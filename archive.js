@@ -44,7 +44,7 @@ function renderEditions(manifest) {
   }
 }
 
-fetch("../editions/index.json", { headers: { accept: "application/json" } })
+fetch("../editions/index.json?v=2", { headers: { accept: "application/json" } })
   .then((response) => {
     if (!response.ok) throw new Error("Archive unavailable");
     return response.json();

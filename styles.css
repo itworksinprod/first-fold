@@ -834,6 +834,7 @@ a:focus-visible {
   grid-template-columns: 1.2fr 0.8fr;
   grid-template-areas:
     "finish tomorrow"
+    "watch watch"
     "delivery principles";
   align-content: center;
   margin: clamp(1rem, 3vw, 2.5rem) 0;
@@ -849,6 +850,7 @@ a:focus-visible {
 
 .back-finish { grid-area: finish; }
 .tomorrow-box { grid-area: tomorrow; background: rgba(127, 33, 31, 0.07); }
+.watch-next-card { grid-area: watch; }
 .delivery-card { grid-area: delivery; }
 .principles-card { grid-area: principles; }
 
@@ -873,6 +875,61 @@ a:focus-visible {
 .tomorrow-box p:last-child,
 .principles-card li {
   line-height: 1.5;
+}
+
+.watch-next-card {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.36fr) minmax(0, 1fr);
+  gap: clamp(1.25rem, 3vw, 2.5rem);
+  padding-block: clamp(1.25rem, 2.3vw, 2rem);
+}
+
+.watch-next-heading h3 {
+  margin: 0;
+  font-size: clamp(1.8rem, 3vw, 2.7rem);
+  line-height: 1;
+}
+
+.watch-next-heading > p:last-child {
+  margin: 0.65rem 0 0;
+  color: var(--ink-soft);
+  line-height: 1.4;
+}
+
+.watch-next-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.watch-next-list li {
+  display: grid;
+  align-content: start;
+  gap: 0.45rem;
+  padding-left: 1rem;
+  border-left: 3px solid var(--red);
+}
+
+.watch-next-list strong {
+  font-size: 1.12rem;
+  line-height: 1.1;
+}
+
+.watch-next-list span {
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.watch-next-list b {
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .delivery-card {
@@ -1073,6 +1130,47 @@ a:focus-visible {
   padding: 1.25rem 1.5rem;
   font-size: 1.05rem;
   line-height: 1.5;
+}
+
+.desk-charters {
+  margin: 0 1.5rem 1.5rem;
+  padding: 1rem;
+  border: 1px solid var(--ink);
+  background: rgba(127, 33, 31, 0.045);
+}
+
+.desk-charters h3 {
+  margin: 0;
+  font-size: 1.45rem;
+}
+
+.desk-charters dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 1rem 0 0;
+  border-top: 1px solid var(--rule-light);
+  border-left: 1px solid var(--rule-light);
+}
+
+.desk-charters dl > div {
+  padding: 0.8rem;
+  border-right: 1px solid var(--rule-light);
+  border-bottom: 1px solid var(--rule-light);
+}
+
+.desk-charters dt {
+  color: var(--red);
+  font-family: var(--sans);
+  font-size: 0.67rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.desk-charters dd {
+  margin: 0.35rem 0 0;
+  font-size: 0.85rem;
+  line-height: 1.4;
 }
 
 .contents-list,
@@ -1703,7 +1801,11 @@ a:focus-visible {
 
   .back-grid {
     grid-template-columns: 1fr;
-    grid-template-areas: "finish" "tomorrow" "delivery" "principles";
+    grid-template-areas: "finish" "tomorrow" "watch" "delivery" "principles";
+  }
+
+  .watch-next-card {
+    grid-template-columns: 1fr;
   }
 
   .page-tabs {
@@ -1860,6 +1962,14 @@ a:focus-visible {
 
   .method-principles {
     margin-inline: 1rem;
+  }
+
+  .desk-charters {
+    margin-inline: 1rem;
+  }
+
+  .desk-charters dl {
+    grid-template-columns: 1fr;
   }
 
   .archive-hero,

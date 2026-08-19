@@ -53,7 +53,7 @@ const server = createServer(async (request, response) => {
         ...securityHeaders,
         "content-type": "application/json; charset=utf-8",
         "content-length": Buffer.byteLength(body),
-        "cache-control": pathname === "/editions/index.json" ? "no-cache" : "public, max-age=3600",
+        "cache-control": "no-store",
       });
       response.end(request.method === "HEAD" ? undefined : body);
       return;
@@ -72,7 +72,7 @@ const server = createServer(async (request, response) => {
       ...securityHeaders,
       "content-type": contentTypes.get(extension),
       "content-length": file.size,
-      "cache-control": extension === ".html" ? "no-cache" : "public, max-age=3600",
+      "cache-control": "no-store",
     });
     if (request.method === "HEAD") response.end();
     else createReadStream(absolutePath).pipe(response);

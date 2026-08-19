@@ -1,4 +1,4 @@
-export const PIPELINE_VERSION = "first-fold-pipeline-v1";
+export const PIPELINE_VERSION = "first-fold-pipeline-v2";
 
 export const EDITORIAL_TIMEZONE = "America/New_York" as const;
 export const RESEARCH_CUTOFF_LOCAL_TIME = "05:00" as const;
@@ -36,7 +36,7 @@ export const EDITORIAL_PIPELINE = [
   {
     id: "select-and-draft",
     target: "05:38 ET",
-    work: "Run the stable editorial policy and daily prompt over bounded candidate dossiers.",
+    work: "Apply desk charters and edition-wide diversity rules, route emerging signals to Watch Next, then draft the qualifying stories.",
   },
   {
     id: "validate",

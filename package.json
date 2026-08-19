@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "A finite morning technology newspaper: one consequential story per desk, delivered at 6:00 AM Eastern.",
+  "description": "A six-minute morning paper for people who work with technology, delivered at 6:00 AM Eastern.",
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "build": "node scripts/build.mjs",

@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "first-fold-2026-08-19",
   "issueNumber": 1,
   "editionDate": "2026-08-19",
@@ -21,7 +21,7 @@
     "publishedAt": "2026-08-19T10:00:00.000Z"
   },
   "frontPage": {
-    "note": "Three developments earned a place this morning. Technology stays intentionally quiet rather than making room for filler.",
+    "note": "Three developments earned a place this morning. Platforms & Power stays intentionally quiet rather than making room for filler.",
     "estimatedMinutes": 6,
     "leadStoryId": "2026-08-19-dgfip-notifications",
     "storyOrder": [
@@ -29,7 +29,8 @@
       "2026-08-19-openai-astra-safety-update",
       "2026-08-19-copilot-deep-research-retirement"
     ],
-    "stopThePressesStoryId": null
+    "stopThePressesStoryId": null,
+    "diversityException": null
   },
   "desks": {
     "ai": {
@@ -50,6 +51,12 @@
         "whatHappened": "OpenAI said it is rewriting its Preparedness Framework after preliminary evaluations of its unreleased Astra model left the company unable to rule out its Critical cybersecurity threshold. In an August 18 briefing reported by Axios, OpenAI described stronger monitoring throughout development, earlier alignment and security controls, and added safeguards before large post-training runs. The company also said it paused two weeks of deployment-focused reinforcement-learning training, kept its largest planned frontier run on hold, and left a significant number of Astra and cyber research workloads paused.",
         "whyItMatters": "The material change is operational, not a new Astra capability claim. A frontier model's evaluation results are now delaying training work and prompting a rewrite of the governance document meant to control such risks. That makes internal safety gates, testing environments, model-weight protection, and independent evaluation part of the delivery schedule rather than an after-the-fact release review.",
         "whatToDoOrWatch": "AI governance and security teams should compare their own stop-work criteria with the controls OpenAI described: isolated testing, restricted tool and network access, monitoring, and escalation before capability increases. Watch for the revised framework, independent evaluation results, and a clear distinction between preliminary capability signals and a final Critical classification. OpenAI has not announced an Astra release date in these sources.",
+        "editorial": {
+          "primaryEntity": "OpenAI",
+          "aiAdjacent": true,
+          "maturity": "verified-development",
+          "deskFit": "The consequential change is what Astra's capability evaluation revealed about frontier-model limits and governance, so AI & Models owns it."
+        },
         "selection": {
           "score": 91,
           "selectedBecause": "It connects frontier capability evaluation to concrete training pauses and governance changes.",
@@ -107,12 +114,12 @@
         ]
       }
     },
-    "ai-at-work": {
-      "desk": "ai-at-work",
+    "work-and-tools": {
+      "desk": "work-and-tools",
       "story": {
         "id": "2026-08-19-copilot-deep-research-retirement",
         "canonicalEventKey": "microsoft-consumer-copilot-deep-research-retirement",
-        "desk": "ai-at-work",
+        "desk": "work-and-tools",
         "headline": "Microsoft retires consumer Copilot's Deep Research",
         "deck": "Existing reports remain accessible, but future in-depth work moves to Researcher for Microsoft 365 Premium subscribers.",
         "status": "new-development",
@@ -125,6 +132,12 @@
         "whatHappened": "Microsoft retired Deep Research in the consumer Copilot app starting August 18. Its support guidance says Microsoft 365 Premium subscribers can continue producing detailed reports with Researcher in Copilot. Previously saved Deep Research work is not being deleted: Premium subscribers can reach it through Researcher, while Personal and Family subscribers can find prior reports in chat history. Microsoft also says existing reports can be opened in Word and saved, and that retiring this feature does not change the underlying Microsoft 365 subscription.",
         "whyItMatters": "The change separates Microsoft's in-depth research experience from the general consumer Copilot surface and makes Researcher the continuing path for Premium users. Anyone who built instructions, training, or recurring knowledge work around the old menu entry now has a small but real workflow migration. Access to completed work remains, reducing the immediate risk of lost research history.",
         "whatToDoOrWatch": "If Deep Research was part of your routine, open one important past report and confirm where it now appears for your subscription tier. Export durable work to Word when local retention matters, then update team documentation and saved prompts to point to Researcher or another approved research process. Check privacy, citation, and human-review requirements before moving a recurring workflow to a different agent.",
+        "editorial": {
+          "primaryEntity": "Microsoft",
+          "aiAdjacent": true,
+          "maturity": "verified-development",
+          "deskFit": "The reader consequence is a concrete migration of an established research workflow, so Work & Tools owns it rather than AI & Models."
+        },
         "selection": {
           "score": 78,
           "selectedBecause": "It is a concrete same-day product change with a clear migration step for people who use AI research at work.",
@@ -183,12 +196,12 @@
         ]
       }
     },
-    "cybersecurity": {
-      "desk": "cybersecurity",
+    "security-and-privacy": {
+      "desk": "security-and-privacy",
       "story": {
         "id": "2026-08-19-dgfip-notifications",
         "canonicalEventKey": "france-dgfip-tax-data-breach-2026",
-        "desk": "cybersecurity",
+        "desk": "security-and-privacy",
         "headline": "France begins notifying 678,000 people and businesses after tax breach",
         "deck": "The response shifted from disclosure to individual warnings as officials ordered a wider security audit.",
         "status": "material-update",
@@ -201,6 +214,12 @@
         "whatHappened": "France's response to the DGFiP tax-authority breach moved into individual notification. Le Monde reported on August 18 that the incident affected data belonging to 678,000 people and businesses, and that notices were set to begin after an August 17 crisis meeting convened by Prime Minister Sébastien Lecornu. The publication also reported that unauthorized access had been blocked at the end of June, but checks at that time did not identify the data theft. DGFiP learned the apparent scale after attackers publicly claimed responsibility in August.",
         "whyItMatters": "The exposed material reportedly includes detailed fiscal and identity information, which can make fraud attempts unusually convincing. The delayed recognition of exfiltration also separates stopping access from understanding what an intruder already removed. France has commissioned an audit of DGFiP systems under national cybersecurity-agency oversight, with findings and operational measures expected to be presented in September.",
         "whatToDoOrWatch": "Potentially affected taxpayers should rely on their secure impots.gouv.fr account and independently verified government contact details, not links or credentials requested in unexpected messages. Treat calls, texts, and emails that reference tax details as potentially tailored phishing. Organizations should use this incident to verify that identity-access alerts, data-loss monitoring, and post-containment investigations can detect exfiltration rather than merely terminate a compromised session.",
+        "editorial": {
+          "primaryEntity": "France's DGFiP",
+          "aiAdjacent": false,
+          "maturity": "verified-development",
+          "deskFit": "The notification creates a concrete privacy exposure and defensive decision for affected taxpayers, so Security & Privacy owns it."
+        },
         "selection": {
           "score": 94,
           "selectedBecause": "The notification phase creates an immediate fraud risk for a large, clearly identified population and adds a concrete government response.",
@@ -284,10 +303,10 @@
         ]
       }
     },
-    "technology": {
-      "desk": "technology",
+    "platforms-and-power": {
+      "desk": "platforms-and-power",
       "story": null,
-      "emptyReason": "No Technology story cleared today's evidence and consequence threshold before the 5:00 AM cutoff."
+      "emptyReason": "No Platforms & Power story cleared today's evidence and consequence threshold before the 5:00 AM cutoff."
     }
   },
   "backPage": {
@@ -319,8 +338,8 @@
   },
   "corrections": [],
   "provenance": {
-    "policyVersion": "first-fold-editorial-v1",
-    "promptVersion": "first-fold-daily-v1",
-    "pipelineVersion": "first-fold-pipeline-v1"
+    "policyVersion": "first-fold-editorial-v2",
+    "promptVersion": "first-fold-daily-v2",
+    "pipelineVersion": "first-fold-pipeline-v2"
   }
 }

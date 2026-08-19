@@ -1,13 +1,13 @@
 # First Fold
 
-**Four desks. One morning edition. No infinite scroll.**
+**A six-minute morning paper for people who work with technology.**
 
-First Fold is a small, newspaper-inspired daily news experience for people who want a useful briefing without opening an endless feed. Every morning, it presents **at most one consequential story from each of four desks**:
+First Fold is a small, newspaper-inspired daily briefing for technology professionals, managers, builders, defenders, and serious technology users who want to understand what matters without opening an endless feed. Every morning, it presents **at most one consequential story from each of four permanent desks**:
 
-- AI
-- AI at Work
-- Cybersecurity
-- Technology
+- AI & Models
+- Work & Tools
+- Security & Privacy
+- Platforms & Power
 
 The interface borrows the ritual and pacing of a folded newspaper—masthead, sections, columns, and page turns—while keeping the reading experience accessible on phones, keyboards, touchscreens, and reduced-motion displays.
 
@@ -24,6 +24,17 @@ The product has three constraints:
 3. A weak story never gets published merely to fill space.
 
 The result should feel less like checking a feed and more like completing a calm, finite daily ritual.
+
+## The four desks
+
+The desks are defined by the reader question each story answers, not merely by the company or technology named in its headline:
+
+- **AI & Models — What became possible or better understood?** Model capabilities, consequential releases, research, safety, and governance belong here. An ordinary product feature does not qualify just because it uses AI.
+- **Work & Tools — What should I change about how I work?** Meaningful workflow changes, productivity tools, workplace policy, labor effects, and evidence of enterprise adoption belong here. Routine feature announcements do not.
+- **Security & Privacy — What risk requires attention or action?** Exploited vulnerabilities, breaches, identity, surveillance, privacy, and proportionate defensive decisions belong here.
+- **Platforms & Power — Who controls the systems, access, and rules?** Chips, cloud infrastructure, operating systems, app stores, developer platforms, antitrust, and digital regulation belong here.
+
+Editors assign an overlapping story according to its primary consequence for the reader. The same underlying event cannot fill two desks, and the broad subject of “technology” is the paper's scope rather than a catch-all fifth desk.
 
 ## The morning edition
 
@@ -48,6 +59,8 @@ If no candidate clears the evidence and quality threshold, that desk prints:
 > No edition-worthy development this morning.
 
 This is a feature, not an error. It makes the absence of filler visible and protects the central promise: one story is the maximum, not the quota.
+
+Promising developments that do not yet clear the story threshold may appear briefly in **Watch Next** on the back page. Watch Next is a small weak-signal list, not another desk and not a way to publish unsupported claims. It preserves the four-desk, six-minute edition while showing readers what the newsroom is monitoring.
 
 ## Run the fixture demo
 
@@ -129,6 +142,7 @@ Presentation stays downstream of that contract:
 - The archive fetches `/editions/index.json` and links each entry back into the same reader.
 - The local press desk reads the same reader projection, so its desk, source, score, and validation views cannot drift into a second editorial dataset.
 - Desktop page turns progressively enhance a mobile reading flow with keyboard navigation, accessible announcements, and reduced-motion support.
+- The back page closes the edition with a practical next step and a bounded Watch Next list; it does not continue into an open-ended feed.
 
 The production pipeline is designed to replace only the fixture input:
 
@@ -163,10 +177,14 @@ The renderer never calls news or model APIs per visitor. A daily job will eventu
 
 A valid edition must satisfy these invariants:
 
-- It has exactly the four known desks, with no duplicate desk.
+- It has exactly the four known desks—AI & Models, Work & Tools, Security & Privacy, and Platforms & Power—with no duplicate desk.
 - Each desk contains zero or one selected story.
 - An empty desk contains the standard quiet-desk message.
 - The same underlying event cannot appear in more than one desk.
+- Every story records its primary entity, AI adjacency, maturity, and desk-fit rationale.
+- No edition contains more than two AI-adjacent stories.
+- Repeating a primary entity requires a specific front-page diversity exception.
+- Watch Next contains no more than three complete emerging signals.
 - Every selected story has a canonical source URL and publication or update date.
 - Material factual claims are traceable to supporting sources.
 - An out-of-window continuing story is eligible only when it identifies a material update inside the window.
@@ -176,7 +194,7 @@ A valid edition must satisfy these invariants:
 
 1. Add one canonical file at `content/editions/YYYY-MM-DD.json`; use the existing edition as the shape reference.
 2. Keep exactly the four configured desk keys. Set a desk's `story` to `null` and provide an honest `emptyReason` when nothing qualifies.
-3. Record direct source URLs, evidence-to-source mappings, reporting-window timestamps, the selection rationale, and any material-update delta in that file.
+3. Record direct source URLs, evidence-to-source mappings, reporting-window timestamps, editorial classification, the selection rationale, and any material-update delta in that file.
 4. Run `npm run build`. Invalid dates, duplicate events, weak scores, missing sources, unsupported claims, malformed quiet desks, and other contract failures stop artifact generation.
 5. Run `npm test`, then inspect the edition at `/?edition=YYYY-MM-DD#front`, its archive card at `/archive/`, and the local review at `/editor/`.
 
@@ -206,6 +224,7 @@ Included:
 - Newspaper-inspired layout and navigation
 - Finite reading progress
 - Quiet-desk handling
+- A bounded Watch Next back-page list
 - Source and editorial-transparency surfaces
 - A dated edition archive
 - A local-only press-desk review prototype with device-local approval state
@@ -227,7 +246,7 @@ Deliberately deferred:
 2. **Editorial engine:** connect the existing edition contract to a curated-source registry, normalization, deduplication, scoring, and replayable research fixtures.
 3. **Morning press:** stage at 5:55 AM ET, publish atomically at 6:00 AM, and alert on missing or invalid editions.
 4. **Archive depth and corrections:** grow the existing dated archive and add visible correction history, source suppression, and a rapid unpublish path.
-5. **Reader controls:** let readers choose a small set of desks while preserving the one-story-per-desk and finite-edition rules.
+5. **Reader refinements:** improve typography, accessibility, and completion cues while preserving the same four-desk, six-minute edition.
 6. **Optional delivery:** add an accessible email edition or notifications only after consent, unsubscribe, privacy, and retention controls are in place.
 
 The project should remain intentionally small enough for one person to understand, operate, and audit.

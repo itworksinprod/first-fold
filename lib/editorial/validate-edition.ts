@@ -73,6 +73,18 @@ function validateStory(
   if (!story.headline.trim() || !story.deck.trim()) {
     errors.push(`${prefix} needs a headline and deck.`);
   }
+  if (!story.editorial.primaryEntity.trim()) {
+    errors.push(`${prefix} needs a primary editorial entity.`);
+  }
+  if (!story.editorial.deskFit.trim()) {
+    errors.push(`${prefix} needs a concise desk-fit rationale.`);
+  }
+  if (story.editorial.maturity !== "verified-development") {
+    errors.push(`${prefix} is an emerging signal and belongs on Watch Next.`);
+  }
+  if (story.desk === "ai" && !story.editorial.aiAdjacent) {
+    errors.push(`${prefix} is on AI & Models but is not marked AI-adjacent.`);
+  }
   if (story.selection.score < 70 || story.selection.score > 100) {
     errors.push(`${prefix} has an ineligible selection score.`);
   }
@@ -155,8 +167,8 @@ function validateStory(
     }
   }
 
-  if (story.securityAction && story.desk !== "cybersecurity") {
-    errors.push(`${prefix} has a security action outside the cybersecurity desk.`);
+  if (story.securityAction && story.desk !== "security-and-privacy") {
+    errors.push(`${prefix} has a security action outside the Security & Privacy desk.`);
   }
 }
 
@@ -166,7 +178,7 @@ export function validateEdition(
 ): EditionValidationResult {
   const errors: string[] = [];
 
-  if (edition.schemaVersion !== 1) errors.push("Unsupported edition schema version.");
+  if (edition.schemaVersion !== 2) errors.push("Unsupported edition schema version.");
   if (!ISO_DATE.test(edition.editionDate)) errors.push("editionDate must be YYYY-MM-DD.");
   if (edition.issueNumber < 1 || !Number.isInteger(edition.issueNumber)) {
     errors.push("issueNumber must be a positive integer.");
@@ -232,6 +244,7 @@ export function validateEdition(
 
   const storyIds = new Set<string>();
   const eventKeys = new Set<string>();
+  const primaryEntities = new Map<string, string[]>();
   for (const story of stories) {
     if (storyIds.has(story.id)) errors.push(`Duplicate story id ${story.id}.`);
     storyIds.add(story.id);
@@ -239,12 +252,35 @@ export function validateEdition(
       errors.push(`Event ${story.canonicalEventKey} appears in more than one desk.`);
     }
     eventKeys.add(story.canonicalEventKey);
+    const normalizedEntity = story.editorial.primaryEntity.trim().toLocaleLowerCase("en-US");
+    const entityStories = primaryEntities.get(normalizedEntity) ?? [];
+    entityStories.push(story.id);
+    primaryEntities.set(normalizedEntity, entityStories);
     if (
       context.recentEventKeys?.has(story.canonicalEventKey) &&
       story.status !== "material-update"
     ) {
       errors.push(`Previously covered event ${story.canonicalEventKey} is not a material update.`);
     }
+  }
+
+  const aiAdjacentStories = stories.filter((story) => story.editorial.aiAdjacent);
+  if (aiAdjacentStories.length > 2) {
+    errors.push(
+      `An edition may contain at most two AI-adjacent stories; found ${aiAdjacentStories.length}.`,
+    );
+  }
+
+  const repeatedEntities = [...primaryEntities.entries()].filter(
+    ([, storyIdsForEntity]) => storyIdsForEntity.length > 1,
+  );
+  if (repeatedEntities.length > 0 && !edition.frontPage.diversityException?.trim()) {
+    errors.push(
+      "A repeated primary entity requires a specific front-page diversity exception.",
+    );
+  }
+  if (repeatedEntities.length === 0 && edition.frontPage.diversityException !== null) {
+    errors.push("A diversity exception was supplied, but no primary entity is repeated.");
   }
 
   const order = edition.frontPage.storyOrder;
@@ -268,8 +304,26 @@ export function validateEdition(
   const stopThePressesId = edition.frontPage.stopThePressesStoryId;
   if (stopThePressesId !== null) {
     const alertStory = stories.find((story) => story.id === stopThePressesId);
-    if (!alertStory || alertStory.desk !== "cybersecurity" || !alertStory.securityAction) {
-      errors.push("Stop the Presses must reference the selected cybersecurity story.");
+    if (
+      !alertStory ||
+      alertStory.desk !== "security-and-privacy" ||
+      !alertStory.securityAction
+    ) {
+      errors.push("Stop the Presses must reference the selected Security & Privacy story.");
+    }
+  }
+
+  if (edition.backPage.watchNext.length > 3) {
+    errors.push("Watch Next may contain at most three emerging signals.");
+  }
+  for (const item of edition.backPage.watchNext) {
+    if (
+      !item.topic.trim() ||
+      !item.unresolved.trim() ||
+      !item.meaningfulSignal.trim() ||
+      !item.whyItMatters.trim()
+    ) {
+      errors.push("Every Watch Next item needs a topic, unresolved question, signal, and consequence.");
     }
   }
 

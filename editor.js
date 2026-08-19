@@ -12,6 +12,13 @@ let edition = null;
 let approvalKey = null;
 let canApprove = false;
 
+const deskLabels = {
+  ai: "AI & Models",
+  "work-and-tools": "Work & Tools",
+  "security-and-privacy": "Security & Privacy",
+  "platforms-and-power": "Platforms & Power",
+};
+
 function currentApproval() {
   if (!approvalKey) return null;
   try {
@@ -89,7 +96,7 @@ function renderDesks(desks) {
 
     const header = document.createElement("div");
     const label = document.createElement("p");
-    label.textContent = `${desk.label} · page ${desk.page}`;
+    label.textContent = `${deskLabels[desk.id] ?? desk.label} · page ${desk.page}`;
     const badge = document.createElement("span");
     badge.textContent = desk.state === "story" ? `Score ${desk.score}` : "Quiet desk";
     header.append(label, badge);
@@ -120,8 +127,8 @@ function browserPreflight(data) {
 
   return [
     {
-      label: "Generated from canonical Edition v1",
-      passed: data.kind === "first-fold/reader-edition" && data.readerProjectionVersion === 1,
+      label: "Generated from canonical Edition v2",
+      passed: data.kind === "first-fold/reader-edition" && data.readerProjectionVersion === 2,
     },
     {
       label: "Revision-bound SHA-256 record",
@@ -192,12 +199,12 @@ approveButton.addEventListener("click", () => {
 });
 
 async function loadLatestEdition() {
-  const manifestResponse = await fetch("../editions/index.json", { headers: { accept: "application/json" } });
+  const manifestResponse = await fetch("../editions/index.json?v=2", { headers: { accept: "application/json" } });
   if (!manifestResponse.ok) throw new Error("Archive unavailable");
   const manifest = await manifestResponse.json();
   if (manifest.kind !== "first-fold/archive-manifest" || !manifest.latest) throw new Error("Invalid archive manifest");
 
-  const editionResponse = await fetch(`../editions/${manifest.latest}.json`, { headers: { accept: "application/json" } });
+  const editionResponse = await fetch(`../editions/${manifest.latest}.json?v=2`, { headers: { accept: "application/json" } });
   if (!editionResponse.ok) throw new Error("Edition unavailable");
   return editionResponse.json();
 }

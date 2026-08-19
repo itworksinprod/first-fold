@@ -2,12 +2,12 @@ import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
-const DESKS = ["ai", "ai-at-work", "cybersecurity", "technology"];
+const DESKS = ["ai", "work-and-tools", "security-and-privacy", "platforms-and-power"];
 const DESK_PRESENTATION = {
-  ai: { id: "ai", label: "AI", page: 2 },
-  "ai-at-work": { id: "work", label: "AI at Work", page: 3 },
-  cybersecurity: { id: "cyber", label: "Cybersecurity", page: 4 },
-  technology: { id: "technology", label: "Technology", page: 5 },
+  ai: { id: "ai", label: "AI & Models", page: 2 },
+  "work-and-tools": { id: "work-and-tools", label: "Work & Tools", page: 3 },
+  "security-and-privacy": { id: "security-and-privacy", label: "Security & Privacy", page: 4 },
+  "platforms-and-power": { id: "platforms-and-power", label: "Platforms & Power", page: 5 },
 };
 
 const PIPELINE = [
@@ -58,7 +58,7 @@ function localClock(instant) {
 export function validateCanonicalEdition(edition) {
   const issues = [];
   if (!isObject(edition)) return { valid: false, issues: ["Edition must be an object."] };
-  if (edition.schemaVersion !== 1) issues.push("Unsupported canonical schema version.");
+  if (edition.schemaVersion !== 2) issues.push("Unsupported canonical schema version.");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(edition.editionDate ?? "")) issues.push("editionDate must be YYYY-MM-DD.");
   if (edition.timezone !== "America/New_York") issues.push("Timezone must be America/New_York.");
   if (!isObject(edition.desks) || Object.keys(edition.desks).sort().join("|") !== [...DESKS].sort().join("|")) {
@@ -76,6 +76,7 @@ export function validateCanonicalEdition(edition) {
   const storyIds = new Set();
   const eventKeys = new Set();
   const selectedStories = [];
+  const primaryEntities = new Map();
 
   for (const desk of DESKS) {
     const page = edition.desks[desk];
@@ -97,6 +98,31 @@ export function validateCanonicalEdition(edition) {
     eventKeys.add(story.canonicalEventKey);
     if (!Number.isFinite(story.selection?.score) || story.selection.score < 70 || story.selection.score > 100) {
       issues.push(`Story ${story.id} has an ineligible score.`);
+    }
+
+    if (!isObject(story.editorial)) {
+      issues.push(`Story ${story.id} has no editorial classification.`);
+    } else {
+      if (typeof story.editorial.primaryEntity !== "string" || !story.editorial.primaryEntity.trim()) {
+        issues.push(`Story ${story.id} has no primary editorial entity.`);
+      } else {
+        const normalizedEntity = story.editorial.primaryEntity.trim().toLocaleLowerCase("en-US");
+        const entityStories = primaryEntities.get(normalizedEntity) ?? [];
+        entityStories.push(story.id);
+        primaryEntities.set(normalizedEntity, entityStories);
+      }
+      if (typeof story.editorial.aiAdjacent !== "boolean") {
+        issues.push(`Story ${story.id} must declare whether it is AI-adjacent.`);
+      }
+      if (story.editorial.maturity !== "verified-development") {
+        issues.push(`Story ${story.id} is an emerging signal and belongs on Watch Next.`);
+      }
+      if (typeof story.editorial.deskFit !== "string" || !story.editorial.deskFit.trim()) {
+        issues.push(`Story ${story.id} has no desk-fit rationale.`);
+      }
+      if (story.desk === "ai" && story.editorial.aiAdjacent !== true) {
+        issues.push(`Story ${story.id} is on AI & Models but is not AI-adjacent.`);
+      }
     }
 
     const readerWords = wordCount(`${story.whatHappened ?? ""} ${story.whyItMatters ?? ""} ${story.whatToDoOrWatch ?? ""}`);
@@ -132,6 +158,22 @@ export function validateCanonicalEdition(edition) {
         if (!sourceIds.has(sourceId)) issues.push(`Claim ${claim.id} references an unknown source.`);
       }
     }
+
+    if (story.securityAction && story.desk !== "security-and-privacy") {
+      issues.push(`Story ${story.id} has a security action outside the Security & Privacy desk.`);
+    }
+  }
+
+  const aiAdjacentCount = selectedStories.filter((story) => story.editorial?.aiAdjacent === true).length;
+  if (aiAdjacentCount > 2) issues.push(`An edition may contain at most two AI-adjacent stories; found ${aiAdjacentCount}.`);
+
+  const repeatedEntities = [...primaryEntities.values()].filter((storyIdsForEntity) => storyIdsForEntity.length > 1);
+  const diversityException = edition.frontPage?.diversityException;
+  if (repeatedEntities.length > 0 && (typeof diversityException !== "string" || !diversityException.trim())) {
+    issues.push("A repeated primary entity requires a specific front-page diversity exception.");
+  }
+  if (repeatedEntities.length === 0 && diversityException !== null) {
+    issues.push("A diversity exception was supplied, but no primary entity is repeated.");
   }
 
   const order = edition.frontPage?.storyOrder ?? [];
@@ -139,6 +181,36 @@ export function validateCanonicalEdition(edition) {
     issues.push("Front-page order must reference every selected story exactly once.");
   }
   if (edition.frontPage?.leadStoryId && !storyIds.has(edition.frontPage.leadStoryId)) issues.push("Lead story is not selected.");
+
+  const stopThePressesId = edition.frontPage?.stopThePressesStoryId;
+  if (stopThePressesId !== null) {
+    const alertStory = selectedStories.find((story) => story.id === stopThePressesId);
+    if (!alertStory || alertStory.desk !== "security-and-privacy" || !alertStory.securityAction) {
+      issues.push("Stop the Presses must reference the selected Security & Privacy story.");
+    }
+  }
+
+  const watchNext = edition.backPage?.watchNext;
+  if (!Array.isArray(watchNext)) {
+    issues.push("Watch Next must be an array.");
+  } else {
+    if (watchNext.length > 3) issues.push("Watch Next may contain at most three signals.");
+    for (const [index, item] of watchNext.entries()) {
+      if (!isObject(item) || ["topic", "unresolved", "meaningfulSignal", "whyItMatters"].some(
+        (field) => typeof item?.[field] !== "string" || !item[field].trim(),
+      )) {
+        issues.push(`Watch Next item ${index + 1} is incomplete.`);
+      }
+    }
+  }
+
+  if (
+    edition.provenance?.policyVersion !== "first-fold-editorial-v2" ||
+    edition.provenance?.promptVersion !== "first-fold-daily-v2" ||
+    edition.provenance?.pipelineVersion !== "first-fold-pipeline-v2"
+  ) {
+    issues.push("Edition provenance must reference the v2 editorial pipeline.");
+  }
 
   return { valid: issues.length === 0, issues };
 }
@@ -210,7 +282,7 @@ export function toReaderEdition(edition, validation) {
 
   return {
     kind: "first-fold/reader-edition",
-    readerProjectionVersion: 1,
+    readerProjectionVersion: 2,
     canonicalEditionId: edition.id,
     sourceRevision: digest,
     id: edition.editionDate,
@@ -237,10 +309,11 @@ export function toReaderEdition(edition, validation) {
       summary: `${stories.length} stories. ${quietCount === 1 ? "One honest blank" : `${quietCount} honest blanks`}. Nothing else is waiting.`,
       experimentTitle: edition.backPage.tryThisTomorrow?.title ?? "Begin with the finish line.",
       experiment: edition.backPage.tryThisTomorrow?.goal ?? "Define a useful result before choosing the tool.",
+      watchNext: edition.backPage.watchNext,
     },
     pipeline: PIPELINE,
     validation: {
-      validatorVersion: "first-fold-runtime-v1",
+      validatorVersion: "first-fold-runtime-v2",
       checkedAt: generatedAt,
       contentSha256: digest,
       issues: validation.issues,

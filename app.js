@@ -33,7 +33,7 @@ const fallbackSourceSets = {
       },
     ],
   },
-  work: {
+  "work-and-tools": {
     headline: "Microsoft folds Deep Research into a paid workflow",
     sources: [
       {
@@ -44,7 +44,7 @@ const fallbackSourceSets = {
       },
     ],
   },
-  cyber: {
+  "security-and-privacy": {
     headline: "France’s tax breach reaches 678,000 people and businesses",
     sources: [
       {
@@ -63,7 +63,18 @@ const fallbackSourceSets = {
   },
 };
 
-const pageSlugs = ["front", "ai", "ai-at-work", "cybersecurity", "technology", "back"];
+const pageSlugs = ["front", "ai", "work-and-tools", "security-and-privacy", "platforms-and-power", "back"];
+const legacyPageSlugAliases = {
+  "ai-at-work": "work-and-tools",
+  cybersecurity: "security-and-privacy",
+  technology: "platforms-and-power",
+};
+const deskLabels = {
+  ai: "AI & Models",
+  "work-and-tools": "Work & Tools",
+  "security-and-privacy": "Security & Privacy",
+  "platforms-and-power": "Platforms & Power",
+};
 let sourceSets = fallbackSourceSets;
 let editionData = null;
 
@@ -84,9 +95,15 @@ function requestedEditionId() {
 }
 
 function validateEditionData(data) {
-  if (!data || data.readerProjectionVersion !== 1 || !data.canonicalEditionId || !Array.isArray(data.desks)) return false;
+  if (!data || data.readerProjectionVersion !== 2 || !data.canonicalEditionId || !Array.isArray(data.desks)) return false;
   const ids = data.desks.map((desk) => desk.id);
-  return ids.length === 4 && new Set(ids).size === 4 && ids.every((id) => ["ai", "work", "cyber", "technology"].includes(id));
+  return ids.length === 4 && new Set(ids).size === 4 && ids.every((id) => Object.hasOwn(deskLabels, id));
+}
+
+function pageIndexFromHash(hash = window.location.hash) {
+  const requestedSlug = hash.slice(1);
+  const canonicalSlug = legacyPageSlugAliases[requestedSlug] ?? requestedSlug;
+  return pageSlugs.indexOf(canonicalSlug);
 }
 
 function hydrateStoryPage(desk) {
@@ -117,6 +134,31 @@ function hydrateStoryPage(desk) {
   }
 }
 
+function renderWatchNext(items) {
+  const card = document.querySelector("[data-watch-next-card]");
+  const list = document.querySelector("[data-watch-next]");
+  if (!card || !list || !Array.isArray(items)) return;
+
+  const watchItems = items.slice(0, 3);
+  card.hidden = watchItems.length === 0;
+  list.replaceChildren();
+
+  for (const item of watchItems) {
+    const entry = document.createElement("li");
+    const topic = document.createElement("strong");
+    const unresolved = document.createElement("span");
+    const signal = document.createElement("span");
+    const signalLabel = document.createElement("b");
+
+    topic.textContent = item.topic;
+    unresolved.textContent = item.unresolved;
+    signalLabel.textContent = "Meaningful next signal: ";
+    signal.append(signalLabel, item.meaningfulSignal);
+    entry.append(topic, unresolved, signal);
+    list.append(entry);
+  }
+}
+
 function hydrateEdition(data) {
   editionData = data;
   document.body.dataset.editionId = data.id;
@@ -135,13 +177,14 @@ function hydrateEdition(data) {
   setText("[data-back-issue]", `Issue ${String(data.issueNumber).padStart(3, "0")} · Demo edition`);
 
   for (const desk of data.desks) {
+    const deskLabel = deskLabels[desk.id] ?? desk.label;
     const cover = document.querySelector(`[data-cover-desk="${desk.id}"]`);
     if (cover) {
-      setText(".story-folio", `${desk.label} · Page ${desk.page}`, cover);
+      setText(".story-folio", `${deskLabel} · Page ${desk.page}`, cover);
       setText("strong", desk.headline, cover);
       const summary = cover.querySelector(":scope > span:last-child");
       if (summary) summary.textContent = desk.frontDeck;
-      cover.setAttribute("aria-label", `Turn to ${desk.label}, page ${desk.page}`);
+      cover.setAttribute("aria-label", `Turn to ${deskLabel}, page ${desk.page}`);
       cover.closest(".front-story")?.classList.toggle(
         "is-edition-lead",
         desk.storyId === data.frontPage.leadStoryId,
@@ -163,6 +206,7 @@ function hydrateEdition(data) {
   setText(".back-finish > p:not(.section-label)", data.backPage.summary);
   setText(".tomorrow-box h3", data.backPage.experimentTitle);
   setText(".tomorrow-box p:last-child", data.backPage.experiment);
+  renderWatchNext(data.backPage.watchNext);
 
   sourceSets = Object.fromEntries(
     data.desks
@@ -179,7 +223,7 @@ function hydrateEdition(data) {
 async function loadEditionData() {
   const editionId = requestedEditionId();
   try {
-    const response = await fetch(`editions/${editionId}.json`, { headers: { accept: "application/json" } });
+    const response = await fetch(`editions/${editionId}.json?v=2`, { headers: { accept: "application/json" } });
     if (!response.ok) throw new Error("Edition not found");
     const data = await response.json();
     if (!validateEditionData(data)) throw new Error("Edition data failed validation");
@@ -441,11 +485,11 @@ reader.addEventListener("pointercancel", () => {
 });
 
 window.addEventListener("hashchange", () => {
-  const index = pageSlugs.indexOf(window.location.hash.slice(1));
+  const index = pageIndexFromHash();
   if (index >= 0) showPage(index, { focus: true, updateHash: false });
 });
 
 loadEditionData().finally(() => {
-  const initialIndex = pageSlugs.indexOf(window.location.hash.slice(1));
+  const initialIndex = pageIndexFromHash();
   showPage(initialIndex >= 0 ? initialIndex : 0, { updateHash: initialIndex < 0 });
 });
