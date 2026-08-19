@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#ede4cf" />
+    <meta name="description" content="A prototype editorial review desk for First Fold." />
+    <title>Press Desk — First Fold</title>
+    <link rel="stylesheet" href="../styles.css" />
+    <script src="../editor.js" defer></script>
+  </head>
+  <body class="utility-body press-body">
+    <a class="skip-link" href="#press-main">Skip to the review</a>
+
+    <header class="edition-rail" aria-label="Press desk navigation">
+      <a class="rail-brand" href="../" aria-label="First Fold — return to the current edition">
+        <span class="rail-mark" aria-hidden="true">FF</span>
+        <span><strong>First Fold</strong><small>Press desk prototype</small></span>
+      </a>
+      <p class="rail-delivery"><span class="status-dot" aria-hidden="true"></span>Copy lock · 5:50 AM ET</p>
+      <nav class="rail-tools" aria-label="Press desk tools">
+        <a href="../">Read edition</a>
+        <a href="../archive/">Archive</a>
+      </nav>
+    </header>
+
+    <main class="utility-shell press-shell" id="press-main">
+      <p class="prototype-banner">Portfolio prototype · approval is stored on this device only</p>
+
+      <section class="utility-paper press-hero">
+        <div>
+          <p class="section-label">Morning run · Issue 001</p>
+          <h1>Ready for<br />the doorstep?</h1>
+          <p class="press-lede">Review the four desk decisions, evidence coverage, and validation gates before the 6:00 AM release.</p>
+        </div>
+        <aside class="press-status-card">
+          <p>Edition status</p>
+          <strong data-review-status>Loading</strong>
+          <span data-review-detail>Reading the edition artifact…</span>
+          <button class="ink-button" type="button" data-approve-edition disabled>Approve demo edition</button>
+        </aside>
+      </section>
+
+      <section class="utility-paper press-section" aria-labelledby="pipeline-title">
+        <header class="utility-section-header">
+          <div><p class="section-label">Production line</p><h2 id="pipeline-title">The morning run</h2></div>
+          <p>Cutoff 5:00 · Publish 6:00</p>
+        </header>
+        <ol class="press-pipeline" data-pipeline-list></ol>
+      </section>
+
+      <section class="utility-paper press-section" aria-labelledby="desk-review-title">
+        <header class="utility-section-header">
+          <div><p class="section-label">Four desks</p><h2 id="desk-review-title">Selection review</h2></div>
+          <p data-desk-summary>Loading desk decisions…</p>
+        </header>
+        <div class="press-desk-grid" data-desk-review></div>
+      </section>
+
+      <section class="utility-paper press-section validation-section" aria-labelledby="validation-title">
+        <header class="utility-section-header">
+          <div><p class="section-label">Preflight</p><h2 id="validation-title">Validation gates</h2></div>
+          <p data-validation-summary>Checking…</p>
+        </header>
+        <ul class="validation-grid" data-validation-list></ul>
+      </section>
+    </main>
+
+    <div class="sr-only" data-editor-announcer aria-live="polite" aria-atomic="true"></div>
+  </body>
+</html>

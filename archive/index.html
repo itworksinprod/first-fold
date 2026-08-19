@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#ede4cf" />
+    <meta name="description" content="Browse finished First Fold morning editions." />
+    <title>Edition Archive — First Fold</title>
+    <link rel="stylesheet" href="../styles.css" />
+    <script src="../archive.js" defer></script>
+  </head>
+  <body class="utility-body">
+    <a class="skip-link" href="#archive-main">Skip to the archive</a>
+
+    <header class="edition-rail" aria-label="Archive navigation">
+      <a class="rail-brand" href="../" aria-label="First Fold — return to the current edition">
+        <span class="rail-mark" aria-hidden="true">FF</span>
+        <span><strong>First Fold</strong><small>Edition archive</small></span>
+      </a>
+      <p class="rail-delivery"><span class="status-dot" aria-hidden="true"></span>One finished paper every morning</p>
+      <nav class="rail-tools" aria-label="Archive tools">
+        <a href="../">Today’s paper</a>
+        <a href="../editor/">Press desk</a>
+      </nav>
+    </header>
+
+    <main class="utility-shell" id="archive-main">
+      <section class="utility-paper archive-hero">
+        <div>
+          <p class="section-label">The bound volume</p>
+          <h1>Every morning,<br />kept intact.</h1>
+        </div>
+        <div class="archive-intro">
+          <p>Published editions are immutable. If a fact changes later, the correction is appended rather than silently rewriting the morning’s record.</p>
+          <dl>
+            <div><dt>Delivery</dt><dd>6:00 AM ET</dd></div>
+            <div><dt>Desks</dt><dd>4 maximum</dd></div>
+            <div><dt>Scroll</dt><dd>Finite</dd></div>
+          </dl>
+        </div>
+      </section>
+
+      <section class="utility-paper archive-section" aria-labelledby="archive-title">
+        <header class="utility-section-header">
+          <div>
+            <p class="section-label">Published issues</p>
+            <h2 id="archive-title">The archive begins here.</h2>
+          </div>
+          <p data-archive-count>Loading editions…</p>
+        </header>
+        <div class="archive-list" data-archive-list aria-live="polite">
+          <article class="archive-card archive-card-fallback">
+            <p class="archive-folio">Issue 001 · published</p>
+            <h3><a href="../?edition=2026-08-19#front">Wednesday, August 19, 2026</a></h3>
+            <p class="archive-summary">Three sourced developments and one intentionally quiet desk.</p>
+            <p class="archive-stats">3 stories · 1 quiet desk · 6 minutes</p>
+          </article>
+        </div>
+        <noscript><p class="utility-empty">The archive is shown above without live index updates.</p></noscript>
+      </section>
+    </main>
+  </body>
+</html>

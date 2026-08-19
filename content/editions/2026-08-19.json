@@ -1,0 +1,326 @@
+{
+  "schemaVersion": 1,
+  "id": "first-fold-2026-08-19",
+  "issueNumber": 1,
+  "editionDate": "2026-08-19",
+  "status": "published",
+  "masthead": {
+    "name": "First Fold",
+    "tagline": "Printed for the screen. Finished by breakfast."
+  },
+  "timezone": "America/New_York",
+  "reportingWindow": {
+    "startInclusive": "2026-08-18T09:00:00.000Z",
+    "endExclusive": "2026-08-19T09:00:00.000Z",
+    "displayLabel": "August 18, 2026 at 5:00 AM ET through August 19, 2026 at 5:00 AM ET"
+  },
+  "publication": {
+    "targetLocalTime": "06:00",
+    "publishAt": "2026-08-19T10:00:00.000Z",
+    "generatedAt": "2026-08-19T09:50:00.000Z",
+    "publishedAt": "2026-08-19T10:00:00.000Z"
+  },
+  "frontPage": {
+    "note": "Three developments earned a place this morning. Technology stays intentionally quiet rather than making room for filler.",
+    "estimatedMinutes": 6,
+    "leadStoryId": "2026-08-19-dgfip-notifications",
+    "storyOrder": [
+      "2026-08-19-dgfip-notifications",
+      "2026-08-19-openai-astra-safety-update",
+      "2026-08-19-copilot-deep-research-retirement"
+    ],
+    "stopThePressesStoryId": null
+  },
+  "desks": {
+    "ai": {
+      "desk": "ai",
+      "story": {
+        "id": "2026-08-19-openai-astra-safety-update",
+        "canonicalEventKey": "openai-astra-critical-cyber-preparedness",
+        "desk": "ai",
+        "headline": "OpenAI widens its Astra pause while rewriting safety rules",
+        "deck": "The unreleased model's cyber evaluations are now changing how OpenAI governs frontier training.",
+        "status": "material-update",
+        "priority": "high",
+        "timing": {
+          "eventAt": "2026-08-18T18:00:04.000Z",
+          "firstPublishedAt": "2026-08-07T16:00:00.000Z",
+          "materiallyUpdatedAt": "2026-08-18T18:00:04.000Z"
+        },
+        "whatHappened": "OpenAI said it is rewriting its Preparedness Framework after preliminary evaluations of its unreleased Astra model left the company unable to rule out its Critical cybersecurity threshold. In an August 18 briefing reported by Axios, OpenAI described stronger monitoring throughout development, earlier alignment and security controls, and added safeguards before large post-training runs. The company also said it paused two weeks of deployment-focused reinforcement-learning training, kept its largest planned frontier run on hold, and left a significant number of Astra and cyber research workloads paused.",
+        "whyItMatters": "The material change is operational, not a new Astra capability claim. A frontier model's evaluation results are now delaying training work and prompting a rewrite of the governance document meant to control such risks. That makes internal safety gates, testing environments, model-weight protection, and independent evaluation part of the delivery schedule rather than an after-the-fact release review.",
+        "whatToDoOrWatch": "AI governance and security teams should compare their own stop-work criteria with the controls OpenAI described: isolated testing, restricted tool and network access, monitoring, and escalation before capability increases. Watch for the revised framework, independent evaluation results, and a clear distinction between preliminary capability signals and a final Critical classification. OpenAI has not announced an Astra release date in these sources.",
+        "selection": {
+          "score": 91,
+          "selectedBecause": "It connects frontier capability evaluation to concrete training pauses and governance changes.",
+          "materialDelta": "OpenAI disclosed broader paused training workloads and a rewrite of its Preparedness Framework on August 18."
+        },
+        "confidence": {
+          "level": "medium",
+          "rationale": "The operational changes were described by OpenAI in a reporter briefing, while Astra's capability assessment remains preliminary and company-reported."
+        },
+        "sources": [
+          {
+            "id": "openai-astra-cyber-post",
+            "title": "Responding to the next frontier of critical cyber capabilities",
+            "publisher": "OpenAI",
+            "url": "https://openai.com/index/responding-next-frontier-critical-cyber-capabilities/",
+            "relationship": "originating",
+            "publishedAt": "2026-08-07T16:00:00.000Z",
+            "retrievedAt": "2026-08-19T09:35:00.000Z"
+          },
+          {
+            "id": "axios-astra-safety-update",
+            "title": "OpenAI to rewrite its safety rules post-Hugging Face",
+            "publisher": "Axios",
+            "url": "https://www.axios.com/2026/08/18/openai-pause-astra-preparedness-framework",
+            "relationship": "independent",
+            "publishedAt": "2026-08-18T18:00:04.000Z",
+            "retrievedAt": "2026-08-19T09:36:00.000Z"
+          }
+        ],
+        "evidence": [
+          {
+            "id": "astra-critical-not-ruled-out",
+            "statement": "OpenAI said preliminary Astra evaluations were strong enough that it could not rule out Critical cybersecurity capability.",
+            "sourceIds": [
+              "openai-astra-cyber-post"
+            ],
+            "verification": "company-claimed"
+          },
+          {
+            "id": "astra-framework-rewrite",
+            "statement": "OpenAI said it was rewriting the Preparedness Framework and introducing safeguards earlier in development.",
+            "sourceIds": [
+              "axios-astra-safety-update"
+            ],
+            "verification": "company-claimed"
+          },
+          {
+            "id": "astra-training-pauses",
+            "statement": "OpenAI said it paused deployment-focused reinforcement learning and kept its largest planned frontier run on hold.",
+            "sourceIds": [
+              "axios-astra-safety-update"
+            ],
+            "verification": "company-claimed"
+          }
+        ]
+      }
+    },
+    "ai-at-work": {
+      "desk": "ai-at-work",
+      "story": {
+        "id": "2026-08-19-copilot-deep-research-retirement",
+        "canonicalEventKey": "microsoft-consumer-copilot-deep-research-retirement",
+        "desk": "ai-at-work",
+        "headline": "Microsoft retires consumer Copilot's Deep Research",
+        "deck": "Existing reports remain accessible, but future in-depth work moves to Researcher for Microsoft 365 Premium subscribers.",
+        "status": "new-development",
+        "priority": "notable",
+        "timing": {
+          "eventAt": "2026-08-18T12:00:00.000Z",
+          "firstPublishedAt": "2026-08-18T12:00:00.000Z",
+          "materiallyUpdatedAt": null
+        },
+        "whatHappened": "Microsoft retired Deep Research in the consumer Copilot app starting August 18. Its support guidance says Microsoft 365 Premium subscribers can continue producing detailed reports with Researcher in Copilot. Previously saved Deep Research work is not being deleted: Premium subscribers can reach it through Researcher, while Personal and Family subscribers can find prior reports in chat history. Microsoft also says existing reports can be opened in Word and saved, and that retiring this feature does not change the underlying Microsoft 365 subscription.",
+        "whyItMatters": "The change separates Microsoft's in-depth research experience from the general consumer Copilot surface and makes Researcher the continuing path for Premium users. Anyone who built instructions, training, or recurring knowledge work around the old menu entry now has a small but real workflow migration. Access to completed work remains, reducing the immediate risk of lost research history.",
+        "whatToDoOrWatch": "If Deep Research was part of your routine, open one important past report and confirm where it now appears for your subscription tier. Export durable work to Word when local retention matters, then update team documentation and saved prompts to point to Researcher or another approved research process. Check privacy, citation, and human-review requirements before moving a recurring workflow to a different agent.",
+        "selection": {
+          "score": 78,
+          "selectedBecause": "It is a concrete same-day product change with a clear migration step for people who use AI research at work.",
+          "materialDelta": null
+        },
+        "confidence": {
+          "level": "high",
+          "rationale": "Microsoft's support documentation directly states the retirement date, replacement path, and retention behavior."
+        },
+        "sources": [
+          {
+            "id": "microsoft-deep-research-retirement",
+            "title": "Deep Research is being retired in the Copilot app",
+            "publisher": "Microsoft Support",
+            "url": "https://support.microsoft.com/en-US/microsoft-copilot/deep-research-in-microsoft-copilot",
+            "relationship": "originating",
+            "publishedAt": null,
+            "retrievedAt": "2026-08-19T09:38:00.000Z"
+          },
+          {
+            "id": "microsoft-researcher-guide",
+            "title": "Get started with Researcher in Microsoft 365 Copilot",
+            "publisher": "Microsoft Support",
+            "url": "https://support.microsoft.com/en-us/microsoft-365-copilot/get-started-with-researcher-in-microsoft-365-copilot",
+            "relationship": "context",
+            "publishedAt": null,
+            "retrievedAt": "2026-08-19T09:39:00.000Z"
+          }
+        ],
+        "evidence": [
+          {
+            "id": "copilot-retirement-date",
+            "statement": "Microsoft retired Deep Research in the consumer Copilot app starting August 18, 2026.",
+            "sourceIds": [
+              "microsoft-deep-research-retirement"
+            ],
+            "verification": "confirmed"
+          },
+          {
+            "id": "copilot-researcher-alternative",
+            "statement": "Microsoft 365 Premium subscribers can continue in-depth research with Researcher in Copilot.",
+            "sourceIds": [
+              "microsoft-deep-research-retirement",
+              "microsoft-researcher-guide"
+            ],
+            "verification": "confirmed"
+          },
+          {
+            "id": "copilot-existing-reports",
+            "statement": "Existing reports remain accessible, and users can save them in Word.",
+            "sourceIds": [
+              "microsoft-deep-research-retirement"
+            ],
+            "verification": "confirmed"
+          }
+        ]
+      }
+    },
+    "cybersecurity": {
+      "desk": "cybersecurity",
+      "story": {
+        "id": "2026-08-19-dgfip-notifications",
+        "canonicalEventKey": "france-dgfip-tax-data-breach-2026",
+        "desk": "cybersecurity",
+        "headline": "France begins notifying 678,000 people and businesses after tax breach",
+        "deck": "The response shifted from disclosure to individual warnings as officials ordered a wider security audit.",
+        "status": "material-update",
+        "priority": "high",
+        "timing": {
+          "eventAt": "2026-06-30T12:00:00.000Z",
+          "firstPublishedAt": "2026-08-13T18:00:00.000Z",
+          "materiallyUpdatedAt": "2026-08-18T10:30:06.000Z"
+        },
+        "whatHappened": "France's response to the DGFiP tax-authority breach moved into individual notification. Le Monde reported on August 18 that the incident affected data belonging to 678,000 people and businesses, and that notices were set to begin after an August 17 crisis meeting convened by Prime Minister Sébastien Lecornu. The publication also reported that unauthorized access had been blocked at the end of June, but checks at that time did not identify the data theft. DGFiP learned the apparent scale after attackers publicly claimed responsibility in August.",
+        "whyItMatters": "The exposed material reportedly includes detailed fiscal and identity information, which can make fraud attempts unusually convincing. The delayed recognition of exfiltration also separates stopping access from understanding what an intruder already removed. France has commissioned an audit of DGFiP systems under national cybersecurity-agency oversight, with findings and operational measures expected to be presented in September.",
+        "whatToDoOrWatch": "Potentially affected taxpayers should rely on their secure impots.gouv.fr account and independently verified government contact details, not links or credentials requested in unexpected messages. Treat calls, texts, and emails that reference tax details as potentially tailored phishing. Organizations should use this incident to verify that identity-access alerts, data-loss monitoring, and post-containment investigations can detect exfiltration rather than merely terminate a compromised session.",
+        "selection": {
+          "score": 94,
+          "selectedBecause": "The notification phase creates an immediate fraud risk for a large, clearly identified population and adds a concrete government response.",
+          "materialDelta": "Individual notifications began after an August 17 crisis meeting, and the government committed to an ANSSI-overseen systems audit."
+        },
+        "confidence": {
+          "level": "high",
+          "rationale": "Multiple reports attribute the affected count and response timeline to DGFiP and French government statements; unverified attacker sales claims are intentionally excluded."
+        },
+        "securityAction": {
+          "severity": "high",
+          "affected": "The 678,000 individuals and businesses identified by DGFiP as having tax or related data accessed and extracted.",
+          "exploitation": "confirmed",
+          "action": "Check official account messages directly and treat tax-themed contact as potential targeted fraud; never provide credentials or payment details through an unsolicited link or call.",
+          "deadline": null
+        },
+        "sources": [
+          {
+            "id": "lemonde-dgfip-response",
+            "title": "French government embroiled in taxpayer data hack decried as country's 'most serious' ever",
+            "publisher": "Le Monde",
+            "url": "https://www.lemonde.fr/en/politics/article/2026/08/18/french-government-embroiled-in-taxpayer-data-hack-decried-as-country-s-most-serious-ever_6756624_5.html",
+            "relationship": "independent",
+            "publishedAt": "2026-08-18T10:30:06.000Z",
+            "retrievedAt": "2026-08-19T09:41:00.000Z"
+          },
+          {
+            "id": "lemonde-dgfip-initial",
+            "title": "French taxpayers' data stolen in hack of Finance Ministry",
+            "publisher": "Le Monde",
+            "url": "https://www.lemonde.fr/en/pixels/article/2026/08/14/french-taxpayers-data-stolen-in-hack-of-finance-ministry_6756510_13.html",
+            "relationship": "context",
+            "publishedAt": "2026-08-14T14:14:00.000Z",
+            "retrievedAt": "2026-08-19T09:42:00.000Z"
+          },
+          {
+            "id": "franceinfo-dgfip-disclosure",
+            "title": "Piratage du système d'information des impôts : quelques centaines de milliers d'usagers sont concernés",
+            "publisher": "franceinfo",
+            "url": "https://www.franceinfo.fr/internet/securite-sur-internet/cyberattaques/piratage-du-systeme-d-information-des-impots-quelques-centaines-de-milliers-d-usagers-sont-concernes-annonce-la-dgfip_8147609.html",
+            "relationship": "independent",
+            "publishedAt": "2026-08-13T18:00:00.000Z",
+            "retrievedAt": "2026-08-19T09:43:00.000Z"
+          }
+        ],
+        "evidence": [
+          {
+            "id": "dgfip-affected-count",
+            "statement": "DGFiP identified 678,000 affected individuals and businesses.",
+            "sourceIds": [
+              "lemonde-dgfip-response",
+              "franceinfo-dgfip-disclosure"
+            ],
+            "verification": "confirmed"
+          },
+          {
+            "id": "dgfip-notifications",
+            "statement": "Individual notifications were scheduled to begin after the August 17 crisis meeting.",
+            "sourceIds": [
+              "lemonde-dgfip-response"
+            ],
+            "verification": "confirmed"
+          },
+          {
+            "id": "dgfip-detection-gap",
+            "statement": "DGFiP blocked unauthorized access in June but did not identify the theft until after attackers publicly claimed it.",
+            "sourceIds": [
+              "lemonde-dgfip-response",
+              "lemonde-dgfip-initial"
+            ],
+            "verification": "confirmed"
+          },
+          {
+            "id": "dgfip-data-types",
+            "statement": "Reported exposed data included identity, contact, and detailed tax information.",
+            "sourceIds": [
+              "lemonde-dgfip-initial"
+            ],
+            "verification": "confirmed"
+          }
+        ]
+      }
+    },
+    "technology": {
+      "desk": "technology",
+      "story": null,
+      "emptyReason": "No Technology story cleared today's evidence and consequence threshold before the 5:00 AM cutoff."
+    }
+  },
+  "backPage": {
+    "tryThisTomorrow": {
+      "title": "Make one research workflow portable",
+      "goal": "Keep an important AI-assisted research process usable when a product changes.",
+      "steps": [
+        "Choose one recurring research task and save its instructions outside the AI tool.",
+        "Export one representative report with its citations and review notes.",
+        "Run the same task in the replacement workflow and compare coverage, source quality, and elapsed time."
+      ],
+      "successMeasure": "A colleague can reproduce the task without relying on a retired menu item or hidden chat history.",
+      "riskCheck": "Remove confidential material before testing another tool and manually verify consequential claims."
+    },
+    "watchNext": [
+      {
+        "topic": "OpenAI's revised Preparedness Framework",
+        "unresolved": "The revised rules and final Astra cyber classification have not been published.",
+        "meaningfulSignal": "A public framework revision, independent evaluation, or documented resumption of paused workloads.",
+        "whyItMatters": "Those details will show whether the temporary controls become durable release gates."
+      },
+      {
+        "topic": "France's DGFiP security audit",
+        "unresolved": "The root access failures, exfiltration path, and remediation plan are not yet public.",
+        "meaningfulSignal": "The ANSSI-overseen findings and operational measures promised for September.",
+        "whyItMatters": "They may turn an incident response into reusable guidance for identity and data-loss controls."
+      }
+    ]
+  },
+  "corrections": [],
+  "provenance": {
+    "policyVersion": "first-fold-editorial-v1",
+    "promptVersion": "first-fold-daily-v1",
+    "pipelineVersion": "first-fold-pipeline-v1"
+  }
+}

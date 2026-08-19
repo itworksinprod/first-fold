@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#ede4cf" />
+    <meta
+      name="description"
+      content="First Fold is a finite morning technology newspaper: at most one consequential story per desk, delivered at 6:00 AM Eastern."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="First Fold — finished by breakfast" />
+    <meta
+      property="og:description"
+      content="Three developments, one quiet desk, and no infinite scroll."
+    />
+    <meta property="og:image" content="og.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <title>First Fold — Morning Edition</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#active-page">Skip to the paper</a>
+
+    <header class="edition-rail" aria-label="Edition information">
+      <button class="rail-brand" type="button" data-go-page="0" aria-label="First Fold — return to front page">
+        <span class="rail-mark" aria-hidden="true">FF</span>
+        <span>
+          <strong>First Fold</strong>
+          <small>Morning edition</small>
+        </span>
+      </button>
+
+      <p class="rail-delivery">
+        <span class="status-dot" aria-hidden="true"></span>
+        On the doorstep · 6:00 AM ET
+      </p>
+
+      <nav class="rail-tools" aria-label="Edition tools">
+        <a href="archive/">Archive</a>
+        <button type="button" data-open-dialog="contents-dialog">Contents</button>
+        <button type="button" data-open-dialog="method-dialog">How it’s made</button>
+      </nav>
+    </header>
+
+    <main class="reader" id="active-page">
+      <p class="demo-ribbon">Source-verified demo edition · Human-reviewed · <span data-edition-data-status>Loading edition data</span></p>
+
+      <div class="paper-stack" data-reader>
+        <article class="paper-page cover-page is-active" data-page="0" data-page-title="Front Page" tabindex="-1">
+          <div class="paper-inner">
+            <header class="masthead-block">
+              <div class="edition-line">
+                <span data-edition-date>Wednesday, August 19, 2026</span>
+                <span data-edition-issue>Vol. I · No. 001</span>
+                <span data-edition-published>New York · 6:00 AM</span>
+              </div>
+              <p class="masthead-kicker">The finite technology newspaper</p>
+              <h1 class="masthead" data-edition-masthead>First Fold</h1>
+              <p class="masthead-tagline" data-edition-tagline>Printed for the screen. Finished by breakfast.</p>
+            </header>
+
+            <div class="cover-grid">
+              <section class="cover-lead">
+                <p class="section-label">Today’s edition</p>
+                <h2 data-front-headline>Three developments. One quiet desk. Your morning, finished.</h2>
+                <p class="cover-standfirst" data-front-standfirst>
+                  One consequential development from each desk—when the evidence clears the bar.
+                  Today’s paper takes about six minutes from front to back.
+                </p>
+                <button class="ink-button" type="button" data-go-page="1">
+                  Open the paper <span aria-hidden="true">→</span>
+                </button>
+              </section>
+
+              <aside class="cover-note" aria-label="Editor’s note">
+                <span class="drop-cap" aria-hidden="true">3</span>
+                <p data-front-editor-note><strong>stories made the paper.</strong> Technology stayed blank. That is the product working—not a missing result.</p>
+                <p class="byline">— The editor</p>
+              </aside>
+
+              <section class="front-story front-story-lead">
+                <button type="button" data-go-page="1" data-cover-desk="ai" aria-label="Turn to AI, page 2">
+                  <span class="story-folio">AI · Page 2</span>
+                  <strong>OpenAI rewrites its safety rules as Astra tests the old ones</strong>
+                  <span>A frontier model’s cyber evaluations are changing what the lab trains—and when.</span>
+                </button>
+              </section>
+
+              <section class="front-story">
+                <button type="button" data-go-page="2" data-cover-desk="work" aria-label="Turn to AI at Work, page 3">
+                  <span class="story-folio">AI at Work · Page 3</span>
+                  <strong>Microsoft folds Deep Research into a paid workflow</strong>
+                  <span>Consumer Copilot’s research feature retires while Researcher continues for Premium subscribers.</span>
+                </button>
+              </section>
+
+              <section class="front-story">
+                <button type="button" data-go-page="3" data-cover-desk="cyber" aria-label="Turn to Cybersecurity, page 4">
+                  <span class="story-folio">Cybersecurity · Page 4</span>
+                  <strong>France’s tax breach reaches 678,000 people and businesses</strong>
+                  <span>Victim notices begin as investigators examine how the data theft went unseen.</span>
+                </button>
+              </section>
+
+              <section class="front-story front-story-quiet">
+                <button type="button" data-go-page="4" data-cover-desk="technology" aria-label="Turn to Technology, page 5">
+                  <span class="story-folio">Technology · Page 5</span>
+                  <strong>Nothing cleared the bar today.</strong>
+                  <span>No stale launch, recycled announcement, or filler took the fourth slot.</span>
+                </button>
+              </section>
+            </div>
+
+            <footer class="paper-footer">
+              <span data-reporting-window>Window: Aug. 18, 5:00 AM → Aug. 19, 5:00 AM ET</span>
+              <span>No feed to refresh. Tomorrow brings a new edition.</span>
+            </footer>
+          </div>
+        </article>
+
+        <article class="paper-page story-page" data-page="1" data-page-title="AI" data-desk-id="ai" tabindex="-1" hidden>
+          <div class="paper-inner">
+            <header class="story-header">
+              <div class="story-rule">
+                <span>First Fold</span>
+                <span>AI · Page 2</span>
+              </div>
+              <p class="section-label">Material update · Medium-high confidence</p>
+              <h2>OpenAI rewrites its safety rules as Astra tests the old ones</h2>
+              <p class="story-deck">
+                The lab paused some frontier training while it revisits a framework written before models approached its highest cyber threshold.
+              </p>
+              <p class="story-meta">3 min read · Checked 5:42 AM ET</p>
+            </header>
+
+            <div class="story-layout">
+              <div class="story-copy">
+                <section>
+                  <h3>What happened</h3>
+                  <p>
+                    OpenAI said preliminary evaluations of its upcoming Astra model were strong enough that it could not rule out the highest cyber-capability tier in its Preparedness Framework. On August 18, Axios reported that the company was rewriting that framework, had paused two weeks of deployment-focused reinforcement learning, and was keeping its largest planned frontier training run on hold.
+                  </p>
+                </section>
+                <section>
+                  <h3>Why it matters</h3>
+                  <p>
+                    This is a rare example of an internal safety threshold changing day-to-day model development. It also exposes a governance problem: capability tests are moving faster than the rules meant to govern them. Astra’s assessed level remains preliminary and comes from the company’s own evaluations, so the pause is more certain than the capability claim.
+                  </p>
+                </section>
+                <section>
+                  <h3>What to watch</h3>
+                  <p>
+                    Look for the revised framework, independent evaluations, release restrictions, and a clear account of what controls must be in place before large training runs resume.
+                  </p>
+                </section>
+              </div>
+
+              <aside class="story-aside">
+                <div class="short-version">
+                  <p>The short version</p>
+                  <strong>A lab’s safety rulebook is now shaping the training schedule, not just the release memo.</strong>
+                </div>
+                <div class="editor-note">
+                  <p class="section-label">Why it made the paper</p>
+                  <p>A same-day operational change with direct implications for frontier-model development and access.</p>
+                </div>
+                <button class="source-button" type="button" data-story-sources="ai">
+                  Sources &amp; receipts <span aria-hidden="true">(3) ↗</span>
+                </button>
+              </aside>
+            </div>
+
+            <footer class="paper-footer">
+              <span>Desk score: 86 / 100</span>
+              <span>Next: AI at Work</span>
+            </footer>
+          </div>
+        </article>
+
+        <article class="paper-page story-page" data-page="2" data-page-title="AI at Work" data-desk-id="work" tabindex="-1" hidden>
+          <div class="paper-inner">
+            <header class="story-header">
+              <div class="story-rule">
+                <span>First Fold</span>
+                <span>AI at Work · Page 3</span>
+              </div>
+              <p class="section-label">New development · High confidence</p>
+              <h2>Microsoft folds Deep Research into a paid workflow</h2>
+              <p class="story-deck">
+                Deep Research is leaving the consumer Copilot app, while Microsoft 365 Premium subscribers keep an in-depth research path through Researcher.
+              </p>
+              <p class="story-meta">2 min read · Checked 5:44 AM ET</p>
+            </header>
+
+            <div class="story-layout">
+              <div class="story-copy">
+                <section>
+                  <h3>What happened</h3>
+                  <p>
+                    Microsoft began retiring Deep Research in the consumer Copilot app on August 18. Premium subscribers can continue producing detailed reports with Researcher. Saved work is not being deleted: Premium users can find it through Researcher, while Personal and Family subscribers retain access through chat history. Reports can also be opened and saved in Word.
+                  </p>
+                </section>
+                <section>
+                  <h3>Why it matters</h3>
+                  <p>
+                    AI work features are still fluid, and a tool’s name, location, or subscription tier can change while teams are building habits around it. The practical risk is less about lost files today and more about undocumented workflows that depend on a product surface the vendor can consolidate.
+                  </p>
+                </section>
+                <section>
+                  <h3>What to do</h3>
+                  <p>
+                    Update internal guides that point to Deep Research. Export important reports to Word, record the prompts and review steps behind recurring research, and confirm which users actually have Premium access before standardizing on Researcher.
+                  </p>
+                </section>
+              </div>
+
+              <aside class="story-aside">
+                <div class="short-version">
+                  <p>The short version</p>
+                  <strong>Archive the output—and document the workflow—before the interface changes again.</strong>
+                </div>
+                <div class="editor-note">
+                  <p class="section-label">Why it made the paper</p>
+                  <p>A concrete product change with an immediate action for people already using AI for research at work.</p>
+                </div>
+                <button class="source-button" type="button" data-story-sources="work">
+                  Sources &amp; receipts <span aria-hidden="true">(1) ↗</span>
+                </button>
+              </aside>
+            </div>
+
+            <footer class="paper-footer">
+              <span>Desk score: 78 / 100</span>
+              <span>Next: Cybersecurity</span>
+            </footer>
+          </div>
+        </article>
+
+        <article class="paper-page story-page" data-page="3" data-page-title="Cybersecurity" data-desk-id="cyber" tabindex="-1" hidden>
+          <div class="paper-inner">
+            <header class="story-header">
+              <div class="story-rule">
+                <span>First Fold</span>
+                <span>Cybersecurity · Page 4</span>
+              </div>
+              <p class="section-label alert-label">Material update · High confidence</p>
+              <h2>France’s tax breach reaches 678,000 people and businesses</h2>
+              <p class="story-deck">
+                Officials began notifying victims as scrutiny turned to why the theft was not detected when the attacker’s access was blocked.
+              </p>
+              <p class="story-meta">3 min read · Checked 5:47 AM ET</p>
+            </header>
+
+            <div class="story-layout">
+              <div class="story-copy">
+                <section>
+                  <h3>What happened</h3>
+                  <p>
+                    France’s tax authority, DGFiP, confirmed that a breach affected data tied to 678,000 individuals and businesses. The attacker’s access was blocked at the end of June, but the theft was not identified then. Its scale became clear after a public claim in August. The government convened a crisis meeting, ordered an audit overseen by the national cybersecurity agency, and began victim notifications.
+                  </p>
+                </section>
+                <section>
+                  <h3>Why it matters</h3>
+                  <p>
+                    Tax and identity details can make fraud attempts unusually convincing. The incident also highlights a familiar defensive gap: stopping access does not prove that defenders know what was viewed or removed. A later detection can leave victims exposed before notifications begin.
+                  </p>
+                </section>
+                <section>
+                  <h3>What to do</h3>
+                  <p>
+                    Reach tax services through a known official address rather than inbound links. Treat tax-themed calls, payment demands, and document requests with suspicion. Security teams should review privileged access, exfiltration telemetry, third-party pathways, and whether notification plans can operate before every forensic question is settled.
+                  </p>
+                </section>
+              </div>
+
+              <aside class="story-aside">
+                <div class="action-box">
+                  <p>Defender’s note</p>
+                  <strong>Access blocked is not the same as exfiltration understood.</strong>
+                  <span>Audit logs and outbound data signals need their own review.</span>
+                </div>
+                <div class="editor-note">
+                  <p class="section-label">Why it made the paper</p>
+                  <p>A confirmed victim count, an active government response, and immediate fraud implications.</p>
+                </div>
+                <button class="source-button" type="button" data-story-sources="cyber">
+                  Sources &amp; receipts <span aria-hidden="true">(2) ↗</span>
+                </button>
+              </aside>
+            </div>
+
+            <footer class="paper-footer">
+              <span>Desk score: 91 / 100</span>
+              <span>Next: Technology</span>
+            </footer>
+          </div>
+        </article>
+
+        <article class="paper-page quiet-page" data-page="4" data-page-title="Technology" data-desk-id="technology" tabindex="-1" hidden>
+          <div class="paper-inner">
+            <header class="story-rule">
+              <span>First Fold</span>
+              <span>Technology · Page 5</span>
+            </header>
+
+            <div class="quiet-center">
+              <div class="quiet-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+              <p class="section-label">The quiet desk</p>
+              <h2>Nothing cleared the bar today.</h2>
+              <p>
+                We reviewed the desk, but no development inside this edition’s reporting window was consequential, well-sourced, and distinct enough to earn the page.
+              </p>
+              <blockquote>“We would rather leave a page quiet than print a weak story.”</blockquote>
+              <div class="quiet-details">
+                <div>
+                  <span>Candidates reviewed</span>
+                  <strong>11</strong>
+                </div>
+                <div>
+                  <span>Minimum score</span>
+                  <strong>70</strong>
+                </div>
+                <div>
+                  <span>Stories forced</span>
+                  <strong>0</strong>
+                </div>
+              </div>
+            </div>
+
+            <footer class="paper-footer">
+              <span>Quiet pages are part of the editorial promise.</span>
+              <span>Next: Back page</span>
+            </footer>
+          </div>
+        </article>
+
+        <article class="paper-page back-page" data-page="5" data-page-title="Back Page" tabindex="-1" hidden>
+          <div class="paper-inner">
+            <header class="story-rule">
+              <span>First Fold</span>
+              <span>Back Page · 6</span>
+            </header>
+
+            <div class="back-grid">
+              <section class="back-finish">
+                <p class="section-label">End of edition</p>
+                <h2>You’re caught up.</h2>
+                <p>Three stories. One honest blank. Nothing else is waiting.</p>
+                <button class="ink-button" type="button" data-go-page="0">
+                  Fold back to the front <span aria-hidden="true">↺</span>
+                </button>
+              </section>
+
+              <aside class="tomorrow-box">
+                <p class="section-label">Try this tomorrow</p>
+                <h3>Write the finish line first.</h3>
+                <p>Before asking AI to help with one recurring task, write down what a good result must include—and what it must never do.</p>
+              </aside>
+
+              <section class="delivery-card">
+                <div class="sunrise-mark" aria-hidden="true"></div>
+                <p>Tomorrow’s First Fold lands at</p>
+                <strong>6:00 AM</strong>
+                <span>America/New_York · every day</span>
+              </section>
+
+              <section class="principles-card">
+                <p class="section-label">The promise</p>
+                <ul>
+                  <li>At most one story per desk</li>
+                  <li>Primary evidence whenever possible</li>
+                  <li>No sponsored placement</li>
+                  <li>Corrections appended, never hidden</li>
+                </ul>
+              </section>
+            </div>
+
+            <footer class="paper-footer">
+              <span data-back-issue>Issue 001 · Demo edition</span>
+              <span class="footer-links"><a href="archive/">Browse the archive</a><button type="button" data-open-dialog="method-dialog">Read the method</button></span>
+            </footer>
+          </div>
+        </article>
+      </div>
+
+      <nav class="edition-controls" aria-label="Edition pages">
+        <button class="turn-button" type="button" data-previous-page disabled>
+          <span aria-hidden="true">←</span> Previous
+        </button>
+
+        <div class="page-tabs" role="group" aria-label="Choose a page">
+          <button type="button" data-go-page="0" aria-current="page" aria-label="Page 1: Front Page">1</button>
+          <button type="button" data-go-page="1" aria-label="Page 2: AI">2</button>
+          <button type="button" data-go-page="2" aria-label="Page 3: AI at Work">3</button>
+          <button type="button" data-go-page="3" aria-label="Page 4: Cybersecurity">4</button>
+          <button type="button" data-go-page="4" aria-label="Page 5: Technology">5</button>
+          <button type="button" data-go-page="5" aria-label="Page 6: Back Page">6</button>
+        </div>
+
+        <p class="page-status" aria-hidden="true"><span data-page-status>Page 1 of 6</span></p>
+
+        <button class="turn-button" type="button" data-next-page>
+          Next <span aria-hidden="true">→</span>
+        </button>
+      </nav>
+      <p class="keyboard-hint">Use the Left and Right Arrow keys to turn pages. Swipe works, too.</p>
+    </main>
+
+    <div class="sr-only" data-page-announcer aria-live="polite" aria-atomic="true"></div>
+
+    <dialog class="paper-dialog contents-dialog" id="contents-dialog" aria-labelledby="contents-title">
+      <div class="dialog-header">
+        <div>
+          <p class="section-label">Issue 001</p>
+          <h2 id="contents-title">Inside this edition</h2>
+        </div>
+        <button class="dialog-close" type="button" data-close-dialog aria-label="Close contents">×</button>
+      </div>
+      <ol class="contents-list">
+        <li><button type="button" data-dialog-page="0"><span>01</span><strong>Front Page</strong><small>The morning at a glance</small></button></li>
+        <li><button type="button" data-dialog-page="1"><span>02</span><strong>AI</strong><small>OpenAI’s Astra pause</small></button></li>
+        <li><button type="button" data-dialog-page="2"><span>03</span><strong>AI at Work</strong><small>Deep Research retires</small></button></li>
+        <li><button type="button" data-dialog-page="3"><span>04</span><strong>Cybersecurity</strong><small>France’s tax breach</small></button></li>
+        <li><button type="button" data-dialog-page="4"><span>05</span><strong>Technology</strong><small>The quiet desk</small></button></li>
+        <li><button type="button" data-dialog-page="5"><span>06</span><strong>Back Page</strong><small>You’re caught up</small></button></li>
+      </ol>
+    </dialog>
+
+    <dialog class="paper-dialog method-dialog" id="method-dialog" aria-labelledby="method-title">
+      <div class="dialog-header">
+        <div>
+          <p class="section-label">Behind the fold</p>
+          <h2 id="method-title">How this edition was made</h2>
+        </div>
+        <button class="dialog-close" type="button" data-close-dialog aria-label="Close editorial method">×</button>
+      </div>
+      <p class="dialog-intro">
+        First Fold reviews candidates across four desks, clusters duplicate coverage, favors primary evidence, and selects at most one edition-worthy story per desk.
+      </p>
+      <ol class="method-steps">
+        <li><span>05:02</span><div><strong>Discover</strong><p>Gather a bounded set of credible candidates from curated feeds and primary sources.</p></div></li>
+        <li><span>05:15</span><div><strong>Normalize</strong><p>Resolve event dates, canonical links, and duplicate coverage of the same underlying event.</p></div></li>
+        <li><span>05:25</span><div><strong>Verify</strong><p>Map material claims to evidence and compare the last 30 editions for real changes.</p></div></li>
+        <li><span>05:38</span><div><strong>Select &amp; write</strong><p>Score impact, novelty, evidence, actionability, relevance, and category fit.</p></div></li>
+        <li><span>05:50</span><div><strong>Validate</strong><p>Check the schema, dates, sources, word count, and one-story-per-desk rule.</p></div></li>
+        <li><span>06:00</span><div><strong>Publish</strong><p>Release one immutable edition. Weak desks stay quiet; urgent security can trigger a labeled bulletin.</p></div></li>
+      </ol>
+      <div class="method-principles">
+        <p><strong>For this demo:</strong> research and drafting were AI-assisted; a human reviewed the edition. The production pipeline is represented in code but not connected to live paid feeds.</p>
+        <p><a href="editor/">Open the editor review prototype →</a></p>
+      </div>
+    </dialog>
+
+    <dialog class="paper-dialog sources-dialog" id="sources-dialog" aria-labelledby="sources-title">
+      <div class="dialog-header">
+        <div>
+          <p class="section-label">Evidence desk</p>
+          <h2 id="sources-title">Sources &amp; receipts</h2>
+        </div>
+        <button class="dialog-close" type="button" data-close-dialog aria-label="Close sources">×</button>
+      </div>
+      <p class="dialog-intro" data-sources-intro></p>
+      <div class="source-list" data-sources-list></div>
+      <p class="source-footer">Story last checked August 19 at 5:47 AM ET. Links open the original reporting or primary material.</p>
+    </dialog>
+  </body>
+</html>
