@@ -119,7 +119,7 @@ test("static pages keep asset and data URLs safe for a GitHub project path", asy
   assert.match(readerScript, /fetch\(`editions\/\$\{editionId\}\.json`/);
   assert.match(archiveScript, /fetch\("\.\.\/editions\/index\.json"/);
   assert.match(editorScript, /fetch\("\.\.\/editions\/index\.json"/);
-  assert.match(workflow, /actions\/upload-pages-artifact@v4/);
+  assert.match(workflow, /actions\/upload-pages-artifact@v5/);
   assert.match(workflow, /path: dist\/client/);
 });
 
