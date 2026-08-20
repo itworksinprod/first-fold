@@ -1,24 +1,39 @@
-name: Test and publish the paper
+name: Validate and deliver Morning Press
 
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
+  schedule:
+    - cron: "0 6 * * 1-5"
+      timezone: "America/New_York"
   workflow_dispatch:
+    inputs:
+      recovery_reason:
+        description: Why the scheduled publication needs a manual recovery
+        required: true
+        type: string
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: github-pages
-  cancel-in-progress: true
+  group: morning-press-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
 
 jobs:
-  build:
+  validate:
+    name: Validate the proposed paper
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'pull_request' &&
+        (github.event.pull_request.user.login != 'github-actions[bot]' ||
+          startsWith(github.head_ref, 'automation/morning-press-') == false))
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - name: Check out the edition
+      - name: Check out the exact revision
         uses: actions/checkout@v6
 
       - name: Set up Node.js
@@ -33,21 +48,122 @@ jobs:
       - name: Build and test
         run: npm test
 
+  package:
+    name: Validate and package the morning edition
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    steps:
+      - name: Require the 6 AM New York delivery gate
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          const parts = Object.fromEntries(
+            new Intl.DateTimeFormat("en-US", {
+              timeZone: "America/New_York",
+              hour: "2-digit",
+              minute: "2-digit",
+              hourCycle: "h23",
+            })
+              .formatToParts(new Date())
+              .filter(({ type }) => type !== "literal")
+              .map(({ type, value }) => [type, value]),
+          );
+          const minuteOfDay = Number(parts.hour) * 60 + Number(parts.minute);
+          if (minuteOfDay < 6 * 60) {
+            throw new Error("Morning Press delivery cannot begin before 6:00 AM New York time.");
+          }
+          NODE
+
+      - name: Require the protected publication branch
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" != "refs/heads/main" ]]; then
+            echo "Morning Press publication is allowed only from main."
+            exit 1
+          fi
+
+      - name: Record a manual recovery
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          RECOVERY_REASON: ${{ inputs.recovery_reason }}
+        run: echo "Manual publication recovery — ${RECOVERY_REASON}"
+
+      - name: Check out the exact publication revision
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Install the locked project
+        run: npm ci
+
+      - name: Build and test the release candidate
+        run: npm test
+
+      - name: Require today's published edition
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFile } from "node:fs/promises";
+
+          const manifest = JSON.parse(
+            await readFile("dist/client/editions/index.json", "utf8"),
+          );
+          const parts = Object.fromEntries(
+            new Intl.DateTimeFormat("en-US", {
+              timeZone: "America/New_York",
+              year: "numeric",
+              month: "2-digit",
+              day: "2-digit",
+            })
+              .formatToParts(new Date())
+              .map(({ type, value }) => [type, value]),
+          );
+          const today = `${parts.year}-${parts.month}-${parts.day}`;
+          const latest = manifest.editions?.find((edition) => edition.id === manifest.latest);
+
+          if (manifest.latest !== today || latest?.status !== "published") {
+            console.error(
+              `Refusing publication: expected a published ${today} edition, found ${manifest.latest ?? "none"}.`,
+            );
+            process.exit(1);
+          }
+
+          console.log(`Morning Press release gate passed for ${today}.`);
+          NODE
+
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v6
 
-      - name: Upload the static paper
+      - name: Upload the tested paper
         uses: actions/upload-pages-artifact@v5
         with:
           path: dist/client
 
   deploy:
+    name: Publish the morning edition
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: github-pages
+      cancel-in-progress: false
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
     steps:
-      - name: Publish to GitHub Pages
+      - name: Publish the tested Pages artifact
         id: deployment
         uses: actions/deploy-pages@v5

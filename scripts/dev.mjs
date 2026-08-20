@@ -7,7 +7,9 @@ import { loadEditionArtifacts } from "./edition-content.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const port = Number.parseInt(process.env.PORT ?? "4173", 10);
-const editionArtifacts = await loadEditionArtifacts(projectRoot);
+// Local review intentionally includes schema-valid drafts and validated issues.
+// Production builds use the loader default and emit published editions only.
+const editionArtifacts = await loadEditionArtifacts(projectRoot, { includeUnpublished: true });
 const publicFiles = new Map([
   ["/", "index.html"],
   ["/index.html", "index.html"],

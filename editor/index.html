@@ -25,19 +25,33 @@
     </header>
 
     <main class="utility-shell press-shell" id="press-main">
-      <p class="prototype-banner">Portfolio prototype · approval is stored on this device only</p>
+      <p class="prototype-banner" data-review-banner role="status" aria-live="polite">Portfolio prototype · review-only · GitHub records approval · no approval is assumed</p>
 
       <section class="utility-paper press-hero">
         <div>
-          <p class="section-label">Morning run · Issue 001</p>
-          <h1>Ready for<br />the doorstep?</h1>
-          <p class="press-lede">Review the four desk decisions, evidence coverage, and validation gates before the 6:00 AM release.</p>
+          <p class="section-label" data-editor-issue>Morning run · loading issue</p>
+          <h1>Ready for<br />review?</h1>
+          <p class="press-lede">Review the four desk decisions, source-check result, and artifact checks. Automation and model output are inputs—not approval.</p>
         </div>
         <aside class="press-status-card">
           <p>Edition status</p>
           <strong data-review-status>Loading</strong>
           <span data-review-detail>Reading the edition artifact…</span>
-          <button class="ink-button" type="button" data-approve-edition disabled>Approve demo edition</button>
+          <dl class="press-review-record" aria-label="Candidate review record">
+            <div data-automation-fact data-state="loading">
+              <dt>Automation provenance</dt>
+              <dd><strong data-automation-status>Loading</strong><span data-automation-detail>Reading generation metadata…</span><a data-automation-run hidden target="_blank" rel="noreferrer noopener">Open automation run ↗<span class="sr-only">, opens in a new tab</span></a></dd>
+            </div>
+            <div data-source-check-fact data-state="loading">
+              <dt>Source check</dt>
+              <dd><strong data-source-check-status>Loading</strong><span data-source-check-detail>Reading source-check result…</span></dd>
+            </div>
+            <div data-revision-fact data-state="loading">
+              <dt>Content SHA-256</dt>
+              <dd><code data-revision-status>Loading content digest…</code><span data-revision-detail>Approval has not been inferred.</span></dd>
+            </div>
+          </dl>
+          <a class="ink-button" href="https://github.com/itworksinprod/first-fold/pulls" target="_blank" rel="noreferrer noopener">Open GitHub pull requests <span aria-hidden="true">↗</span><span class="sr-only">, opens in a new tab</span></a>
         </aside>
       </section>
 
@@ -59,13 +73,12 @@
 
       <section class="utility-paper press-section validation-section" aria-labelledby="validation-title">
         <header class="utility-section-header">
-          <div><p class="section-label">Preflight</p><h2 id="validation-title">Validation gates</h2></div>
-          <p data-validation-summary>Checking…</p>
+          <div><p class="section-label">Preflight</p><h2 id="validation-title">Artifact checks</h2></div>
+          <p><span data-validation-summary>Checking…</span><small>Checks do not approve model output.</small></p>
         </header>
         <ul class="validation-grid" data-validation-list></ul>
       </section>
     </main>
 
-    <div class="sr-only" data-editor-announcer aria-live="polite" aria-atomic="true"></div>
   </body>
 </html>

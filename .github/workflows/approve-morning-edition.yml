@@ -1,0 +1,477 @@
+name: Merge approved Morning Press edition
+
+on:
+  pull_request_review:
+    types: [submitted]
+
+permissions: {}
+
+concurrency:
+  group: morning-press-approval-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+env:
+  AUTHORIZED_REVIEWERS: ${{ vars.MORNING_PRESS_REVIEWERS }}
+  BOT_BRANCH_PREFIX: automation/morning-press-
+  BOT_LABEL: morning-press-bot
+  DEFAULT_BRANCH: main
+  PILOT_LIMIT: "5"
+
+jobs:
+  approve:
+    name: Validate the approved SHA and merge
+    if: >-
+      github.event.review.state == 'approved' &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.base.repo.full_name == github.repository &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.event.pull_request.head.ref, 'automation/morning-press-')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      actions: write
+      contents: write
+      pull-requests: read
+      statuses: read
+    steps:
+      - name: Bind the approval to the live bot PR
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFile, readFile } from "node:fs/promises";
+
+          const event = JSON.parse(await readFile(process.env.GITHUB_EVENT_PATH, "utf8"));
+          const repository = process.env.GITHUB_REPOSITORY;
+          const reviewState = String(event.review?.state ?? "").toLowerCase();
+          const reviewer = event.review?.user?.login ?? "";
+          const reviewId = event.review?.id;
+          const approvedSha = event.review?.commit_id ?? "";
+          const pullNumber = event.pull_request?.number;
+          const headers = {
+            accept: "application/vnd.github+json",
+            authorization: `Bearer ${process.env.GH_TOKEN}`,
+            "x-github-api-version": "2022-11-28",
+          };
+          async function api(apiPath) {
+            const response = await fetch(`${process.env.GITHUB_API_URL}${apiPath}`, { headers });
+            if (!response.ok) throw new Error(`GitHub API ${apiPath} failed with ${response.status}.`);
+            return response.json();
+          }
+          function requireGate(condition, message) {
+            if (!condition) throw new Error(message);
+          }
+
+          requireGate(reviewState === "approved", "Only a submitted APPROVED review can open the merge gate.");
+          requireGate(Number.isInteger(pullNumber), "The review event is missing a pull request number.");
+          requireGate(Number.isInteger(reviewId), "The review event is missing a review id.");
+          requireGate(/^[a-f0-9]{40}$/.test(approvedSha), "The approved commit id is invalid.");
+
+          const live = await api(`/repos/${repository}/pulls/${pullNumber}`);
+          const expectedBranch = `${process.env.BOT_BRANCH_PREFIX}${live.head.ref.slice(process.env.BOT_BRANCH_PREFIX.length)}`;
+          const dateMatch = live.head.ref.match(/^automation\/morning-press-(\d{4}-\d{2}-\d{2})$/);
+          requireGate(Boolean(dateMatch), "The PR head is not a dated Morning Press automation branch.");
+          const editionDate = dateMatch[1];
+          const editionPath = `content/editions/${editionDate}.json`;
+          const todayParts = Object.fromEntries(
+            new Intl.DateTimeFormat("en-US", {
+              timeZone: "America/New_York",
+              calendar: "gregory",
+              numberingSystem: "latn",
+              year: "numeric",
+              month: "2-digit",
+              day: "2-digit",
+            })
+              .formatToParts(new Date())
+              .filter(({ type }) => type !== "literal")
+              .map(({ type, value }) => [type, value]),
+          );
+          const today = `${todayParts.year}-${todayParts.month}-${todayParts.day}`;
+          requireGate(editionDate === today, `Only today's ${today} candidate can be approved.`);
+          requireGate(live.state === "open" && live.draft === false, "The candidate PR must be open and ready for review.");
+          requireGate(live.base.ref === process.env.DEFAULT_BRANCH, "The candidate must target main.");
+          requireGate(live.base.repo.full_name === repository, "The candidate base repository is not trusted.");
+          requireGate(live.head.repo.full_name === repository, "Fork pull requests cannot enter the merge gate.");
+          requireGate(live.head.ref === expectedBranch, "The automation branch identity is invalid.");
+          requireGate(live.user.login === "github-actions[bot]", "The candidate PR was not opened by the repository bot.");
+          requireGate(live.labels.some((label) => label.name === process.env.BOT_LABEL), "The bot routing label is missing.");
+          requireGate(live.head.sha === approvedSha, "The PR head changed after the reviewed revision.");
+          requireGate(event.pull_request.head.sha === approvedSha, "The event head does not match the reviewed revision.");
+
+          const candidateStatuses = await api(
+            `/repos/${repository}/commits/${approvedSha}/statuses?per_page=100`,
+          );
+          const trustedStatuses = candidateStatuses.filter(
+            (status) => status.context === "first-fold/morning-press-candidate",
+          );
+          requireGate(trustedStatuses.length === 1, "The candidate needs one unambiguous trusted research status.");
+          const trustedStatus = trustedStatuses[0];
+          const runPrefix = `${process.env.GITHUB_SERVER_URL}/${repository}/actions/runs/`;
+          const attestedRunId = String(trustedStatus.target_url ?? "").slice(runPrefix.length);
+          requireGate(trustedStatus.state === "success", "The trusted research status is not successful.");
+          requireGate(trustedStatus.creator?.login === "github-actions[bot]", "The trusted research status was not created by GitHub Actions.");
+          requireGate(
+            String(trustedStatus.target_url ?? "").startsWith(runPrefix) && /^[1-9]\d*$/.test(attestedRunId),
+            "The trusted research status does not link to this repository's Actions run.",
+          );
+
+          const review = await api(`/repos/${repository}/pulls/${pullNumber}/reviews/${reviewId}`);
+          requireGate(String(review.state).toUpperCase() === "APPROVED", "The triggering review is no longer approved.");
+          requireGate(review.commit_id === approvedSha, "The live review is not bound to the current head SHA.");
+          requireGate(review.user.login === reviewer, "The live reviewer identity changed.");
+          requireGate(reviewer !== live.user.login && !reviewer.endsWith("[bot]"), "A human other than the bot author must approve.");
+
+          const allowlist = String(process.env.AUTHORIZED_REVIEWERS ?? "")
+            .split(",")
+            .map((login) => login.trim().toLowerCase())
+            .filter(Boolean);
+          requireGate(allowlist.length > 0, "MORNING_PRESS_REVIEWERS must name at least one authorized editor.");
+          requireGate(allowlist.includes(reviewer.toLowerCase()), `${reviewer} is not an authorized Morning Press editor.`);
+          const permission = await api(
+            `/repos/${repository}/collaborators/${encodeURIComponent(reviewer)}/permission`,
+          );
+          requireGate(["admin", "maintain", "write"].includes(permission.permission), "The reviewer no longer has write permission.");
+
+          requireGate(live.changed_files === 1, "A candidate PR may change exactly one file.");
+          const files = await api(`/repos/${repository}/pulls/${pullNumber}/files?per_page=100&page=1`);
+          requireGate(
+            files.length === 1 && files[0].filename === editionPath && files[0].status === "added",
+            `The only allowed change is a newly added ${editionPath}.`,
+          );
+
+          const main = await api(`/repos/${repository}/branches/${process.env.DEFAULT_BRANCH}`);
+          requireGate(live.base.sha === main.commit.sha, "The PR base is not the current main revision.");
+
+          const output = process.env.GITHUB_OUTPUT;
+          await appendFile(output, `approved_sha=${approvedSha}\n`);
+          await appendFile(output, `base_sha=${main.commit.sha}\n`);
+          await appendFile(output, `edition_date=${editionDate}\n`);
+          await appendFile(output, `edition_path=${editionPath}\n`);
+          await appendFile(output, `pr_number=${pullNumber}\n`);
+          await appendFile(output, `review_id=${reviewId}\n`);
+          await appendFile(output, `reviewer=${reviewer}\n`);
+          await appendFile(output, `attested_run_id=${attestedRunId}\n`);
+          await appendFile(output, `attested_run_url=${trustedStatus.target_url}\n`);
+          NODE
+
+      - name: Check out the trusted base revision
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.gate.outputs.base_sha }}
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Install the locked trusted project
+        run: npm ci
+
+      - name: Download only the approved candidate JSON
+        env:
+          APPROVED_SHA: ${{ steps.gate.outputs.approved_sha }}
+          ATTESTED_RUN_ID: ${{ steps.gate.outputs.attested_run_id }}
+          ATTESTED_RUN_URL: ${{ steps.gate.outputs.attested_run_url }}
+          EDITION_DATE: ${{ steps.gate.outputs.edition_date }}
+          EDITION_PATH: ${{ steps.gate.outputs.edition_path }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readdir, readFile, writeFile } from "node:fs/promises";
+          import path from "node:path";
+
+          const repository = process.env.GITHUB_REPOSITORY;
+          const response = await fetch(
+            `${process.env.GITHUB_API_URL}/repos/${repository}/contents/${process.env.EDITION_PATH}?ref=${process.env.APPROVED_SHA}`,
+            {
+              headers: {
+                accept: "application/vnd.github.raw+json",
+                authorization: `Bearer ${process.env.GH_TOKEN}`,
+                "x-github-api-version": "2022-11-28",
+              },
+            },
+          );
+          if (!response.ok) throw new Error(`Candidate download failed with ${response.status}.`);
+          const raw = await response.text();
+          const edition = JSON.parse(raw);
+          const automation = edition.provenance?.automation;
+          const sourceCheck = edition.provenance?.sourceCheck;
+          const expectedRunUrl = `${process.env.GITHUB_SERVER_URL}/${repository}/actions/runs/${automation?.runId}`;
+
+          if (
+            edition.editionDate !== process.env.EDITION_DATE ||
+            edition.id !== `first-fold-${process.env.EDITION_DATE}` ||
+            edition.status !== "published" ||
+            edition.publication?.publishedAt !== edition.publication?.publishAt ||
+            automation?.workflow !== "morning-press" ||
+            automation?.candidate !== true ||
+            automation?.runId !== process.env.ATTESTED_RUN_ID ||
+            automation?.runUrl !== process.env.ATTESTED_RUN_URL ||
+            automation?.runUrl !== expectedRunUrl ||
+            !Number.isInteger(automation?.pilotSequence) ||
+            automation.pilotSequence < 1 ||
+            automation.pilotSequence > Number(process.env.PILOT_LIMIT) ||
+            sourceCheck?.status !== "passed" ||
+            !Array.isArray(sourceCheck.issues) ||
+            sourceCheck.issues.length !== 0
+          ) {
+            throw new Error("The approved JSON does not satisfy the publishable pilot-candidate contract.");
+          }
+
+          const filenames = (await readdir("content/editions"))
+            .filter((filename) => filename.endsWith(".json"))
+            .sort();
+          const mergedSequences = [];
+          for (const filename of filenames) {
+            const current = JSON.parse(await readFile(path.join("content/editions", filename), "utf8"));
+            if (current.provenance?.automation?.workflow === "morning-press") {
+              mergedSequences.push(current.provenance.automation.pilotSequence);
+            }
+          }
+          mergedSequences.sort((left, right) => left - right);
+          for (let index = 0; index < mergedSequences.length; index += 1) {
+            if (mergedSequences[index] !== index + 1) {
+              throw new Error("Merged automatic pilot sequences are not unique and contiguous.");
+            }
+          }
+          const expectedSequence = mergedSequences.length + 1;
+          if (expectedSequence > Number(process.env.PILOT_LIMIT) || automation.pilotSequence !== expectedSequence) {
+            throw new Error("This approval would exceed or skip the explicit five-issue pilot.");
+          }
+
+          await writeFile(process.env.EDITION_PATH, raw, { encoding: "utf8", flag: "wx" });
+          NODE
+
+      - name: Verify the originating trusted research run
+        env:
+          ATTESTED_RUN_ID: ${{ steps.gate.outputs.attested_run_id }}
+          ATTESTED_RUN_URL: ${{ steps.gate.outputs.attested_run_url }}
+          BASE_SHA: ${{ steps.gate.outputs.base_sha }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          const repository = process.env.GITHUB_REPOSITORY;
+          const response = await fetch(
+            `${process.env.GITHUB_API_URL}/repos/${repository}/actions/runs/${process.env.ATTESTED_RUN_ID}`,
+            {
+              headers: {
+                accept: "application/vnd.github+json",
+                authorization: `Bearer ${process.env.GH_TOKEN}`,
+                "x-github-api-version": "2022-11-28",
+              },
+            },
+          );
+          const run = await response.json().catch(() => ({}));
+          const valid =
+            response.ok &&
+            String(run.id) === process.env.ATTESTED_RUN_ID &&
+            run.html_url === process.env.ATTESTED_RUN_URL &&
+            run.repository?.full_name === repository &&
+            run.path === ".github/workflows/morning-research.yml@main" &&
+            ["schedule", "workflow_dispatch"].includes(run.event) &&
+            run.head_branch === process.env.DEFAULT_BRANCH &&
+            run.head_sha === process.env.BASE_SHA &&
+            run.status === "completed" &&
+            run.conclusion === "success";
+          if (!valid) {
+            throw new Error("The candidate is not backed by a successful trusted-main research run.");
+          }
+          NODE
+
+      - name: Validate the exact candidate with trusted code
+        run: npm test
+
+      - name: Re-check candidate sources with trusted code
+        env:
+          EDITION_PATH: ${{ steps.gate.outputs.edition_path }}
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readdir, readFile } from "node:fs/promises";
+          import path from "node:path";
+          import { runNewsroomQa } from "./scripts/automation/newsroom-qa.mjs";
+
+          const edition = JSON.parse(await readFile(process.env.EDITION_PATH, "utf8"));
+          const filenames = (await readdir("content/editions"))
+            .filter((filename) => filename.endsWith(".json"))
+            .sort();
+          const priorEditions = [];
+          for (const filename of filenames) {
+            const current = JSON.parse(await readFile(path.join("content/editions", filename), "utf8"));
+            if (current.editionDate < edition.editionDate) priorEditions.push(current);
+          }
+          const checked = await runNewsroomQa(edition, {
+            priorEditions,
+            checkLinks: true,
+            checkedAt: edition.provenance?.sourceCheck?.checkedAt ?? null,
+            timeoutMs: 5_000,
+          });
+          if (
+            checked.sourceCheck.status !== "passed" ||
+            checked.sourceCheck.checkedSourceCount !== edition.provenance?.sourceCheck?.checkedSourceCount ||
+            checked.sourceCheck.issues.length !== 0
+          ) {
+            throw new Error("Trusted source QA no longer passes for the exact approved candidate.");
+          }
+          NODE
+
+      - name: Re-check live state and merge the approved SHA
+        id: merge
+        env:
+          APPROVED_SHA: ${{ steps.gate.outputs.approved_sha }}
+          ATTESTED_RUN_ID: ${{ steps.gate.outputs.attested_run_id }}
+          ATTESTED_RUN_URL: ${{ steps.gate.outputs.attested_run_url }}
+          BASE_SHA: ${{ steps.gate.outputs.base_sha }}
+          EDITION_DATE: ${{ steps.gate.outputs.edition_date }}
+          EDITION_PATH: ${{ steps.gate.outputs.edition_path }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.gate.outputs.pr_number }}
+          REVIEWER: ${{ steps.gate.outputs.reviewer }}
+          REVIEW_ID: ${{ steps.gate.outputs.review_id }}
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFile } from "node:fs/promises";
+
+          const repository = process.env.GITHUB_REPOSITORY;
+          const headers = {
+            accept: "application/vnd.github+json",
+            authorization: `Bearer ${process.env.GH_TOKEN}`,
+            "content-type": "application/json",
+            "x-github-api-version": "2022-11-28",
+          };
+          async function api(apiPath, { method = "GET", body } = {}) {
+            const response = await fetch(`${process.env.GITHUB_API_URL}${apiPath}`, {
+              method,
+              headers,
+              body: body ? JSON.stringify(body) : undefined,
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) {
+              throw new Error(`GitHub API ${apiPath} failed closed with ${response.status}: ${payload.message ?? "unknown error"}`);
+            }
+            return payload;
+          }
+          function requireGate(condition, message) {
+            if (!condition) throw new Error(message);
+          }
+
+          const live = await api(`/repos/${repository}/pulls/${process.env.PR_NUMBER}`);
+          const review = await api(
+            `/repos/${repository}/pulls/${process.env.PR_NUMBER}/reviews/${process.env.REVIEW_ID}`,
+          );
+          const permission = await api(
+            `/repos/${repository}/collaborators/${encodeURIComponent(process.env.REVIEWER)}/permission`,
+          );
+          const files = await api(
+            `/repos/${repository}/pulls/${process.env.PR_NUMBER}/files?per_page=100&page=1`,
+          );
+          const main = await api(`/repos/${repository}/branches/${process.env.DEFAULT_BRANCH}`);
+
+          requireGate(live.state === "open" && live.draft === false, "The PR is no longer open and mergeable by this gate.");
+          requireGate(live.base.ref === process.env.DEFAULT_BRANCH && live.base.repo.full_name === repository, "The base identity changed.");
+          requireGate(live.head.repo.full_name === repository, "The PR head is no longer in the trusted repository.");
+          requireGate(live.head.ref === `${process.env.BOT_BRANCH_PREFIX}${process.env.EDITION_DATE}`, "The dated bot branch changed.");
+          requireGate(live.user.login === "github-actions[bot]", "The PR author identity changed.");
+          requireGate(live.labels.some((label) => label.name === process.env.BOT_LABEL), "The bot label was removed.");
+          requireGate(live.head.sha === process.env.APPROVED_SHA, "The candidate SHA changed during validation.");
+          requireGate(String(review.state).toUpperCase() === "APPROVED", "The review was dismissed during validation.");
+          requireGate(review.commit_id === process.env.APPROVED_SHA && review.user.login === process.env.REVIEWER, "The live review binding changed.");
+          const allowlist = String(process.env.AUTHORIZED_REVIEWERS ?? "")
+            .split(",")
+            .map((login) => login.trim().toLowerCase())
+            .filter(Boolean);
+          requireGate(allowlist.includes(process.env.REVIEWER.toLowerCase()), "The editor was removed from MORNING_PRESS_REVIEWERS.");
+          requireGate(["admin", "maintain", "write"].includes(permission.permission), "The editor is no longer authorized.");
+          requireGate(
+            live.changed_files === 1 &&
+              files.length === 1 &&
+              files[0].filename === process.env.EDITION_PATH &&
+              files[0].status === "added",
+            "The candidate path allowlist changed during validation.",
+          );
+          requireGate(main.commit.sha === process.env.BASE_SHA && live.base.sha === process.env.BASE_SHA, "Main moved during validation; obtain a fresh exact-revision approval.");
+
+          const statuses = await api(
+            `/repos/${repository}/commits/${process.env.APPROVED_SHA}/statuses?per_page=100`,
+          );
+          const trustedStatuses = statuses.filter(
+            (status) => status.context === "first-fold/morning-press-candidate",
+          );
+          requireGate(trustedStatuses.length === 1, "The trusted research status became ambiguous.");
+          const trustedStatus = trustedStatuses[0];
+          requireGate(
+            trustedStatus.state === "success" &&
+              trustedStatus.target_url === process.env.ATTESTED_RUN_URL &&
+              trustedStatus.creator?.login === "github-actions[bot]",
+            "The exact-SHA trusted research status changed during validation.",
+          );
+
+          const run = await api(
+            `/repos/${repository}/actions/runs/${process.env.ATTESTED_RUN_ID}`,
+          );
+          requireGate(
+            String(run.id) === process.env.ATTESTED_RUN_ID &&
+              run.html_url === process.env.ATTESTED_RUN_URL &&
+              run.repository?.full_name === repository &&
+              run.path === ".github/workflows/morning-research.yml@main" &&
+              ["schedule", "workflow_dispatch"].includes(run.event) &&
+              run.head_branch === process.env.DEFAULT_BRANCH &&
+              run.head_sha === process.env.BASE_SHA &&
+              run.status === "completed" &&
+              run.conclusion === "success",
+            "The originating trusted research run changed or is no longer successful.",
+          );
+
+          const result = await api(`/repos/${repository}/pulls/${process.env.PR_NUMBER}/merge`, {
+            method: "PUT",
+            body: {
+              sha: process.env.APPROVED_SHA,
+              merge_method: "squash",
+              commit_title: `Publish Morning Press candidate (#${process.env.PR_NUMBER})`,
+              commit_message: `Approved exact candidate ${process.env.APPROVED_SHA} by ${process.env.REVIEWER}.`,
+            },
+          });
+          requireGate(result.merged === true && /^[a-f0-9]{40}$/.test(result.sha ?? ""), "GitHub did not confirm the SHA-bound merge.");
+          await appendFile(process.env.GITHUB_OUTPUT, `merge_sha=${result.sha}\n`);
+          NODE
+
+      - name: Check whether the 6 AM delivery gate has opened
+        id: delivery_time
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFile } from "node:fs/promises";
+
+          const parts = Object.fromEntries(
+            new Intl.DateTimeFormat("en-US", {
+              timeZone: "America/New_York",
+              hour: "2-digit",
+              minute: "2-digit",
+              hourCycle: "h23",
+            })
+              .formatToParts(new Date())
+              .filter(({ type }) => type !== "literal")
+              .map(({ type, value }) => [type, value]),
+          );
+          const afterGate = Number(parts.hour) * 60 + Number(parts.minute) >= 6 * 60;
+          await appendFile(process.env.GITHUB_OUTPUT, `after_gate=${String(afterGate)}\n`);
+          NODE
+
+      - name: Dispatch the separate delivery recovery after 6 AM
+        if: steps.delivery_time.outputs.after_gate == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.gate.outputs.pr_number }}
+        shell: bash
+        run: |
+          gh workflow run pages.yml \
+            --repo "${GITHUB_REPOSITORY}" \
+            --ref "${DEFAULT_BRANCH}" \
+            -f "recovery_reason=Exact-SHA approved PR #${PR_NUMBER} merged after the 6:00 AM ET delivery gate"

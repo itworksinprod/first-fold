@@ -193,7 +193,8 @@ a:focus-visible {
 }
 
 .offline-notice,
-.install-banner {
+.install-banner,
+.new-edition-banner {
   width: min(100%, 860px);
   margin: 0 auto 0.85rem;
   border: 1px solid rgba(245, 236, 216, 0.34);
@@ -243,7 +244,8 @@ a:focus-visible {
 }
 
 .offline-notice[hidden],
-.install-banner[hidden] {
+.install-banner[hidden],
+.new-edition-banner[hidden] {
   display: none !important;
 }
 
@@ -307,6 +309,80 @@ a:focus-visible {
   background: #ffffff;
 }
 
+.new-edition-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.7rem 0.75rem 0.7rem 1rem;
+  border-left: 4px solid #b8493e;
+  background: rgba(23, 21, 18, 0.88);
+}
+
+.new-edition-banner p {
+  margin: 0;
+  line-height: 1.35;
+}
+
+.new-edition-banner strong,
+.new-edition-banner span {
+  display: block;
+}
+
+.new-edition-banner strong {
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.new-edition-banner p span {
+  margin-top: 0.2rem;
+  color: #cfc2aa;
+  font-size: 0.7rem;
+}
+
+.new-edition-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.new-edition-actions a,
+.new-edition-actions button {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid #f5ecd8;
+  font-family: var(--sans);
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.new-edition-actions a {
+  gap: 0.45rem;
+  background: #f5ecd8;
+  color: var(--ink);
+}
+
+.new-edition-actions button {
+  background: transparent;
+  color: #f5ecd8;
+  cursor: pointer;
+}
+
+.new-edition-actions a:hover {
+  background: #ffffff;
+}
+
+.new-edition-actions button:hover {
+  background: rgba(245, 236, 216, 0.12);
+}
+
 .demo-ribbon {
   width: max-content;
   max-width: 100%;
@@ -319,6 +395,31 @@ a:focus-visible {
   letter-spacing: 0.12em;
   text-align: center;
   text-transform: uppercase;
+}
+
+.demo-ribbon[data-publication-status="draft"] {
+  border-color: rgba(242, 184, 75, 0.72);
+  background: rgba(73, 47, 10, 0.55);
+  color: #f6d99e;
+}
+
+.demo-ribbon[data-publication-status="candidate"] {
+  border-color: rgba(242, 184, 75, 0.9);
+  background: #4c300c;
+  color: #ffe3aa;
+  box-shadow: inset 4px 0 0 #f2b84b;
+}
+
+.demo-ribbon[data-publication-status="validated"] {
+  border-color: rgba(218, 206, 181, 0.55);
+  background: rgba(68, 62, 51, 0.72);
+  color: #ede1c8;
+}
+
+.demo-ribbon[data-publication-status="published"] {
+  border-color: rgba(242, 231, 205, 0.3);
+  background: transparent;
+  color: #cfc2aa;
 }
 
 .paper-stack {
@@ -589,12 +690,7 @@ a:focus-visible {
   border-bottom: 1px solid var(--ink);
 }
 
-.front-story-lead {
-  background: rgba(127, 33, 31, 0.055);
-  box-shadow: inset 4px 0 0 var(--red);
-}
-
-.front-story-lead::after {
+.front-story.is-edition-lead::after {
   position: absolute;
   z-index: 2;
   top: 0.75rem;
@@ -979,6 +1075,47 @@ a:focus-visible {
 .back-finish > p:not(.section-label) {
   margin: 1rem 0 1.5rem;
   font-size: 1.25rem;
+}
+
+.back-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin-top: 0.75rem;
+}
+
+.back-actions .ink-button {
+  min-height: 44px;
+  gap: 0.5rem;
+  padding: 0.65rem 0.75rem;
+  font-size: 0.64rem;
+  text-decoration: none;
+}
+
+.back-actions .ink-button:disabled {
+  cursor: wait;
+  opacity: 0.45;
+  transform: none;
+}
+
+.back-actions .back-action-secondary {
+  background: transparent;
+  color: var(--ink);
+}
+
+.back-actions .back-action-secondary:hover {
+  background: rgba(127, 33, 31, 0.08);
+}
+
+.share-status {
+  width: 100%;
+  min-height: 1.2em;
+  margin: 0;
+  color: var(--ink-soft);
+  font-family: var(--sans);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
 }
 
 .tomorrow-box h3 {
@@ -1422,6 +1559,10 @@ a:focus-visible {
   margin: 0;
 }
 
+[data-method-status] {
+  overflow-wrap: anywhere;
+}
+
 .source-list {
   padding: 0 1.5rem;
 }
@@ -1609,6 +1750,12 @@ a:focus-visible {
   border-bottom: 1px solid var(--rule);
 }
 
+.archive-card.is-unpublished {
+  border-color: rgba(127, 33, 31, 0.48);
+  background: rgba(127, 33, 31, 0.055);
+  box-shadow: inset 4px 0 0 var(--red);
+}
+
 .archive-card-fallback:only-child {
   opacity: 0.72;
 }
@@ -1706,6 +1853,82 @@ a:focus-visible {
   text-transform: uppercase;
 }
 
+.press-review-record {
+  display: grid;
+  gap: 0;
+  margin: 1rem 0 0;
+  border-top: 1px solid var(--rule);
+  font-family: var(--sans);
+}
+
+.press-review-record > div {
+  display: grid;
+  grid-template-columns: minmax(7.5rem, 0.42fr) minmax(0, 1fr);
+  gap: 0.75rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--rule-light);
+}
+
+.press-review-record dt,
+.press-review-record dd {
+  margin: 0;
+}
+
+.press-review-record dt {
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1.35;
+  text-transform: uppercase;
+}
+
+.press-review-record dd {
+  min-width: 0;
+}
+
+.press-review-record dd > strong,
+.press-review-record dd > span,
+.press-review-record dd > a,
+.press-review-record dd > code {
+  display: block;
+}
+
+.press-review-record dd > strong,
+.press-review-record dd > code {
+  color: var(--ink);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.press-review-record dd > code {
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  line-height: 1.35;
+}
+
+.press-review-record dd > span,
+.press-review-record dd > a {
+  margin-top: 0.22rem;
+  color: var(--ink-soft);
+  font-size: 0.62rem;
+  line-height: 1.4;
+}
+
+.press-review-record dd > a {
+  width: max-content;
+  max-width: 100%;
+  color: var(--red-dark);
+  font-weight: 800;
+  text-underline-offset: 0.18rem;
+}
+
+.press-review-record > div[data-state="failed"] dd > strong,
+.press-review-record > div[data-state="missing"] dd > strong,
+.press-review-record > div[data-state="not-run"] dd > strong,
+.press-review-record > div[data-state="pending"] dd > code {
+  color: var(--red);
+}
+
 .press-status-card > strong {
   display: block;
   margin: 0.45rem 0;
@@ -1724,6 +1947,16 @@ a:focus-visible {
   width: 100%;
   justify-content: center;
   margin-top: 1.25rem;
+}
+
+.validation-section .utility-section-header > p small {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--ink-soft);
+  font-size: 0.56rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: none;
 }
 
 .press-status-card .ink-button:disabled {
@@ -1963,6 +2196,20 @@ a:focus-visible {
     grid-template-areas: "finish" "tomorrow" "watch" "delivery" "principles";
   }
 
+  .new-edition-banner {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .new-edition-actions {
+    width: 100%;
+  }
+
+  .new-edition-actions a {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
   .watch-next-card {
     grid-template-columns: 1fr;
   }
@@ -2171,6 +2418,11 @@ a:focus-visible {
     margin-top: 0.75rem;
   }
 
+  .press-review-record > div {
+    grid-template-columns: 1fr;
+    gap: 0.3rem;
+  }
+
   .archive-card {
     display: block;
   }
@@ -2212,8 +2464,10 @@ a:focus-visible {
   .edition-rail,
   .demo-ribbon,
   .offline-notice,
+  .new-edition-banner,
   .edition-unavailable,
   .install-banner,
+  .back-actions,
   .edition-controls,
   .keyboard-hint,
   dialog {

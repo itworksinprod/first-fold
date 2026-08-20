@@ -17,6 +17,15 @@ const installBanner = document.querySelector("[data-install-banner]");
 const installButton = document.querySelector("[data-install-app]");
 const installCopy = document.querySelector("[data-install-copy]");
 const installDialog = document.querySelector("#install-dialog");
+const newEditionBanner = document.querySelector("[data-new-edition-banner]");
+const newEditionCopy = document.querySelector("[data-new-edition-copy]");
+const newEditionLink = document.querySelector("[data-new-edition-link]");
+const dismissNewEditionButton = document.querySelector("[data-dismiss-new-edition]");
+const shareEditionButton = document.querySelector("[data-share-edition]");
+const shareStatus = document.querySelector("[data-share-status]");
+const feedbackLink = document.querySelector("[data-send-feedback]");
+const editionReviewSummary = document.querySelector("[data-edition-review-summary]");
+const editionSourceCheckStatus = document.querySelector("[data-edition-source-check-status]");
 const editionControls = document.querySelector(".edition-controls");
 const keyboardHint = document.querySelector(".keyboard-hint");
 const demoRibbon = document.querySelector(".demo-ribbon");
@@ -87,6 +96,13 @@ const deskLabels = {
   "security-and-privacy": "Security & Privacy",
   "platforms-and-power": "Platforms & Power",
 };
+const publicationStatusLabels = {
+  candidate: "Automated candidate · Awaiting human approval",
+  draft: "Local draft · Not published",
+  validated: "Validated draft · Awaiting publication",
+  published: "Source-verified edition · Published",
+};
+const canonicalPublicationStatuses = new Set(["draft", "validated", "published"]);
 let sourceSets = fallbackSourceSets;
 let editionData = null;
 
@@ -99,6 +115,9 @@ let deferredInstallPrompt = null;
 let editionLoadState = "loading";
 let cachedEditionAt = null;
 let unavailableEditionId = null;
+let latestEditionCheck = null;
+let latestEditionCheckTimer = null;
+let dismissedEditionId = null;
 
 function setText(selector, value, root = document) {
   const element = root.querySelector(selector);
@@ -108,6 +127,75 @@ function setText(selector, value, root = document) {
 function requestedEditionId() {
   const value = new URLSearchParams(window.location.search).get("edition");
   return value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
+}
+
+function generationMetadata(data) {
+  return data?.review?.generation ?? data?.provenance?.automation ?? null;
+}
+
+function publishedMethodStatus(data) {
+  return generationMetadata(data)
+    ? "For this edition: the paper was researched and drafted automatically; source QA and exact-revision human review passed before release."
+    : "For this edition: research and drafting were human-directed and AI-assisted; validation and exact-revision approval passed before the scheduled release.";
+}
+
+function sourceCheckMetadata(data) {
+  return data?.review?.sourceCheck ?? data?.provenance?.sourceCheck ?? null;
+}
+
+function isReviewSurface(locationLike = window.location) {
+  const hostname = locationLike?.hostname ?? "";
+  const search = locationLike?.search ?? "";
+  return (
+    locationLike?.protocol === "file:" ||
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "::1" ||
+    /(?:^|[?&])review=candidate(?:&|$)/.test(search)
+  );
+}
+
+function readerPublicationStatus(data) {
+  return generationMetadata(data)?.candidate === true && isReviewSurface()
+    ? "candidate"
+    : data.status;
+}
+
+function sourceCheckLabel(data) {
+  const check = sourceCheckMetadata(data);
+  if (!check) return "Source check not recorded";
+  if (check.status === "passed") {
+    const count = Number.isInteger(check.checkedSourceCount) ? ` · ${check.checkedSourceCount} checked` : "";
+    return `Source check passed${count}`;
+  }
+  if (check.status === "warnings") return "Source check has warnings";
+  if (check.status === "failed") return "Source check failed";
+  return "Source check not run";
+}
+
+function candidateMethodStatus(data) {
+  const contentSha256 = /^[a-f0-9]{64}$/.test(data.sourceRevision ?? "")
+    ? data.sourceRevision
+    : "unavailable";
+  return `Morning Press automation prepared this publication-ready candidate. ${sourceCheckLabel(data)}; source QA and model output are not editorial approval. It is not approved or deployed. Content SHA-256 ${contentSha256} lets this artifact be matched to the candidate content; it is not a Git commit SHA or an approval record. A human must review and approve the current PR commit SHA shown in GitHub, then merge the public pull request; deployment still waits for the release gate.`;
+}
+
+function editionPermalink(editionId) {
+  const url = new URL("./", window.location.href);
+  url.searchParams.set("edition", editionId);
+  url.hash = "front";
+  return url.href;
+}
+
+function feedbackIssueUrl(data) {
+  const url = new URL("https://github.com/itworksinprod/first-fold/issues/new");
+  const issue = String(data.issueNumber).padStart(3, "0");
+  url.searchParams.set("title", `Reader feedback — First Fold ${data.id}`);
+  url.searchParams.set(
+    "body",
+    `Edition: ${data.displayDate} (Issue ${issue})\nEdition link: ${editionPermalink(data.id)}\n\nWhat worked well?\n\n\nWhat could be better?\n\n`,
+  );
+  return url.href;
 }
 
 function cachedAtLabel(value) {
@@ -136,7 +224,9 @@ function updateOfflineNotice() {
   offlineTitle.textContent = "Offline copy.";
   if (editionLoadState === "cached") {
     const editionLabel = editionData?.displayDate ?? editionData?.id ?? "this edition";
-    offlineMessage.textContent = `Showing ${editionLabel}, saved ${cachedAtLabel(cachedEditionAt)}. Reconnect before treating it as today’s paper.`;
+    offlineMessage.textContent = disconnected
+      ? `Showing ${editionLabel}, saved ${cachedAtLabel(cachedEditionAt)}. Reconnect before treating it as today’s paper.`
+      : `Showing ${editionLabel}, saved ${cachedAtLabel(cachedEditionAt)}. A live check will offer any newer paper without replacing this one.`;
     return;
   }
 
@@ -170,7 +260,13 @@ async function latestEditionId() {
 }
 
 function validateEditionData(data) {
-  if (!data || data.readerProjectionVersion !== 2 || !data.canonicalEditionId || !Array.isArray(data.desks)) return false;
+  if (
+    !data ||
+    data.readerProjectionVersion !== 2 ||
+    !data.canonicalEditionId ||
+    !canonicalPublicationStatuses.has(data.status) ||
+    !Array.isArray(data.desks)
+  ) return false;
   const ids = data.desks.map((desk) => desk.id);
   return ids.length === 4 && new Set(ids).size === 4 && ids.every((id) => Object.hasOwn(deskLabels, id));
 }
@@ -235,22 +331,63 @@ function renderWatchNext(items) {
 }
 
 function hydrateEdition(data) {
+  const displayStatus = readerPublicationStatus(data);
   editionData = data;
   document.body.dataset.editionId = data.id;
-  document.title = `${data.masthead.name} — ${data.displayDate}`;
+  document.body.dataset.reviewCandidate = String(displayStatus === "candidate");
+  document.title = `${displayStatus === "candidate" ? "Review candidate — " : ""}${data.masthead.name} — ${data.displayDate}`;
 
+  demoRibbon.dataset.publicationStatus = displayStatus;
+  setText("[data-edition-publication-status]", publicationStatusLabels[displayStatus]);
+  editionReviewSummary.hidden = displayStatus !== "candidate";
+  if (displayStatus === "candidate") editionSourceCheckStatus.textContent = sourceCheckLabel(data);
+  setText(
+    "[data-rail-delivery-copy]",
+    displayStatus === "candidate"
+      ? "In human review · not live"
+      : data.status === "published"
+      ? "On the doorstep · 6:00 AM ET"
+      : data.status === "validated"
+        ? "Awaiting the press · 6:00 AM ET"
+        : "In the press room · local preview",
+  );
+  setText(
+    "[data-method-status]",
+    displayStatus === "candidate"
+      ? candidateMethodStatus(data)
+      : data.status === "published"
+      ? publishedMethodStatus(data)
+      : data.status === "validated"
+        ? "For this edition: research and drafting were human-directed and AI-assisted; validation passed, but exact-revision approval and publication are still pending."
+        : "For this edition: research and drafting were human-directed and AI-assisted. This local draft has not passed the exact-revision approval or publication gate.",
+  );
   setText("[data-edition-data-status]", `Issue ${String(data.issueNumber).padStart(3, "0")} data loaded`);
   setText("[data-edition-date]", data.displayDate);
   setText("[data-edition-issue]", `Vol. I · No. ${String(data.issueNumber).padStart(3, "0")}`);
-  setText("[data-edition-published]", `New York · ${data.publishedAt.replace(" ET", "")}`);
+  setText(
+    "[data-edition-published]",
+    displayStatus === "candidate"
+      ? "New York · Review preview"
+      : data.status === "published"
+      ? `New York · ${data.publishedAt.replace(" ET", "")}`
+      : data.status === "validated"
+        ? "New York · Awaiting publication"
+        : "New York · Local preview",
+  );
   setText("[data-edition-masthead]", data.masthead.name);
   setText("[data-edition-tagline]", data.masthead.tagline);
   setText("[data-front-headline]", data.frontPage.headline);
+  setText("[data-front-edition-label]", displayStatus === "candidate" ? "Automated review candidate" : "Today’s edition");
   setText("[data-front-standfirst]", data.frontPage.standfirst);
   setText("[data-front-editor-note]", data.frontPage.editorNote);
+  setText("[data-front-story-count]", String(data.desks.filter((desk) => desk.state === "story").length));
   setText("[data-reporting-window]", `Window: ${data.reportingWindow}`);
-  setText("[data-back-issue]", `Issue ${String(data.issueNumber).padStart(3, "0")} · Demo edition`);
+  setText(
+    "[data-back-issue]",
+    `Issue ${String(data.issueNumber).padStart(3, "0")} · ${publicationStatusLabels[displayStatus]}`,
+  );
 
+  let leadAssigned = false;
   for (const desk of data.desks) {
     const deskLabel = deskLabels[desk.id] ?? desk.label;
     const cover = document.querySelector(`[data-cover-desk="${desk.id}"]`);
@@ -259,11 +396,10 @@ function hydrateEdition(data) {
       setText("strong", desk.headline, cover);
       const summary = cover.querySelector(":scope > span:last-child");
       if (summary) summary.textContent = desk.frontDeck;
-      cover.setAttribute("aria-label", `Turn to ${deskLabel}, page ${desk.page}`);
-      cover.closest(".front-story")?.classList.toggle(
-        "is-edition-lead",
-        desk.storyId === data.frontPage.leadStoryId,
-      );
+      const isLead = !leadAssigned && Boolean(data.frontPage.leadStoryId) && desk.storyId === data.frontPage.leadStoryId;
+      cover.setAttribute("aria-label", `Turn to ${deskLabel}, page ${desk.page}${isLead ? ", lead story" : ""}`);
+      cover.closest(".front-story")?.classList.toggle("is-edition-lead", isLead);
+      if (isLead) leadAssigned = true;
     }
 
     if (desk.state === "story") hydrateStoryPage(desk);
@@ -293,6 +429,156 @@ function hydrateEdition(data) {
   if (sourceFooter) {
     sourceFooter.textContent = `Edition checked ${data.shortDate} at ${data.checkedAt}. Links open the original reporting or primary material.`;
   }
+
+  shareEditionButton.disabled = displayStatus === "candidate";
+  if (displayStatus === "candidate") {
+    shareStatus.textContent = "Sharing is disabled until human approval and release.";
+  } else {
+    shareStatus.textContent = "";
+  }
+  feedbackLink.href = feedbackIssueUrl(data);
+}
+
+function editionDayNumber(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value ?? "")) return Number.NaN;
+  return Date.parse(`${value}T00:00:00Z`);
+}
+
+function isNewerEdition(candidateId, currentId) {
+  const candidateDay = editionDayNumber(candidateId);
+  const currentDay = editionDayNumber(currentId);
+  return Number.isFinite(candidateDay) && Number.isFinite(currentDay) && candidateDay > currentDay;
+}
+
+function hideNewEditionBanner() {
+  newEditionBanner.hidden = true;
+  newEditionCopy.textContent = "";
+}
+
+function liveEditionResponse(response) {
+  return navigator.onLine !== false && response.headers.get("x-first-fold-source") !== "offline-cache";
+}
+
+async function verifiedPublishedEdition(editionId) {
+  const response = await fetch(`editions/${editionId}.json?v=2`, {
+    cache: "no-store",
+    headers: { accept: "application/json" },
+  });
+  if (!response.ok || !liveEditionResponse(response)) return null;
+  const candidate = await response.json();
+  if (!validateEditionData(candidate) || candidate.id !== editionId || candidate.status !== "published") return null;
+  return candidate;
+}
+
+async function checkForNewEdition() {
+  if (document.visibilityState === "hidden" || !editionData?.id || navigator.onLine === false) return;
+  if (latestEditionCheck) return latestEditionCheck;
+
+  latestEditionCheck = (async () => {
+    try {
+      const response = await fetch("editions/index.json?v=2", {
+        cache: "no-store",
+        headers: { accept: "application/json" },
+      });
+      if (!response.ok || !liveEditionResponse(response)) {
+        hideNewEditionBanner();
+        return;
+      }
+
+      const manifest = await response.json();
+      if (!Array.isArray(manifest?.editions)) {
+        hideNewEditionBanner();
+        return;
+      }
+
+      const latestPublished = manifest.editions
+        .filter((entry) => entry?.status === "published" && isNewerEdition(entry.id, editionData.id))
+        .sort((left, right) => right.id.localeCompare(left.id))[0];
+      if (!latestPublished) {
+        hideNewEditionBanner();
+        return;
+      }
+
+      const candidate = await verifiedPublishedEdition(latestPublished.id);
+      if (!candidate || !isNewerEdition(candidate.id, editionData.id)) {
+        hideNewEditionBanner();
+        return;
+      }
+
+      newEditionLink.href = editionPermalink(candidate.id);
+      newEditionLink.setAttribute("aria-label", `Open ${candidate.displayDate}, today’s published paper`);
+      newEditionBanner.hidden = candidate.id === dismissedEditionId;
+      if (!newEditionBanner.hidden) {
+        newEditionCopy.textContent = `${candidate.displayDate} is on the doorstep. This edition will stay open until you choose to leave it.`;
+      }
+    } catch {
+      hideNewEditionBanner();
+    } finally {
+      latestEditionCheck = null;
+    }
+  })();
+
+  return latestEditionCheck;
+}
+
+function scheduleNewEditionCheck() {
+  if (latestEditionCheckTimer) window.clearTimeout(latestEditionCheckTimer);
+  latestEditionCheckTimer = window.setTimeout(() => {
+    latestEditionCheckTimer = null;
+    checkForNewEdition();
+  }, 150);
+}
+
+async function copyEditionLink(value) {
+  if (navigator.clipboard?.writeText && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(value);
+      return true;
+    } catch {
+      // Fall through to the selection-based copy for older or restricted browsers.
+    }
+  }
+
+  const copyField = document.createElement("textarea");
+  copyField.value = value;
+  copyField.setAttribute("readonly", "");
+  copyField.className = "sr-only";
+  document.body.append(copyField);
+  copyField.select();
+  copyField.setSelectionRange(0, value.length);
+  let copied = false;
+  try {
+    copied = document.execCommand("copy");
+  } catch {
+    copied = false;
+  }
+  copyField.remove();
+  return copied;
+}
+
+async function shareCurrentEdition() {
+  if (!editionData) return;
+  shareStatus.textContent = "";
+  const shareData = {
+    title: `${editionData.masthead.name} — ${editionData.displayDate}`,
+    text: editionData.frontPage.headline,
+    url: editionPermalink(editionData.id),
+  };
+
+  if (typeof navigator.share === "function") {
+    try {
+      await navigator.share(shareData);
+      shareStatus.textContent = "Edition shared.";
+      return;
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+    }
+  }
+
+  const copied = await copyEditionLink(shareData.url);
+  shareStatus.textContent = copied
+    ? "Edition link copied."
+    : "The link could not be copied here. Copy it from your browser’s address bar.";
 }
 
 async function loadEditionData() {
@@ -392,14 +678,32 @@ installButton.addEventListener("click", async () => {
   if (isAppleMobileBrowser()) openDialog(installDialog, installButton);
 });
 
-window.addEventListener("offline", updateOfflineNotice);
-window.addEventListener("online", () => {
-  if (editionLoadState === "cached" || editionLoadState === "fallback") {
-    loadEditionData();
-  } else {
-    updateOfflineNotice();
-  }
+window.addEventListener("offline", () => {
+  hideNewEditionBanner();
+  updateOfflineNotice();
 });
+window.addEventListener("online", () => {
+  if (editionLoadState === "fallback") {
+    loadEditionData().finally(scheduleNewEditionCheck);
+    return;
+  }
+  updateOfflineNotice();
+  scheduleNewEditionCheck();
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") scheduleNewEditionCheck();
+});
+
+window.addEventListener("pageshow", scheduleNewEditionCheck);
+window.addEventListener("focus", scheduleNewEditionCheck);
+
+dismissNewEditionButton.addEventListener("click", () => {
+  dismissedEditionId = new URL(newEditionLink.href).searchParams.get("edition");
+  hideNewEditionBanner();
+});
+
+shareEditionButton.addEventListener("click", shareCurrentEdition);
 
 if ("serviceWorker" in navigator && window.isSecureContext) {
   window.addEventListener("load", async () => {
@@ -676,4 +980,5 @@ window.addEventListener("hashchange", () => {
 loadEditionData().finally(() => {
   const initialIndex = pageIndexFromHash();
   showPage(initialIndex >= 0 ? initialIndex : 0, { updateHash: initialIndex < 0 });
+  scheduleNewEditionCheck();
 });

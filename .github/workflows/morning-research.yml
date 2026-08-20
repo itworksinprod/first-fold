@@ -1,0 +1,433 @@
+name: Prepare Morning Press candidate
+
+on:
+  schedule:
+    - cron: "17 5 * * 1-5"
+      timezone: "America/New_York"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: morning-press-research
+  cancel-in-progress: false
+
+env:
+  BOT_BRANCH_PREFIX: automation/morning-press-
+  BOT_LABEL: morning-press-bot
+  DEFAULT_BRANCH: main
+  PILOT_LIMIT: "5"
+
+jobs:
+  prepare:
+    name: Research and stage the public candidate
+    if: github.repository == 'itworksinprod/first-fold' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      statuses: write
+    steps:
+      - name: Check out trusted main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Install the locked project
+        run: npm ci
+
+      - name: Resolve today's pilot slot from merged provenance
+        id: pilot
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFile, readdir, readFile } from "node:fs/promises";
+          import path from "node:path";
+
+          const timeZone = "America/New_York";
+          const parts = Object.fromEntries(
+            new Intl.DateTimeFormat("en-US", {
+              timeZone,
+              calendar: "gregory",
+              numberingSystem: "latn",
+              weekday: "short",
+              year: "numeric",
+              month: "2-digit",
+              day: "2-digit",
+              hour: "2-digit",
+              minute: "2-digit",
+              hourCycle: "h23",
+            })
+              .formatToParts(new Date())
+              .filter(({ type }) => type !== "literal")
+              .map(({ type, value }) => [type, value]),
+          );
+          const editionDate = `${parts.year}-${parts.month}-${parts.day}`;
+          const weekday = parts.weekday;
+          const minuteOfDay = Number(parts.hour) * 60 + Number(parts.minute);
+          const pilotLimit = Number(process.env.PILOT_LIMIT);
+
+          if (!["Mon", "Tue", "Wed", "Thu", "Fri"].includes(weekday)) {
+            throw new Error(`Morning Press research is weekday-only; ${editionDate} is ${weekday}.`);
+          }
+          if (minuteOfDay < 5 * 60) {
+            throw new Error("Morning Press research cannot start before the 5:00 AM New York cutoff.");
+          }
+          if (minuteOfDay >= 6 * 60) {
+            throw new Error("Morning Press research must start before the 6:00 AM New York publication gate.");
+          }
+
+          const root = "content/editions";
+          const filenames = (await readdir(root)).filter((name) => name.endsWith(".json")).sort();
+          const editions = [];
+          for (const filename of filenames) {
+            editions.push(JSON.parse(await readFile(path.join(root, filename), "utf8")));
+          }
+
+          const existingToday = editions.find((edition) => edition.editionDate === editionDate);
+          const automatic = editions.filter(
+            (edition) => edition.provenance?.automation?.workflow === "morning-press",
+          );
+          const sequences = automatic
+            .map((edition) => edition.provenance.automation.pilotSequence)
+            .sort((left, right) => left - right);
+
+          for (let index = 0; index < sequences.length; index += 1) {
+            const expected = index + 1;
+            if (sequences[index] !== expected || expected > pilotLimit) {
+              throw new Error(
+                `Merged Morning Press pilot provenance must be contiguous from 1 through ${pilotLimit}.`,
+              );
+            }
+          }
+
+          let shouldGenerate = true;
+          let reason = "pilot slot available";
+          if (existingToday) {
+            if (existingToday.provenance?.automation?.workflow !== "morning-press") {
+              throw new Error(`A non-automatic canonical edition already exists for ${editionDate}.`);
+            }
+            shouldGenerate = false;
+            reason = "today's automatic edition is already merged";
+          } else if (sequences.length >= pilotLimit) {
+            shouldGenerate = false;
+            reason = `the explicit ${pilotLimit}-issue automatic pilot is complete`;
+          }
+
+          const output = process.env.GITHUB_OUTPUT;
+          await appendFile(output, `edition_date=${editionDate}\n`);
+          await appendFile(output, `edition_path=content/editions/${editionDate}.json\n`);
+          await appendFile(output, `pilot_sequence=${sequences.length + 1}\n`);
+          await appendFile(output, `should_generate=${String(shouldGenerate)}\n`);
+          await appendFile(process.env.GITHUB_STEP_SUMMARY, `Morning Press: ${reason}.\n`);
+          NODE
+
+      - name: Require one correctly shaped same-day bot PR
+        if: steps.pilot.outputs.should_generate == 'true'
+        id: existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EDITION_DATE: ${{ steps.pilot.outputs.edition_date }}
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFile } from "node:fs/promises";
+
+          const repository = process.env.GITHUB_REPOSITORY;
+          const [owner] = repository.split("/");
+          const branch = `${process.env.BOT_BRANCH_PREFIX}${process.env.EDITION_DATE}`;
+          const headers = {
+            accept: "application/vnd.github+json",
+            authorization: `Bearer ${process.env.GH_TOKEN}`,
+            "x-github-api-version": "2022-11-28",
+          };
+          async function api(apiPath, { allowNotFound = false } = {}) {
+            const response = await fetch(`${process.env.GITHUB_API_URL}${apiPath}`, { headers });
+            if (allowNotFound && response.status === 404) return null;
+            if (!response.ok) throw new Error(`GitHub API ${apiPath} failed with ${response.status}.`);
+            return response.json();
+          }
+
+          const pulls = await api(`/repos/${repository}/pulls?state=open&base=${process.env.DEFAULT_BRANCH}&per_page=100`);
+          if (pulls.length === 100) {
+            throw new Error("Open pull-request pagination is ambiguous; refusing to guess past the first 100.");
+          }
+          const labeled = pulls.filter((pull) =>
+            pull.labels.some((label) => label.name === process.env.BOT_LABEL),
+          );
+          const sameDay = labeled.filter((pull) => pull.head.ref === branch);
+          if (labeled.some((pull) => pull.head.ref !== branch)) {
+            throw new Error("A prior Morning Press bot PR is still open; refusing to stack pilot issues.");
+          }
+          if (sameDay.length > 1) {
+            throw new Error("More than one same-day Morning Press bot PR is open.");
+          }
+
+          const remote = await api(
+            `/repos/${repository}/git/ref/heads/${branch}`,
+            { allowNotFound: true },
+          );
+          const pull = sameDay[0] ?? null;
+          if (Boolean(remote) !== Boolean(pull)) {
+            throw new Error("The automation branch and open bot PR must either both exist or both be absent.");
+          }
+          if (pull) {
+            const valid =
+              pull.user.login === "github-actions[bot]" &&
+              pull.base.ref === process.env.DEFAULT_BRANCH &&
+              pull.base.repo.full_name === repository &&
+              pull.head.repo.full_name === repository &&
+              pull.head.label === `${owner}:${branch}` &&
+              pull.head.sha === remote.object.sha;
+            if (!valid) throw new Error("The existing same-day PR is not the expected same-repository bot PR.");
+          }
+
+          await appendFile(process.env.GITHUB_OUTPUT, `mode=${pull ? "update" : "create"}\n`);
+          await appendFile(process.env.GITHUB_OUTPUT, `branch=${branch}\n`);
+          await appendFile(process.env.GITHUB_OUTPUT, `remote_sha=${remote?.object?.sha ?? ""}\n`);
+          await appendFile(process.env.GITHUB_OUTPUT, `pr_number=${pull?.number ?? ""}\n`);
+          NODE
+
+      - name: Generate the source-checked candidate
+        if: steps.pilot.outputs.should_generate == 'true'
+        env:
+          EDITION_DATE: ${{ steps.pilot.outputs.edition_date }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
+        shell: bash
+        run: |
+          if [[ -z "${OPENAI_API_KEY}" ]]; then
+            echo "OPENAI_API_KEY is required; no candidate was created."
+            exit 1
+          fi
+          node scripts/automation/generate-edition.mjs "${EDITION_DATE}"
+
+      - name: Verify candidate provenance and source checks
+        if: steps.pilot.outputs.should_generate == 'true'
+        env:
+          EDITION_DATE: ${{ steps.pilot.outputs.edition_date }}
+          EDITION_PATH: ${{ steps.pilot.outputs.edition_path }}
+          PILOT_SEQUENCE: ${{ steps.pilot.outputs.pilot_sequence }}
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFile } from "node:fs/promises";
+
+          const edition = JSON.parse(await readFile(process.env.EDITION_PATH, "utf8"));
+          const automation = edition.provenance?.automation;
+          const sourceCheck = edition.provenance?.sourceCheck;
+          const expectedRunUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+
+          if (
+            edition.editionDate !== process.env.EDITION_DATE ||
+            edition.status !== "published" ||
+            edition.publication?.publishedAt !== edition.publication?.publishAt ||
+            automation?.workflow !== "morning-press" ||
+            automation?.candidate !== true ||
+            automation?.pilotSequence !== Number(process.env.PILOT_SEQUENCE) ||
+            automation?.runId !== process.env.GITHUB_RUN_ID ||
+            automation?.runUrl !== expectedRunUrl ||
+            sourceCheck?.status !== "passed" ||
+            !Array.isArray(sourceCheck.issues) ||
+            sourceCheck.issues.length !== 0
+          ) {
+            throw new Error("Generated candidate did not satisfy the automatic-pilot provenance contract.");
+          }
+          NODE
+
+      - name: Build and test the candidate
+        if: steps.pilot.outputs.should_generate == 'true'
+        run: npm test
+
+      - name: Commit and safely refresh the automation branch
+        if: steps.pilot.outputs.should_generate == 'true'
+        id: commit
+        env:
+          BRANCH: ${{ steps.existing.outputs.branch }}
+          EDITION_DATE: ${{ steps.pilot.outputs.edition_date }}
+          EDITION_PATH: ${{ steps.pilot.outputs.edition_path }}
+          MODE: ${{ steps.existing.outputs.mode }}
+          REMOTE_SHA: ${{ steps.existing.outputs.remote_sha }}
+        shell: bash
+        run: |
+          git add -- "${EDITION_PATH}"
+          mapfile -t staged_paths < <(git diff --cached --name-only)
+          if [[ "${#staged_paths[@]}" -ne 1 || "${staged_paths[0]}" != "${EDITION_PATH}" ]]; then
+            echo "The research command may change only ${EDITION_PATH}."
+            exit 1
+          fi
+          if ! git diff --quiet || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
+            echo "Unexpected unstaged or untracked research output detected."
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "${BRANCH}"
+          git commit -m "Prepare Morning Press candidate for ${EDITION_DATE}"
+          head_sha="$(git rev-parse HEAD)"
+
+          if [[ "${MODE}" == "update" ]]; then
+            git push --force-with-lease="refs/heads/${BRANCH}:${REMOTE_SHA}" origin "HEAD:refs/heads/${BRANCH}"
+          else
+            git push origin "HEAD:refs/heads/${BRANCH}"
+          fi
+          echo "head_sha=${head_sha}" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload the exact-revision review bundle
+        if: steps.pilot.outputs.should_generate == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: morning-press-${{ steps.pilot.outputs.edition_date }}-${{ steps.commit.outputs.head_sha }}
+          path: dist/client
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Create or update the public candidate PR
+        if: steps.pilot.outputs.should_generate == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ steps.existing.outputs.branch }}
+          EDITION_DATE: ${{ steps.pilot.outputs.edition_date }}
+          HEAD_SHA: ${{ steps.commit.outputs.head_sha }}
+          MODE: ${{ steps.existing.outputs.mode }}
+          PILOT_SEQUENCE: ${{ steps.pilot.outputs.pilot_sequence }}
+          PR_NUMBER: ${{ steps.existing.outputs.pr_number }}
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          const repository = process.env.GITHUB_REPOSITORY;
+          const headers = {
+            accept: "application/vnd.github+json",
+            authorization: `Bearer ${process.env.GH_TOKEN}`,
+            "content-type": "application/json",
+            "x-github-api-version": "2022-11-28",
+          };
+          async function api(apiPath, { method = "GET", body, allowNotFound = false } = {}) {
+            const response = await fetch(`${process.env.GITHUB_API_URL}${apiPath}`, {
+              method,
+              headers,
+              body: body ? JSON.stringify(body) : undefined,
+            });
+            if (allowNotFound && response.status === 404) return null;
+            if (!response.ok) throw new Error(`GitHub API ${apiPath} failed with ${response.status}.`);
+            return response.status === 204 ? null : response.json();
+          }
+
+          const title = `Morning Press candidate — ${process.env.EDITION_DATE}`;
+          const body = [
+            "## Automatic Morning Press candidate",
+            "",
+            "> This pull request and its candidate JSON are public. The edition is not deployed or reader-facing until a human approves this exact revision and the separate delivery gate passes. The model credential remains private.",
+            "",
+            `- Edition: \`content/editions/${process.env.EDITION_DATE}.json\``,
+            `- Pilot sequence: ${process.env.PILOT_SEQUENCE} of ${process.env.PILOT_LIMIT}`,
+            `- Exact candidate SHA: \`${process.env.HEAD_SHA}\``,
+            `- Generation run: ${process.env.GITHUB_SERVER_URL}/${repository}/actions/runs/${process.env.GITHUB_RUN_ID}`,
+            `- Review bundle: \`morning-press-${process.env.EDITION_DATE}-${process.env.HEAD_SHA}\` in that run`,
+            "",
+            "Review the source links, visible preview, cutoff, and canonical status. An authorized human may submit GitHub’s **Approve** review only for the exact SHA above; the model and browser cannot approve or merge an edition.",
+          ].join("\n");
+
+          const existingLabel = await api(
+            `/repos/${repository}/labels/${encodeURIComponent(process.env.BOT_LABEL)}`,
+            { allowNotFound: true },
+          );
+          if (!existingLabel) {
+            await api(`/repos/${repository}/labels`, {
+              method: "POST",
+              body: {
+                name: process.env.BOT_LABEL,
+                color: "7b4b31",
+                description: "Exact-revision Morning Press automation candidate",
+              },
+            });
+          }
+
+          let pull;
+          if (process.env.MODE === "update") {
+            pull = await api(`/repos/${repository}/pulls/${process.env.PR_NUMBER}`, {
+              method: "PATCH",
+              body: { title, body },
+            });
+          } else {
+            pull = await api(`/repos/${repository}/pulls`, {
+              method: "POST",
+              body: {
+                title,
+                body,
+                head: process.env.BRANCH,
+                base: process.env.DEFAULT_BRANCH,
+                draft: false,
+                maintainer_can_modify: false,
+              },
+            });
+          }
+          await api(`/repos/${repository}/issues/${pull.number}/labels`, {
+            method: "POST",
+            body: { labels: [process.env.BOT_LABEL] },
+          });
+
+          const live = await api(`/repos/${repository}/pulls/${pull.number}`);
+          const valid =
+            live.state === "open" &&
+            live.draft === false &&
+            live.user.login === "github-actions[bot]" &&
+            live.base.ref === process.env.DEFAULT_BRANCH &&
+            live.base.repo.full_name === repository &&
+            live.head.ref === process.env.BRANCH &&
+            live.head.repo.full_name === repository &&
+            live.head.sha === process.env.HEAD_SHA &&
+            live.labels.some((label) => label.name === process.env.BOT_LABEL);
+          if (!valid) throw new Error("The public candidate PR failed its post-write identity check.");
+          NODE
+
+      - name: Attest the exact candidate SHA
+        if: steps.pilot.outputs.should_generate == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ steps.commit.outputs.head_sha }}
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          const repository = process.env.GITHUB_REPOSITORY;
+          const context = "first-fold/morning-press-candidate";
+          const targetUrl = `${process.env.GITHUB_SERVER_URL}/${repository}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+          const response = await fetch(
+            `${process.env.GITHUB_API_URL}/repos/${repository}/statuses/${process.env.HEAD_SHA}`,
+            {
+              method: "POST",
+              headers: {
+                accept: "application/vnd.github+json",
+                authorization: `Bearer ${process.env.GH_TOKEN}`,
+                "content-type": "application/json",
+                "x-github-api-version": "2022-11-28",
+              },
+              body: JSON.stringify({
+                state: "success",
+                context,
+                target_url: targetUrl,
+                description: "Trusted research, canonical validation, and source QA passed",
+              }),
+            },
+          );
+          const status = await response.json().catch(() => ({}));
+          if (
+            !response.ok ||
+            status.state !== "success" ||
+            status.context !== context ||
+            status.target_url !== targetUrl ||
+            status.creator?.login !== "github-actions[bot]"
+          ) {
+            throw new Error(`Unable to attest the exact candidate SHA (${response.status}).`);
+          }
+          NODE

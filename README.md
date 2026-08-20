@@ -11,7 +11,7 @@ First Fold is a small, newspaper-inspired daily briefing for technology professi
 
 The interface borrows the ritual and pacing of a folded newspaper—masthead, sections, columns, and page turns—while keeping the reading experience accessible on phones, keyboards, touchscreens, and reduced-motion displays.
 
-This repository contains the **First Fold MVP**: a deterministic, fixture-backed edition that demonstrates the product, editorial contract, archive, and reading experience without requiring live news or AI credentials. One canonical JSON document is the source of truth for each issue; the build validates it and derives every browser-facing edition and archive artifact from it.
+This repository contains the **First Fold MVP and Morning Press pilot**: the finite reader, installable app, editorial contract, deterministic edition scaffolder, optional automatic research draft, human-review workflow, dated archive, and fail-closed 6:00 AM delivery gate. One canonical JSON document is the source of truth for each issue; the reader build validates every issue and derives the browser-facing edition and archive artifacts without runtime feeds or client-side AI credentials.
 
 ## Why this exists
 
@@ -40,11 +40,11 @@ Editors assign an overlapping story according to its primary consequence for the
 
 All editorial times use the IANA timezone `America/New_York`, including daylight-saving changes.
 
-- **5:00 AM ET — editorial cutoff.** The normal edition covers material developments after the previous edition's cutoff and at or before this cutoff.
-- **5:00–5:20 AM — verification.** Supporting sources may be retrieved to verify an eligible development.
-- **5:20 AM — research lock.** The candidate set closes for the normal edition.
-- **5:30–5:55 AM — selection, copy lock, validation, and staging.** Stories, dates, citations, desk assignments, and layout are checked.
-- **6:00 AM — publication.** A validated edition becomes public as one immutable release.
+- **5:00 AM ET — editorial cutoff.** The normal edition covers material developments at or after the previous edition's cutoff and before this cutoff; the reporting window is half-open.
+- **5:17 AM — automatic candidate preparation begins.** The weekday pilot researches only developments eligible before the closed 5:00 AM cutoff; GitHub's scheduler may start the run late.
+- **5:17–5:45 AM — research and validation target.** Direct sources, dates, evidence mappings, desk assignments, and copy are assembled into a public candidate pull request.
+- **Candidate ready–5:59 AM — human copy lock.** The authorized editor opens the sources and preview, approves the exact current SHA, and the trusted merge workflow retests it.
+- **6:00 AM — delivery gate opens.** The scheduled job begins its final tests and deployment; an approved, valid current-day edition becomes public only after those steps succeed. Otherwise the previous release stays live.
 
 Ordinary developments after 5:00 AM roll into the following morning. A verified, time-sensitive security event may eventually use a separately labeled **Stop the Presses** bulletin; that exception is outside the MVP.
 
@@ -54,7 +54,8 @@ Every production run should use an idempotent edition key such as `2026-08-19@Am
 
 First Fold guarantees a page for each desk, not a mandatory story.
 
-If no candidate clears the evidence and quality threshold, that desk prints:
+If no candidate clears the evidence and quality threshold, that desk gives an
+honest explanation with this meaning, for example:
 
 > No edition-worthy development this morning.
 
@@ -62,7 +63,9 @@ This is a feature, not an error. It makes the absence of filler visible and prot
 
 Promising developments that do not yet clear the story threshold may appear briefly in **Watch Next** on the back page. Watch Next is a small weak-signal list, not another desk and not a way to publish unsupported claims. It preserves the four-desk, six-minute edition while showing readers what the newsroom is monitoring.
 
-## Run the fixture demo
+The five-edition automatic pilot leaves Watch Next empty. The current v2 item cannot retain claim-to-source mappings, so automated weak signals remain unpublished until that audit trail exists. Human-reviewed manual editions may still use the bounded Watch Next list.
+
+## Run the MVP
 
 ### Prerequisites
 
@@ -85,7 +88,7 @@ Run the production build and test suite with:
 npm run build && npm test
 ```
 
-No environment variables or paid services are needed. The demo reads the canonical edition in `content/editions/`, validates it during the build, and serves derived JSON to the reader and archive. It does **not** crawl publishers, call a model, require an API key, or mutate production data.
+No environment variables or paid services are needed to build, read, preview, or publish a hand-written edition. The optional automatic-draft pilot calls the OpenAI Responses API during a trusted GitHub Actions research job, so that job requires an API key and incurs API usage. The key is never shipped to the PWA, exposed to pull-request code, or needed by readers. Automatic research prepares a source-grounded proposal; final editorial judgment remains human.
 
 For a fresh GitHub checkout, `npm ci` reproduces the lockfile exactly. Use `npm install` only when intentionally changing dependencies, and commit the resulting lockfile change. Generated output, local dependencies, logs, and environment files are ignored.
 
@@ -105,24 +108,36 @@ The manifest, service worker, and icon URLs are relative, so installation works 
 
 | Route | Availability | Purpose |
 | --- | --- | --- |
-| `/` | Local and hosted | Opens the current fixture-backed morning edition. |
+| `/` | Local and hosted | Opens the newest available morning edition. Production includes only published issues; local development can preview drafts. |
 | `/?edition=2026-08-19#front` | Local and hosted | Opens a dated edition in the same finite reader; page hashes remain shareable. |
-| `/archive/` | Local and hosted | Lists every validated edition from the generated archive manifest. |
+| `/archive/` | Local and hosted | Lists published issues in production and clearly labeled unpublished previews during local development. |
 | `/editions/2026-08-19.json` | Generated artifact | Reader-safe projection used by the newspaper, source dialog, and press-desk prototype. |
-| `/editions/index.json` | Generated artifact | Archive manifest derived from all validated reader projections. |
+| `/editions/index.json` | Generated artifact | Archive manifest derived from published reader projections; local development explicitly opts into unpublished previews. |
 | `/manifest.webmanifest` | Local and hosted | Install metadata for the standalone First Fold app. |
 | `/service-worker.js` | Local and hosted | Versioned offline shell and network-first edition caching. |
-| `/editor/` | Demo only | Prototype press desk for reviewing desk decisions, validation state, and the 6:00 AM pipeline. |
+| `/editor/` | Local and hosted | Review-only press desk for desk decisions, evidence, validation state, and the 6:00 AM pipeline. |
 
-The press desk is intentionally not a production administration system. Its approve/reset control writes only to `localStorage` in the current browser; it cannot change the canonical edition, publish content, or affect another reader.
+The press desk is intentionally not a production administration system and cannot approve or publish an issue. It reads the same revision-bound projection as the reader. Human approval is recorded by reviewing and merging the exact GitHub pull-request revision.
+
+## Five-edition automatic-draft pilot
+
+The assisted pilot automates research and first-draft assembly, not editorial authority:
+
+1. At 5:17 AM `America/New_York` on weekdays, **Prepare Morning Press candidate** runs after the 5:00 AM reporting cutoff and calls `node scripts/automation/generate-edition.mjs "$EDITION_DATE"`.
+2. The drafting prompt requires web research and inspection of direct sources, then maps material claims to evidence. Deterministic QA confirms that cited URLs came from the run's web-search results, checks link safety and reachability, validates the canonical edition, and writes `content/editions/YYYY-MM-DD.json` on `automation/morning-press-YYYY-MM-DD`. Those checks do not establish that the copy is true; the human still opens and verifies every source. The generator refuses to overwrite an existing edition and leaves Watch Next empty during this pilot.
+3. The workflow opens or refreshes a same-repository pull request labeled `morning-press-bot`. A same-day rerun refreshes only the expected dated bot branch and pull request, using the observed head SHA as a force-with-lease guard; a mismatched branch or pull request fails closed. This is a public repository, so the branch, proposed JSON, copy, and source links are publicly visible in the pull request. They are not deployed or reader-facing in First Fold until approval. The proposed JSON is release-shaped so the deployment gate can validate the exact final payload, but its canonical `published` status is not an approval record by itself.
+4. A human listed in the `MORNING_PRESS_REVIEWERS` repository variable, who also currently has write, maintain, or admin permission, opens the sources and the downloadable exact-SHA review bundle linked from the pull request, confirms `provenance.sourceCheck.status` is `passed`, reviews the current commit, and submits an **Approve** review. Warnings have no override in this pilot. **Merge approved Morning Press edition** requires the exact-SHA status created by the successful trusted research run, reruns link/source QA and the test suite with code from `main`, and squash-merges only that approved revision. Any bot or human change invalidates the earlier approval.
+5. The separate 6:00 AM delivery workflow publishes only a valid current-day edition already present on `main`; otherwise it leaves the previous Pages deployment intact. If the approved merge lands at or after 6:00 AM, the merge workflow explicitly requests that delivery instead of waiting for the next scheduled run.
+
+The pilot counter lives in canonical automation provenance. It counts five new automatic editions that were successfully approved and merged to `main`; manual editions and rejected or closed bot pull requests do not count. After `pilotSequence: 5` reaches `main`, research stops before another API call and no sixth automatic pull request is created. Full-auto publication remains disabled until the explicit post-pilot decision in the runbook.
 
 ## Publish with GitHub Pages
 
-The repository includes `.github/workflows/pages.yml`. On every push to `main`, GitHub Actions installs the locked project, runs the build-gated test suite, uploads `dist/client`, and deploys that static artifact to GitHub Pages. Relative asset and data URLs keep the demo working when it is hosted at a project path such as `username.github.io/first-fold/`.
+The repository separates research, approval, and delivery. `.github/workflows/morning-research.yml` prepares a publicly reviewable proposal, `.github/workflows/approve-morning-edition.yml` accepts an authorized exact-revision approval, and `.github/workflows/pages.yml` validates and delivers from `main`. Human-authored pull requests and all pushes run the ordinary build-gated test suite; the exact dated bot proposal skips that duplicate job because the research job already tests and attests its SHA, and the trusted merge job reruns source QA and tests the approved JSON. None of those paths publishes early. At 6:00 AM `America/New_York` on weekdays, the scheduled delivery job rebuilds the latest `main`, requires today's newest artifact to be `published`, and deploys it to GitHub Pages. A failed, missing, stale, or draft issue leaves the previous successful deployment intact. Manual dispatch is a reason-recorded recovery path that also fails closed before 6:00 AM New York time.
 
-After the first push, open **Settings → Pages** in the GitHub repository and choose **GitHub Actions** as the publishing source. You can also run the workflow manually from the Actions tab. A failed editorial validation or test prevents deployment.
+Open **Settings → Pages** and choose **GitHub Actions** as the publishing source. Protect `main`, require pull requests and one human approval, dismiss stale approvals when new commits are pushed, and do not let Actions bypass the branch rules. Configure `MORNING_PRESS_REVIEWERS`, the private drafting credential, and the optional model variable exactly as described in [`docs/morning-press-runbook.md`](docs/morning-press-runbook.md). Ordinary pull-request CI for a bot proposal created with `GITHUB_TOKEN` is not relied on and may not become usable automatically. The research job and trusted merge job supply the pilot's tests; the merge workflow binds the authorized review to the exact current SHA and validates the one JSON candidate with trusted code from `main` before merging it.
 
-The press desk is included in the portfolio demo so visitors can inspect the concept. Its approval state remains isolated to their browser; it has no server-side authority.
+Relative asset and data URLs keep the app working at a GitHub Pages project path such as `username.github.io/first-fold/`. The press desk remains a transparent review surface; Git and GitHub Actions are the authority for approval and delivery.
 
 ## Architecture
 
@@ -143,12 +158,12 @@ content/editions/YYYY-MM-DD.json        canonical edition
                  |
                  +--> finite reader
                  +--> public archive
-                 +--> local-only press desk prototype
+                 +--> review-only press desk
 ```
 
 `scripts/edition-content.mjs` loads every canonical edition, enforces the runtime editorial invariants, creates a stable reader projection, and derives the archive manifest from those projections. The projection includes its canonical edition ID, projection version, validation result, and content digest so a displayed issue can be traced back to the exact source revision.
 
-The canonical JSON is the only hand-maintained edition payload. Do not separately edit the projected edition, archive manifest, fallback reader copy, or files under `dist/`; the build regenerates artifacts from `content/editions/`.
+The canonical JSON is the only maintained edition payload. Whether the pilot generator creates it or a human edits it through review, do not separately edit the projected edition, archive manifest, fallback reader copy, or files under `dist/`; the build regenerates artifacts from `content/editions/`.
 
 Presentation stays downstream of that contract:
 
@@ -185,7 +200,7 @@ Canonical edition JSON
 Build-time validation --> reader projection + archive artifact --> First Fold renderer
 ```
 
-The renderer never calls news or model APIs per visitor. A daily job will eventually produce one canonical edition; the build then emits validated, cacheable artifacts that the public site only reads and renders.
+The renderer never calls news or model APIs per visitor. During the assisted pilot, a trusted scheduled job researches and stages a canonical proposal in a public pull request, an editor approves the exact pull-request revision, and the separate delivery job validates and releases only approved content already on `main`. The build emits immutable, cacheable artifacts that the public site only reads and renders.
 
 ### Edition contract
 
@@ -193,7 +208,7 @@ A valid edition must satisfy these invariants:
 
 - It has exactly the four known desks—AI & Models, Work & Tools, Security & Privacy, and Platforms & Power—with no duplicate desk.
 - Each desk contains zero or one selected story.
-- An empty desk contains the standard quiet-desk message.
+- An empty desk contains an honest quiet-desk explanation with the standard meaning; it need not use one literal sentence.
 - The same underlying event cannot appear in more than one desk.
 - Every story records its primary entity, AI adjacency, maturity, and desk-fit rationale.
 - No edition contains more than two AI-adjacent stories.
@@ -204,13 +219,24 @@ A valid edition must satisfy these invariants:
 - An out-of-window continuing story is eligible only when it identifies a material update inside the window.
 - Published editions retain their timestamp and version; later changes are recorded as corrections.
 
-### Add or review an edition
+### Add or review an edition manually
 
-1. Add one canonical file at `content/editions/YYYY-MM-DD.json`; use the existing edition as the shape reference.
+Start the next canonical issue with the deterministic scaffolder:
+
+```bash
+npm run edition:new -- 2026-08-20
+```
+
+The command reads the latest canonical edition, advances the issue number, carries forward only the stable masthead and v2 policy provenance, and calculates the reporting cutoff, 5:50 AM generation time, and 6:00 AM publication time in `America/New_York`. It starts every desk quiet and clears all prior stories, sources, evidence, Watch Next items, experiments, corrections, publication state, and front-page selections. The reporting window begins at the preceding edition's cutoff, including when dates are skipped, and New York daylight-saving changes are applied instead of assuming every day is 24 hours.
+
+The destination is `content/editions/YYYY-MM-DD.json`. The date must be later than every existing canonical edition, and the command refuses to overwrite a file. A scaffold is a schema-valid `draft`: production builds validate it but do not expose it in the public reader or archive. `npm run dev` deliberately includes unpublished editions so they can be inspected locally.
+
+1. Run the scaffolder for the intended edition date, then replace each draft quiet-desk explanation when a story is selected or when the research cutoff confirms that the desk should remain quiet.
 2. Keep exactly the four configured desk keys. Set a desk's `story` to `null` and provide an honest `emptyReason` when nothing qualifies.
 3. Record direct source URLs, evidence-to-source mappings, reporting-window timestamps, editorial classification, the selection rationale, and any material-update delta in that file.
-4. Run `npm run build`. Invalid dates, duplicate events, weak scores, missing sources, unsupported claims, malformed quiet desks, and other contract failures stop artifact generation.
-5. Run `npm test`, then inspect the edition at `/?edition=YYYY-MM-DD#front`, its archive card at `/archive/`, and the local review at `/editor/`.
+4. Update the front and back pages. For a hand-written issue, set `status` to `published` and set `publication.publishedAt` only in the exact revision proposed for approval. The pull-request review—not the JSON status alone—is the approval record, and nothing outside `main` can reach production.
+5. Run `npm run build`. Every canonical file is validated, including unpublished drafts; invalid dates, duplicate events, weak scores, missing sources, unsupported claims, malformed quiet desks, and other contract failures stop artifact generation.
+6. Run `npm test`, then use `npm run dev` to inspect the edition at `/?edition=YYYY-MM-DD#front`, its archive card at `/archive/`, and the local review at `/editor/`.
 
 The build-generated reader projection intentionally contains only what the public experience needs. Rich editorial evidence and provenance remain in the canonical source document.
 
@@ -233,15 +259,19 @@ The intended production selector uses deterministic eligibility gates before any
 
 Included:
 
-- A complete four-desk sample edition
-- One canonical edition JSON transformed into validated reader and archive artifacts
+- Complete four-desk sample issues plus honest quiet-desk support
+- Multiple canonical edition JSON files transformed into validated reader and archive artifacts
+- A deterministic, DST-safe `edition:new` scaffolder that refuses overwrites
 - Newspaper-inspired layout and navigation
 - Finite reading progress
 - Quiet-desk handling
 - A bounded Watch Next back-page list
 - Source and editorial-transparency surfaces
 - A dated edition archive
-- A local-only press-desk review prototype with device-local approval state
+- A review-only press desk backed by the same revision-bound edition projection
+- Pull-request approval and a weekday 6:00 AM fail-closed GitHub Pages release gate
+- A five-edition, source-grounded automatic-draft pilot with an API-call stop, publicly visible bot pull requests that are not deployed until approval, and exact-revision human approval
+- New-edition detection on app resume, immutable edition sharing, and a feedback link
 - Responsive and reduced-motion behavior
 - Free home-screen installation on supported mobile and desktop browsers
 - A versioned offline reading shell with explicitly labeled saved-edition fallback
@@ -249,8 +279,8 @@ Included:
 
 Deliberately deferred:
 
-- Live ingestion and scheduling
-- Automated model-based selection
+- Unbounded or production-scale ingestion beyond the five-edition pilot
+- Human-free selection, merge, or publication
 - Accounts, saved stories, comments, or recommendations
 - Personalized desks
 - Email or push delivery
@@ -258,12 +288,13 @@ Deliberately deferred:
 
 ## Roadmap
 
-1. **First Fold:** validate the visual ritual and reading flow with a fixed edition.
-2. **Editorial engine:** connect the existing edition contract to a curated-source registry, normalization, deduplication, scoring, and replayable research fixtures.
-3. **Morning press:** stage at 5:55 AM ET, publish atomically at 6:00 AM, and alert on missing or invalid editions.
-4. **Archive depth and corrections:** grow the existing dated archive and add visible correction history, source suppression, and a rapid unpublish path.
-5. **Reader refinements:** improve typography, accessibility, and completion cues while preserving the same four-desk, six-minute edition.
-6. **Optional delivery:** add an accessible email edition or notifications only after consent, unsubscribe, privacy, and retention controls are in place.
+1. **Morning Press pilot (current):** prepare and approve five new automatically researched weekday editions through source-grounded drafting, exact-revision pull-request approval, and the fail-closed 6:00 AM release gate.
+2. **Pilot stop and decision:** stop before a sixth API call, audit factual quality, edits, failures, cost, timing, and quiet-desk behavior, then explicitly stop, extend the assisted pilot, or authorize a separately reviewed automation change. Passing metrics never enables full auto by itself.
+3. **Pilot evidence:** test with at least five target readers and record completion, usefulness, editorial effort, quiet-desk rate, shares, and qualitative feedback without paid analytics.
+4. **Editorial engine:** if the pilot justifies further work, connect the edition contract to a curated-source registry, normalization, deduplication, scoring, and replayable research fixtures while retaining a reviewable evidence trail.
+5. **Archive depth and corrections:** grow the dated archive and add visible correction history, source suppression, and a rapid unpublish path.
+6. **Reader refinements:** improve typography, accessibility, and completion cues while preserving the same four-desk, six-minute edition.
+7. **Optional delivery:** add accessible email or notifications only after consent, unsubscribe, privacy, and retention controls are in place.
 
 The project should remain intentionally small enough for one person to understand, operate, and audit.
 

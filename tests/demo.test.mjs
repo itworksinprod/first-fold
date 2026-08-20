@@ -31,7 +31,7 @@ test("the morning edition renders the product promise", async () => {
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html/);
   assert.match(html, /First Fold/);
-  assert.match(html, /On the doorstep · 6:00 AM ET/);
+  assert.match(html, /Morning delivery · 6:00 AM ET/);
   assert.match(html, /Nothing cleared the bar today/);
   assert.match(html, /Three developments\. One quiet desk/);
   assert.match(html, /AI &amp; Models/);

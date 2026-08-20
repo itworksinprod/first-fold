@@ -27,6 +27,12 @@ function isInstant(value) {
   return typeof value === "string" && Number.isFinite(Date.parse(value));
 }
 
+function isIsoDate(value) {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const instant = Date.parse(`${value}T00:00:00.000Z`);
+  return Number.isFinite(instant) && new Date(instant).toISOString().slice(0, 10) === value;
+}
+
 function isInWindow(value, startInclusive, endExclusive) {
   const instant = Date.parse(value);
   return instant >= Date.parse(startInclusive) && instant < Date.parse(endExclusive);
@@ -55,11 +61,25 @@ function localClock(instant) {
   return `${parts.find((part) => part.type === "hour")?.value}:${parts.find((part) => part.type === "minute")?.value}`;
 }
 
+function localDate(instant) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(instant));
+  const value = (type) => parts.find((part) => part.type === type)?.value;
+  return `${value("year")}-${value("month")}-${value("day")}`;
+}
+
 export function validateCanonicalEdition(edition) {
   const issues = [];
   if (!isObject(edition)) return { valid: false, issues: ["Edition must be an object."] };
   if (edition.schemaVersion !== 2) issues.push("Unsupported canonical schema version.");
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(edition.editionDate ?? "")) issues.push("editionDate must be YYYY-MM-DD.");
+  if (!isIsoDate(edition.editionDate)) issues.push("editionDate must be a real calendar date in YYYY-MM-DD format.");
+  if (edition.id !== `first-fold-${edition.editionDate}`) issues.push("Edition id must match first-fold-${editionDate}.");
+  if (!Number.isInteger(edition.issueNumber) || edition.issueNumber < 1) issues.push("issueNumber must be a positive integer.");
+  if (!["draft", "validated", "published"].includes(edition.status)) issues.push("Edition status is invalid.");
   if (edition.timezone !== "America/New_York") issues.push("Timezone must be America/New_York.");
   if (!isObject(edition.desks) || Object.keys(edition.desks).sort().join("|") !== [...DESKS].sort().join("|")) {
     issues.push("Edition must contain exactly the four configured desks.");
@@ -68,9 +88,29 @@ export function validateCanonicalEdition(edition) {
 
   const start = edition.reportingWindow?.startInclusive;
   const end = edition.reportingWindow?.endExclusive;
-  if (!isInstant(start) || !isInstant(end) || Date.parse(start) >= Date.parse(end)) issues.push("Reporting window is invalid.");
+  if (!isInstant(start) || !isInstant(end) || Date.parse(start) >= Date.parse(end)) {
+    issues.push("Reporting window is invalid.");
+  } else if (localClock(end) !== "05:00" || localDate(end) !== edition.editionDate) {
+    issues.push("Reporting window must end at 05:00 America/New_York on editionDate.");
+  }
+
+  if (edition.publication?.targetLocalTime !== "06:00") {
+    issues.push("publication.targetLocalTime must be 06:00.");
+  }
+  if (!isInstant(edition.publication?.generatedAt)) {
+    issues.push("publication.generatedAt must be a valid instant.");
+  }
   if (!isInstant(edition.publication?.publishAt) || localClock(edition.publication.publishAt) !== "06:00") {
     issues.push("Publication must resolve to 06:00 America/New_York.");
+  } else if (localDate(edition.publication.publishAt) !== edition.editionDate) {
+    issues.push("Publication must occur on editionDate in America/New_York.");
+  }
+  if (edition.status === "published") {
+    if (!isInstant(edition.publication?.publishedAt)) {
+      issues.push("A published edition requires a valid publication.publishedAt instant.");
+    }
+  } else if (edition.publication?.publishedAt !== null) {
+    issues.push("An unpublished edition must have publication.publishedAt set to null.");
   }
 
   const storyIds = new Set();
@@ -212,6 +252,55 @@ export function validateCanonicalEdition(edition) {
     issues.push("Edition provenance must reference the v2 editorial pipeline.");
   }
 
+  const automation = edition.provenance?.automation;
+  if (automation !== undefined) {
+    const runId = typeof automation?.runId === "string" ? automation.runId : "";
+    let runUrlMatches = false;
+    try {
+      const runUrl = new URL(automation?.runUrl);
+      const runPath = /^\/[^/]+\/[^/]+\/actions\/runs\/([1-9]\d*)$/.exec(runUrl.pathname);
+      runUrlMatches =
+        runUrl.origin === "https://github.com" &&
+        !runUrl.search &&
+        !runUrl.hash &&
+        runPath?.[1] === runId;
+    } catch {
+      runUrlMatches = false;
+    }
+
+    if (
+      !isObject(automation) ||
+      automation.workflow !== "morning-press" ||
+      !/^[1-9]\d*$/.test(runId) ||
+      !runUrlMatches ||
+      automation.candidate !== true ||
+      !isInstant(automation.generatedAt) ||
+      automation.generatedAt !== edition.publication?.generatedAt ||
+      !Number.isInteger(automation.pilotSequence) ||
+      automation.pilotSequence < 1 ||
+      automation.pilotSequence > 5
+    ) {
+      issues.push("Automatic edition provenance is invalid or incomplete.");
+    }
+
+    const sourceCheck = edition.provenance?.sourceCheck;
+    if (
+      edition.status !== "published" ||
+      edition.publication?.publishedAt !== edition.publication?.publishAt ||
+      !isObject(sourceCheck) ||
+      sourceCheck.status !== "passed" ||
+      !isInstant(sourceCheck.checkedAt) ||
+      !Number.isInteger(sourceCheck.checkedSourceCount) ||
+      sourceCheck.checkedSourceCount < 0 ||
+      !Array.isArray(sourceCheck.issues) ||
+      sourceCheck.issues.length !== 0 ||
+      !Array.isArray(edition.backPage?.watchNext) ||
+      edition.backPage.watchNext.length !== 0
+    ) {
+      issues.push("Automatic editions require a passing source check and an empty Watch Next list.");
+    }
+  }
+
   return { valid: issues.length === 0, issues };
 }
 
@@ -227,6 +316,85 @@ function sourceBadge(relationship) {
 
 function displayStatus(status) {
   return status === "material-update" ? "Material update" : "New development";
+}
+
+function safeReviewText(value, maximumLength) {
+  if (typeof value !== "string") return "";
+  return value.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, maximumLength);
+}
+
+function toReaderReview(provenance) {
+  const automation = provenance?.automation;
+  if (!isObject(automation) || automation.workflow !== "morning-press") return null;
+
+  const runId = safeReviewText(automation.runId, 32);
+  const runUrl = safeReviewText(automation.runUrl, 500);
+  let parsedRunUrl;
+  try {
+    parsedRunUrl = new URL(runUrl);
+  } catch {
+    return null;
+  }
+  const runPath = /^\/[^/]+\/[^/]+\/actions\/runs\/([1-9]\d*)$/.exec(parsedRunUrl.pathname);
+  if (
+    !/^[1-9]\d*$/.test(runId) ||
+    parsedRunUrl.origin !== "https://github.com" ||
+    parsedRunUrl.search ||
+    parsedRunUrl.hash ||
+    runPath?.[1] !== runId ||
+    automation.candidate !== true ||
+    !isInstant(automation.generatedAt) ||
+    !Number.isInteger(automation.pilotSequence) ||
+    automation.pilotSequence < 1 ||
+    automation.pilotSequence > 5
+  ) {
+    return null;
+  }
+
+  const rawSourceCheck = provenance?.sourceCheck;
+  const issuesAreRecorded = Array.isArray(rawSourceCheck?.issues);
+  const rawIssues = issuesAreRecorded ? rawSourceCheck.issues : [];
+  const issues = rawIssues.slice(0, 50).map((issue) => ({
+    code: /^[A-Z0-9_]+$/.test(issue?.code ?? "") ? issue.code : "SOURCE_CHECK_ISSUE",
+    severity: issue?.severity === "warning" ? "warning" : "error",
+    path: safeReviewText(issue?.path, 300),
+    message: safeReviewText(issue?.message, 1_000),
+  }));
+  const checkedAt = isInstant(rawSourceCheck?.checkedAt) ? rawSourceCheck.checkedAt : null;
+  const checkedSourceCountIsValid = Number.isInteger(rawSourceCheck?.checkedSourceCount) &&
+    rawSourceCheck.checkedSourceCount >= 0;
+  const checkedSourceCount = checkedSourceCountIsValid
+    ? rawSourceCheck.checkedSourceCount
+    : 0;
+  const allowedStatus = ["passed", "warnings", "failed", "not-run"].includes(rawSourceCheck?.status)
+    ? rawSourceCheck.status
+    : "not-run";
+  const status = allowedStatus === "passed" && (
+    !isObject(rawSourceCheck) ||
+    checkedAt === null ||
+    !checkedSourceCountIsValid ||
+    !issuesAreRecorded ||
+    issues.length > 0
+  )
+    ? "failed"
+    : allowedStatus;
+
+  return {
+    generation: {
+      workflow: "morning-press",
+      runId,
+      runUrl: parsedRunUrl.href,
+      candidate: true,
+      generatedAt: automation.generatedAt,
+      pilotSequence: automation.pilotSequence,
+    },
+    sourceCheck: {
+      status,
+      checkedAt,
+      checkedSourceCount,
+      issues,
+    },
+  };
 }
 
 function toReaderDesk(desk, page) {
@@ -288,6 +456,7 @@ export function toReaderEdition(edition, validation) {
     id: edition.editionDate,
     issueNumber: edition.issueNumber,
     status: edition.status,
+    review: toReaderReview(edition.provenance),
     displayDate: formatDate(`${edition.editionDate}T12:00:00Z`, { weekday: "long", month: "long", day: "numeric", year: "numeric" }),
     shortDate: formatDate(`${edition.editionDate}T12:00:00Z`, { month: "short", day: "numeric", year: "numeric" }),
     timezone: edition.timezone,
@@ -340,10 +509,13 @@ export function toArchiveManifest(readerEditions) {
   };
 }
 
-export async function loadEditionArtifacts(projectRoot) {
+export async function loadEditionArtifacts(projectRoot, { includeUnpublished = false } = {}) {
   const contentRoot = path.join(projectRoot, "content", "editions");
   const filenames = (await readdir(contentRoot)).filter((filename) => filename.endsWith(".json")).sort();
-  const readerEditions = [];
+  const canonicalEditions = [];
+  const editionDates = new Set();
+  const editionIds = new Set();
+  const issueNumbers = new Set();
 
   for (const filename of filenames) {
     const source = await readFile(path.join(contentRoot, filename), "utf8");
@@ -352,8 +524,42 @@ export async function loadEditionArtifacts(projectRoot) {
     if (!validation.valid) {
       throw new Error(`Invalid canonical edition ${filename}:\n- ${validation.issues.join("\n- ")}`);
     }
-    readerEditions.push(toReaderEdition(canonical, validation));
+    if (filename !== `${canonical.editionDate}.json`) {
+      throw new Error(`Canonical edition filename ${filename} must match editionDate ${canonical.editionDate}.`);
+    }
+    if (editionDates.has(canonical.editionDate)) {
+      throw new Error(`Canonical edition date ${canonical.editionDate} is duplicated.`);
+    }
+    if (editionIds.has(canonical.id)) {
+      throw new Error(`Canonical edition id ${canonical.id} is duplicated.`);
+    }
+    if (issueNumbers.has(canonical.issueNumber)) {
+      throw new Error(`Canonical issue number ${canonical.issueNumber} is duplicated.`);
+    }
+
+    editionDates.add(canonical.editionDate);
+    editionIds.add(canonical.id);
+    issueNumbers.add(canonical.issueNumber);
+    canonicalEditions.push({ canonical, validation, filename });
   }
+
+  canonicalEditions.sort((left, right) => left.canonical.editionDate.localeCompare(right.canonical.editionDate));
+  for (let index = 1; index < canonicalEditions.length; index += 1) {
+    const previous = canonicalEditions[index - 1];
+    const current = canonicalEditions[index];
+    if (
+      Date.parse(current.canonical.reportingWindow.startInclusive) !==
+      Date.parse(previous.canonical.reportingWindow.endExclusive)
+    ) {
+      throw new Error(
+        `Canonical reporting windows are not contiguous: ${current.filename} must start at the ${previous.filename} cutoff.`,
+      );
+    }
+  }
+
+  const readerEditions = canonicalEditions
+    .filter(({ canonical }) => includeUnpublished || canonical.status === "published")
+    .map(({ canonical, validation }) => toReaderEdition(canonical, validation));
 
   const artifacts = new Map();
   for (const edition of readerEditions) {

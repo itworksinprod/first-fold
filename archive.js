@@ -1,5 +1,6 @@
 const archiveList = document.querySelector("[data-archive-list]");
 const archiveCount = document.querySelector("[data-archive-count]");
+const archiveScope = document.querySelector("[data-archive-scope]");
 
 function renderEmpty(message) {
   const empty = document.createElement("p");
@@ -10,11 +11,16 @@ function renderEmpty(message) {
 
 function renderEditions(manifest) {
   archiveList.replaceChildren();
-  archiveCount.textContent = `${manifest.editions.length} ${manifest.editions.length === 1 ? "edition" : "editions"}`;
+  const unpublishedCount = manifest.editions.filter((edition) => edition.status !== "published").length;
+  archiveScope.textContent = unpublishedCount > 0 ? "Local review archive" : "Published issues";
+  archiveCount.textContent = unpublishedCount > 0
+    ? `${manifest.editions.length} editions · ${unpublishedCount} unpublished`
+    : `${manifest.editions.length} ${manifest.editions.length === 1 ? "edition" : "editions"}`;
 
   for (const edition of manifest.editions) {
     const article = document.createElement("article");
     article.className = "archive-card";
+    if (edition.status !== "published") article.classList.add("is-unpublished");
 
     const folio = document.createElement("p");
     folio.className = "archive-folio";
@@ -32,12 +38,12 @@ function renderEditions(manifest) {
 
     const stats = document.createElement("p");
     stats.className = "archive-stats";
-    stats.textContent = `${edition.storyCount} stories · ${edition.quietDeskCount} quiet desk · ${edition.estimatedMinutes} minutes`;
+    stats.textContent = `${edition.storyCount} stories · ${edition.quietDeskCount} ${edition.quietDeskCount === 1 ? "quiet desk" : "quiet desks"} · ${edition.estimatedMinutes} minutes`;
 
     const action = document.createElement("a");
     action.className = "archive-action";
     action.href = link.href;
-    action.textContent = "Unfold this edition →";
+    action.textContent = edition.status === "published" ? "Unfold this edition →" : "Review this draft →";
 
     article.append(folio, heading, summary, stats, action);
     archiveList.append(article);

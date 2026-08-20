@@ -39,9 +39,9 @@
         </span>
       </button>
 
-      <p class="rail-delivery">
+      <p class="rail-delivery" data-rail-delivery>
         <span class="status-dot" aria-hidden="true"></span>
-        On the doorstep · 6:00 AM ET
+        <span data-rail-delivery-copy>Morning delivery · 6:00 AM ET</span>
       </p>
 
       <nav class="rail-tools" aria-label="Edition tools">
@@ -55,6 +55,17 @@
       <aside class="offline-notice" data-offline-notice role="status" hidden>
         <strong data-offline-title>Offline copy.</strong>
         <span data-offline-message>This saved edition may not be today’s paper. Reconnect to check the doorstep.</span>
+      </aside>
+
+      <aside class="new-edition-banner" data-new-edition-banner aria-label="New edition available" hidden>
+        <p data-new-edition-announcement role="status" aria-live="polite" aria-atomic="true">
+          <strong>Today’s paper is ready.</strong>
+          <span data-new-edition-copy></span>
+        </p>
+        <div class="new-edition-actions">
+          <a data-new-edition-link href="./#front">Open today’s paper <span aria-hidden="true">→</span></a>
+          <button type="button" data-dismiss-new-edition aria-label="Dismiss new edition notice">Not now</button>
+        </div>
       </aside>
 
       <section class="edition-unavailable" data-edition-unavailable role="alert" hidden>
@@ -72,7 +83,11 @@
         <button class="install-button" type="button" data-install-app>Install app</button>
       </aside>
 
-      <p class="demo-ribbon">Source-verified demo edition · Human-reviewed · <span data-edition-data-status>Loading edition data</span></p>
+      <p class="demo-ribbon" data-publication-status="loading">
+        <span data-edition-publication-status>Checking edition status</span>
+        <span data-edition-review-summary hidden> · <span data-edition-source-check-status></span></span>
+        · <span data-edition-data-status>Loading edition data</span>
+      </p>
 
       <div class="paper-stack" data-reader>
         <article class="paper-page cover-page is-active" data-page="0" data-page-title="Front Page" tabindex="-1">
@@ -90,7 +105,7 @@
 
             <div class="cover-grid">
               <section class="cover-lead">
-                <p class="section-label">Today’s edition</p>
+                <p class="section-label" data-front-edition-label>Today’s edition</p>
                 <h2 data-front-headline>Three developments. One quiet desk. Your morning, finished.</h2>
                 <p class="cover-standfirst" data-front-standfirst>
                   One consequential development from each desk—when the evidence clears the bar.
@@ -102,12 +117,12 @@
               </section>
 
               <aside class="cover-note" aria-label="Editor’s note">
-                <span class="drop-cap" aria-hidden="true">3</span>
+                <span class="drop-cap" data-front-story-count aria-hidden="true"></span>
                 <p data-front-editor-note><strong>stories made the paper.</strong> Platforms &amp; Power stayed blank. That is the product working—not a missing result.</p>
                 <p class="byline">— The editor</p>
               </aside>
 
-              <section class="front-story front-story-lead">
+              <section class="front-story">
                 <button type="button" data-go-page="1" data-cover-desk="ai" aria-label="Turn to AI &amp; Models, page 2">
                   <span class="story-folio">AI &amp; Models · Page 2</span>
                   <strong>OpenAI rewrites its safety rules as Astra tests the old ones</strong>
@@ -378,6 +393,19 @@
                 <button class="ink-button" type="button" data-go-page="0">
                   Fold back to the front <span aria-hidden="true">↺</span>
                 </button>
+                <div class="back-actions" aria-label="Edition actions">
+                  <button class="ink-button" type="button" data-share-edition disabled>
+                    Share this edition <span aria-hidden="true">↗</span>
+                  </button>
+                  <a
+                    class="ink-button back-action-secondary"
+                    data-send-feedback
+                    href="https://github.com/itworksinprod/first-fold/issues/new?title=Reader%20feedback&amp;body=What%20worked%3A%0A%0AWhat%20could%20be%20better%3A%0A"
+                    target="_blank"
+                    rel="noreferrer noopener"
+                  >Send feedback <span aria-hidden="true">↗</span><span class="sr-only">, opens in a new tab</span></a>
+                  <p class="share-status" data-share-status role="status" aria-live="polite" aria-atomic="true"></p>
+                </div>
               </section>
 
               <aside class="tomorrow-box">
@@ -390,7 +418,7 @@
                 <div class="watch-next-heading">
                   <p class="section-label">Back-page watchlist</p>
                   <h3 id="watch-next-title">Watch next</h3>
-                  <p>Signals worth following, but not yet strong enough to take a desk.</p>
+                  <p>The signals that could materially change these stories next.</p>
                 </div>
                 <ol class="watch-next-list" data-watch-next>
                   <li>
@@ -408,9 +436,9 @@
 
               <section class="delivery-card">
                 <div class="sunrise-mark" aria-hidden="true"></div>
-                <p>Tomorrow’s First Fold lands at</p>
+                <p>Next First Fold lands at</p>
                 <strong>6:00 AM</strong>
-                <span>America/New_York · every day</span>
+                <span>America/New_York · weekdays during the pilot</span>
               </section>
 
               <section class="principles-card">
@@ -425,7 +453,7 @@
             </div>
 
             <footer class="paper-footer">
-              <span data-back-issue>Issue 001 · Demo edition</span>
+              <span data-back-issue>Issue 001 · Publication status loading</span>
               <span class="footer-links"><a href="archive/">Browse the archive</a><button type="button" data-open-dialog="method-dialog">Read the method</button></span>
             </footer>
           </div>
@@ -517,7 +545,7 @@
         <li><span>06:00</span><div><strong>Publish</strong><p>Release one immutable edition. Weak desks stay quiet; urgent security can trigger a labeled bulletin.</p></div></li>
       </ol>
       <div class="method-principles">
-        <p><strong>For this demo:</strong> research and drafting were AI-assisted; a human reviewed the edition. The production pipeline is represented in code but not connected to live paid feeds.</p>
+        <p data-method-status><strong>For this edition:</strong> Checking publication status…</p>
         <p><a href="editor/">Open the editor review prototype →</a></p>
       </div>
     </dialog>
