@@ -39,6 +39,10 @@ test("the morning edition renders the product promise", async () => {
   assert.match(html, /Security &amp; Privacy/);
   assert.match(html, /Platforms &amp; Power/);
   assert.match(html, /Watch next/i);
+  assert.match(html, /rel="manifest" href="manifest\.webmanifest"/);
+  assert.match(html, /data-install-app/);
+  assert.match(html, /data-offline-notice/);
+  assert.match(html, /Add it to your Home Screen/);
 });
 
 test("the hosted response converts social metadata to an absolute URL", async () => {
@@ -97,6 +101,69 @@ test("the archive, editor, and generated edition routes are shipped", async (con
   }
 });
 
+test("the installable app assets are complete and project-path safe", async (context) => {
+  const manifestResponse = await worker.fetch(
+    new Request("https://first-fold.example/manifest.webmanifest"),
+  );
+  assert.equal(manifestResponse.status, 200);
+  assert.match(
+    manifestResponse.headers.get("content-type") ?? "",
+    /^application\/manifest\+json/,
+  );
+  assert.equal(manifestResponse.headers.get("cache-control"), "no-cache");
+  const manifest = await manifestResponse.json();
+  assert.equal(manifest.id, "./");
+  assert.equal(manifest.start_url, "./#front");
+  assert.equal(manifest.scope, "./");
+  assert.equal(manifest.display, "standalone");
+  assert.equal(manifest.icons.length, 3);
+  assert.ok(manifest.icons.every(({ src }) => !src.startsWith("/")));
+  assert.ok(manifest.shortcuts.every(({ url }) => !url.startsWith("/")));
+  const projectBase = new URL("https://itworksinprod.github.io/first-fold/");
+  for (const relativeUrl of [
+    manifest.start_url,
+    manifest.scope,
+    ...manifest.icons.map(({ src }) => src),
+    ...manifest.shortcuts.map(({ url }) => url),
+  ]) {
+    assert.match(new URL(relativeUrl, projectBase).pathname, /^\/first-fold\//);
+  }
+
+  const serviceWorkerResponse = await worker.fetch(
+    new Request("https://first-fold.example/service-worker.js"),
+  );
+  assert.equal(serviceWorkerResponse.status, 200);
+  assert.match(serviceWorkerResponse.headers.get("content-type") ?? "", /^text\/javascript/);
+  assert.equal(serviceWorkerResponse.headers.get("cache-control"), "no-cache");
+  const serviceWorker = await serviceWorkerResponse.text();
+  assert.doesNotMatch(serviceWorker, /__FIRST_FOLD_BUILD_VERSION__/);
+  assert.match(serviceWorker, /networkFirstEdition/);
+  assert.match(serviceWorker, /x-first-fold-cached-at/);
+  assert.match(serviceWorker, /x-first-fold-source/);
+  assert.match(serviceWorker, /ignoreSearch: true/);
+  assert.match(serviceWorker, /Navigation unavailable offline/);
+  assert.doesNotMatch(serviceWorker, /relativePath\.startsWith\("archive"\)/);
+  assert.doesNotMatch(serviceWorker, /skipWaiting/);
+  assert.doesNotMatch(serviceWorker, /\.\/editor\//);
+
+  for (const [pathname, expectedSize] of [
+    ["/icons/icon-192.png", 192],
+    ["/icons/icon-512.png", 512],
+    ["/icons/icon-maskable-512.png", 512],
+    ["/icons/apple-touch-icon.png", 180],
+  ]) {
+    await context.test(pathname, async () => {
+      const response = await worker.fetch(new Request(`https://first-fold.example${pathname}`));
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get("content-type"), "image/png");
+      const png = Buffer.from(await response.arrayBuffer());
+      assert.equal(png.subarray(1, 4).toString("ascii"), "PNG");
+      assert.equal(png.readUInt32BE(16), expectedSize);
+      assert.equal(png.readUInt32BE(20), expectedSize);
+    });
+  }
+});
+
 test("the interaction layer includes finite navigation and accessible announcements", async () => {
   const script = await readFile(new URL("../app.js", import.meta.url), "utf8");
   assert.match(script, /ArrowLeft/);
@@ -108,6 +175,12 @@ test("the interaction layer includes finite navigation and accessible announceme
   assert.match(script, /cybersecurity: "security-and-privacy"/);
   assert.match(script, /technology: "platforms-and-power"/);
   assert.match(script, /renderWatchNext\(data\.backPage\.watchNext\)/);
+  assert.match(script, /beforeinstallprompt/);
+  assert.match(script, /navigator\.serviceWorker\.register\("\.\/service-worker\.js"/);
+  assert.match(script, /updateViaCache: "none"/);
+  assert.match(script, /x-first-fold-cached-at/);
+  assert.match(script, /No different issue has been substituted/);
+  assert.match(script, /setEditionAvailable\(\s*false/);
 });
 
 test("static pages keep asset and data URLs safe for a GitHub project path", async () => {
@@ -121,11 +194,13 @@ test("static pages keep asset and data URLs safe for a GitHub project path", asy
     readFile(new URL("../.github/workflows/pages.yml", import.meta.url), "utf8"),
   ]);
 
-  assert.match(readerHtml, /href="styles\.css\?v=2"/);
-  assert.match(archiveHtml, /href="\.\.\/styles\.css\?v=2"/);
-  assert.match(editorHtml, /href="\.\.\/styles\.css\?v=2"/);
+  assert.match(readerHtml, /href="styles\.css\?v=3"/);
+  assert.match(archiveHtml, /href="\.\.\/styles\.css\?v=3"/);
+  assert.match(editorHtml, /href="\.\.\/styles\.css\?v=3"/);
   assert.doesNotMatch(`${readerHtml}${archiveHtml}${editorHtml}`, /(?:href|src)="\//);
+  assert.match(readerHtml, /href="manifest\.webmanifest"/);
   assert.match(readerScript, /fetch\(`editions\/\$\{editionId\}\.json\?v=2`/);
+  assert.match(readerScript, /fetch\("editions\/index\.json\?v=2"/);
   assert.match(archiveScript, /fetch\("\.\.\/editions\/index\.json\?v=2"/);
   assert.match(editorScript, /fetch\("\.\.\/editions\/index\.json\?v=2"/);
   assert.match(workflow, /actions\/upload-pages-artifact@v5/);

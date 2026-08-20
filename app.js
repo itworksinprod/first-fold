@@ -8,6 +8,18 @@ const reader = document.querySelector("[data-reader]");
 const sourcesDialog = document.querySelector("#sources-dialog");
 const sourcesIntro = document.querySelector("[data-sources-intro]");
 const sourcesList = document.querySelector("[data-sources-list]");
+const offlineNotice = document.querySelector("[data-offline-notice]");
+const offlineTitle = document.querySelector("[data-offline-title]");
+const offlineMessage = document.querySelector("[data-offline-message]");
+const unavailablePanel = document.querySelector("[data-edition-unavailable]");
+const unavailableMessage = document.querySelector("[data-unavailable-message]");
+const installBanner = document.querySelector("[data-install-banner]");
+const installButton = document.querySelector("[data-install-app]");
+const installCopy = document.querySelector("[data-install-copy]");
+const installDialog = document.querySelector("#install-dialog");
+const editionControls = document.querySelector(".edition-controls");
+const keyboardHint = document.querySelector(".keyboard-hint");
+const demoRibbon = document.querySelector(".demo-ribbon");
 
 const fallbackSourceSets = {
   ai: {
@@ -83,6 +95,10 @@ let dialogOpener = null;
 let pointerStart = null;
 let pageStateInitialized = false;
 let turnTimer = null;
+let deferredInstallPrompt = null;
+let editionLoadState = "loading";
+let cachedEditionAt = null;
+let unavailableEditionId = null;
 
 function setText(selector, value, root = document) {
   const element = root.querySelector(selector);
@@ -91,7 +107,66 @@ function setText(selector, value, root = document) {
 
 function requestedEditionId() {
   const value = new URLSearchParams(window.location.search).get("edition");
-  return value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : "2026-08-19";
+  return value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
+}
+
+function cachedAtLabel(value) {
+  if (!value || Number.isNaN(Date.parse(value))) return "at an unknown time";
+  return `at ${new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value))}`;
+}
+
+function updateOfflineNotice() {
+  const disconnected = navigator.onLine === false;
+  const shouldShow = disconnected || editionLoadState === "cached" || editionLoadState === "fallback";
+  offlineNotice.hidden = !shouldShow;
+  if (!shouldShow) return;
+
+  if (editionLoadState === "fallback") {
+    offlineTitle.textContent = "Edition unavailable.";
+    const requestedCopy = unavailableEditionId
+      ? `The requested ${unavailableEditionId} edition could not be verified.`
+      : "The latest edition could not be checked.";
+    offlineMessage.textContent = `${requestedCopy} No different issue has been substituted.`;
+    return;
+  }
+
+  offlineTitle.textContent = "Offline copy.";
+  if (editionLoadState === "cached") {
+    const editionLabel = editionData?.displayDate ?? editionData?.id ?? "this edition";
+    offlineMessage.textContent = `Showing ${editionLabel}, saved ${cachedAtLabel(cachedEditionAt)}. Reconnect before treating it as today’s paper.`;
+    return;
+  }
+
+  const editionLabel = editionData?.displayDate ?? "the loaded edition";
+  offlineMessage.textContent = `Showing ${editionLabel}. Reconnect to check whether a newer paper is on the doorstep.`;
+}
+
+function setEditionAvailable(available, message = "") {
+  reader.hidden = !available;
+  editionControls.hidden = !available;
+  keyboardHint.hidden = !available;
+  demoRibbon.hidden = !available;
+  unavailablePanel.hidden = available;
+  if (!available) unavailableMessage.textContent = message;
+}
+
+async function latestEditionId() {
+  const response = await fetch("editions/index.json?v=2", {
+    headers: { accept: "application/json" },
+  });
+  if (!response.ok) throw new Error("Edition index not found");
+  const manifest = await response.json();
+  if (!manifest || !/^\d{4}-\d{2}-\d{2}$/.test(manifest.latest)) {
+    throw new Error("Edition index failed validation");
+  }
+  return {
+    id: manifest.latest,
+    source: response.headers.get("x-first-fold-source"),
+    cachedAt: response.headers.get("x-first-fold-cached-at"),
+  };
 }
 
 function validateEditionData(data) {
@@ -221,17 +296,126 @@ function hydrateEdition(data) {
 }
 
 async function loadEditionData() {
-  const editionId = requestedEditionId();
+  const explicitEditionId = requestedEditionId();
+  let editionId = explicitEditionId;
+  let indexMetadata = null;
+  unavailableEditionId = null;
+
   try {
+    if (!editionId) {
+      indexMetadata = await latestEditionId();
+      editionId = indexMetadata.id;
+    }
     const response = await fetch(`editions/${editionId}.json?v=2`, { headers: { accept: "application/json" } });
     if (!response.ok) throw new Error("Edition not found");
     const data = await response.json();
     if (!validateEditionData(data)) throw new Error("Edition data failed validation");
     hydrateEdition(data);
+    setEditionAvailable(true);
+
+    const responseSource = response.headers.get("x-first-fold-source");
+    editionLoadState = responseSource === "offline-cache" || indexMetadata?.source === "offline-cache"
+      ? "cached"
+      : "live";
+    cachedEditionAt =
+      response.headers.get("x-first-fold-cached-at") ?? indexMetadata?.cachedAt ?? null;
+    if (editionLoadState === "cached") {
+      setText(
+        "[data-edition-data-status]",
+        `Offline copy · Issue ${String(data.issueNumber).padStart(3, "0")}`,
+      );
+    }
   } catch {
-    setText("[data-edition-data-status]", "Fixture fallback");
+    editionLoadState = "fallback";
+    cachedEditionAt = null;
+    unavailableEditionId = explicitEditionId;
+    setEditionAvailable(
+      false,
+      explicitEditionId
+        ? `The ${explicitEditionId} edition is not saved here. Reconnect to check the archive, or return to the latest available paper.`
+        : "The latest edition is not saved here. Reconnect once to put today’s paper on this device.",
+    );
+    setText("[data-edition-data-status]", "Edition unavailable");
+  }
+  updateOfflineNotice();
+}
+
+function isAppleMobileBrowser() {
+  const appleUserAgent = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const modernIPad = navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
+  return appleUserAgent || modernIPad;
+}
+
+function isStandaloneApp() {
+  return window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+}
+
+function updateInstallBanner() {
+  if (isStandaloneApp()) {
+    installBanner.hidden = true;
+    return;
+  }
+
+  const canPrompt = Boolean(deferredInstallPrompt);
+  const needsAppleInstructions = isAppleMobileBrowser();
+  installBanner.hidden = !canPrompt && !needsAppleInstructions;
+  if (needsAppleInstructions && !canPrompt) {
+    installButton.textContent = "How to install";
+    installCopy.textContent = "Add First Fold from Safari’s Share menu.";
+  } else {
+    installButton.textContent = "Install app";
+    installCopy.textContent = "First Fold can open in its own app window.";
   }
 }
+
+window.addEventListener("beforeinstallprompt", (event) => {
+  event.preventDefault();
+  deferredInstallPrompt = event;
+  updateInstallBanner();
+});
+
+window.addEventListener("appinstalled", () => {
+  deferredInstallPrompt = null;
+  installBanner.hidden = true;
+});
+
+installButton.addEventListener("click", async () => {
+  if (deferredInstallPrompt) {
+    const promptEvent = deferredInstallPrompt;
+    deferredInstallPrompt = null;
+    await promptEvent.prompt();
+    await promptEvent.userChoice;
+    installBanner.hidden = true;
+    return;
+  }
+
+  if (isAppleMobileBrowser()) openDialog(installDialog, installButton);
+});
+
+window.addEventListener("offline", updateOfflineNotice);
+window.addEventListener("online", () => {
+  if (editionLoadState === "cached" || editionLoadState === "fallback") {
+    loadEditionData();
+  } else {
+    updateOfflineNotice();
+  }
+});
+
+if ("serviceWorker" in navigator && window.isSecureContext) {
+  window.addEventListener("load", async () => {
+    try {
+      const registration = await navigator.serviceWorker.register("./service-worker.js", {
+        scope: "./",
+        updateViaCache: "none",
+      });
+      await registration.update();
+    } catch {
+      // The reader still works online when service workers are unavailable.
+    }
+  });
+}
+
+updateInstallBanner();
 
 function pageLabel(index) {
   return `Page ${index + 1} of ${pages.length}: ${pages[index].dataset.pageTitle}.`;

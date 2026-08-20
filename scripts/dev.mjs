@@ -13,6 +13,8 @@ const publicFiles = new Map([
   ["/index.html", "index.html"],
   ["/styles.css", "styles.css"],
   ["/app.js", "app.js"],
+  ["/manifest.webmanifest", "manifest.webmanifest"],
+  ["/service-worker.js", "service-worker.js"],
   ["/archive", "archive/index.html"],
   ["/archive/", "archive/index.html"],
   ["/archive/index.html", "archive/index.html"],
@@ -22,15 +24,20 @@ const publicFiles = new Map([
   ["/editor/index.html", "editor/index.html"],
   ["/editor.js", "editor.js"],
   ["/og.png", "public/og.png"],
+  ["/icons/icon-192.png", "public/icons/icon-192.png"],
+  ["/icons/icon-512.png", "public/icons/icon-512.png"],
+  ["/icons/icon-maskable-512.png", "public/icons/icon-maskable-512.png"],
+  ["/icons/apple-touch-icon.png", "public/icons/apple-touch-icon.png"],
 ]);
 const contentTypes = new Map([
   [".html", "text/html; charset=utf-8"],
   [".css", "text/css; charset=utf-8"],
   [".js", "text/javascript; charset=utf-8"],
+  [".webmanifest", "application/manifest+json; charset=utf-8"],
   [".png", "image/png"],
 ]);
 const securityHeaders = {
-  "content-security-policy": "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'",
+  "content-security-policy": "default-src 'self'; connect-src 'self'; img-src 'self' data:; manifest-src 'self'; style-src 'self'; script-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'",
   "permissions-policy": "camera=(), microphone=(), geolocation=()",
   "referrer-policy": "strict-origin-when-cross-origin",
   "x-content-type-options": "nosniff",

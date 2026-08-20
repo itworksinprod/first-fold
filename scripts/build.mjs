@@ -1,4 +1,5 @@
-import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { loadEditionArtifacts } from "./edition-content.mjs";
@@ -12,12 +13,31 @@ const sourceFiles = [
   ["index.html", "text/html; charset=utf-8", "/index.html"],
   ["styles.css", "text/css; charset=utf-8", "/styles.css"],
   ["app.js", "text/javascript; charset=utf-8", "/app.js"],
+  ["manifest.webmanifest", "application/manifest+json; charset=utf-8", "/manifest.webmanifest"],
+  ["service-worker.js", "text/javascript; charset=utf-8", "/service-worker.js"],
   ["archive/index.html", "text/html; charset=utf-8", "/archive/index.html"],
   ["archive.js", "text/javascript; charset=utf-8", "/archive.js"],
   ["editor/index.html", "text/html; charset=utf-8", "/editor/index.html"],
   ["editor.js", "text/javascript; charset=utf-8", "/editor.js"],
   ["public/og.png", "image/png", "/og.png"],
+  ["public/icons/icon-192.png", "image/png", "/icons/icon-192.png"],
+  ["public/icons/icon-512.png", "image/png", "/icons/icon-512.png"],
+  ["public/icons/icon-maskable-512.png", "image/png", "/icons/icon-maskable-512.png"],
+  ["public/icons/apple-touch-icon.png", "image/png", "/icons/apple-touch-icon.png"],
 ];
+
+const editionArtifacts = await loadEditionArtifacts(projectRoot);
+const versionHash = createHash("sha256");
+for (const [relativePath] of sourceFiles) {
+  if (relativePath === "service-worker.js") continue;
+  versionHash.update(relativePath);
+  versionHash.update(await readFile(path.join(projectRoot, relativePath)));
+}
+for (const [publicPath, source] of [...editionArtifacts].sort(([left], [right]) => left.localeCompare(right))) {
+  versionHash.update(publicPath);
+  versionHash.update(source);
+}
+const buildVersion = versionHash.digest("hex").slice(0, 12);
 
 await rm(outputRoot, { recursive: true, force: true });
 await mkdir(clientRoot, { recursive: true });
@@ -30,16 +50,19 @@ for (const [relativePath, contentType, publicPath] of sourceFiles) {
   const source = path.join(projectRoot, relativePath);
   const destination = path.join(clientRoot, publicPath.slice(1));
   await mkdir(path.dirname(destination), { recursive: true });
-  await copyFile(source, destination);
-
-  const data = await readFile(source);
+  let data = await readFile(source);
+  if (relativePath === "service-worker.js") {
+    data = Buffer.from(
+      data.toString("utf8").replaceAll("__FIRST_FOLD_BUILD_VERSION__", buildVersion),
+    );
+  }
+  await writeFile(destination, data);
   routeTable[publicPath] = {
     contentType,
     base64: data.toString("base64"),
   };
 }
 
-const editionArtifacts = await loadEditionArtifacts(projectRoot);
 for (const [publicPath, source] of editionArtifacts) {
   const destination = path.join(clientRoot, publicPath.slice(1));
   await mkdir(path.dirname(destination), { recursive: true });
@@ -53,7 +76,7 @@ for (const [publicPath, source] of editionArtifacts) {
 const workerSource = `
 const files = ${JSON.stringify(routeTable)};
 const securityHeaders = {
-  "content-security-policy": "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'",
+  "content-security-policy": "default-src 'self'; connect-src 'self'; img-src 'self' data:; manifest-src 'self'; style-src 'self'; script-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'",
   "permissions-policy": "camera=(), microphone=(), geolocation=()",
   "referrer-policy": "strict-origin-when-cross-origin",
   "x-content-type-options": "nosniff",
@@ -96,7 +119,11 @@ export default {
 
     const headers = new Headers(securityHeaders);
     headers.set("content-type", file.contentType);
-    const isMutableIndex = publicPath.endsWith(".html") || publicPath === "/editions/index.json";
+    const isMutableIndex =
+      publicPath.endsWith(".html") ||
+      publicPath === "/editions/index.json" ||
+      publicPath === "/manifest.webmanifest" ||
+      publicPath === "/service-worker.js";
     headers.set("cache-control", isMutableIndex ? "no-cache" : "public, max-age=86400");
     return new Response(request.method === "HEAD" ? null : body, { status: 200, headers });
   },

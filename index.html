@@ -4,6 +4,10 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#ede4cf" />
+    <meta name="application-name" content="First Fold" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <meta name="apple-mobile-web-app-title" content="First Fold" />
     <meta
       name="description"
       content="First Fold is a finite morning technology newspaper: at most one consequential story per desk, delivered at 6:00 AM Eastern."
@@ -17,8 +21,11 @@
     <meta property="og:image" content="og.png" />
     <meta name="twitter:card" content="summary_large_image" />
     <title>First Fold — Morning Edition</title>
-    <link rel="stylesheet" href="styles.css?v=2" />
-    <script src="app.js?v=2" defer></script>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png" />
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+    <link rel="stylesheet" href="styles.css?v=3" />
+    <script src="app.js?v=3" defer></script>
   </head>
   <body>
     <a class="skip-link" href="#active-page">Skip to the paper</a>
@@ -45,6 +52,26 @@
     </header>
 
     <main class="reader" id="active-page">
+      <aside class="offline-notice" data-offline-notice role="status" hidden>
+        <strong data-offline-title>Offline copy.</strong>
+        <span data-offline-message>This saved edition may not be today’s paper. Reconnect to check the doorstep.</span>
+      </aside>
+
+      <section class="edition-unavailable" data-edition-unavailable role="alert" hidden>
+        <p class="section-label">Edition unavailable</p>
+        <h2>That paper isn’t on this device.</h2>
+        <p data-unavailable-message>Reconnect to check the archive for this edition.</p>
+        <a class="ink-button" href="./">Return to the latest paper <span aria-hidden="true">→</span></a>
+      </section>
+
+      <aside class="install-banner" data-install-banner aria-label="Install First Fold" hidden>
+        <div>
+          <strong>Put the paper on your home screen.</strong>
+          <span data-install-copy>First Fold can open in its own app window.</span>
+        </div>
+        <button class="install-button" type="button" data-install-app>Install app</button>
+      </aside>
+
       <p class="demo-ribbon">Source-verified demo edition · Human-reviewed · <span data-edition-data-status>Loading edition data</span></p>
 
       <div class="paper-stack" data-reader>
@@ -506,6 +533,23 @@
       <p class="dialog-intro" data-sources-intro></p>
       <div class="source-list" data-sources-list></div>
       <p class="source-footer">Story last checked August 19 at 5:47 AM ET. Links open the original reporting or primary material.</p>
+    </dialog>
+
+    <dialog class="paper-dialog install-dialog" id="install-dialog" aria-labelledby="install-title">
+      <div class="dialog-header">
+        <div>
+          <p class="section-label">Keep First Fold close</p>
+          <h2 id="install-title">Add it to your Home Screen</h2>
+        </div>
+        <button class="dialog-close" type="button" data-close-dialog aria-label="Close install instructions">×</button>
+      </div>
+      <p class="dialog-intro">On iPhone or iPad, install First Fold from Safari:</p>
+      <ol class="install-steps">
+        <li><span>1</span><p>Tap the <strong>Share</strong> button in Safari.</p></li>
+        <li><span>2</span><p>Scroll down and choose <strong>Add to Home Screen</strong>.</p></li>
+        <li><span>3</span><p>Tap <strong>Add</strong>. The morning paper will open like an app.</p></li>
+      </ol>
+      <p class="install-footnote">The reading shell works offline. First Fold still reconnects to check for the newest edition, and clearly labels any saved copy.</p>
     </dialog>
   </body>
 </html>

@@ -89,6 +89,18 @@ No environment variables or paid services are needed. The demo reads the canonic
 
 For a fresh GitHub checkout, `npm ci` reproduces the lockfile exactly. Use `npm install` only when intentionally changing dependencies, and commit the resulting lockfile change. Generated output, local dependencies, logs, and environment files are ignored.
 
+## Install the free app
+
+First Fold is a Progressive Web App (PWA), so the same free GitHub Pages deployment can be installed without maintaining separate iOS, Android, macOS, or Windows projects.
+
+- On supported Android and desktop browsers, use the **Install app** prompt above the paper.
+- On iPhone or iPad, open First Fold in Safari, tap **Share**, choose **Add to Home Screen**, and tap **Add**. The site also shows these steps when viewed on iOS.
+- Once installed, First Fold opens in its own app window and keeps the reader shell plus the last verified edition available offline.
+
+Edition data is always requested from the network first. If the connection fails, a saved edition may be shown only with a prominent **Offline copy** label, its edition date, and when it was cached. An unavailable requested date never silently presents the bundled demo as that date, and reconnecting makes the reader check the latest archive manifest again.
+
+The manifest, service worker, and icon URLs are relative, so installation works both at a domain root and at a GitHub Pages project path such as `username.github.io/first-fold/`. Each production build injects a content-derived cache version into the service worker; old First Fold caches are removed only after the replacement worker activates.
+
 ### Routes
 
 | Route | Availability | Purpose |
@@ -98,6 +110,8 @@ For a fresh GitHub checkout, `npm ci` reproduces the lockfile exactly. Use `npm 
 | `/archive/` | Local and hosted | Lists every validated edition from the generated archive manifest. |
 | `/editions/2026-08-19.json` | Generated artifact | Reader-safe projection used by the newspaper, source dialog, and press-desk prototype. |
 | `/editions/index.json` | Generated artifact | Archive manifest derived from all validated reader projections. |
+| `/manifest.webmanifest` | Local and hosted | Install metadata for the standalone First Fold app. |
+| `/service-worker.js` | Local and hosted | Versioned offline shell and network-first edition caching. |
 | `/editor/` | Demo only | Prototype press desk for reviewing desk decisions, validation state, and the 6:00 AM pipeline. |
 
 The press desk is intentionally not a production administration system. Its approve/reset control writes only to `localStorage` in the current browser; it cannot change the canonical edition, publish content, or affect another reader.
@@ -229,6 +243,8 @@ Included:
 - A dated edition archive
 - A local-only press-desk review prototype with device-local approval state
 - Responsive and reduced-motion behavior
+- Free home-screen installation on supported mobile and desktop browsers
+- A versioned offline reading shell with explicitly labeled saved-edition fallback
 - Deterministic tests against fixture content
 
 Deliberately deferred:
