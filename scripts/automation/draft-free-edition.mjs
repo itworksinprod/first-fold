@@ -23,6 +23,8 @@ export const FREE_AUTOMATION_WORKFLOW = "free-morning-press";
 export const MAX_FREE_MODEL_CANDIDATES = 24;
 export const FREE_RUN_MODES = Object.freeze(["on_time", "same_day_backfill"]);
 
+const FREE_COPY_OVERLAP_WORDS = 12;
+
 const localDateFormatter = new Intl.DateTimeFormat("en-CA", {
   timeZone: "America/New_York",
   calendar: "gregory",
@@ -558,6 +560,14 @@ fixed and must not be changed; source claims are limited to normalized feed
 titles and summaries; and no semantic page verification may be claimed.
 </free-lane-execution-constraints>
 
+Write every model-authored prose field in original wording. Candidate title,
+verifiedFacts, and sources[].title strings are notes to synthesize, not copy.
+Outside the required verbatim sources metadata, no story prose field, including
+each evidence[].statement, may repeat ${FREE_COPY_OVERLAP_WORDS} or more contiguous words from any of
+those dossier strings, even when capitalization or punctuation changes. Before
+returning JSON, compare each story with its matched dossier and restructure any
+overlapping sentence while preserving only supported meaning.
+
 Return only the model-authored editorial payload accepted by the supplied JSON
 schema: frontPage, exactly four desks, and backPage.tryThisTomorrow. Trusted
 local code composes identity, schedule, status, corrections, empty Watch Next,
@@ -595,6 +605,19 @@ export function buildFreeWorkersAiMessages({ policyText, promptText, scaffold, p
         `and return JSON only.\n\nRUN_CONTEXT:\n${JSON.stringify(runContext)}`,
     },
   ];
+}
+
+function buildFreeWorkersAiCopyRetryMessages(messages) {
+  const retryMessages = structuredClone(messages);
+  retryMessages[0].content += `\n\n<free-copy-retry>\n` +
+    `CORRECTIVE RETRY: Trusted local originality validation rejected the prior result. Produce one complete ` +
+    `replacement editorial payload from the same RUN_CONTEXT. Rewrite every model-authored prose field from ` +
+    `scratch, including evidence[].statement, while preserving only supported meaning and the dossier's exact ` +
+    `non-prose identifiers and source metadata. After ignoring capitalization and punctuation, no story prose ` +
+    `may repeat ${FREE_COPY_OVERLAP_WORDS} or more contiguous words from a candidate title, verifiedFacts entry, ` +
+    `or sources[].title. Return JSON only.\n` +
+    `</free-copy-retry>`;
+  return retryMessages;
 }
 
 function equalSourceMetadata(left, right) {
@@ -640,7 +663,20 @@ function modelStoryPassages(story) {
   ].filter((value) => typeof value === "string" && value.trim());
 }
 
-export function assertOriginalFreeStoryCopy(story, candidate, overlapWords = 12) {
+class FreeStoryCopyOverlapError extends Error {
+  constructor(overlapWords) {
+    super(
+      `Workers AI story prose repeats ${overlapWords} or more contiguous words from untrusted feed text.`,
+    );
+    this.name = "FreeStoryCopyOverlapError";
+  }
+}
+
+export function assertOriginalFreeStoryCopy(
+  story,
+  candidate,
+  overlapWords = FREE_COPY_OVERLAP_WORDS,
+) {
   if (!Number.isInteger(overlapWords) || overlapWords < 8 || overlapWords > 30) {
     throw new Error("Free copy overlapWords must be an integer from 8 through 30.");
   }
@@ -654,9 +690,7 @@ export function assertOriginalFreeStoryCopy(story, candidate, overlapWords = 12)
     const copied = [...contiguousPhrases(passage, overlapWords)]
       .find((phrase) => evidencePhrases.has(phrase));
     if (copied) {
-      throw new Error(
-        `Workers AI story ${story.id} repeats ${overlapWords} or more contiguous words from untrusted feed text.`,
-      );
+      throw new FreeStoryCopyOverlapError(overlapWords);
     }
   }
   return true;
@@ -680,6 +714,7 @@ export function normalizeFreeEditorialAgainstCandidates(payload, candidates, gen
     candidateByEventKey.set(candidate.canonicalEventKey, candidate);
   }
   const usedEventKeys = new Set();
+  let copyOverlapError = null;
   const desks = {};
   for (const desk of FREE_DESKS) {
     const page = payload.desks[desk];
@@ -699,8 +734,6 @@ export function normalizeFreeEditorialAgainstCandidates(payload, candidates, gen
     if (candidate.suggestedDesk !== desk || story.desk !== desk) {
       throw new Error(`Workers AI filed free event ${candidate.canonicalEventKey} under the wrong desk.`);
     }
-    assertOriginalFreeStoryCopy(story, candidate);
-
     const candidateSources = new Map();
     for (const source of candidate.sources) {
       if (candidateSources.has(source.id)) {
@@ -793,9 +826,16 @@ export function normalizeFreeEditorialAgainstCandidates(payload, candidates, gen
     if (expectedStatus === "material-update" && !story.selection.materialDelta?.trim()) {
       throw new Error(`Workers AI story ${story.id} omitted the material delta for its matched dossier.`);
     }
+    try {
+      assertOriginalFreeStoryCopy(story, candidate);
+    } catch (error) {
+      if (!(error instanceof FreeStoryCopyOverlapError)) throw error;
+      copyOverlapError ??= error;
+    }
     if (story.securityAction === null) delete story.securityAction;
     desks[desk] = { desk, story };
   }
+  if (copyOverlapError) throw copyOverlapError;
   return {
     frontPage: structuredClone(payload.frontPage),
     desks,
@@ -951,7 +991,6 @@ export async function draftFreeEdition({
   sourceLookupImpl,
   sourceCheckTimeoutMs = 5_000,
   timeoutMs,
-  maxAttempts,
   maxRequestBytes,
   maxResponseBytes,
   sleepImpl,
@@ -1023,36 +1062,62 @@ export async function draftFreeEdition({
       priorEditions: archiveEditions,
       candidates,
     });
-    const aiResult = await aiRequestImpl({
-      accountId,
-      apiToken,
-      model: modelId,
-      messages,
-      schema: EDITORIAL_OUTPUT_SCHEMA,
-      validatePayload: validateFreeEditorialPayload,
-      fetchImpl,
-      timeoutMs,
-      maxAttempts,
-      maxRequestBytes,
-      maxResponseBytes,
-      sleepImpl,
-    });
-    if (
-      !isObject(aiResult) ||
-      aiResult.provider !== WORKERS_AI_PROVIDER ||
-      aiResult.model !== modelId
-    ) {
-      throw new Error("Workers AI returned invalid provider or model provenance.");
-    }
-    editorial = normalizeFreeEditorialAgainstCandidates(aiResult.editorialPayload, candidates, generatedAt);
-    inference = {
-      provider: aiResult.provider,
-      model: aiResult.model,
-      responseId: requireNonBlank(aiResult.responseId, "Workers AI response id"),
-      requestSha256: requireSha256(aiResult.requestSha256, "Workers AI requestSha256"),
-      responseSha256: requireSha256(aiResult.responseSha256, "Workers AI responseSha256"),
-      kind: "workers-ai",
+    const requestInference = async (requestMessages) => {
+      const result = await aiRequestImpl({
+        accountId,
+        apiToken,
+        model: modelId,
+        messages: requestMessages,
+        schema: EDITORIAL_OUTPUT_SCHEMA,
+        validatePayload: validateFreeEditorialPayload,
+        fetchImpl,
+        timeoutMs,
+        // The free lane permits at most two POSTs: the initial draft and one
+        // locally triggered originality rewrite. Provider transport retries
+        // remain available to other adapter callers, but cannot multiply this
+        // hard-$0 semantic budget.
+        maxAttempts: 1,
+        maxRequestBytes,
+        maxResponseBytes,
+        sleepImpl,
+      });
+      if (
+        !isObject(result) ||
+        result.provider !== WORKERS_AI_PROVIDER ||
+        result.model !== modelId
+      ) {
+        throw new Error("Workers AI returned invalid provider or model provenance.");
+      }
+      return {
+        aiResult: result,
+        inference: {
+          provider: result.provider,
+          model: result.model,
+          responseId: requireNonBlank(result.responseId, "Workers AI response id"),
+          requestSha256: requireSha256(result.requestSha256, "Workers AI requestSha256"),
+          responseSha256: requireSha256(result.responseSha256, "Workers AI responseSha256"),
+          kind: "workers-ai",
+        },
+      };
     };
+
+    let accepted = await requestInference(messages);
+    try {
+      editorial = normalizeFreeEditorialAgainstCandidates(
+        accepted.aiResult.editorialPayload,
+        candidates,
+        generatedAt,
+      );
+    } catch (error) {
+      if (!(error instanceof FreeStoryCopyOverlapError)) throw error;
+      accepted = await requestInference(buildFreeWorkersAiCopyRetryMessages(messages));
+      editorial = normalizeFreeEditorialAgainstCandidates(
+        accepted.aiResult.editorialPayload,
+        candidates,
+        generatedAt,
+      );
+    }
+    inference = accepted.inference;
   }
 
   const checkedAt = resolveNow(now);
