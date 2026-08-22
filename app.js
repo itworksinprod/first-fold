@@ -367,12 +367,12 @@ function hydrateEdition(data) {
   setText(
     "[data-edition-published]",
     displayStatus === "candidate"
-      ? "New York · Review preview"
+      ? "Washington, D.C. · Review preview"
       : data.status === "published"
-      ? `New York · ${data.publishedAt.replace(" ET", "")}`
+      ? `Washington, D.C. · ${data.publishedAt.replace(" ET", "")}`
       : data.status === "validated"
-        ? "New York · Awaiting publication"
-        : "New York · Local preview",
+        ? "Washington, D.C. · Awaiting publication"
+        : "Washington, D.C. · Local preview",
   );
   setText("[data-edition-masthead]", data.masthead.name);
   setText("[data-edition-tagline]", data.masthead.tagline);

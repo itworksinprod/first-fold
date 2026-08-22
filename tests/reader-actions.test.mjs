@@ -47,13 +47,15 @@ test("publication state, lead story, and story count come from the hydrated edit
   assert.match(readerScript, /published: "Source-verified edition · Published"/);
   assert.match(readerScript, /demoRibbon\.dataset\.publicationStatus = displayStatus/);
   assert.match(readerStyles, /\.demo-ribbon\[data-publication-status="draft"\]/);
-  assert.match(readerScript, /data\.status === "published"[\s\S]+New York · Local preview/);
+  assert.match(readerScript, /data\.status === "published"[\s\S]+Washington, D\.C\. · Local preview/);
   assert.match(readerScript, /data-back-issue[\s\S]+publicationStatusLabels\[displayStatus\]/);
   assert.match(readerHtml, /data-rail-delivery-copy>Morning delivery · 6:00 AM ET/);
   assert.match(readerScript, /In the press room · local preview/);
   assert.match(readerHtml, /data-method-status><strong>For this edition:/);
   assert.match(readerScript, /local draft has not passed the exact-revision approval or publication gate/);
   assert.match(readerHtml, /weekdays during the pilot/);
+  assert.match(readerHtml, /Washington, D\.C\. time · weekdays during the pilot/);
+  assert.doesNotMatch(readerHtml, />New York ·/);
   assert.match(readerHtml, /Next First Fold lands at/);
   assert.match(readerHtml, /The signals that could materially change these stories next\./);
   assert.doesNotMatch(readerHtml, /not yet strong enough to take a desk|America\/New_York · every day/);
