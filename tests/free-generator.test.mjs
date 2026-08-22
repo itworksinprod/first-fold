@@ -8,6 +8,7 @@ import { buildEditionDraft } from "../scripts/new-edition.mjs";
 import {
   FREE_AUTOMATION_WORKFLOW,
   assertOriginalFreeStoryCopy,
+  assertFreeEditionGenerationTime,
   buildFreeReportingWindow,
   buildFreeWorkersAiMessages,
   draftFreeEdition,
@@ -235,6 +236,7 @@ test("draftFreeEdition creates a validated, unpublished, QA-passed comparison ca
   assert.equal(candidate.publication.publishedAt, null);
   assert.equal(Object.hasOwn(candidate.provenance, "automation"), false);
   assert.equal(candidate.provenance.freePilot.workflow, FREE_AUTOMATION_WORKFLOW);
+  assert.equal(candidate.provenance.freePilot.runMode, "on_time");
   assert.equal(candidate.provenance.freePilot.provider, "cloudflare-workers-ai");
   assert.equal(candidate.provenance.freePilot.model, "@cf/openai/gpt-oss-120b");
   assert.equal(candidate.provenance.freePilot.inference, "workers-ai");
@@ -288,6 +290,57 @@ test("healthy zero-news coverage creates a deterministic quiet candidate without
   assert.equal(candidate.frontPage.leadStoryId, null);
   assert.equal(Object.values(candidate.desks).every((page) => page.story === null), true);
   assert.equal(validateCanonicalEdition(candidate).valid, true);
+});
+
+test("same-day backfill keeps the real late generation time while on-time mode stays gated", async () => {
+  const lateNow = "2026-08-20T18:15:00.000Z";
+  const timing = {
+    editionDate: "2026-08-20",
+    now: lateNow,
+    cutoffInstant: "2026-08-20T09:00:00.000Z",
+    publishInstant: "2026-08-20T10:00:00.000Z",
+  };
+  assert.throws(
+    () => assertFreeEditionGenerationTime(timing),
+    /must begin before/,
+  );
+  assert.equal(
+    assertFreeEditionGenerationTime({ ...timing, runMode: "same_day_backfill" }),
+    lateNow,
+  );
+  assert.throws(
+    () => assertFreeEditionGenerationTime({
+      ...timing,
+      now: "2026-08-20T09:59:59.999Z",
+      runMode: "same_day_backfill",
+    }),
+    /cannot begin before.*06:00/,
+  );
+  assert.throws(
+    () => assertFreeEditionGenerationTime({
+      ...timing,
+      editionDate: "2026-08-19",
+      runMode: "same_day_backfill",
+    }),
+    /must equal the current/,
+  );
+
+  const candidate = await draftFreeEdition(draftOptions({
+    now: lateNow,
+    runMode: "same_day_backfill",
+    researchImpl: async (options) => {
+      const result = researchResult({ candidates: [] });
+      result.reportingWindow = structuredClone(options.reportingWindow);
+      result.retrievedAt = options.retrievedAt;
+      return result;
+    },
+  }));
+  assert.equal(candidate.editionDate, "2026-08-20");
+  assert.equal(candidate.status, "validated");
+  assert.equal(candidate.publication.publishedAt, null);
+  assert.equal(candidate.publication.generatedAt, lateNow);
+  assert.equal(candidate.provenance.freePilot.generatedAt, lateNow);
+  assert.equal(candidate.provenance.freePilot.runMode, "same_day_backfill");
 });
 
 test("free provenance rejects inference/count conflicts and registry-count drift", async () => {

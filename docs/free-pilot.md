@@ -56,11 +56,13 @@ Cloudflare's official [Workers AI REST API setup](https://developers.cloudflare.
 
 1. Open the repository's **Actions** tab.
 2. Select **Prepare free Morning Press comparison**.
-3. Choose **Run workflow**, leave the branch set to `main`, and start the run between 5:00 and 5:59 AM `America/New_York`. The manual window is available every day, including weekends. The workflow uses the current New York edition date and does not accept a custom date.
+3. Choose **Run workflow** and leave the branch set to `main`. For the normal path, keep `run_mode` set to `on_time`, leave all three backfill fields blank, and start the run between 5:00 and 5:59 AM `America/New_York`; it will use the current New York edition date. This normal manual window is available every day, including weekends.
 4. Open the completed run and review its summary and logs. A successful run uploads an artifact named `free-morning-press-<run-id>-<date>-<sha>` and opens a comparison pull request from `experiment/free-morning-press-<date>`.
 5. Open and read both cited article pages for every non-quiet story, then independently verify every material claim, attribution, date, and caveat. A passing link check means only that the URL was reachable; it is not evidence that the draft is true.
 6. When a paid candidate exists and its reporting boundaries match exactly, compare the two results directly. After a skipped paid day or weekend, the paid candidate may span a longer window; compare topic choices and output quality, but do not treat differences in story coverage as a like-for-like recall test. On a day without a paid candidate, review the free result on its own. Check every desk assignment, omission, and quiet-desk decision manually.
 7. Record the comparison result and close the free comparison pull request without merging it. Merging is neither required nor part of this pilot.
+
+If that morning window was missed, the same manual workflow has an explicit same-day backfill path after 6:00 AM New York time. Choose `same_day_backfill`, set `backfill_date` to today's New York date (for example, `2026-08-22`), enter a one-line `backfill_reason`, and enter the exact confirmation `BACKFILL 2026-08-22`. All three fields are required together. The workflow rejects any other date and rejects a same-day backfill before 6:00 AM or after the New York calendar date changes. It still requires the authenticated `itworksinprod` actor, the `itworksinprod/first-fold` repository, and the `main` branch. A backfill records its real execution time in `publication.generatedAt` and `provenance.freePilot.generatedAt`; it does not pretend that generation happened during the missed morning window.
 
 For a trusted local or test invocation, the generator entry point is:
 
@@ -68,7 +70,7 @@ For a trusted local or test invocation, the generator entry point is:
 npm run edition:free -- YYYY-MM-DD
 ```
 
-The script requires `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_AI_API_TOKEN` in its environment and accepts only the fixed `@cf/openai/gpt-oss-120b` model. It also enforces trusted GitHub run metadata and the 5:00–6:00 AM New York generation window, so the GitHub workflow is the supported way to run a real comparison; direct invocation is primarily for controlled testing. Do not put credentials in a `.env` file that could be committed. A local output is still a non-publishing experiment candidate.
+The script requires `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_AI_API_TOKEN` in its environment and accepts only the fixed `@cf/openai/gpt-oss-120b` model. By default it enforces trusted GitHub run metadata and the 5:00–6:00 AM New York generation window. The workflow's guarded backfill path invokes the same script with `--same-day-backfill` only after its date, reason, confirmation, actor, repository, and branch checks pass. The GitHub workflow is the supported way to run a real comparison; direct invocation is primarily for controlled testing. Do not put credentials in a `.env` file that could be committed. A local output is still a non-publishing experiment candidate.
 
 ## Cost guardrail
 

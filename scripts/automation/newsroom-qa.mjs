@@ -423,6 +423,11 @@ function analyzeNewsroomDraft(edition, options = {}) {
     };
   }
 
+  const freeSameDayBackfill =
+    options.temporalMode === "free-same-day-backfill" &&
+    edition.provenance?.freePilot?.workflow === "free-morning-press" &&
+    edition.provenance?.freePilot?.runMode === "same_day_backfill";
+
   const windowStart = parseInstant(edition.reportingWindow?.startInclusive);
   const windowEnd = parseInstant(edition.reportingWindow?.endExclusive);
   if (
@@ -459,7 +464,11 @@ function analyzeNewsroomDraft(edition, options = {}) {
         "publication.publishAt must be a valid UTC ISO instant.",
       ),
     );
-  } else if (Number.isFinite(generatedAt) && generatedAt > publishAt) {
+  } else if (
+    Number.isFinite(generatedAt) &&
+    generatedAt > publishAt &&
+    !freeSameDayBackfill
+  ) {
     issues.push(
       createIssue(
         "GENERATED_AFTER_PUBLICATION",
@@ -905,7 +914,11 @@ function analyzeNewsroomDraft(edition, options = {}) {
               ),
             );
           }
-          if (Number.isFinite(publishAt) && retrievedAt > publishAt) {
+          if (
+            Number.isFinite(publishAt) &&
+            retrievedAt > publishAt &&
+            !freeSameDayBackfill
+          ) {
             issues.push(
               createIssue(
                 "SOURCE_RETRIEVED_AFTER_PUBLICATION",

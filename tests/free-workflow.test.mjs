@@ -19,12 +19,18 @@ function triggerBlock(workflow) {
   return workflow.slice(workflow.indexOf("on:"), workflow.indexOf("permissions:"));
 }
 
-test("the free comparison is manual, trusted-main only, and time-gated every day", () => {
+test("the free comparison is manual, trusted-main only, and has an explicit same-day backfill", () => {
   const triggers = triggerBlock(freeResearch);
 
   assert.match(freeResearch, /^name: Prepare free Morning Press comparison$/m);
   assert.match(triggers, /^  workflow_dispatch:$/m);
-  assert.doesNotMatch(triggers, /inputs:|schedule:|cron:|pull_request|push:/);
+  assert.doesNotMatch(triggers, /schedule:|cron:|pull_request|push:/);
+  assert.match(triggers, /^      run_mode:$/m);
+  assert.match(triggers, /^        default: on_time$/m);
+  assert.match(triggers, /^          - same_day_backfill$/m);
+  assert.match(triggers, /^      backfill_date:$/m);
+  assert.match(triggers, /^      backfill_reason:$/m);
+  assert.match(triggers, /^      backfill_confirmation:$/m);
   assert.match(freeResearch, /^permissions: \{\}$/m);
   assert.match(freeResearch, /group: free-morning-press-comparison/);
   assert.equal(freeResearch.match(/github\.repository == 'itworksinprod\/first-fold'/g)?.length, 2);
@@ -32,7 +38,13 @@ test("the free comparison is manual, trusted-main only, and time-gated every day
   assert.equal(freeResearch.match(/github\.actor == 'itworksinprod'/g)?.length, 2);
   assert.match(researchJob, /timeout-minutes: 30/);
   assert.match(stageJob, /timeout-minutes: 15/);
-  assert.match(freeResearch, /minuteOfDay < 5 \* 60 \|\| minuteOfDay >= 6 \* 60/);
+  assert.match(freeResearch, /runMode === "on_time"/);
+  assert.match(freeResearch, /minuteOfDay >= 5 \* 60 && minuteOfDay < 6 \* 60/);
+  assert.match(freeResearch, /runMode === "same_day_backfill"/);
+  assert.match(freeResearch, /requestedDate !== currentDate/);
+  assert.match(freeResearch, /confirmation !== `BACKFILL \$\{requestedDate\}`/);
+  assert.match(freeResearch, /reason\.length < 8/);
+  assert.match(freeResearch, /--same-day-backfill/);
   assert.match(freeResearch, /No model credential or AI API was used/);
   assert.doesNotMatch(freeResearch, /isWeekday|\["Mon", "Tue", "Wed", "Thu", "Fri"\]/);
   assert.ok(
@@ -176,6 +188,8 @@ test("free candidates remain outside every production identity and publication p
     freeResearch.match(/expectedFeedSourceCount: FREE_FEED_SOURCES\.length/g)?.length,
     2,
   );
+  assert.equal(freeResearch.match(/expectedRunMode: process\.env\.RUN_MODE/g)?.length, 2);
+  assert.equal(freeResearch.match(/RUN_MODE: \$\{\{ (?:steps\.candidate|needs\.research)\.outputs\.run_mode \}\}/g)?.length, 4);
 
   assert.match(stageJob, /git add -- "\$\{CANDIDATE_PATH\}"/);
   assert.match(stageJob, /staged_paths\[0\].*CANDIDATE_PATH/);

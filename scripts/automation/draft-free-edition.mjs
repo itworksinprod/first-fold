@@ -21,6 +21,7 @@ import {
 
 export const FREE_AUTOMATION_WORKFLOW = "free-morning-press";
 export const MAX_FREE_MODEL_CANDIDATES = 24;
+export const FREE_RUN_MODES = Object.freeze(["on_time", "same_day_backfill"]);
 
 const localDateFormatter = new Intl.DateTimeFormat("en-CA", {
   timeZone: "America/New_York",
@@ -120,13 +121,30 @@ function requireGitHubRun({ runId, runUrl, repository }, label = "Free automatio
   };
 }
 
-export function assertFreeEditionGenerationTime({ editionDate, now, cutoffInstant, publishInstant }) {
+export function assertFreeEditionGenerationTime({
+  editionDate,
+  now,
+  cutoffInstant,
+  publishInstant,
+  runMode = "on_time",
+}) {
   const generatedAt = resolveNow(now);
+  if (!FREE_RUN_MODES.includes(runMode)) {
+    throw new Error("Free runMode must be on_time or same_day_backfill.");
+  }
   if (localDate(generatedAt) !== editionDate) {
     throw new Error("The requested edition date must equal the current America/New_York date.");
   }
   if (!isInstant(cutoffInstant) || Date.parse(generatedAt) < Date.parse(cutoffInstant)) {
     throw new Error("Free generation cannot begin before the edition's 05:00 America/New_York cutoff.");
+  }
+  if (runMode === "same_day_backfill") {
+    if (!isInstant(publishInstant) || Date.parse(generatedAt) < Date.parse(publishInstant)) {
+      throw new Error(
+        "A same-day free backfill cannot begin before the edition's 06:00 America/New_York comparison time.",
+      );
+    }
+    return generatedAt;
   }
   if (!isInstant(publishInstant) || Date.parse(generatedAt) >= Date.parse(publishInstant)) {
     throw new Error("Free generation must begin before the edition's 06:00 America/New_York comparison time.");
@@ -813,17 +831,31 @@ function sourceUrlsFromCandidates(candidates) {
     Array.isArray(candidate.sources) ? candidate.sources.map((source) => source.url) : []);
 }
 
-function assertCheckedAt({ checkedAt, generatedAt, publishAt }) {
+function assertCheckedAt({
+  checkedAt,
+  generatedAt,
+  publishAt,
+  editionDate,
+  runMode = "on_time",
+}) {
+  const isBackfill = runMode === "same_day_backfill";
   if (
     !isInstant(checkedAt) ||
     Date.parse(checkedAt) < Date.parse(generatedAt) ||
-    Date.parse(checkedAt) >= Date.parse(publishAt)
+    (isBackfill && localDate(checkedAt) !== editionDate) ||
+    (!isBackfill && Date.parse(checkedAt) >= Date.parse(publishAt))
   ) {
-    throw new Error("The free newsroom run did not complete inside the 05:00-06:00 comparison window.");
+    throw new Error(isBackfill
+      ? "The free backfill newsroom run must finish on its requested New York date at or after generation."
+      : "The free newsroom run did not complete inside the 05:00-06:00 comparison window.");
   }
 }
 
-export function validateFreePilotProvenance(candidate, automation, { expectedFeedSourceCount } = {}) {
+export function validateFreePilotProvenance(
+  candidate,
+  automation,
+  { expectedFeedSourceCount, expectedRunMode } = {},
+) {
   if (!isObject(candidate) || candidate.status !== "validated" || candidate.publication?.publishedAt !== null) {
     throw new Error("Free candidate must remain validated and unpublished.");
   }
@@ -836,6 +868,7 @@ export function validateFreePilotProvenance(candidate, automation, { expectedFee
     !isObject(freePilot) ||
     freePilot.workflow !== FREE_AUTOMATION_WORKFLOW ||
     freePilot.provider !== WORKERS_AI_PROVIDER ||
+    !FREE_RUN_MODES.includes(freePilot.runMode) ||
     freePilot.runId !== expectedRun.runId ||
     freePilot.runUrl !== expectedRun.runUrl ||
     freePilot.repository !== expectedRun.repository ||
@@ -875,6 +908,9 @@ export function validateFreePilotProvenance(candidate, automation, { expectedFee
   ) {
     throw new Error("Free candidate feedSourceCount does not match the reviewed registry.");
   }
+  if (expectedRunMode !== undefined && freePilot.runMode !== expectedRunMode) {
+    throw new Error("Free candidate runMode does not match the requested generation mode.");
+  }
   const sourceCheck = candidate.provenance?.sourceCheck;
   if (
     !isObject(sourceCheck) ||
@@ -904,6 +940,7 @@ export async function draftFreeEdition({
   apiToken = process.env.CLOUDFLARE_AI_API_TOKEN,
   model = process.env.CLOUDFLARE_AI_MODEL,
   now,
+  runMode = "on_time",
   feedSources = FREE_FEED_SOURCES,
   researchImpl = researchFreeEdition,
   feedRequestImpl,
@@ -930,6 +967,7 @@ export async function draftFreeEdition({
     now,
     cutoffInstant: scaffold.reportingWindow.endExclusive,
     publishInstant: scaffold.publication.publishAt,
+    runMode,
   });
   const githubRun = requireGitHubRun(automation ?? {});
   scaffold.publication.generatedAt = generatedAt;
@@ -1018,7 +1056,13 @@ export async function draftFreeEdition({
   }
 
   const checkedAt = resolveNow(now);
-  assertCheckedAt({ checkedAt, generatedAt, publishAt: scaffold.publication.publishAt });
+  assertCheckedAt({
+    checkedAt,
+    generatedAt,
+    publishAt: scaffold.publication.publishAt,
+    editionDate,
+    runMode,
+  });
   const candidate = {
     ...scaffold,
     status: "validated",
@@ -1039,6 +1083,7 @@ export async function draftFreeEdition({
         runId: githubRun.runId,
         runUrl: githubRun.runUrl,
         repository: githubRun.repository,
+        runMode,
         generatedAt,
         feedSnapshotSha256,
         requestSha256: inference.requestSha256,
@@ -1068,6 +1113,9 @@ export async function draftFreeEdition({
     lookupImpl: sourceLookupImpl,
     timeoutMs: sourceCheckTimeoutMs,
     maxRedirects: 0,
+    ...(runMode === "same_day_backfill"
+      ? { temporalMode: "free-same-day-backfill" }
+      : {}),
   });
   if (qaResult?.sourceCheck?.status !== "passed") {
     throw new Error("Free candidate failed mandatory newsroom source QA.");

@@ -81,7 +81,10 @@ export function freeAutomationFromEnvironment(env) {
   };
 }
 
-function assertWritableFreeCandidate(candidate, { editionDate, automation, expectedFeedSourceCount }) {
+function assertWritableFreeCandidate(
+  candidate,
+  { editionDate, automation, expectedFeedSourceCount, expectedRunMode },
+) {
   const validation = validateCanonicalEdition(candidate);
   if (!validation.valid) {
     throw new Error(`Free candidate failed canonical validation: ${validation.issues.join(" ")}`);
@@ -94,7 +97,10 @@ function assertWritableFreeCandidate(candidate, { editionDate, automation, expec
   ) {
     throw new Error("Free candidate does not satisfy the isolated comparison contract.");
   }
-  validateFreePilotProvenance(candidate, automation, { expectedFeedSourceCount });
+  validateFreePilotProvenance(candidate, automation, {
+    expectedFeedSourceCount,
+    expectedRunMode,
+  });
 }
 
 /**
@@ -107,6 +113,7 @@ export async function generateFreeEditionFile({
   projectRoot = defaultProjectRoot,
   env = process.env,
   now,
+  runMode = "on_time",
   researchImpl,
   feedSources,
   feedRequestImpl,
@@ -142,6 +149,7 @@ export async function generateFreeEditionFile({
     apiToken: env.CLOUDFLARE_AI_API_TOKEN,
     model: env.CLOUDFLARE_AI_MODEL,
     now,
+    runMode,
     researchImpl,
     feedSources: effectiveFeedSources,
     feedRequestImpl,
@@ -156,6 +164,7 @@ export async function generateFreeEditionFile({
     editionDate,
     automation,
     expectedFeedSourceCount: effectiveFeedSources.length,
+    expectedRunMode: runMode,
   });
 
   const fileContents = `${JSON.stringify(candidate, null, 2)}\n`;
@@ -179,10 +188,21 @@ export async function generateFreeEditionFile({
 
 async function main() {
   const [editionDate, ...extraArguments] = process.argv.slice(2);
-  if (!editionDate || extraArguments.length > 0 || editionDate === "--help" || editionDate === "-h") {
-    throw new Error("Usage: node scripts/automation/generate-free-edition.mjs YYYY-MM-DD");
+  const isSameDayBackfill =
+    extraArguments.length === 1 && extraArguments[0] === "--same-day-backfill";
+  if (
+    !editionDate ||
+    extraArguments.length > (isSameDayBackfill ? 1 : 0) ||
+    (extraArguments.length > 0 && !isSameDayBackfill) ||
+    editionDate === "--help" ||
+    editionDate === "-h"
+  ) {
+    throw new Error(
+      "Usage: node scripts/automation/generate-free-edition.mjs YYYY-MM-DD [--same-day-backfill]",
+    );
   }
-  const result = await generateFreeEditionFile({ editionDate });
+  const runMode = isSameDayBackfill ? "same_day_backfill" : "on_time";
+  const result = await generateFreeEditionFile({ editionDate, runMode });
   console.log(`Created isolated free candidate ${result.relativePath} · sha256 ${result.sha256}`);
 }
 

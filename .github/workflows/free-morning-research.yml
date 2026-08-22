@@ -2,6 +2,27 @@ name: Prepare free Morning Press comparison
 
 on:
   workflow_dispatch:
+    inputs:
+      run_mode:
+        description: "Choose on_time normally; same_day_backfill only after today's morning window was missed"
+        required: true
+        default: on_time
+        type: choice
+        options:
+          - on_time
+          - same_day_backfill
+      backfill_date:
+        description: "For same_day_backfill, enter today's New York date as YYYY-MM-DD"
+        required: false
+        type: string
+      backfill_reason:
+        description: "Required when backfill_date is set (8–200 characters, one line)"
+        required: false
+        type: string
+      backfill_confirmation:
+        description: "For a backfill, enter BACKFILL followed by a space and the exact date"
+        required: false
+        type: string
 
 permissions: {}
 
@@ -33,14 +54,21 @@ jobs:
       candidate_sha256: ${{ steps.verify.outputs.candidate_sha256 }}
       edition_date: ${{ steps.candidate.outputs.edition_date }}
       branch: ${{ steps.candidate.outputs.branch }}
+      run_mode: ${{ steps.candidate.outputs.run_mode }}
     steps:
       - name: Open the New York free-comparison gate
         id: candidate
+        env:
+          BACKFILL_CONFIRMATION: ${{ inputs.backfill_confirmation }}
+          BACKFILL_DATE: ${{ inputs.backfill_date }}
+          BACKFILL_REASON: ${{ inputs.backfill_reason }}
+          REQUESTED_RUN_MODE: ${{ inputs.run_mode }}
         shell: bash
         run: |
           node --input-type=module <<'NODE'
           import { appendFile } from "node:fs/promises";
 
+          const now = new Date();
           const parts = Object.fromEntries(
             new Intl.DateTimeFormat("en-US", {
               timeZone: "America/New_York",
@@ -53,18 +81,59 @@ jobs:
               minute: "2-digit",
               hourCycle: "h23",
             })
-              .formatToParts(new Date())
+              .formatToParts(now)
               .filter(({ type }) => type !== "literal")
               .map(({ type, value }) => [type, value]),
           );
-          const editionDate = `${parts.year}-${parts.month}-${parts.day}`;
+          const currentDate = `${parts.year}-${parts.month}-${parts.day}`;
           const minuteOfDay = Number(parts.hour) * 60 + Number(parts.minute);
-          if (minuteOfDay < 5 * 60 || minuteOfDay >= 6 * 60) {
-            await appendFile(
-              process.env.GITHUB_STEP_SUMMARY,
-              `### Free Morning Press comparison — stopped\n\nRun this manual comparison between 5:00 and 6:00 AM America/New_York. No model credential or AI API was used.\n`,
-            );
-            throw new Error("The free comparison may run only from 5:00 through 5:59 AM America/New_York.");
+          const requestedDate = (process.env.BACKFILL_DATE ?? "").trim();
+          const reason = (process.env.BACKFILL_REASON ?? "").trim();
+          const confirmation = (process.env.BACKFILL_CONFIRMATION ?? "").trim();
+          const hasBackfillInput = Boolean(requestedDate || reason || confirmation);
+          let editionDate = currentDate;
+          const runMode = (process.env.REQUESTED_RUN_MODE ?? "").trim();
+
+          if (runMode === "same_day_backfill") {
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) {
+              throw new Error("A backfill date is required and must use YYYY-MM-DD.");
+            }
+            const parsedDate = Date.parse(`${requestedDate}T00:00:00.000Z`);
+            if (!Number.isFinite(parsedDate) || new Date(parsedDate).toISOString().slice(0, 10) !== requestedDate) {
+              throw new Error("The backfill date must be a real calendar date.");
+            }
+            if (
+              reason.length < 8 ||
+              reason.length > 200 ||
+              /[\r\n\u0000-\u001f\u007f]/.test(reason)
+            ) {
+              throw new Error("The backfill reason must be one line containing 8 through 200 characters.");
+            }
+            if (confirmation !== `BACKFILL ${requestedDate}`) {
+              throw new Error(`Backfill confirmation must be exactly BACKFILL ${requestedDate}.`);
+            }
+            if (requestedDate !== currentDate) {
+              throw new Error("A same-day backfill date must equal today's America/New_York date.");
+            }
+            if (minuteOfDay < 6 * 60) {
+              throw new Error("A same-day backfill cannot begin before today's 06:00 America/New_York comparison time.");
+            }
+            editionDate = requestedDate;
+          } else if (runMode === "on_time") {
+            if (hasBackfillInput) {
+              throw new Error("Leave all backfill fields blank when run_mode is on_time.");
+            }
+            if (minuteOfDay >= 5 * 60 && minuteOfDay < 6 * 60) {
+              // Preserve the original current-date morning behavior.
+            } else {
+              await appendFile(
+                process.env.GITHUB_STEP_SUMMARY,
+                `### Free Morning Press comparison — stopped\n\nRun the normal manual comparison between 5:00 and 6:00 AM America/New_York, or choose same_day_backfill and supply all three explicit backfill inputs. No model credential or AI API was used.\n`,
+              );
+              throw new Error("The normal free comparison may run only from 5:00 through 5:59 AM America/New_York.");
+            }
+          } else {
+            throw new Error("run_mode must be on_time or same_day_backfill.");
           }
 
           const candidatePath = `${process.env.FREE_OUTPUT_ROOT}/${editionDate}.json`;
@@ -72,9 +141,10 @@ jobs:
           await appendFile(process.env.GITHUB_OUTPUT, `edition_date=${editionDate}\n`);
           await appendFile(process.env.GITHUB_OUTPUT, `candidate_path=${candidatePath}\n`);
           await appendFile(process.env.GITHUB_OUTPUT, `branch=${branch}\n`);
+          await appendFile(process.env.GITHUB_OUTPUT, `run_mode=${runMode}\n`);
           await appendFile(
             process.env.GITHUB_STEP_SUMMARY,
-            `### Free Morning Press comparison\n\nPreparing an unpublished comparison candidate for ${editionDate}.\n`,
+            `### Free Morning Press comparison\n\nPreparing an unpublished ${runMode} comparison candidate for ${editionDate}.${runMode === "same_day_backfill" ? " The reason and exact confirmation are recorded in the workflow inputs." : ""}\n`,
           );
           NODE
 
@@ -98,6 +168,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_AI_API_TOKEN: ${{ secrets.CLOUDFLARE_AI_API_TOKEN }}
           EDITION_DATE: ${{ steps.candidate.outputs.edition_date }}
+          RUN_MODE: ${{ steps.candidate.outputs.run_mode }}
         shell: bash
         run: |
           if [[ ! "${CLOUDFLARE_ACCOUNT_ID}" =~ ^[A-Fa-f0-9]{32}$ ]]; then
@@ -108,13 +179,21 @@ jobs:
             echo "CLOUDFLARE_AI_API_TOKEN must be configured as a repository secret."
             exit 1
           fi
-          node scripts/automation/generate-free-edition.mjs "${EDITION_DATE}"
+          if [[ "${RUN_MODE}" == "same_day_backfill" ]]; then
+            node scripts/automation/generate-free-edition.mjs "${EDITION_DATE}" --same-day-backfill
+          elif [[ "${RUN_MODE}" == "on_time" ]]; then
+            node scripts/automation/generate-free-edition.mjs "${EDITION_DATE}"
+          else
+            echo "The free comparison run mode is invalid."
+            exit 1
+          fi
 
       - name: Verify the free-only artifact contract
         id: verify
         env:
           CANDIDATE_PATH: ${{ steps.candidate.outputs.candidate_path }}
           EDITION_DATE: ${{ steps.candidate.outputs.edition_date }}
+          RUN_MODE: ${{ steps.candidate.outputs.run_mode }}
         shell: bash
         run: |
           node --input-type=module <<'NODE'
@@ -137,6 +216,7 @@ jobs:
           };
           validateFreePilotProvenance(edition, automation, {
             expectedFeedSourceCount: FREE_FEED_SOURCES.length,
+            expectedRunMode: process.env.RUN_MODE,
           });
           const expectedRunUrl = automation.runUrl;
           const sha256 = /^[a-f0-9]{64}$/;
@@ -302,6 +382,7 @@ jobs:
           CANDIDATE_PATH: ${{ needs.research.outputs.candidate_path }}
           CANDIDATE_SHA256: ${{ needs.research.outputs.candidate_sha256 }}
           EDITION_DATE: ${{ needs.research.outputs.edition_date }}
+          RUN_MODE: ${{ needs.research.outputs.run_mode }}
         shell: bash
         run: |
           node --input-type=module <<'NODE'
@@ -350,6 +431,7 @@ jobs:
           };
           validateFreePilotProvenance(edition, automation, {
             expectedFeedSourceCount: FREE_FEED_SOURCES.length,
+            expectedRunMode: process.env.RUN_MODE,
           });
           const expectedRunUrl = automation.runUrl;
           const sha256 = /^[a-f0-9]{64}$/;
@@ -443,6 +525,7 @@ jobs:
           HEAD_SHA: ${{ steps.commit.outputs.head_sha }}
           MODE: ${{ steps.existing.outputs.mode }}
           PR_NUMBER: ${{ steps.existing.outputs.pr_number }}
+          RUN_MODE: ${{ needs.research.outputs.run_mode }}
         shell: bash
         run: |
           node --input-type=module <<'NODE'
@@ -472,6 +555,7 @@ jobs:
             "",
             `- Candidate: \`${process.env.CANDIDATE_PATH}\``,
             `- Exact candidate SHA: \`${process.env.HEAD_SHA}\``,
+            `- Run mode: \`${process.env.RUN_MODE}\``,
             `- Generation run: ${process.env.GITHUB_SERVER_URL}/${repository}/actions/runs/${process.env.GITHUB_RUN_ID}`,
             `- Review artifact: \`${process.env.ARTIFACT_NAME}\``,
             "",
