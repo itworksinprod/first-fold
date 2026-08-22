@@ -1275,6 +1275,7 @@ function pinnedHttpsRequest(url, options) {
     const request = httpsRequest(url, {
       method: options.method,
       agent: false,
+      signal: options.signal,
       servername: isIP(options.hostname) ? undefined : options.hostname,
       headers: {
         accept: "text/html,application/json,application/pdf,*/*;q=0.8",
@@ -1340,6 +1341,7 @@ async function requestFollowingRedirects(startUrl, method, options) {
     }
 
     let response;
+    const requestController = new AbortController();
     try {
       response = await withTimeout(
         () => options.requestImpl(currentUrl, {
@@ -1347,8 +1349,10 @@ async function requestFollowingRedirects(startUrl, method, options) {
           timeoutMs: options.timeoutMs,
           addresses: resolved.addresses,
           hostname: inspected.hostname,
+          signal: requestController.signal,
         }),
         options.timeoutMs,
+        () => requestController.abort(),
       );
     } catch (error) {
       return {

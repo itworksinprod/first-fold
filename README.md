@@ -90,6 +90,8 @@ npm run build && npm test
 
 No environment variables or paid services are needed to build, read, preview, or publish a hand-written edition. The optional automatic-draft pilot calls the OpenAI Responses API during a trusted GitHub Actions research job, so that job requires an API key and incurs API usage. The key is never shipped to the PWA, exposed to pull-request code, or needed by readers. Automatic research prepares a source-grounded proposal; final editorial judgment remains human.
 
+A separate **Free Morning Press comparison** keeps the paid production lane unchanged while testing curated official feeds with Cloudflare Workers AI. It is manual, writes only to `content/free-candidates/`, cannot enter the production approval or delivery workflows, and fails closed when its free allowance or evidence checks are unavailable. Setup, operating limits, and comparison instructions are in [`docs/free-pilot.md`](docs/free-pilot.md).
+
 For a fresh GitHub checkout, `npm ci` reproduces the lockfile exactly. Use `npm install` only when intentionally changing dependencies, and commit the resulting lockfile change. Generated output, local dependencies, logs, and environment files are ignored.
 
 ## Install the free app

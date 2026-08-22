@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Example Security Advisories</title>
+  <entry>
+    <id>tag:security.example,2026:CVE-2026-4242</id>
+    <title>Critical CVE-2026-4242 vulnerability is actively exploited</title>
+    <link rel="self" href="https://security.example/feed/item/4242" />
+    <link rel="alternate" href="https://security.example/advisories/CVE-2026-4242?gclid=tracking" />
+    <published>2026-08-21T13:30:00-04:00</published>
+    <updated>2026-08-21T13:30:00-04:00</updated>
+    <summary type="html">Administrators should patch affected systems using the vendor update.</summary>
+    <category term="security" />
+  </entry>
+</feed>

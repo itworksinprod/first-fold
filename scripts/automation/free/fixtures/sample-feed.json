@@ -1,0 +1,22 @@
+{
+  "version": "https://jsonfeed.org/version/1.1",
+  "title": "Independent Technology Desk",
+  "items": [
+    {
+      "id": "independent-cve-2026-4242",
+      "url": "https://report.example/security/cve-2026-4242",
+      "title": "CVE-2026-4242 flaw is actively exploited; vendor patch is available",
+      "summary": "Independent testing confirms the affected range and the published mitigation.",
+      "date_published": "2026-08-21T18:00:00Z",
+      "tags": ["security", "vulnerability"]
+    },
+    {
+      "id": "ambiguous-zone",
+      "url": "https://report.example/ambiguous",
+      "title": "This item has an ambiguous timestamp",
+      "summary": "It must be rejected.",
+      "date_published": "2026-08-21 18:00:00",
+      "tags": ["technology"]
+    }
+  ]
+}

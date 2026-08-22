@@ -1,0 +1,574 @@
+name: Prepare free Morning Press comparison
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: free-morning-press-comparison
+  cancel-in-progress: false
+
+env:
+  CLOUDFLARE_AI_MODEL: "@cf/openai/gpt-oss-120b"
+  DEFAULT_BRANCH: main
+  FREE_BRANCH_PREFIX: experiment/free-morning-press-
+  FREE_LABEL: free-morning-press-pilot
+  FREE_OUTPUT_ROOT: content/free-candidates
+
+jobs:
+  research:
+    name: Build a read-only free comparison artifact
+    if: >-
+      github.repository == 'itworksinprod/first-fold' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'itworksinprod'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      artifact_name: ${{ steps.verify.outputs.artifact_name }}
+      candidate_path: ${{ steps.candidate.outputs.candidate_path }}
+      candidate_sha256: ${{ steps.verify.outputs.candidate_sha256 }}
+      edition_date: ${{ steps.candidate.outputs.edition_date }}
+      branch: ${{ steps.candidate.outputs.branch }}
+    steps:
+      - name: Open the New York free-comparison gate
+        id: candidate
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFile } from "node:fs/promises";
+
+          const parts = Object.fromEntries(
+            new Intl.DateTimeFormat("en-US", {
+              timeZone: "America/New_York",
+              calendar: "gregory",
+              numberingSystem: "latn",
+              year: "numeric",
+              month: "2-digit",
+              day: "2-digit",
+              hour: "2-digit",
+              minute: "2-digit",
+              hourCycle: "h23",
+            })
+              .formatToParts(new Date())
+              .filter(({ type }) => type !== "literal")
+              .map(({ type, value }) => [type, value]),
+          );
+          const editionDate = `${parts.year}-${parts.month}-${parts.day}`;
+          const minuteOfDay = Number(parts.hour) * 60 + Number(parts.minute);
+          if (minuteOfDay < 5 * 60 || minuteOfDay >= 6 * 60) {
+            await appendFile(
+              process.env.GITHUB_STEP_SUMMARY,
+              `### Free Morning Press comparison — stopped\n\nRun this manual comparison between 5:00 and 6:00 AM America/New_York. No model credential or AI API was used.\n`,
+            );
+            throw new Error("The free comparison may run only from 5:00 through 5:59 AM America/New_York.");
+          }
+
+          const candidatePath = `${process.env.FREE_OUTPUT_ROOT}/${editionDate}.json`;
+          const branch = `${process.env.FREE_BRANCH_PREFIX}${editionDate}`;
+          await appendFile(process.env.GITHUB_OUTPUT, `edition_date=${editionDate}\n`);
+          await appendFile(process.env.GITHUB_OUTPUT, `candidate_path=${candidatePath}\n`);
+          await appendFile(process.env.GITHUB_OUTPUT, `branch=${branch}\n`);
+          await appendFile(
+            process.env.GITHUB_STEP_SUMMARY,
+            `### Free Morning Press comparison\n\nPreparing an unpublished comparison candidate for ${editionDate}.\n`,
+          );
+          NODE
+
+      - name: Check out trusted main without write credentials
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Install the locked project
+        run: npm ci
+
+      - name: Generate the free source-checked comparison
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_AI_API_TOKEN: ${{ secrets.CLOUDFLARE_AI_API_TOKEN }}
+          EDITION_DATE: ${{ steps.candidate.outputs.edition_date }}
+        shell: bash
+        run: |
+          if [[ ! "${CLOUDFLARE_ACCOUNT_ID}" =~ ^[A-Fa-f0-9]{32}$ ]]; then
+            echo "CLOUDFLARE_ACCOUNT_ID must be configured as a repository variable."
+            exit 1
+          fi
+          if [[ -z "${CLOUDFLARE_AI_API_TOKEN}" ]]; then
+            echo "CLOUDFLARE_AI_API_TOKEN must be configured as a repository secret."
+            exit 1
+          fi
+          node scripts/automation/generate-free-edition.mjs "${EDITION_DATE}"
+
+      - name: Verify the free-only artifact contract
+        id: verify
+        env:
+          CANDIDATE_PATH: ${{ steps.candidate.outputs.candidate_path }}
+          EDITION_DATE: ${{ steps.candidate.outputs.edition_date }}
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { createHash } from "node:crypto";
+          import { appendFile, readFile } from "node:fs/promises";
+          import { validateFreePilotProvenance } from "./scripts/automation/draft-free-edition.mjs";
+          import { FREE_FEED_SOURCES } from "./scripts/automation/free/feed-sources.mjs";
+          import { validateCanonicalEdition } from "./scripts/edition-content.mjs";
+
+          const raw = await readFile(process.env.CANDIDATE_PATH, "utf8");
+          const edition = JSON.parse(raw);
+          const validation = validateCanonicalEdition(edition);
+          const freePilot = edition.provenance?.freePilot;
+          const sourceCheck = edition.provenance?.sourceCheck;
+          const automation = {
+            runId: process.env.GITHUB_RUN_ID,
+            repository: process.env.GITHUB_REPOSITORY,
+            runUrl:
+              `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`,
+          };
+          validateFreePilotProvenance(edition, automation, {
+            expectedFeedSourceCount: FREE_FEED_SOURCES.length,
+          });
+          const expectedRunUrl = automation.runUrl;
+          const sha256 = /^[a-f0-9]{64}$/;
+
+          if (
+            !validation.valid ||
+            edition.editionDate !== process.env.EDITION_DATE ||
+            edition.status !== "validated" ||
+            edition.publication?.publishedAt !== null ||
+            edition.provenance?.automation !== undefined ||
+            freePilot?.workflow !== "free-morning-press" ||
+            freePilot?.provider !== "cloudflare-workers-ai" ||
+            freePilot?.model !== process.env.CLOUDFLARE_AI_MODEL ||
+            freePilot?.runId !== process.env.GITHUB_RUN_ID ||
+            freePilot?.runUrl !== expectedRunUrl ||
+            !Number.isFinite(Date.parse(freePilot?.generatedAt)) ||
+            !sha256.test(freePilot?.feedSnapshotSha256 ?? "") ||
+            !sha256.test(freePilot?.responseSha256 ?? "") ||
+            sourceCheck?.status !== "passed" ||
+            !Array.isArray(sourceCheck.issues) ||
+            sourceCheck.issues.length !== 0
+          ) {
+            throw new Error("The free comparison failed its isolated, unpublished artifact contract.");
+          }
+
+          const candidateSha256 = createHash("sha256").update(raw).digest("hex");
+          const artifactName =
+            `free-morning-press-${process.env.GITHUB_RUN_ID}-${process.env.EDITION_DATE}-${candidateSha256}`;
+          await appendFile(process.env.GITHUB_OUTPUT, `candidate_sha256=${candidateSha256}\n`);
+          await appendFile(process.env.GITHUB_OUTPUT, `artifact_name=${artifactName}\n`);
+          NODE
+
+      - name: Test the free candidate without publishing it
+        run: npm test
+
+      - name: Upload the exact free comparison artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.verify.outputs.artifact_name }}
+          path: ${{ steps.candidate.outputs.candidate_path }}
+          if-no-files-found: error
+          retention-days: 7
+
+  stage:
+    name: Stage the exact artifact for separate human review
+    needs: research
+    if: >-
+      needs.research.result == 'success' &&
+      github.repository == 'itworksinprod/first-fold' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'itworksinprod'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      statuses: write
+    steps:
+      - name: Check out trusted main without persisted credentials
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind staging to the unchanged dispatch revision
+        shell: bash
+        run: |
+          git fetch --no-tags origin "+refs/heads/main:refs/remotes/origin/main"
+          live_main="$(git rev-parse refs/remotes/origin/main)"
+          if [[ "${live_main}" != "${GITHUB_SHA}" || "$(git rev-parse HEAD)" != "${GITHUB_SHA}" ]]; then
+            echo "Main advanced after this free comparison started; rerun the workflow from the new main revision."
+            exit 1
+          fi
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Install the locked trusted project
+        run: npm ci
+
+      - name: Require one isolated free-pilot PR
+        id: existing
+        env:
+          BASE_SHA: ${{ github.sha }}
+          BRANCH: ${{ needs.research.outputs.branch }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFile } from "node:fs/promises";
+
+          const repository = process.env.GITHUB_REPOSITORY;
+          const [owner] = repository.split("/");
+          const headers = {
+            accept: "application/vnd.github+json",
+            authorization: `Bearer ${process.env.GH_TOKEN}`,
+            "x-github-api-version": "2022-11-28",
+          };
+          async function api(apiPath, { allowNotFound = false } = {}) {
+            const response = await fetch(`${process.env.GITHUB_API_URL}${apiPath}`, { headers });
+            if (allowNotFound && response.status === 404) return null;
+            if (!response.ok) throw new Error(`GitHub API ${apiPath} failed with ${response.status}.`);
+            return response.json();
+          }
+
+          const pulls = await api(
+            `/repos/${repository}/pulls?state=open&base=${process.env.DEFAULT_BRANCH}&per_page=100`,
+          );
+          if (pulls.length === 100) {
+            throw new Error("Open pull-request pagination is ambiguous; refusing to guess past the first 100.");
+          }
+          const labeled = pulls.filter((pull) =>
+            pull.labels.some((label) => label.name === process.env.FREE_LABEL),
+          );
+          const sameDay = labeled.filter((pull) => pull.head.ref === process.env.BRANCH);
+          if (labeled.some((pull) => pull.head.ref !== process.env.BRANCH)) {
+            throw new Error("A prior free comparison PR is still open; finish that human review first.");
+          }
+          if (sameDay.length > 1) {
+            throw new Error("More than one same-day free comparison PR is open.");
+          }
+
+          const remote = await api(
+            `/repos/${repository}/git/ref/heads/${process.env.BRANCH}`,
+            { allowNotFound: true },
+          );
+          const pull = sameDay[0] ?? null;
+          if (Boolean(remote) !== Boolean(pull)) {
+            throw new Error("The free comparison branch and PR must either both exist or both be absent.");
+          }
+          if (pull) {
+            const valid =
+              pull.user.login === "github-actions[bot]" &&
+              pull.base.ref === process.env.DEFAULT_BRANCH &&
+              pull.base.repo.full_name === repository &&
+              pull.base.sha === process.env.BASE_SHA &&
+              pull.head.repo.full_name === repository &&
+              pull.head.label === `${owner}:${process.env.BRANCH}` &&
+              pull.head.sha === remote.object.sha;
+            if (!valid) throw new Error("The existing free comparison PR failed its identity check.");
+          }
+
+          await appendFile(process.env.GITHUB_OUTPUT, `mode=${pull ? "update" : "create"}\n`);
+          await appendFile(process.env.GITHUB_OUTPUT, `remote_sha=${remote?.object?.sha ?? ""}\n`);
+          await appendFile(process.env.GITHUB_OUTPUT, `pr_number=${pull?.number ?? ""}\n`);
+          NODE
+
+      - name: Download only the free comparison artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ needs.research.outputs.artifact_name }}
+          path: ${{ runner.temp }}/free-morning-press-artifact
+
+      - name: Revalidate and materialize the exact free candidate
+        env:
+          ARTIFACT_ROOT: ${{ runner.temp }}/free-morning-press-artifact
+          BRANCH: ${{ needs.research.outputs.branch }}
+          CANDIDATE_PATH: ${{ needs.research.outputs.candidate_path }}
+          CANDIDATE_SHA256: ${{ needs.research.outputs.candidate_sha256 }}
+          EDITION_DATE: ${{ needs.research.outputs.edition_date }}
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { createHash } from "node:crypto";
+          import { lstat, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+          import path from "node:path";
+          import { validateFreePilotProvenance } from "./scripts/automation/draft-free-edition.mjs";
+          import { FREE_FEED_SOURCES } from "./scripts/automation/free/feed-sources.mjs";
+          import { validateCanonicalEdition } from "./scripts/edition-content.mjs";
+
+          const expectedCandidatePath = `content/free-candidates/${process.env.EDITION_DATE}.json`;
+          const expectedBranch = `experiment/free-morning-press-${process.env.EDITION_DATE}`;
+          if (
+            process.env.CANDIDATE_PATH !== expectedCandidatePath ||
+            process.env.BRANCH !== expectedBranch
+          ) {
+            throw new Error("The free comparison path or branch crossed its isolation boundary.");
+          }
+
+          const entries = await readdir(process.env.ARTIFACT_ROOT);
+          const expectedName = path.basename(process.env.CANDIDATE_PATH);
+          if (entries.length !== 1 || entries[0] !== expectedName) {
+            throw new Error("The downloaded artifact must contain only the expected candidate JSON.");
+          }
+          const source = path.join(process.env.ARTIFACT_ROOT, expectedName);
+          const sourceStat = await lstat(source);
+          if (!sourceStat.isFile() || sourceStat.isSymbolicLink()) {
+            throw new Error("The downloaded free candidate must be a regular file.");
+          }
+
+          const raw = await readFile(source, "utf8");
+          const contentSha256 = createHash("sha256").update(raw).digest("hex");
+          if (contentSha256 !== process.env.CANDIDATE_SHA256) {
+            throw new Error("The downloaded free candidate does not match the research-job digest.");
+          }
+
+          const edition = JSON.parse(raw);
+          const validation = validateCanonicalEdition(edition);
+          const freePilot = edition.provenance?.freePilot;
+          const sourceCheck = edition.provenance?.sourceCheck;
+          const automation = {
+            runId: process.env.GITHUB_RUN_ID,
+            repository: process.env.GITHUB_REPOSITORY,
+            runUrl:
+              `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`,
+          };
+          validateFreePilotProvenance(edition, automation, {
+            expectedFeedSourceCount: FREE_FEED_SOURCES.length,
+          });
+          const expectedRunUrl = automation.runUrl;
+          const sha256 = /^[a-f0-9]{64}$/;
+          if (
+            !validation.valid ||
+            edition.editionDate !== process.env.EDITION_DATE ||
+            edition.status !== "validated" ||
+            edition.publication?.publishedAt !== null ||
+            edition.provenance?.automation !== undefined ||
+            freePilot?.workflow !== "free-morning-press" ||
+            freePilot?.provider !== "cloudflare-workers-ai" ||
+            freePilot?.model !== process.env.CLOUDFLARE_AI_MODEL ||
+            freePilot?.runId !== process.env.GITHUB_RUN_ID ||
+            freePilot?.runUrl !== expectedRunUrl ||
+            !Number.isFinite(Date.parse(freePilot?.generatedAt)) ||
+            !sha256.test(freePilot?.feedSnapshotSha256 ?? "") ||
+            !sha256.test(freePilot?.responseSha256 ?? "") ||
+            sourceCheck?.status !== "passed" ||
+            !Array.isArray(sourceCheck.issues) ||
+            sourceCheck.issues.length !== 0
+          ) {
+            throw new Error("The downloaded comparison failed trusted publication-isolation checks.");
+          }
+
+          await mkdir(path.dirname(process.env.CANDIDATE_PATH), { recursive: true });
+          await writeFile(process.env.CANDIDATE_PATH, raw, { encoding: "utf8", flag: "wx" });
+          NODE
+
+      - name: Test the exact staged candidate without publishing it
+        run: npm test
+
+      - name: Commit only the free comparison candidate
+        id: commit
+        env:
+          BRANCH: ${{ needs.research.outputs.branch }}
+          CANDIDATE_PATH: ${{ needs.research.outputs.candidate_path }}
+          EDITION_DATE: ${{ needs.research.outputs.edition_date }}
+          MODE: ${{ steps.existing.outputs.mode }}
+          PUSH_TOKEN: ${{ github.token }}
+          REMOTE_SHA: ${{ steps.existing.outputs.remote_sha }}
+        shell: bash
+        run: |
+          git fetch --no-tags origin "+refs/heads/main:refs/remotes/origin/main"
+          live_main="$(git rev-parse refs/remotes/origin/main)"
+          if [[ "${live_main}" != "${GITHUB_SHA}" || "$(git rev-parse HEAD)" != "${GITHUB_SHA}" ]]; then
+            echo "Main advanced during free-candidate validation; rerun from the new main revision."
+            exit 1
+          fi
+
+          git add -- "${CANDIDATE_PATH}"
+          mapfile -t staged_paths < <(git diff --cached --name-only)
+          if [[ "${#staged_paths[@]}" -ne 1 || "${staged_paths[0]}" != "${CANDIDATE_PATH}" ]]; then
+            echo "The staging job may change only ${CANDIDATE_PATH}."
+            exit 1
+          fi
+          if ! git diff --quiet || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
+            echo "Unexpected unstaged or untracked staging output detected."
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "${BRANCH}"
+          git commit -m "Prepare free Morning Press comparison for ${EDITION_DATE}"
+          head_sha="$(git rev-parse HEAD)"
+          if [[ "$(git rev-parse HEAD^)" != "${GITHUB_SHA}" ]]; then
+            echo "The free comparison commit is not based on the exact dispatch revision."
+            exit 1
+          fi
+          push_auth="$(node -e 'process.stdout.write(Buffer.from(`x-access-token:${process.env.PUSH_TOKEN}`).toString("base64"))')"
+          echo "::add-mask::${push_auth}"
+
+          if [[ "${MODE}" == "update" ]]; then
+            git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${push_auth}" \
+              push --force-with-lease="refs/heads/${BRANCH}:${REMOTE_SHA}" origin "HEAD:refs/heads/${BRANCH}"
+          else
+            git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${push_auth}" \
+              push origin "HEAD:refs/heads/${BRANCH}"
+          fi
+          unset push_auth
+          echo "head_sha=${head_sha}" >> "${GITHUB_OUTPUT}"
+
+      - name: Create or update the separate human-review PR
+        env:
+          ARTIFACT_NAME: ${{ needs.research.outputs.artifact_name }}
+          BASE_SHA: ${{ github.sha }}
+          BRANCH: ${{ needs.research.outputs.branch }}
+          CANDIDATE_PATH: ${{ needs.research.outputs.candidate_path }}
+          EDITION_DATE: ${{ needs.research.outputs.edition_date }}
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ steps.commit.outputs.head_sha }}
+          MODE: ${{ steps.existing.outputs.mode }}
+          PR_NUMBER: ${{ steps.existing.outputs.pr_number }}
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          const repository = process.env.GITHUB_REPOSITORY;
+          const headers = {
+            accept: "application/vnd.github+json",
+            authorization: `Bearer ${process.env.GH_TOKEN}`,
+            "content-type": "application/json",
+            "x-github-api-version": "2022-11-28",
+          };
+          async function api(apiPath, { method = "GET", body, allowNotFound = false } = {}) {
+            const response = await fetch(`${process.env.GITHUB_API_URL}${apiPath}`, {
+              method,
+              headers,
+              body: body ? JSON.stringify(body) : undefined,
+            });
+            if (allowNotFound && response.status === 404) return null;
+            if (!response.ok) throw new Error(`GitHub API ${apiPath} failed with ${response.status}.`);
+            return response.status === 204 ? null : response.json();
+          }
+
+          const title = `Free Morning Press comparison — ${process.env.EDITION_DATE}`;
+          const body = [
+            "## Free model comparison candidate",
+            "",
+            "> Comparison only: this candidate is unpublished, cannot enter the paid Morning Press approval workflow, and cannot deploy to the reader app.",
+            "",
+            `- Candidate: \`${process.env.CANDIDATE_PATH}\``,
+            `- Exact candidate SHA: \`${process.env.HEAD_SHA}\``,
+            `- Generation run: ${process.env.GITHUB_SERVER_URL}/${repository}/actions/runs/${process.env.GITHUB_RUN_ID}`,
+            `- Review artifact: \`${process.env.ARTIFACT_NAME}\``,
+            "",
+            "A human should compare the writing, sources, and desk choices with the paid edition. Record findings as ordinary PR comments, not as a production approval. Review state here is informational only; no automation will merge or publish it. Close the PR after recording the result.",
+          ].join("\n");
+
+          const existingLabel = await api(
+            `/repos/${repository}/labels/${encodeURIComponent(process.env.FREE_LABEL)}`,
+            { allowNotFound: true },
+          );
+          if (!existingLabel) {
+            await api(`/repos/${repository}/labels`, {
+              method: "POST",
+              body: {
+                name: process.env.FREE_LABEL,
+                color: "446b5f",
+                description: "Unpublished Cloudflare Workers AI comparison candidate",
+              },
+            });
+          }
+
+          let pull;
+          if (process.env.MODE === "update") {
+            pull = await api(`/repos/${repository}/pulls/${process.env.PR_NUMBER}`, {
+              method: "PATCH",
+              body: { title, body },
+            });
+          } else {
+            pull = await api(`/repos/${repository}/pulls`, {
+              method: "POST",
+              body: {
+                title,
+                body,
+                head: process.env.BRANCH,
+                base: process.env.DEFAULT_BRANCH,
+                draft: false,
+                maintainer_can_modify: false,
+              },
+            });
+          }
+          await api(`/repos/${repository}/issues/${pull.number}/labels`, {
+            method: "POST",
+            body: { labels: [process.env.FREE_LABEL] },
+          });
+
+          const live = await api(`/repos/${repository}/pulls/${pull.number}`);
+          const valid =
+            live.state === "open" &&
+            live.draft === false &&
+            live.user.login === "github-actions[bot]" &&
+            live.base.ref === process.env.DEFAULT_BRANCH &&
+            live.base.repo.full_name === repository &&
+            live.base.sha === process.env.BASE_SHA &&
+            live.head.ref === process.env.BRANCH &&
+            live.head.repo.full_name === repository &&
+            live.head.sha === process.env.HEAD_SHA &&
+            live.labels.some((label) => label.name === process.env.FREE_LABEL);
+          if (!valid) throw new Error("The free comparison PR failed its post-write identity check.");
+          NODE
+
+      - name: Attest the exact free comparison SHA
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ steps.commit.outputs.head_sha }}
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          const repository = process.env.GITHUB_REPOSITORY;
+          const context = "first-fold/free-morning-press-candidate";
+          const targetUrl =
+            `${process.env.GITHUB_SERVER_URL}/${repository}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+          const response = await fetch(
+            `${process.env.GITHUB_API_URL}/repos/${repository}/statuses/${process.env.HEAD_SHA}`,
+            {
+              method: "POST",
+              headers: {
+                accept: "application/vnd.github+json",
+                authorization: `Bearer ${process.env.GH_TOKEN}`,
+                "content-type": "application/json",
+                "x-github-api-version": "2022-11-28",
+              },
+              body: JSON.stringify({
+                state: "success",
+                context,
+                target_url: targetUrl,
+                description: "Free comparison generation, validation, and source QA passed",
+              }),
+            },
+          );
+          const status = await response.json().catch(() => ({}));
+          if (
+            !response.ok ||
+            status.state !== "success" ||
+            status.context !== context ||
+            status.target_url !== targetUrl ||
+            status.creator?.login !== "github-actions[bot]"
+          ) {
+            throw new Error(`Unable to attest the exact free comparison SHA (${response.status}).`);
+          }
+          NODE

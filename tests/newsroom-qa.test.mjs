@@ -472,15 +472,21 @@ test("reachability rejects an unpinned fetch implementation", async () => {
 });
 
 test("reachability timeouts fail closed", async () => {
+  const requestSignals = [];
   const result = await runNewsroomQa(editionFixture(), {
     checkLinks: true,
     timeoutMs: 5,
     lookupImpl: publicLookup,
-    requestImpl: async () => new Promise(() => {}),
+    requestImpl: async (_url, options) => new Promise((_resolve, reject) => {
+      requestSignals.push(options.signal);
+      options.signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+    }),
   });
 
   assert.equal(result.sourceCheck.status, "failed");
   assert.ok(issueCodes(result.sourceCheck).includes("LINK_TIMEOUT"));
+  assert.ok(requestSignals.length > 0);
+  assert.ok(requestSignals.every((signal) => signal.aborted));
 });
 
 test("bot-protection statuses are warnings, while missing pages fail", async (context) => {
