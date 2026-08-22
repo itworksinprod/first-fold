@@ -1,0 +1,212 @@
+{
+  "schemaVersion": 2,
+  "id": "first-fold-2026-08-22",
+  "issueNumber": 2,
+  "editionDate": "2026-08-22",
+  "status": "validated",
+  "masthead": {
+    "name": "First Fold",
+    "tagline": "Printed for the screen. Finished by breakfast."
+  },
+  "timezone": "America/New_York",
+  "reportingWindow": {
+    "startInclusive": "2026-08-21T09:00:00.000Z",
+    "endExclusive": "2026-08-22T09:00:00.000Z",
+    "displayLabel": "August 21, 2026 at 5:00 AM ET through August 22, 2026 at 5:00 AM ET"
+  },
+  "publication": {
+    "targetLocalTime": "06:00",
+    "publishAt": "2026-08-22T10:00:00.000Z",
+    "generatedAt": "2026-08-22T22:12:44.077Z",
+    "publishedAt": null
+  },
+  "frontPage": {
+    "diversityException": null,
+    "estimatedMinutes": 6,
+    "leadStoryId": "candidate-ddbb44867e92d0d5",
+    "note": "This edition highlights a major privacy settlement affecting a popular social platform and a significant staffing shift at a leading hardware and software maker.",
+    "stopThePressesStoryId": null,
+    "storyOrder": [
+      "candidate-ddbb44867e92d0d5",
+      "candidate-38dc3efcfe52bbba"
+    ]
+  },
+  "desks": {
+    "ai": {
+      "desk": "ai",
+      "story": null,
+      "emptyReason": "No AI‑adjacent verified development met the editorial threshold in this reporting window."
+    },
+    "work-and-tools": {
+      "desk": "work-and-tools",
+      "story": {
+        "canonicalEventKey": "free-f33c9654221aa103",
+        "confidence": {
+          "level": "high",
+          "rationale": "Both The Verge and TechCrunch independently reported the same layoff figures and team impacts, with timestamps inside the reporting window."
+        },
+        "deck": "Apple is cutting hundreds of jobs from its Siri and Vision Pro groups, including the shutdown of a Vision Pro gaming team.",
+        "desk": "work-and-tools",
+        "editorial": {
+          "aiAdjacent": false,
+          "deskFit": "The story’s main consequence is a shift in Apple’s internal tooling and product development resources, directly affecting developers and users who rely on Siri and Vision Pro capabilities.",
+          "maturity": "verified-development",
+          "primaryEntity": "Apple"
+        },
+        "evidence": [
+          {
+            "id": "evidence-2",
+            "sourceIds": [
+              "source-1-techcrunch",
+              "source-3-the-verge"
+            ],
+            "statement": "Apple announced layoffs affecting hundreds of employees on the Siri and Vision Pro teams, including the closure of a Vision Pro gaming group.",
+            "verification": "confirmed"
+          }
+        ],
+        "headline": "Apple trims Siri and Vision Pro staff, cutting hundreds of jobs",
+        "id": "candidate-38dc3efcfe52bbba",
+        "priority": "high",
+        "selection": {
+          "materialDelta": null,
+          "score": 71,
+          "selectedBecause": "Meets the impact, novelty, evidence, and actionability thresholds for the Work & Tools desk."
+        },
+        "sources": [
+          {
+            "id": "source-1-techcrunch",
+            "title": "Apple is reportedly cutting hundreds of jobs from Siri, Vision Pro teams",
+            "publisher": "TechCrunch",
+            "url": "https://techcrunch.com/2026/08/21/apple-is-reportedly-cutting-hundreds-of-jobs-from-siri-vision-pro-teams/",
+            "relationship": "independent",
+            "publishedAt": "2026-08-21T20:58:07.000Z",
+            "retrievedAt": "2026-08-22T22:12:44.077Z"
+          },
+          {
+            "id": "source-3-the-verge",
+            "title": "Apple is laying off staffers working on the Vision Pro and Siri",
+            "publisher": "The Verge",
+            "url": "https://www.theverge.com/tech/983451/apple-layoffs-vision-pro-siri",
+            "relationship": "independent",
+            "publishedAt": "2026-08-21T19:44:55.000Z",
+            "retrievedAt": "2026-08-22T22:12:44.077Z"
+          }
+        ],
+        "status": "new-development",
+        "timing": {
+          "eventAt": null,
+          "firstPublishedAt": "2026-08-21T19:44:55.000Z",
+          "materiallyUpdatedAt": null
+        },
+        "whatHappened": "Apple disclosed that it is eliminating several hundred positions across its Siri and Vision Pro divisions. The cuts include the complete shutdown of a Vision Pro gaming team and a reduction in staff responsible for immersive content creation. Company officials said the moves reflect a strategic shift away from certain initiatives while reallocating resources to higher‑priority projects.",
+        "whatToDoOrWatch": "Developers building for Vision Pro should monitor Apple’s upcoming roadmap announcements for changes to SDK support or feature timelines. Teams relying on Siri integration may need to adjust expectations for future enhancements. Employees impacted by the layoffs are encouraged to explore internal transfer options within Apple’s broader ecosystem.",
+        "whyItMatters": "The layoffs signal a recalibration of Apple’s investment in mixed‑reality and voice‑assistant technologies, potentially slowing the rollout of new Vision Pro features and Siri capabilities. For developers and enterprise customers, reduced staffing could mean longer development cycles and fewer updates, influencing decisions about platform commitment and prompting a reassessment of alternative tools."
+      }
+    },
+    "security-and-privacy": {
+      "desk": "security-and-privacy",
+      "story": {
+        "canonicalEventKey": "free-7be8a3866703485e",
+        "confidence": {
+          "level": "high",
+          "rationale": "Two independent reputable outlets (The Verge and TechCrunch) reported the same settlement details, and both provide timestamps within the reporting window."
+        },
+        "deck": "TikTok will pay $400 million to settle a DOJ lawsuit accusing the platform of collecting data from children without parental consent.",
+        "desk": "security-and-privacy",
+        "editorial": {
+          "aiAdjacent": false,
+          "deskFit": "The story’s primary consequence is a privacy‑risk mitigation that directly affects millions of under‑age users and sets a regulatory precedent, matching the Security & Privacy charter.",
+          "maturity": "verified-development",
+          "primaryEntity": "TikTok"
+        },
+        "evidence": [
+          {
+            "id": "evidence-1",
+            "sourceIds": [
+              "source-1-the-verge",
+              "source-3-techcrunch"
+            ],
+            "statement": "TikTok agreed to a $400 million settlement with the U.S. Department of Justice over alleged violations of the Children’s Online Privacy Protection Act.",
+            "verification": "confirmed"
+          }
+        ],
+        "headline": "TikTok settles DOJ child‑privacy lawsuit for $400 million",
+        "id": "candidate-ddbb44867e92d0d5",
+        "priority": "high",
+        "selection": {
+          "materialDelta": null,
+          "score": 75,
+          "selectedBecause": "Meets the impact, novelty, evidence, and actionability thresholds for the Security & Privacy desk."
+        },
+        "sources": [
+          {
+            "id": "source-1-the-verge",
+            "title": "TikTok will pay $400 million to settle DOJ child privacy lawsuit",
+            "publisher": "The Verge",
+            "url": "https://www.theverge.com/tech/983531/tiktok-settle-doj-lawsuit-coppa",
+            "relationship": "independent",
+            "publishedAt": "2026-08-21T22:13:34.000Z",
+            "retrievedAt": "2026-08-22T22:12:44.077Z"
+          },
+          {
+            "id": "source-3-techcrunch",
+            "title": "TikTok reaches $400M settlement over children’s privacy lawsuit",
+            "publisher": "TechCrunch",
+            "url": "https://techcrunch.com/2026/08/21/tiktok-reaches-400m-settlement-over-childrens-privacy-lawsuit/",
+            "relationship": "independent",
+            "publishedAt": "2026-08-21T20:25:21.000Z",
+            "retrievedAt": "2026-08-22T22:12:44.077Z"
+          }
+        ],
+        "status": "new-development",
+        "timing": {
+          "eventAt": null,
+          "firstPublishedAt": "2026-08-21T20:25:21.000Z",
+          "materiallyUpdatedAt": null
+        },
+        "whatHappened": "The Department of Justice announced that TikTok will pay $400 million to resolve a lawsuit claiming the company collected personal data from children without parental consent, violating COPPA. The settlement covers alleged failures to notify parents, obtain consent, and delete under‑age accounts. TikTok did not admit wrongdoing but agreed to the payment and to implement stronger age‑verification and data‑handling safeguards.",
+        "whatToDoOrWatch": "Parents should review TikTok’s updated privacy settings and consider supervising their children’s app usage. Regulators may target other platforms with similar practices, so watch for additional enforcement actions. TikTok users can expect clearer age‑gate prompts and a public report on the new safeguards later this year.",
+        "whyItMatters": "The settlement underscores growing governmental scrutiny of how social apps handle minors’ data, setting a costly precedent for the industry. With $400 million at stake, the case signals that non‑compliance with COPPA can lead to substantial financial penalties and mandatory policy overhauls, influencing how all child‑focused services design their data‑collection flows."
+      }
+    },
+    "platforms-and-power": {
+      "desk": "platforms-and-power",
+      "story": null,
+      "emptyReason": "No platform‑control story qualified for this edition."
+    }
+  },
+  "backPage": {
+    "tryThisTomorrow": null,
+    "watchNext": []
+  },
+  "corrections": [],
+  "provenance": {
+    "policyVersion": "first-fold-editorial-v2",
+    "promptVersion": "first-fold-daily-v2",
+    "pipelineVersion": "first-fold-pipeline-v2",
+    "freePilot": {
+      "workflow": "free-morning-press",
+      "provider": "cloudflare-workers-ai",
+      "model": "@cf/openai/gpt-oss-120b",
+      "runId": "32601791706",
+      "runUrl": "https://github.com/itworksinprod/first-fold/actions/runs/32601791706",
+      "repository": "itworksinprod/first-fold",
+      "runMode": "same_day_backfill",
+      "generatedAt": "2026-08-22T22:12:44.077Z",
+      "feedSnapshotSha256": "1975b7ca8cfc4da756f6030685e13f3bd346a528c0400cf2f0040d8de37505ec",
+      "requestSha256": "ea5a429bf772ae0363ccea0451689871a5ba1333ec1ee29863d214e8c87102be",
+      "responseSha256": "d84e72fa940794d0eaa53d54115d5441d22e2a19f4f4e8f58cdc30825c7b2bc1",
+      "responseId": "chatcmpl-8829abfd-1b36-4073-898a-df4c8a282325",
+      "inference": "workers-ai",
+      "feedSourceCount": 17,
+      "successfulFeedSourceCount": 16,
+      "candidateCount": 2
+    },
+    "sourceCheck": {
+      "status": "passed",
+      "checkedAt": "2026-08-22T22:13:52.709Z",
+      "checkedSourceCount": 4,
+      "issues": []
+    }
+  }
+}
