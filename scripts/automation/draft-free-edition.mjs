@@ -1,5 +1,10 @@
 import { createHash } from "node:crypto";
-import { validateCanonicalEdition } from "../edition-content.mjs";
+import {
+  MAX_READER_FACING_STORY_WORDS,
+  MIN_READER_FACING_STORY_WORDS,
+  countReaderFacingStoryWords,
+  validateCanonicalEdition,
+} from "../edition-content.mjs";
 import { buildEditionDraft, localTimeToIso } from "../new-edition.mjs";
 import {
   EDITORIAL_OUTPUT_SCHEMA,
@@ -568,6 +573,14 @@ those dossier strings, even when capitalization or punctuation changes. Before
 returning JSON, compare each story with its matched dossier and restructure any
 overlapping sentence while preserving only supported meaning.
 
+For every selected story, whatHappened, whyItMatters, and whatToDoOrWatch must
+contain ${MIN_READER_FACING_STORY_WORDS}–${MAX_READER_FACING_STORY_WORDS} reader-facing words in total, inclusive. Count the
+combined words in those three fields before returning JSON. Do not count
+headlines, decks, evidence statements, or metadata toward that total, and do
+not pad a story with unsupported facts. Aim for 175–200 words to leave a safe
+margin inside the hard range. Leave a desk quiet if its dossier cannot support
+that length.
+
 Return only the model-authored editorial payload accepted by the supplied JSON
 schema: frontPage, exactly four desks, and backPage.tryThisTomorrow. Trusted
 local code composes identity, schedule, status, corrections, empty Watch Next,
@@ -607,16 +620,23 @@ export function buildFreeWorkersAiMessages({ policyText, promptText, scaffold, p
   ];
 }
 
-function buildFreeWorkersAiCopyRetryMessages(messages) {
+function buildFreeWorkersAiCorrectiveRetryMessages(messages, repairKind) {
   const retryMessages = structuredClone(messages);
-  retryMessages[0].content += `\n\n<free-copy-retry>\n` +
-    `CORRECTIVE RETRY: Trusted local originality validation rejected the prior result. Produce one complete ` +
+  const lengthRepair = repairKind === "length";
+  const tag = lengthRepair ? "free-length-retry" : "free-copy-retry";
+  const reason = lengthRepair
+    ? `Trusted local word-count validation rejected the prior result. Every selected story must contain ` +
+      `${MIN_READER_FACING_STORY_WORDS}–${MAX_READER_FACING_STORY_WORDS} words in whatHappened, whyItMatters, and whatToDoOrWatch combined, inclusive. ` +
+      `Count only those three fields before returning JSON and aim for 175–200 words.`
+    : `Trusted local originality validation rejected the prior result.`;
+  retryMessages[0].content += `\n\n<${tag}>\n` +
+    `CORRECTIVE RETRY: ${reason} Produce one complete ` +
     `replacement editorial payload from the same RUN_CONTEXT. Rewrite every model-authored prose field from ` +
     `scratch, including evidence[].statement, while preserving only supported meaning and the dossier's exact ` +
     `non-prose identifiers and source metadata. After ignoring capitalization and punctuation, no story prose ` +
     `may repeat ${FREE_COPY_OVERLAP_WORDS} or more contiguous words from a candidate title, verifiedFacts entry, ` +
     `or sources[].title. Return JSON only.\n` +
-    `</free-copy-retry>`;
+    `</${tag}>`;
   return retryMessages;
 }
 
@@ -663,13 +683,44 @@ function modelStoryPassages(story) {
   ].filter((value) => typeof value === "string" && value.trim());
 }
 
-class FreeStoryCopyOverlapError extends Error {
+class FreeEditorialRepairError extends Error {
+  constructor(message, repairKind) {
+    super(message);
+    this.name = "FreeEditorialRepairError";
+    this.repairKind = repairKind;
+  }
+}
+
+class FreeStoryCopyOverlapError extends FreeEditorialRepairError {
   constructor(overlapWords) {
     super(
       `Workers AI story prose repeats ${overlapWords} or more contiguous words from untrusted feed text.`,
+      "originality",
     );
     this.name = "FreeStoryCopyOverlapError";
   }
+}
+
+class FreeStoryWordCountError extends FreeEditorialRepairError {
+  constructor(readerWords) {
+    super(
+      `Workers AI story must contain ${MIN_READER_FACING_STORY_WORDS}–${MAX_READER_FACING_STORY_WORDS} ` +
+      `reader-facing words; received ${readerWords}.`,
+      "length",
+    );
+    this.name = "FreeStoryWordCountError";
+  }
+}
+
+function assertFreeStoryReaderWordCount(story) {
+  const readerWords = countReaderFacingStoryWords(story);
+  if (
+    readerWords < MIN_READER_FACING_STORY_WORDS ||
+    readerWords > MAX_READER_FACING_STORY_WORDS
+  ) {
+    throw new FreeStoryWordCountError(readerWords);
+  }
+  return readerWords;
 }
 
 export function assertOriginalFreeStoryCopy(
@@ -714,7 +765,7 @@ export function normalizeFreeEditorialAgainstCandidates(payload, candidates, gen
     candidateByEventKey.set(candidate.canonicalEventKey, candidate);
   }
   const usedEventKeys = new Set();
-  let copyOverlapError = null;
+  let editorialRepairError = null;
   const desks = {};
   for (const desk of FREE_DESKS) {
     const page = payload.desks[desk];
@@ -826,16 +877,21 @@ export function normalizeFreeEditorialAgainstCandidates(payload, candidates, gen
     if (expectedStatus === "material-update" && !story.selection.materialDelta?.trim()) {
       throw new Error(`Workers AI story ${story.id} omitted the material delta for its matched dossier.`);
     }
-    try {
-      assertOriginalFreeStoryCopy(story, candidate);
-    } catch (error) {
-      if (!(error instanceof FreeStoryCopyOverlapError)) throw error;
-      copyOverlapError ??= error;
+    for (const assertion of [
+      () => assertOriginalFreeStoryCopy(story, candidate),
+      () => assertFreeStoryReaderWordCount(story),
+    ]) {
+      try {
+        assertion();
+      } catch (error) {
+        if (!(error instanceof FreeEditorialRepairError)) throw error;
+        editorialRepairError ??= error;
+      }
     }
     if (story.securityAction === null) delete story.securityAction;
     desks[desk] = { desk, story };
   }
-  if (copyOverlapError) throw copyOverlapError;
+  if (editorialRepairError) throw editorialRepairError;
   return {
     frontPage: structuredClone(payload.frontPage),
     desks,
@@ -1109,8 +1165,10 @@ export async function draftFreeEdition({
         generatedAt,
       );
     } catch (error) {
-      if (!(error instanceof FreeStoryCopyOverlapError)) throw error;
-      accepted = await requestInference(buildFreeWorkersAiCopyRetryMessages(messages));
+      if (!(error instanceof FreeEditorialRepairError)) throw error;
+      accepted = await requestInference(
+        buildFreeWorkersAiCorrectiveRetryMessages(messages, error.repairKind),
+      );
       editorial = normalizeFreeEditorialAgainstCandidates(
         accepted.aiResult.editorialPayload,
         candidates,

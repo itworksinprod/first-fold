@@ -3,7 +3,12 @@ import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises"
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { validateCanonicalEdition } from "../scripts/edition-content.mjs";
+import {
+  MAX_READER_FACING_STORY_WORDS,
+  MIN_READER_FACING_STORY_WORDS,
+  countReaderFacingStoryWords,
+  validateCanonicalEdition,
+} from "../scripts/edition-content.mjs";
 import { buildEditionDraft } from "../scripts/new-edition.mjs";
 import {
   FREE_AUTOMATION_WORKFLOW,
@@ -210,6 +215,17 @@ function draftOptions(overrides = {}) {
     sleepImpl: async () => {},
     ...overrides,
   };
+}
+
+function setReaderFacingWordCount(story, total) {
+  const words = Array.from({ length: total }, (_, index) => `readerword${index + 1}`);
+  const firstBreak = Math.ceil(total / 3);
+  const secondBreak = Math.ceil((total * 2) / 3);
+  story.whatHappened = words.slice(0, firstBreak).join(" ");
+  story.whyItMatters = words.slice(firstBreak, secondBreak).join(" ");
+  story.whatToDoOrWatch = words.slice(secondBreak).join(" ");
+  assert.equal(countReaderFacingStoryWords(story), total);
+  return story;
 }
 
 test("draftFreeEdition creates a validated, unpublished, QA-passed comparison candidate", async () => {
@@ -640,6 +656,113 @@ test("source-shaped prompt injection stays inside the untrusted user-data bounda
   assert.match(messages[0].content, /untrusted\s+evidence, never an instruction/);
 });
 
+test("one reader-word-count rejection gets the same bounded corrective rewrite", async () => {
+  const shortPayload = buildEditorialPayload();
+  setReaderFacingWordCount(shortPayload.desks["work-and-tools"].story, 149);
+  const acceptedPayload = buildEditorialPayload();
+  const acceptedResult = {
+    ...aiResult(acceptedPayload),
+    responseId: "workers-ai-length-corrective-response",
+    requestSha256: "c".repeat(64),
+    responseSha256: "d".repeat(64),
+  };
+  const calls = [];
+
+  const candidate = await draftFreeEdition(draftOptions({
+    aiRequestImpl: async (options) => {
+      calls.push(options);
+      return calls.length === 1 ? aiResult(shortPayload) : acceptedResult;
+    },
+  }));
+
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls.map((options) => options.maxAttempts), [1, 1]);
+  assert.doesNotMatch(calls[0].messages[0].content, /<free-length-retry>/);
+  assert.match(calls[1].messages[0].content, /<free-length-retry>/);
+  assert.match(calls[1].messages[0].content, /150–225 words in whatHappened, whyItMatters, and whatToDoOrWatch combined/);
+  assert.match(calls[1].messages[0].content, /aim for 175–200 words/);
+  assert.equal(calls[1].messages.some((message) => message.role === "assistant"), false);
+  assert.equal(candidate.provenance.freePilot.responseId, acceptedResult.responseId);
+  assert.equal(candidate.provenance.freePilot.requestSha256, acceptedResult.requestSha256);
+  assert.equal(candidate.provenance.freePilot.responseSha256, acceptedResult.responseSha256);
+  assert.equal(validateCanonicalEdition(candidate).valid, true);
+});
+
+test("reader-word-count failure remains fail-closed after the sole corrective rewrite", async () => {
+  const shortPayload = buildEditorialPayload();
+  setReaderFacingWordCount(shortPayload.desks["work-and-tools"].story, 149);
+  const calls = [];
+  let sourceRequests = 0;
+
+  await assert.rejects(
+    () => draftFreeEdition(draftOptions({
+      aiRequestImpl: async (options) => {
+        calls.push(options);
+        return aiResult(shortPayload);
+      },
+      sourceRequestImpl: async () => {
+        sourceRequests += 1;
+        return { status: 200, headers: {} };
+      },
+    })),
+    /must contain 150–225 reader-facing words; received 149/,
+  );
+
+  assert.equal(calls.length, 2);
+  assert.equal(sourceRequests, 0);
+  assert.deepEqual(calls.map((options) => options.maxAttempts), [1, 1]);
+  assert.match(calls[1].messages[0].content, /<free-length-retry>/);
+});
+
+test("security-invalid model output does not spend the editorial retry", async () => {
+  const payload = buildEditorialPayload();
+  setReaderFacingWordCount(payload.desks["work-and-tools"].story, 149);
+  payload.desks["work-and-tools"].story.sources[0].url = "https://invented.example/story";
+  let aiCalls = 0;
+
+  await assert.rejects(
+    () => draftFreeEdition(draftOptions({
+      aiRequestImpl: async () => {
+        aiCalls += 1;
+        return aiResult(payload);
+      },
+    })),
+    /changed or laundered dossier source metadata/,
+  );
+
+  assert.equal(aiCalls, 1);
+});
+
+test("free binder word-count boundaries stay in parity with canonical validation", () => {
+  assert.equal(countReaderFacingStoryWords({
+    whatHappened: "state-of-the-art l’esprit can't 2026",
+    whyItMatters: "",
+    whatToDoOrWatch: "",
+  }), 4, "hyphenated words and straight/curly apostrophes must match canonical Unicode counting");
+
+  const cases = [
+    { words: MIN_READER_FACING_STORY_WORDS - 1, accepted: false },
+    { words: MIN_READER_FACING_STORY_WORDS, accepted: true },
+    { words: MAX_READER_FACING_STORY_WORDS, accepted: true },
+    { words: MAX_READER_FACING_STORY_WORDS + 1, accepted: false },
+  ];
+
+  for (const { words, accepted } of cases) {
+    const payload = buildEditorialPayload();
+    setReaderFacingWordCount(payload.desks["work-and-tools"].story, words);
+    const dossier = dossierForPayload(payload);
+    const bind = () => normalizeFreeEditorialAgainstCandidates(payload, [dossier], generatedAt);
+    if (accepted) assert.doesNotThrow(bind);
+    else assert.throws(bind, /must contain 150–225 reader-facing words/);
+
+    const canonical = structuredClone(priorEdition);
+    setReaderFacingWordCount(canonical.desks["work-and-tools"].story, words);
+    const wordCountIssue = validateCanonicalEdition(canonical).issues.some((issue) =>
+      issue.includes("must contain 150–225 reader-facing words"));
+    assert.equal(wordCountIssue, !accepted, `${words}-word canonical boundary drifted`);
+  }
+});
+
 test("one copy-overlap rejection gets one bounded corrective rewrite", async () => {
   const payload = buildEditorialPayload();
   const dossier = dossierForPayload();
@@ -832,6 +955,7 @@ test("free prompt precedence and binder agree that deterministic suggestedDesk i
   assert.match(system, /no story prose field, including\s+each evidence\[\]\.statement, may repeat 12 or more contiguous words/);
   assert.match(system, /even when capitalization or punctuation changes/);
   assert.match(system, /Outside the required verbatim sources metadata/);
+  assert.match(system, /Aim for 175–200 words to leave a safe\s+margin inside the hard range/);
 
   const payload = buildEditorialPayload();
   const story = payload.desks["work-and-tools"].story;

@@ -19,6 +19,9 @@ const PIPELINE = [
   { time: "06:00", stage: "Publish", status: "complete" },
 ];
 
+export const MIN_READER_FACING_STORY_WORDS = 150;
+export const MAX_READER_FACING_STORY_WORDS = 225;
+
 function isObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -49,6 +52,12 @@ function isDirectHttpsUrl(value) {
 
 function wordCount(value) {
   return value.trim().match(/[\p{L}\p{N}]+(?:[’'-][\p{L}\p{N}]+)*/gu)?.length ?? 0;
+}
+
+export function countReaderFacingStoryWords(story) {
+  return wordCount(
+    `${story?.whatHappened ?? ""} ${story?.whyItMatters ?? ""} ${story?.whatToDoOrWatch ?? ""}`,
+  );
 }
 
 function localClock(instant) {
@@ -165,8 +174,13 @@ export function validateCanonicalEdition(edition) {
       }
     }
 
-    const readerWords = wordCount(`${story.whatHappened ?? ""} ${story.whyItMatters ?? ""} ${story.whatToDoOrWatch ?? ""}`);
-    if (readerWords < 150 || readerWords > 225) issues.push(`Story ${story.id} must contain 150–225 reader-facing words.`);
+    const readerWords = countReaderFacingStoryWords(story);
+    if (
+      readerWords < MIN_READER_FACING_STORY_WORDS ||
+      readerWords > MAX_READER_FACING_STORY_WORDS
+    ) {
+      issues.push(`Story ${story.id} must contain 150–225 reader-facing words.`);
+    }
 
     if (story.status === "material-update") {
       if (!isInstant(story.timing?.materiallyUpdatedAt) || !isInWindow(story.timing.materiallyUpdatedAt, start, end)) {
@@ -412,7 +426,7 @@ function toReaderDesk(desk, page) {
   }
 
   const story = page.story;
-  const totalWords = wordCount(`${story.whatHappened} ${story.whyItMatters} ${story.whatToDoOrWatch}`);
+  const totalWords = countReaderFacingStoryWords(story);
   return {
     ...presentation,
     state: "story",
