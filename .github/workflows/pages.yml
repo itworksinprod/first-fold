@@ -5,14 +5,23 @@ on:
     branches: [main]
   push:
     branches: [main]
-  schedule:
-    - cron: "0 6 * * 1-5"
-      timezone: "America/New_York"
   workflow_dispatch:
     inputs:
+      trigger_source:
+        description: Leave blank for manual use; the dispatcher sends cloudflare
+        required: false
+        type: string
+      scheduled_at:
+        description: Dispatcher-supplied canonical ISO timestamp; leave blank manually
+        required: false
+        type: string
+      dispatch_key:
+        description: Dispatcher correlation key; leave blank manually
+        required: false
+        type: string
       recovery_reason:
-        description: Why the scheduled publication needs a manual recovery
-        required: true
+        description: Why this external delivery trigger or manual recovery is running
+        required: false
         type: string
 
 permissions:
@@ -48,16 +57,90 @@ jobs:
       - name: Build and test
         run: npm test
 
-  package:
-    name: Validate and package the morning edition
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+  delivery_gate:
+    name: Validate the delivery request
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
+    timeout-minutes: 5
     steps:
+      - name: Validate dispatch provenance
+        env:
+          DISPATCH_KEY: ${{ inputs.dispatch_key }}
+          RECOVERY_REASON: ${{ inputs.recovery_reason }}
+          SCHEDULED_AT: ${{ inputs.scheduled_at }}
+          TRIGGER_SOURCE: ${{ inputs.trigger_source }}
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          const triggerSource = String(process.env.TRIGGER_SOURCE ?? "").trim();
+          const scheduledAt = String(process.env.SCHEDULED_AT ?? "");
+          const dispatchKey = String(process.env.DISPATCH_KEY ?? "").trim();
+          const recoveryReason = String(process.env.RECOVERY_REASON ?? "").trim();
+          const isCloudflare = triggerSource === "cloudflare";
+          const isManual = triggerSource === "" || triggerSource === "manual";
+
+          if (!isCloudflare && !isManual) {
+            throw new Error("trigger_source must be blank, manual, or cloudflare.");
+          }
+
+          const nowParts = Object.fromEntries(
+            new Intl.DateTimeFormat("en-US", {
+              timeZone: "America/New_York",
+              calendar: "gregory",
+              numberingSystem: "latn",
+              year: "numeric",
+              month: "2-digit",
+              day: "2-digit",
+            })
+              .formatToParts(new Date())
+              .filter(({ type }) => type !== "literal")
+              .map(({ type, value }) => [type, value]),
+          );
+          const today = `${nowParts.year}-${nowParts.month}-${nowParts.day}`;
+
+          if (isCloudflare) {
+            const scheduledDate = new Date(scheduledAt);
+            if (Number.isNaN(scheduledDate.getTime()) || scheduledDate.toISOString() !== scheduledAt) {
+              throw new Error("Cloudflare scheduled_at must be a canonical ISO timestamp.");
+            }
+            const scheduledParts = Object.fromEntries(
+              new Intl.DateTimeFormat("en-US", {
+                timeZone: "America/New_York",
+                calendar: "gregory",
+                numberingSystem: "latn",
+                weekday: "short",
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit",
+                hour: "2-digit",
+                minute: "2-digit",
+                hourCycle: "h23",
+              })
+                .formatToParts(scheduledDate)
+                .filter(({ type }) => type !== "literal")
+                .map(({ type, value }) => [type, value]),
+            );
+            const scheduledEditionDate = `${scheduledParts.year}-${scheduledParts.month}-${scheduledParts.day}`;
+            if (
+              process.env.GITHUB_ACTOR !== "itworksinprod" ||
+              !["Mon", "Tue", "Wed", "Thu", "Fri"].includes(scheduledParts.weekday) ||
+              scheduledParts.hour !== "06" ||
+              scheduledParts.minute !== "00" ||
+              scheduledEditionDate !== today ||
+              dispatchKey !== `delivery:${scheduledEditionDate}`
+            ) {
+              throw new Error("Cloudflare delivery provenance is invalid for today's 6:00 AM New York slot.");
+            }
+          } else {
+            if (scheduledAt !== "" || dispatchKey !== "") {
+              throw new Error("Manual delivery dispatches must leave scheduled_at and dispatch_key blank.");
+            }
+            if (recoveryReason.length === 0) {
+              throw new Error("Manual delivery dispatches require a nonblank recovery_reason.");
+            }
+          }
+          NODE
+
       - name: Require the 6 AM New York delivery gate
         shell: bash
         run: |
@@ -87,12 +170,25 @@ jobs:
             exit 1
           fi
 
-      - name: Record a manual recovery
-        if: github.event_name == 'workflow_dispatch'
+      - name: Record the delivery request
         env:
           RECOVERY_REASON: ${{ inputs.recovery_reason }}
-        run: echo "Manual publication recovery — ${RECOVERY_REASON}"
+        run: echo "Morning Press delivery request — ${RECOVERY_REASON:-scheduled external trigger}"
 
+  package:
+    name: Validate and package the morning edition
+    needs: delivery_gate
+    if: needs.delivery_gate.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      should_publish: ${{ steps.edition.outputs.should_publish }}
+      edition_date: ${{ steps.edition.outputs.edition_date }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    steps:
       - name: Check out the exact publication revision
         uses: actions/checkout@v6
 
@@ -108,7 +204,86 @@ jobs:
       - name: Build and test the release candidate
         run: npm test
 
+      - name: Check for today's canonical published edition
+        id: edition
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFile, readdir, readFile } from "node:fs/promises";
+
+          const parts = Object.fromEntries(
+            new Intl.DateTimeFormat("en-US", {
+              timeZone: "America/New_York",
+              calendar: "gregory",
+              numberingSystem: "latn",
+              year: "numeric",
+              month: "2-digit",
+              day: "2-digit",
+            })
+              .formatToParts(new Date())
+              .filter(({ type }) => type !== "literal")
+              .map(({ type, value }) => [type, value]),
+          );
+          const today = `${parts.year}-${parts.month}-${parts.day}`;
+          const editionPath = `content/editions/${today}.json`;
+          let raw;
+          try {
+            raw = await readFile(editionPath, "utf8");
+          } catch (error) {
+            if (error?.code !== "ENOENT") throw error;
+            const futureFilename = (await readdir("content/editions")).find(
+              (filename) =>
+                /^\d{4}-\d{2}-\d{2}\.json$/.test(filename) &&
+                filename.slice(0, 10) > today,
+            );
+            if (futureFilename) {
+              throw new Error(
+                `Future canonical edition ${futureFilename} exists; refusing a no-paper result for ${today}.`,
+              );
+            }
+            const manifest = JSON.parse(
+              await readFile("dist/client/editions/index.json", "utf8"),
+            );
+            const latest = manifest.latest;
+            const latestIsStrictlyHistorical =
+              latest === null ||
+              (typeof latest === "string" && /^\d{4}-\d{2}-\d{2}$/.test(latest) && latest < today);
+            if (!latestIsStrictlyHistorical) {
+              throw new Error(
+                `No ${today} canonical file exists, but the built archive latest is ${latest ?? "missing"}; refusing an inconsistent no-paper result.`,
+              );
+            }
+            await appendFile(process.env.GITHUB_OUTPUT, "should_publish=false\n");
+            await appendFile(process.env.GITHUB_OUTPUT, `edition_date=${today}\n`);
+            await appendFile(
+              process.env.GITHUB_STEP_SUMMARY,
+              `### Morning Press delivery — no action\n\nNo paper was delivered for ${today}: no canonical edition exists on main. The previous GitHub Pages deployment remains live and unchanged.\n`,
+            );
+            process.exit(0);
+          }
+
+          const edition = JSON.parse(raw);
+          if (
+            edition.id !== `first-fold-${today}` ||
+            edition.editionDate !== today ||
+            edition.status !== "published" ||
+            edition.publication?.publishedAt !== edition.publication?.publishAt
+          ) {
+            throw new Error(
+              `Unsafe current-day canonical state in ${editionPath}; refusing to treat it as a no-paper day.`,
+            );
+          }
+
+          await appendFile(process.env.GITHUB_OUTPUT, "should_publish=true\n");
+          await appendFile(process.env.GITHUB_OUTPUT, `edition_date=${today}\n`);
+          await appendFile(
+            process.env.GITHUB_STEP_SUMMARY,
+            `### Morning Press delivery\n\nA published canonical edition exists for ${today}; continuing through the full release gates.\n`,
+          );
+          NODE
+
       - name: Require today's published edition
+        if: steps.edition.outputs.should_publish == 'true'
         shell: bash
         run: |
           node --input-type=module <<'NODE'
@@ -141,17 +316,19 @@ jobs:
           NODE
 
       - name: Configure GitHub Pages
+        if: steps.edition.outputs.should_publish == 'true'
         uses: actions/configure-pages@v6
 
       - name: Upload the tested paper
+        if: steps.edition.outputs.should_publish == 'true'
         uses: actions/upload-pages-artifact@v5
         with:
           path: dist/client
 
   deploy:
     name: Publish the morning edition
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     needs: package
+    if: needs.package.result == 'success' && needs.package.outputs.should_publish == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

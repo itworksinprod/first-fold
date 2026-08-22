@@ -274,7 +274,7 @@ jobs:
             run.html_url === process.env.ATTESTED_RUN_URL &&
             run.repository?.full_name === repository &&
             run.path === ".github/workflows/morning-research.yml@main" &&
-            ["schedule", "workflow_dispatch"].includes(run.event) &&
+            run.event === "workflow_dispatch" &&
             run.head_branch === process.env.DEFAULT_BRANCH &&
             run.head_sha === process.env.BASE_SHA &&
             run.status === "completed" &&
@@ -421,7 +421,7 @@ jobs:
               run.html_url === process.env.ATTESTED_RUN_URL &&
               run.repository?.full_name === repository &&
               run.path === ".github/workflows/morning-research.yml@main" &&
-              ["schedule", "workflow_dispatch"].includes(run.event) &&
+              run.event === "workflow_dispatch" &&
               run.head_branch === process.env.DEFAULT_BRANCH &&
               run.head_sha === process.env.BASE_SHA &&
               run.status === "completed" &&

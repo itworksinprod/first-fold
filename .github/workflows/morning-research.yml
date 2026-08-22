@@ -1,10 +1,20 @@
 name: Prepare Morning Press candidate
 
 on:
-  schedule:
-    - cron: "17 5 * * 1-5"
-      timezone: "America/New_York"
   workflow_dispatch:
+    inputs:
+      trigger_source:
+        description: Leave blank for manual use; the dispatcher sends cloudflare
+        required: false
+        type: string
+      scheduled_at:
+        description: Dispatcher-supplied canonical ISO timestamp; leave blank manually
+        required: false
+        type: string
+      dispatch_key:
+        description: Dispatcher correlation key; leave blank manually
+        required: false
+        type: string
 
 permissions: {}
 
@@ -19,9 +29,118 @@ env:
   PILOT_LIMIT: "5"
 
 jobs:
+  window:
+    name: Check the New York research window
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      should_prepare: ${{ steps.window.outputs.should_prepare }}
+      edition_date: ${{ steps.window.outputs.edition_date }}
+      trigger_source: ${{ steps.window.outputs.trigger_source }}
+    steps:
+      - name: Decide whether research may begin
+        id: window
+        env:
+          DISPATCH_KEY: ${{ inputs.dispatch_key }}
+          SCHEDULED_AT: ${{ inputs.scheduled_at }}
+          TRIGGER_SOURCE: ${{ inputs.trigger_source }}
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFile } from "node:fs/promises";
+
+          const parts = Object.fromEntries(
+            new Intl.DateTimeFormat("en-US", {
+              timeZone: "America/New_York",
+              calendar: "gregory",
+              numberingSystem: "latn",
+              weekday: "short",
+              year: "numeric",
+              month: "2-digit",
+              day: "2-digit",
+              hour: "2-digit",
+              minute: "2-digit",
+              hourCycle: "h23",
+            })
+              .formatToParts(new Date())
+              .filter(({ type }) => type !== "literal")
+              .map(({ type, value }) => [type, value]),
+          );
+          const editionDate = `${parts.year}-${parts.month}-${parts.day}`;
+          const minuteOfDay = Number(parts.hour) * 60 + Number(parts.minute);
+          const isWeekday = ["Mon", "Tue", "Wed", "Thu", "Fri"].includes(parts.weekday);
+          const triggerSource = String(process.env.TRIGGER_SOURCE ?? "").trim();
+          const scheduledAt = String(process.env.SCHEDULED_AT ?? "");
+          const dispatchKey = String(process.env.DISPATCH_KEY ?? "").trim();
+          const isCloudflare = triggerSource === "cloudflare";
+          const isManual = triggerSource === "" || triggerSource === "manual";
+
+          if (!isCloudflare && !isManual) {
+            throw new Error("trigger_source must be blank, manual, or cloudflare.");
+          }
+          if (isCloudflare) {
+            const scheduledDate = new Date(scheduledAt);
+            if (Number.isNaN(scheduledDate.getTime()) || scheduledDate.toISOString() !== scheduledAt) {
+              throw new Error("Cloudflare scheduled_at must be a canonical ISO timestamp.");
+            }
+            const scheduledParts = Object.fromEntries(
+              new Intl.DateTimeFormat("en-US", {
+                timeZone: "America/New_York",
+                calendar: "gregory",
+                numberingSystem: "latn",
+                weekday: "short",
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit",
+                hour: "2-digit",
+                minute: "2-digit",
+                hourCycle: "h23",
+              })
+                .formatToParts(scheduledDate)
+                .filter(({ type }) => type !== "literal")
+                .map(({ type, value }) => [type, value]),
+            );
+            const scheduledEditionDate = `${scheduledParts.year}-${scheduledParts.month}-${scheduledParts.day}`;
+            if (
+              process.env.GITHUB_ACTOR !== "itworksinprod" ||
+              !["Mon", "Tue", "Wed", "Thu", "Fri"].includes(scheduledParts.weekday) ||
+              scheduledParts.hour !== "05" ||
+              scheduledParts.minute !== "05" ||
+              scheduledEditionDate !== editionDate ||
+              dispatchKey !== `research:${scheduledEditionDate}`
+            ) {
+              throw new Error("Cloudflare research provenance is invalid for today's 5:05 AM New York slot.");
+            }
+          } else if (scheduledAt !== "" || dispatchKey !== "") {
+            throw new Error("Manual research dispatches must leave scheduled_at and dispatch_key blank.");
+          }
+
+          const isTrustedMain =
+            process.env.GITHUB_REPOSITORY === "itworksinprod/first-fold" &&
+            process.env.GITHUB_REF === "refs/heads/main";
+          const shouldPrepare = isTrustedMain && isWeekday && minuteOfDay >= 5 * 60 && minuteOfDay < 6 * 60;
+
+          let reason = "the 5:00–6:00 AM New York weekday research window is open";
+          if (!isTrustedMain) reason = "this run is not the trusted main branch";
+          else if (!isWeekday) reason = `${editionDate} is not a weekday`;
+          else if (minuteOfDay < 5 * 60) reason = "the 5:00 AM New York research gate has not opened";
+          else if (minuteOfDay >= 6 * 60) reason = "the 6:00 AM New York publication gate has already opened";
+
+          await appendFile(process.env.GITHUB_OUTPUT, `should_prepare=${String(shouldPrepare)}\n`);
+          await appendFile(process.env.GITHUB_OUTPUT, `edition_date=${editionDate}\n`);
+          await appendFile(process.env.GITHUB_OUTPUT, `trigger_source=${isCloudflare ? "cloudflare" : "manual"}\n`);
+          await appendFile(
+            process.env.GITHUB_STEP_SUMMARY,
+            shouldPrepare
+              ? `### Morning Press research window\n\nProceeding for ${editionDate}: ${reason}.\n`
+              : `### Morning Press research — no action\n\nNo candidate was created for ${editionDate}: ${reason}. No model credential or API was used.\n`,
+          );
+          NODE
+
   prepare:
     name: Research and stage the public candidate
-    if: github.repository == 'itworksinprod/first-fold' && github.ref == 'refs/heads/main'
+    needs: window
+    if: needs.window.result == 'success' && needs.window.outputs.should_prepare == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 35
     permissions:
@@ -47,6 +166,8 @@ jobs:
 
       - name: Resolve today's pilot slot from merged provenance
         id: pilot
+        env:
+          WINDOW_EDITION_DATE: ${{ needs.window.outputs.edition_date }}
         shell: bash
         run: |
           node --input-type=module <<'NODE'
@@ -75,15 +196,22 @@ jobs:
           const weekday = parts.weekday;
           const minuteOfDay = Number(parts.hour) * 60 + Number(parts.minute);
           const pilotLimit = Number(process.env.PILOT_LIMIT);
+          const stillInWindow =
+            ["Mon", "Tue", "Wed", "Thu", "Fri"].includes(weekday) &&
+            minuteOfDay >= 5 * 60 &&
+            minuteOfDay < 6 * 60 &&
+            editionDate === process.env.WINDOW_EDITION_DATE;
 
-          if (!["Mon", "Tue", "Wed", "Thu", "Fri"].includes(weekday)) {
-            throw new Error(`Morning Press research is weekday-only; ${editionDate} is ${weekday}.`);
-          }
-          if (minuteOfDay < 5 * 60) {
-            throw new Error("Morning Press research cannot start before the 5:00 AM New York cutoff.");
-          }
-          if (minuteOfDay >= 6 * 60) {
-            throw new Error("Morning Press research must start before the 6:00 AM New York publication gate.");
+          if (!stillInWindow) {
+            await appendFile(process.env.GITHUB_OUTPUT, `edition_date=${editionDate}\n`);
+            await appendFile(process.env.GITHUB_OUTPUT, `edition_path=content/editions/${editionDate}.json\n`);
+            await appendFile(process.env.GITHUB_OUTPUT, "pilot_sequence=\n");
+            await appendFile(process.env.GITHUB_OUTPUT, "should_generate=false\n");
+            await appendFile(
+              process.env.GITHUB_STEP_SUMMARY,
+              `### Morning Press research — no action\n\nNo candidate was created for ${editionDate}: the trusted preparation steps finished outside the 5:00–6:00 AM New York weekday window. No model credential or API was used.\n`,
+            );
+            process.exit(0);
           }
 
           const root = "content/editions";
@@ -137,6 +265,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           EDITION_DATE: ${{ steps.pilot.outputs.edition_date }}
+          TRIGGER_SOURCE: ${{ needs.window.outputs.trigger_source }}
         shell: bash
         run: |
           node --input-type=module <<'NODE'
@@ -191,14 +320,22 @@ jobs:
             if (!valid) throw new Error("The existing same-day PR is not the expected same-repository bot PR.");
           }
 
+          const shouldContinue = !(pull && process.env.TRIGGER_SOURCE === "cloudflare");
           await appendFile(process.env.GITHUB_OUTPUT, `mode=${pull ? "update" : "create"}\n`);
           await appendFile(process.env.GITHUB_OUTPUT, `branch=${branch}\n`);
           await appendFile(process.env.GITHUB_OUTPUT, `remote_sha=${remote?.object?.sha ?? ""}\n`);
           await appendFile(process.env.GITHUB_OUTPUT, `pr_number=${pull?.number ?? ""}\n`);
+          await appendFile(process.env.GITHUB_OUTPUT, `should_continue=${String(shouldContinue)}\n`);
+          if (!shouldContinue) {
+            await appendFile(
+              process.env.GITHUB_STEP_SUMMARY,
+              `### Morning Press research — no action\n\nThe trusted same-day candidate PR #${pull.number} is already open. The Cloudflare retry did not call the model API or replace its exact revision.\n`,
+            );
+          }
           NODE
 
       - name: Generate the source-checked candidate
-        if: steps.pilot.outputs.should_generate == 'true'
+        if: steps.existing.outputs.should_continue == 'true'
         env:
           EDITION_DATE: ${{ steps.pilot.outputs.edition_date }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -212,7 +349,7 @@ jobs:
           node scripts/automation/generate-edition.mjs "${EDITION_DATE}"
 
       - name: Verify candidate provenance and source checks
-        if: steps.pilot.outputs.should_generate == 'true'
+        if: steps.existing.outputs.should_continue == 'true'
         env:
           EDITION_DATE: ${{ steps.pilot.outputs.edition_date }}
           EDITION_PATH: ${{ steps.pilot.outputs.edition_path }}
@@ -245,11 +382,11 @@ jobs:
           NODE
 
       - name: Build and test the candidate
-        if: steps.pilot.outputs.should_generate == 'true'
+        if: steps.existing.outputs.should_continue == 'true'
         run: npm test
 
       - name: Commit and safely refresh the automation branch
-        if: steps.pilot.outputs.should_generate == 'true'
+        if: steps.existing.outputs.should_continue == 'true'
         id: commit
         env:
           BRANCH: ${{ steps.existing.outputs.branch }}
@@ -284,7 +421,7 @@ jobs:
           echo "head_sha=${head_sha}" >> "${GITHUB_OUTPUT}"
 
       - name: Upload the exact-revision review bundle
-        if: steps.pilot.outputs.should_generate == 'true'
+        if: steps.existing.outputs.should_continue == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: morning-press-${{ steps.pilot.outputs.edition_date }}-${{ steps.commit.outputs.head_sha }}
@@ -293,7 +430,7 @@ jobs:
           retention-days: 7
 
       - name: Create or update the public candidate PR
-        if: steps.pilot.outputs.should_generate == 'true'
+        if: steps.existing.outputs.should_continue == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           BRANCH: ${{ steps.existing.outputs.branch }}
@@ -392,7 +529,7 @@ jobs:
           NODE
 
       - name: Attest the exact candidate SHA
-        if: steps.pilot.outputs.should_generate == 'true'
+        if: steps.existing.outputs.should_continue == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ steps.commit.outputs.head_sha }}
