@@ -311,6 +311,28 @@ async function requestEnvelope({
   throw new Error("Cloudflare Workers AI request failed without a response.");
 }
 
+function extractChatCompletionContent(result) {
+  if (!Array.isArray(result.choices) || result.choices.length !== 1) return undefined;
+
+  const [choice] = result.choices;
+  const message = isObject(choice) ? choice.message : null;
+  if (
+    !isObject(choice) ||
+    choice.index !== 0 ||
+    choice.finish_reason !== "stop" ||
+    !isObject(message) ||
+    message.role !== "assistant" ||
+    typeof message.content !== "string" ||
+    (Object.hasOwn(message, "tool_calls") &&
+      (!Array.isArray(message.tool_calls) || message.tool_calls.length > 0)) ||
+    (Object.hasOwn(message, "refusal") && message.refusal !== null)
+  ) {
+    return undefined;
+  }
+
+  return message.content;
+}
+
 function extractEditorialPayload(envelope) {
   if (!isObject(envelope) || envelope.success !== true || !isObject(envelope.result)) {
     throw new Error("Cloudflare Workers AI did not return a successful result envelope.");
@@ -319,7 +341,9 @@ function extractEditorialPayload(envelope) {
     throw new Error("Cloudflare Workers AI returned errors in a successful result envelope.");
   }
 
-  const response = envelope.result.response;
+  const response = Object.hasOwn(envelope.result, "response")
+    ? envelope.result.response
+    : extractChatCompletionContent(envelope.result);
   if (isObject(response)) return cloneJson(response, "Workers AI editorial payload");
   if (typeof response !== "string" || !response.trim()) {
     throw new Error("Cloudflare Workers AI result did not contain an editorial payload.");

@@ -44,6 +44,40 @@ function cloudflareResponse(resultResponse = payload, options = {}) {
   });
 }
 
+function cloudflareChatCompletion(content = JSON.stringify(payload), options = {}) {
+  return new Response(JSON.stringify({
+    success: true,
+    errors: [],
+    messages: [],
+    result: {
+      id: "chatcmpl-workers-ai-response-id",
+      object: "chat.completion",
+      created: 1_787_428_800,
+      model: DEFAULT_CLOUDFLARE_AI_MODEL,
+      choices: [{
+        index: 0,
+        message: {
+          role: "assistant",
+          content,
+          refusal: null,
+          ...options.message,
+        },
+        finish_reason: "stop",
+        ...options.choice,
+      }],
+      usage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 },
+      ...options.result,
+    },
+  }), {
+    status: options.status ?? 200,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cf-ray": "test-ray-id",
+      ...options.headers,
+    },
+  });
+}
+
 function requestOptions(overrides = {}) {
   return {
     accountId,
@@ -151,6 +185,81 @@ test("string JSON responses are parsed but markdown and non-object payloads fail
           fetchImpl: async () => cloudflareResponse(response),
         })),
         expected,
+      );
+    });
+  }
+});
+
+test("the documented gpt-oss Chat Completions result is parsed and locally validated", async () => {
+  let validated;
+  const result = await requestWorkersAiEditorial(requestOptions({
+    validatePayload: (value) => {
+      validated = value;
+      return true;
+    },
+    fetchImpl: async () => cloudflareChatCompletion(),
+  }));
+
+  assert.deepEqual(validated, payload);
+  assert.deepEqual(result.editorialPayload, payload);
+  assert.equal(result.responseId, "chatcmpl-workers-ai-response-id");
+  assert.deepEqual(result.usage, {
+    prompt_tokens: 100,
+    completion_tokens: 20,
+    total_tokens: 120,
+  });
+});
+
+test("Chat Completions extraction rejects ambiguous or non-final assistant output", async (t) => {
+  const unsafeToolCall = {
+    id: "call_1",
+    type: "function",
+    function: { name: "publish", arguments: JSON.stringify(payload) },
+  };
+  const scenarios = [
+    ["no choices", { result: { choices: [] } }],
+    [
+      "multiple choices",
+      { result: { choices: [
+        { index: 0, message: { role: "assistant", content: JSON.stringify(payload) }, finish_reason: "stop" },
+        { index: 1, message: { role: "assistant", content: JSON.stringify(payload) }, finish_reason: "stop" },
+      ] } },
+    ],
+    ["wrong index", { choice: { index: 1 } }],
+    ["truncated", { choice: { finish_reason: "length" } }],
+    ["tool call", { message: { content: null, tool_calls: [unsafeToolCall] }, choice: { finish_reason: "tool_calls" } }],
+    ["malformed tool calls", { message: { tool_calls: {} } }],
+    ["refusal", { message: { content: null, refusal: "I cannot comply." } }],
+    ["malformed refusal", { message: { refusal: {} } }],
+    ["non-assistant", { message: { role: "user" } }],
+    ["blank content", { message: { content: " " } }],
+    ["legacy response takes precedence", { result: { response: null } }],
+  ];
+
+  for (const [name, options] of scenarios) {
+    await t.test(name, async () => {
+      await assert.rejects(
+        requestWorkersAiEditorial(requestOptions({
+          fetchImpl: async () => cloudflareChatCompletion(JSON.stringify(payload), options),
+        })),
+        /did not contain an editorial payload/,
+      );
+    });
+  }
+});
+
+test("Chat Completions content still rejects markdown and non-object JSON", async (t) => {
+  for (const [name, content] of [
+    ["markdown fence", "```json\n{\"headline\":\"unsafe\"}\n```"],
+    ["array", "[]"],
+    ["primitive", "true"],
+  ]) {
+    await t.test(name, async () => {
+      await assert.rejects(
+        requestWorkersAiEditorial(requestOptions({
+          fetchImpl: async () => cloudflareChatCompletion(content),
+        })),
+        /not valid JSON/,
       );
     });
   }
