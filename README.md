@@ -92,6 +92,8 @@ No environment variables or paid services are needed to build, read, preview, or
 
 A separate **Free Morning Press comparison** keeps the paid production lane unchanged while testing curated official feeds with Cloudflare Workers AI. It is manual, writes only to `content/free-candidates/`, cannot enter the production approval or delivery workflows, and fails closed when its free allowance or evidence checks are unavailable. Setup, operating limits, and comparison instructions are in [`docs/free-pilot.md`](docs/free-pilot.md).
 
+An optional **Personal Morning Paper** reuses the free feed-and-Workers-AI research path for one owner-only email at 5:05 AM `America/New_York` every day, including weekends. It is a separate read-only lane: it sends static HTML and plain text through Resend's self-only testing sender and creates no branch, pull request, Actions artifact, Pages deployment, or public archive entry. It is not active merely because the code is present; when both personal-delivery secrets are absent, a scheduled run exits as a neutral no-op before checkout or AI use. The repository secrets and updated Cloudflare dispatcher must be configured and verified before delivery is live. Setup, privacy boundaries, recovery, cost guardrails, and emergency controls are in [`docs/personal-delivery.md`](docs/personal-delivery.md).
+
 For a fresh GitHub checkout, `npm ci` reproduces the lockfile exactly. Use `npm install` only when intentionally changing dependencies, and commit the resulting lockfile change. Generated output, local dependencies, logs, and environment files are ignored.
 
 ## Install the free app
@@ -275,6 +277,7 @@ Included:
 - A review-only press desk backed by the same revision-bound edition projection
 - Pull-request approval and a weekday 6:00 AM fail-closed GitHub Pages release gate
 - A five-edition, source-grounded automatic-draft pilot with an API-call stop, publicly visible bot pull requests that are not deployed until approval, and exact-revision human approval
+- An optional, isolated owner-only daily email lane that keeps generated content out of Git branches, artifacts, Pages, and the public archive
 - New-edition detection on app resume, immutable edition sharing, and a feedback link
 - Responsive and reduced-motion behavior
 - Free home-screen installation on supported mobile and desktop browsers
@@ -287,7 +290,7 @@ Deliberately deferred:
 - Human-free selection, merge, or publication
 - Accounts, saved stories, comments, or recommendations
 - Personalized desks
-- Email or push delivery
+- Subscriber-facing email or push delivery
 - Advertising, engagement ranking, or infinite scroll
 
 ## Roadmap
@@ -298,7 +301,7 @@ Deliberately deferred:
 4. **Editorial engine:** if the pilot justifies further work, connect the edition contract to a curated-source registry, normalization, deduplication, scoring, and replayable research fixtures while retaining a reviewable evidence trail.
 5. **Archive depth and corrections:** grow the dated archive and add visible correction history, source suppression, and a rapid unpublish path.
 6. **Reader refinements:** improve typography, accessibility, and completion cues while preserving the same four-desk, six-minute edition.
-7. **Optional delivery:** add accessible email or notifications only after consent, unsubscribe, privacy, and retention controls are in place.
+7. **Optional subscriber delivery:** add email or notifications for other readers only after consent, unsubscribe, privacy, and retention controls are in place. The self-only owner lane is not a subscriber system.
 
 The project should remain intentionally small enough for one person to understand, operate, and audit.
 

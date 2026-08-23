@@ -7,13 +7,22 @@ const REPOSITORY = Object.freeze({
 });
 
 const CRON_SLOTS = Object.freeze({
-  "5 9 * * MON-FRI": Object.freeze({ hour: 9, minute: 5 }),
-  "5 10 * * MON-FRI": Object.freeze({ hour: 10, minute: 5 }),
-  "0 10 * * MON-FRI": Object.freeze({ hour: 10, minute: 0 }),
-  "0 11 * * MON-FRI": Object.freeze({ hour: 11, minute: 0 }),
+  "5 9 * * *": Object.freeze({ hour: 9, minute: 5 }),
+  "5 10 * * *": Object.freeze({ hour: 10, minute: 5 }),
+  "0 10 * * *": Object.freeze({ hour: 10, minute: 0 }),
+  "0 11 * * *": Object.freeze({ hour: 11, minute: 0 }),
 });
 
 const DISPATCHES = Object.freeze({
+  personal: Object.freeze({
+    workflow: "personal-morning-paper.yml",
+    inputs: Object.freeze({
+      run_mode: "on_time",
+      backfill_date: "",
+      backfill_reason: "",
+      backfill_confirmation: "",
+    }),
+  }),
   research: Object.freeze({
     workflow: "morning-research.yml",
     inputs: undefined,
@@ -57,10 +66,7 @@ function requireKnownCron(cron, scheduledDate) {
     throw new Error("The scheduled event did not originate from an approved cron trigger.");
   }
 
-  const weekday = scheduledDate.getUTCDay();
   const matches =
-    weekday >= 1 &&
-    weekday <= 5 &&
     scheduledDate.getUTCHours() === slot.hour &&
     scheduledDate.getUTCMinutes() === slot.minute;
   if (!matches) {
@@ -93,6 +99,20 @@ export function dispatchForScheduledTime(scheduledTime) {
   return null;
 }
 
+export function dispatchesForScheduledTime(scheduledTime) {
+  const scheduledDate = requireScheduledTime(scheduledTime);
+  const parts = newYorkParts(scheduledDate);
+  const isWeekday = ["Mon", "Tue", "Wed", "Thu", "Fri"].includes(parts.weekday);
+
+  if (parts.hour === "05" && parts.minute === "05") {
+    return Object.freeze(isWeekday ? ["personal", "research"] : ["personal"]);
+  }
+  if (isWeekday && parts.hour === "06" && parts.minute === "00") {
+    return Object.freeze(["delivery"]);
+  }
+  return Object.freeze([]);
+}
+
 export function requireFineGrainedToken(env) {
   const token = env?.GITHUB_TOKEN;
   if (
@@ -118,7 +138,7 @@ export async function dispatchGitHubWorkflow(
   }
   requireFineGrainedToken({ GITHUB_TOKEN: token });
   const scheduledDate = requireScheduledTime(scheduledTime);
-  if (dispatchForScheduledTime(scheduledTime) !== dispatchName) {
+  if (!dispatchesForScheduledTime(scheduledTime).includes(dispatchName)) {
     throw new Error("The requested workflow does not match the scheduled New York time.");
   }
   if (typeof fetchImpl !== "function") {
@@ -194,21 +214,28 @@ export async function handleScheduled(controller, env, fetchImpl = globalThis.fe
   const scheduledDate = requireScheduledTime(controller?.scheduledTime);
   requireKnownCron(controller?.cron, scheduledDate);
 
-  const dispatchName = dispatchForScheduledTime(controller.scheduledTime);
-  if (!dispatchName) {
+  const dispatchNames = dispatchesForScheduledTime(controller.scheduledTime);
+  if (dispatchNames.length === 0) {
     return Object.freeze({ status: "ignored" });
   }
 
   const token = requireFineGrainedToken(env);
-  await dispatchGitHubWorkflow(dispatchName, token, controller.scheduledTime, fetchImpl);
-  return Object.freeze({ status: "dispatched", dispatch: dispatchName });
+  const results = await Promise.allSettled(
+    dispatchNames.map((dispatchName) =>
+      dispatchGitHubWorkflow(dispatchName, token, controller.scheduledTime, fetchImpl),
+    ),
+  );
+  if (results.some(({ status }) => status === "rejected")) {
+    throw new Error("One or more GitHub workflow dispatches failed.");
+  }
+  return Object.freeze({ status: "dispatched", dispatches: dispatchNames });
 }
 
 export default {
   async scheduled(controller, env) {
-    // There are two UTC companions for each Eastern time. Local-time gating
-    // selects only one. Platform retries remain enabled; the GitHub workflows
-    // serialize duplicate attempts and no-op repeated research before the API.
+    // There are two daily UTC companions for each Eastern time. Local-time and
+    // weekday gating select the due workflows. Platform retries remain enabled;
+    // the GitHub workflows serialize duplicate attempts by dispatch key.
     await handleScheduled(controller, env);
   },
 };

@@ -1,0 +1,433 @@
+name: Send personal Morning Paper
+
+run-name: >-
+  Personal Morning Paper · ${{ inputs.dispatch_key || (inputs.run_mode == 'same_day_backfill' && format('personal:{0}', inputs.backfill_date)) || 'personal:on_time' }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      trigger_source:
+        description: Leave blank for manual use; the dispatcher sends cloudflare
+        required: false
+        type: string
+      scheduled_at:
+        description: Dispatcher-supplied canonical ISO timestamp; leave blank manually
+        required: false
+        type: string
+      dispatch_key:
+        description: Dispatcher correlation key; leave blank manually
+        required: false
+        type: string
+      run_mode:
+        description: Choose on_time normally; same_day_backfill only after today's morning window was missed
+        required: true
+        default: on_time
+        type: choice
+        options:
+          - on_time
+          - same_day_backfill
+      backfill_date:
+        description: For same_day_backfill, enter today's New York date as YYYY-MM-DD
+        required: false
+        type: string
+      backfill_reason:
+        description: Required for same_day_backfill (8–200 characters, one line)
+        required: false
+        type: string
+      backfill_confirmation:
+        description: For a backfill, enter BACKFILL followed by a space and the exact date
+        required: false
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: personal-morning-paper
+  cancel-in-progress: false
+
+env:
+  CLOUDFLARE_AI_MODEL: "@cf/openai/gpt-oss-120b"
+  PERSONAL_OUTPUT_ROOT: content/free-candidates
+
+jobs:
+  send:
+    name: Generate and privately email the personal paper
+    if: >-
+      github.repository == 'itworksinprod/first-fold' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'itworksinprod'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Open the personal New York delivery gate
+        id: gate
+        env:
+          BACKFILL_CONFIRMATION: ${{ inputs.backfill_confirmation }}
+          BACKFILL_DATE: ${{ inputs.backfill_date }}
+          BACKFILL_REASON: ${{ inputs.backfill_reason }}
+          DISPATCH_KEY: ${{ inputs.dispatch_key }}
+          REQUESTED_RUN_MODE: ${{ inputs.run_mode }}
+          SCHEDULED_AT: ${{ inputs.scheduled_at }}
+          TRIGGER_SOURCE: ${{ inputs.trigger_source }}
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFile } from "node:fs/promises";
+
+          const timeZone = "America/New_York";
+          function zonedParts(date) {
+            return Object.fromEntries(
+              new Intl.DateTimeFormat("en-US", {
+                timeZone,
+                calendar: "gregory",
+                numberingSystem: "latn",
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit",
+                hour: "2-digit",
+                minute: "2-digit",
+                hourCycle: "h23",
+              })
+                .formatToParts(date)
+                .filter(({ type }) => type !== "literal")
+                .map(({ type, value }) => [type, value]),
+            );
+          }
+
+          const nowParts = zonedParts(new Date());
+          const currentDate = `${nowParts.year}-${nowParts.month}-${nowParts.day}`;
+          const minuteOfDay = Number(nowParts.hour) * 60 + Number(nowParts.minute);
+          const triggerSource = String(process.env.TRIGGER_SOURCE ?? "").trim();
+          const scheduledAt = String(process.env.SCHEDULED_AT ?? "");
+          const suppliedDispatchKey = String(process.env.DISPATCH_KEY ?? "").trim();
+          const runMode = String(process.env.REQUESTED_RUN_MODE ?? "").trim();
+          const requestedDate = String(process.env.BACKFILL_DATE ?? "").trim();
+          const reason = String(process.env.BACKFILL_REASON ?? "").trim();
+          const confirmation = String(process.env.BACKFILL_CONFIRMATION ?? "").trim();
+          const hasBackfillInput = Boolean(requestedDate || reason || confirmation);
+          const isCloudflare = triggerSource === "cloudflare";
+          const isManual = triggerSource === "" || triggerSource === "manual";
+          let editionDate = currentDate;
+
+          if (!isCloudflare && !isManual) {
+            throw new Error("trigger_source must be blank, manual, or cloudflare.");
+          }
+          if (runMode !== "on_time" && runMode !== "same_day_backfill") {
+            throw new Error("run_mode must be on_time or same_day_backfill.");
+          }
+
+          if (isCloudflare) {
+            if (runMode !== "on_time" || hasBackfillInput) {
+              throw new Error("Cloudflare may dispatch only an on_time run with blank backfill fields.");
+            }
+            const scheduledDate = new Date(scheduledAt);
+            if (Number.isNaN(scheduledDate.getTime()) || scheduledDate.toISOString() !== scheduledAt) {
+              throw new Error("Cloudflare scheduled_at must be a canonical ISO timestamp.");
+            }
+            const scheduledParts = zonedParts(scheduledDate);
+            const scheduledEditionDate =
+              `${scheduledParts.year}-${scheduledParts.month}-${scheduledParts.day}`;
+            if (
+              scheduledParts.hour !== "05" ||
+              scheduledParts.minute !== "05" ||
+              scheduledEditionDate !== currentDate ||
+              suppliedDispatchKey !== `personal:${scheduledEditionDate}`
+            ) {
+              throw new Error("Cloudflare personal-paper provenance is invalid for today's 5:05 AM New York slot.");
+            }
+            editionDate = scheduledEditionDate;
+          } else {
+            if (scheduledAt !== "" || suppliedDispatchKey !== "") {
+              throw new Error("Manual personal-paper dispatches must leave scheduled_at and dispatch_key blank.");
+            }
+            if (runMode === "on_time") {
+              if (hasBackfillInput) {
+                throw new Error("Leave all backfill fields blank when run_mode is on_time.");
+              }
+              if (minuteOfDay < 5 * 60 || minuteOfDay >= 6 * 60) {
+                throw new Error("The normal manual personal paper may run only from 5:00 through 5:59 AM America/New_York.");
+              }
+            } else {
+              if (!/^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) {
+                throw new Error("A backfill date is required and must use YYYY-MM-DD.");
+              }
+              const parsedDate = Date.parse(`${requestedDate}T00:00:00.000Z`);
+              if (
+                !Number.isFinite(parsedDate) ||
+                new Date(parsedDate).toISOString().slice(0, 10) !== requestedDate
+              ) {
+                throw new Error("The backfill date must be a real calendar date.");
+              }
+              if (
+                reason.length < 8 ||
+                reason.length > 200 ||
+                /[\r\n\u0000-\u001f\u007f]/.test(reason)
+              ) {
+                throw new Error("The backfill reason must be one line containing 8 through 200 characters.");
+              }
+              if (confirmation !== `BACKFILL ${requestedDate}`) {
+                throw new Error(`Backfill confirmation must be exactly BACKFILL ${requestedDate}.`);
+              }
+              if (requestedDate !== currentDate) {
+                throw new Error("A same-day backfill date must equal today's America/New_York date.");
+              }
+              if (minuteOfDay < 6 * 60) {
+                throw new Error("A same-day backfill cannot begin before 06:00 America/New_York.");
+              }
+              editionDate = requestedDate;
+            }
+          }
+
+          const dispatchKey = `personal:${editionDate}`;
+          const runTitle = isCloudflare || runMode === "same_day_backfill"
+            ? `Personal Morning Paper · ${dispatchKey}`
+            : "Personal Morning Paper · personal:on_time";
+          const candidatePath = `${process.env.PERSONAL_OUTPUT_ROOT}/${editionDate}.json`;
+          await appendFile(process.env.GITHUB_OUTPUT, `candidate_path=${candidatePath}\n`);
+          await appendFile(process.env.GITHUB_OUTPUT, `dispatch_key=${dispatchKey}\n`);
+          await appendFile(process.env.GITHUB_OUTPUT, `edition_date=${editionDate}\n`);
+          await appendFile(process.env.GITHUB_OUTPUT, `run_mode=${runMode}\n`);
+          await appendFile(process.env.GITHUB_OUTPUT, `run_title=${runTitle}\n`);
+          await appendFile(
+            process.env.GITHUB_STEP_SUMMARY,
+            `### Personal Morning Paper\n\nThe trusted ${isCloudflare ? "scheduled" : "manual"} gate opened for ${editionDate}.\n`,
+          );
+          NODE
+
+      - name: Suppress an already successful delivery
+        id: dedupe
+        env:
+          DISPATCH_KEY: ${{ steps.gate.outputs.dispatch_key }}
+          EDITION_DATE: ${{ steps.gate.outputs.edition_date }}
+          EXPECTED_RUN_TITLE: ${{ steps.gate.outputs.run_title }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFile } from "node:fs/promises";
+
+          const headers = {
+            accept: "application/vnd.github+json",
+            authorization: `Bearer ${process.env.GH_TOKEN}`,
+            "x-github-api-version": "2022-11-28",
+          };
+          async function api(apiPath) {
+            const response = await fetch(`${process.env.GITHUB_API_URL}${apiPath}`, { headers });
+            if (!response.ok) {
+              throw new Error(`GitHub API request failed with HTTP ${response.status}.`);
+            }
+            return response.json();
+          }
+          function newYorkDate(value) {
+            const parts = Object.fromEntries(
+              new Intl.DateTimeFormat("en-US", {
+                timeZone: "America/New_York",
+                calendar: "gregory",
+                numberingSystem: "latn",
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit",
+              })
+                .formatToParts(new Date(value))
+                .filter(({ type }) => type !== "literal")
+                .map(({ type, value: partValue }) => [type, partValue]),
+            );
+            return `${parts.year}-${parts.month}-${parts.day}`;
+          }
+
+          const currentRunId = BigInt(process.env.GITHUB_RUN_ID);
+          const workflowPath = ".github/workflows/personal-morning-paper.yml@main";
+          const current = await api(
+            `/repos/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`,
+          );
+          if (
+            current.id !== Number(currentRunId) ||
+            current.event !== "workflow_dispatch" ||
+            current.head_branch !== "main" ||
+            current.head_sha !== process.env.GITHUB_SHA ||
+            current.repository?.full_name !== process.env.GITHUB_REPOSITORY ||
+            current.actor?.login !== "itworksinprod" ||
+            current.path !== workflowPath ||
+            current.display_title !== process.env.EXPECTED_RUN_TITLE
+          ) {
+            throw new Error("The current personal-paper run failed its identity and title check.");
+          }
+
+          const completed = [];
+          for (let page = 1; page <= 10; page += 1) {
+            const result = await api(
+              `/repos/${process.env.GITHUB_REPOSITORY}/actions/workflows/personal-morning-paper.yml/runs` +
+                `?branch=main&event=workflow_dispatch&status=completed&per_page=100&page=${page}`,
+            );
+            if (!Array.isArray(result.workflow_runs)) {
+              throw new Error("GitHub returned an invalid workflow-run listing.");
+            }
+            const sameOrNewer = result.workflow_runs.filter(
+              (run) => newYorkDate(run.created_at) >= process.env.EDITION_DATE,
+            );
+            completed.push(...sameOrNewer);
+            const reachedOlderDay = result.workflow_runs.some(
+              (run) => newYorkDate(run.created_at) < process.env.EDITION_DATE,
+            );
+            if (reachedOlderDay || result.workflow_runs.length < 100) break;
+            if (page === 10) {
+              throw new Error("More than 1,000 completed personal-paper runs exist for the current New York day.");
+            }
+          }
+
+          const sameDispatchRuns = completed.filter((run) => {
+            let runId;
+            try {
+              runId = BigInt(run.id);
+            } catch {
+              return false;
+            }
+            const sameDispatchTitles = new Set([
+              process.env.EXPECTED_RUN_TITLE,
+              `Personal Morning Paper · ${process.env.DISPATCH_KEY}`,
+              "Personal Morning Paper · personal:on_time",
+            ]);
+            return (
+              runId < currentRunId &&
+              run.status === "completed" &&
+              run.event === "workflow_dispatch" &&
+              run.head_branch === "main" &&
+              run.path === workflowPath &&
+              sameDispatchTitles.has(run.display_title) &&
+              newYorkDate(run.created_at) === process.env.EDITION_DATE
+            );
+          });
+          let priorSuccess = null;
+          for (const run of sameDispatchRuns) {
+            const result = await api(
+              `/repos/${process.env.GITHUB_REPOSITORY}/actions/runs/${run.id}/jobs` +
+                "?filter=latest&per_page=100",
+            );
+            if (!Array.isArray(result.jobs) || result.total_count > 100) {
+              throw new Error("A prior personal-paper run returned an ambiguous job listing.");
+            }
+            const deliveryJobs = result.jobs.filter(
+              (candidate) => candidate.name === "Generate and privately email the personal paper",
+            );
+            if (deliveryJobs.length > 1) {
+              throw new Error("A prior successful personal-paper run has an ambiguous delivery job.");
+            }
+            if (deliveryJobs.length === 0) continue;
+            const sendSteps = (deliveryJobs[0].steps ?? []).filter(
+              (step) => step.name === "Send only the validated paper to its private recipient",
+            );
+            if (sendSteps.length > 1) {
+              throw new Error("A prior successful personal-paper run has an ambiguous private-send step.");
+            }
+            if (sendSteps.length === 0) continue;
+            if (
+              deliveryJobs[0].status === "completed" &&
+              sendSteps[0].status === "completed" &&
+              sendSteps[0].conclusion === "success"
+            ) {
+              priorSuccess = run;
+              break;
+            }
+          }
+          const shouldSend = !priorSuccess;
+          await appendFile(process.env.GITHUB_OUTPUT, `should_send=${String(shouldSend)}\n`);
+          await appendFile(
+            process.env.GITHUB_STEP_SUMMARY,
+            shouldSend
+              ? `No earlier successful ${process.env.DISPATCH_KEY} delivery exists; generation may proceed.\n`
+              : `An earlier successful ${process.env.DISPATCH_KEY} delivery already exists. This retry sent nothing and used no AI credential.\n`,
+          );
+          NODE
+
+      - name: Require all private-delivery configuration
+        id: preflight
+        if: steps.dedupe.outputs.should_send == 'true'
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_AI_API_TOKEN: ${{ secrets.CLOUDFLARE_AI_API_TOKEN }}
+          PERSONAL_PAPER_EMAIL: ${{ secrets.PERSONAL_PAPER_EMAIL }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+        shell: bash
+        run: |
+          if [[ -z "${RESEND_API_KEY}" && -z "${PERSONAL_PAPER_EMAIL}" ]]; then
+            echo "delivery_enabled=false" >> "${GITHUB_OUTPUT}"
+            echo "### Personal Morning Paper — not enabled" >> "${GITHUB_STEP_SUMMARY}"
+            echo "" >> "${GITHUB_STEP_SUMMARY}"
+            echo "Both private-email settings are absent. Nothing was generated or sent, and no AI credential was used." >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+          if [[ -z "${RESEND_API_KEY}" || -z "${PERSONAL_PAPER_EMAIL}" ]]; then
+            echo "RESEND_API_KEY and PERSONAL_PAPER_EMAIL must either both be configured or both be absent."
+            exit 1
+          fi
+          if [[ ! "${CLOUDFLARE_ACCOUNT_ID}" =~ ^[A-Fa-f0-9]{32}$ ]]; then
+            echo "CLOUDFLARE_ACCOUNT_ID must be configured as a repository variable."
+            exit 1
+          fi
+          if [[ -z "${CLOUDFLARE_AI_API_TOKEN}" ]]; then
+            echo "CLOUDFLARE_AI_API_TOKEN must be configured as a repository secret."
+            exit 1
+          fi
+          echo "delivery_enabled=true" >> "${GITHUB_OUTPUT}"
+
+      - name: Check out trusted main without write credentials
+        if: >-
+          steps.dedupe.outputs.should_send == 'true' &&
+          steps.preflight.outputs.delivery_enabled == 'true'
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Set up Node.js
+        if: >-
+          steps.dedupe.outputs.should_send == 'true' &&
+          steps.preflight.outputs.delivery_enabled == 'true'
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Install the locked project
+        if: >-
+          steps.dedupe.outputs.should_send == 'true' &&
+          steps.preflight.outputs.delivery_enabled == 'true'
+        run: npm ci
+
+      - name: Generate the private source-checked candidate
+        if: >-
+          steps.dedupe.outputs.should_send == 'true' &&
+          steps.preflight.outputs.delivery_enabled == 'true'
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_AI_API_TOKEN: ${{ secrets.CLOUDFLARE_AI_API_TOKEN }}
+          EDITION_DATE: ${{ steps.gate.outputs.edition_date }}
+          RUN_MODE: ${{ steps.gate.outputs.run_mode }}
+        shell: bash
+        run: |
+          if [[ "${RUN_MODE}" == "same_day_backfill" ]]; then
+            node scripts/automation/generate-free-edition.mjs "${EDITION_DATE}" --same-day-backfill >/dev/null
+          elif [[ "${RUN_MODE}" == "on_time" ]]; then
+            node scripts/automation/generate-free-edition.mjs "${EDITION_DATE}" >/dev/null
+          else
+            echo "The personal-paper run mode is invalid."
+            exit 1
+          fi
+
+      - name: Test the exact private candidate
+        if: >-
+          steps.dedupe.outputs.should_send == 'true' &&
+          steps.preflight.outputs.delivery_enabled == 'true'
+        run: npm test
+
+      - name: Send only the validated paper to its private recipient
+        if: >-
+          steps.dedupe.outputs.should_send == 'true' &&
+          steps.preflight.outputs.delivery_enabled == 'true'
+        env:
+          PERSONAL_PAPER_EMAIL: ${{ secrets.PERSONAL_PAPER_EMAIL }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+        run: node scripts/automation/personal-email.mjs "${{ steps.gate.outputs.candidate_path }}"
