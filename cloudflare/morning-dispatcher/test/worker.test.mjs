@@ -20,6 +20,7 @@ function timestamp(iso) {
 function response(status = 200) {
   return {
     status,
+    headers: new Headers(),
     async json() {
       return {
         workflow_run_id: 123,
@@ -116,6 +117,18 @@ test("weekday research time dispatches the personal and paid workflows with exac
   assert.deepEqual(result, {
     status: "dispatched",
     dispatches: ["personal", "research"],
+    workflowRuns: [
+      {
+        dispatch: "personal",
+        workflowRunId: 123,
+        htmlUrl: "https://github.com/itworksinprod/first-fold/actions/runs/123",
+      },
+      {
+        dispatch: "research",
+        workflowRunId: 123,
+        htmlUrl: "https://github.com/itworksinprod/first-fold/actions/runs/123",
+      },
+    ],
   });
   assert.equal(requests.length, 2);
 
@@ -151,7 +164,7 @@ test("weekday research time dispatches the personal and paid workflows with exac
     "https://api.github.com/repos/itworksinprod/first-fold/actions/workflows/morning-research.yml/dispatches",
   );
   assert.equal(research.options.method, "POST");
-  assert.equal(research.options.redirect, "error");
+  assert.equal(research.options.redirect, "manual");
   assert.equal(research.options.headers.authorization, `Bearer ${token}`);
   assert.equal(research.options.headers["x-github-api-version"], "2026-03-10");
   assert.deepEqual(JSON.parse(research.options.body), {
@@ -179,11 +192,21 @@ test("weekend research time dispatches only the personal workflow", async () => 
     { GITHUB_TOKEN: token },
     async (...request) => {
       requests.push(request);
-      return response(204);
+      return response();
     },
   );
 
-  assert.deepEqual(result, { status: "dispatched", dispatches: ["personal"] });
+  assert.deepEqual(result, {
+    status: "dispatched",
+    dispatches: ["personal"],
+    workflowRuns: [
+      {
+        dispatch: "personal",
+        workflowRunId: 123,
+        htmlUrl: "https://github.com/itworksinprod/first-fold/actions/runs/123",
+      },
+    ],
+  });
   assert.equal(requests.length, 1);
   assert.equal(workflowFromUrl(requests[0][0]), "personal-morning-paper.yml");
   assert.deepEqual(JSON.parse(requests[0][1].body), {
@@ -200,6 +223,46 @@ test("weekend research time dispatches only the personal workflow", async () => 
   });
 });
 
+test("the exact failed Sunday event normalizes the secret and reaches GitHub", async () => {
+  let captured;
+  const result = await handleScheduled(
+    {
+      cron: "5 9 * * *",
+      scheduledTime: timestamp("2026-08-23T09:05:51Z"),
+    },
+    { GITHUB_TOKEN: `\n${token}  ` },
+    async (url, options) => {
+      captured = { url, options };
+      return response();
+    },
+  );
+
+  assert.equal(
+    captured.url,
+    "https://api.github.com/repos/itworksinprod/first-fold/actions/workflows/personal-morning-paper.yml/dispatches",
+  );
+  assert.equal(captured.options.headers.authorization, `Bearer ${token}`);
+  assert.deepEqual(JSON.parse(captured.options.body), {
+    ref: "main",
+    inputs: {
+      trigger_source: "cloudflare",
+      scheduled_at: "2026-08-23T09:05:51.000Z",
+      dispatch_key: "personal:2026-08-23",
+      run_mode: "on_time",
+      backfill_date: "",
+      backfill_reason: "",
+      backfill_confirmation: "",
+    },
+  });
+  assert.deepEqual(result.workflowRuns, [
+    {
+      dispatch: "personal",
+      workflowRunId: 123,
+      htmlUrl: "https://github.com/itworksinprod/first-fold/actions/runs/123",
+    },
+  ]);
+});
+
 test("weekday delivery dispatch keeps the paid recovery payload unchanged", async () => {
   let captured;
   const result = await handleScheduled(
@@ -210,11 +273,21 @@ test("weekday delivery dispatch keeps the paid recovery payload unchanged", asyn
     { GITHUB_TOKEN: token },
     async (url, options) => {
       captured = { url, options };
-      return response(204);
+      return response();
     },
   );
 
-  assert.deepEqual(result, { status: "dispatched", dispatches: ["delivery"] });
+  assert.deepEqual(result, {
+    status: "dispatched",
+    dispatches: ["delivery"],
+    workflowRuns: [
+      {
+        dispatch: "delivery",
+        workflowRunId: 123,
+        htmlUrl: "https://github.com/itworksinprod/first-fold/actions/runs/123",
+      },
+    ],
+  });
   assert.equal(
     captured.url,
     "https://api.github.com/repos/itworksinprod/first-fold/actions/workflows/pages.yml/dispatches",
@@ -262,7 +335,7 @@ test("inactive DST companions and weekend delivery are no-ops without a token", 
   assert.equal(fetched, false);
 });
 
-test("the runtime handler awaits every dispatch and leaves recovery retries enabled", async () => {
+test("the runtime handler awaits every dispatch before resolving", async () => {
   const originalFetch = globalThis.fetch;
   const events = [];
   let finishResearch;
@@ -276,7 +349,7 @@ test("the runtime handler awaits every dispatch and leaves recovery retries enab
       });
     }
     events.push(`finish:${workflow}`);
-    return response(204);
+    return response();
   };
 
   try {
@@ -352,13 +425,22 @@ test("unknown and timestamp-mismatched cron events fail closed", async () => {
   assert.equal(calls, 0);
 });
 
-test("only a fine-grained GitHub token is accepted", () => {
+test("a fine-grained GitHub token is normalized without assuming its suffix format", () => {
   assert.equal(requireFineGrainedToken({ GITHUB_TOKEN: token }), token);
+  assert.equal(requireFineGrainedToken({ GITHUB_TOKEN: `  ${token}\n` }), token);
+  const futureFormatToken = `github_pat_${"a".repeat(22)}-${"b".repeat(40)}`;
+  assert.equal(
+    requireFineGrainedToken({ GITHUB_TOKEN: futureFormatToken }),
+    futureFormatToken,
+  );
   for (const invalid of [
     undefined,
     "",
     "ghp_classic_token_that_is_long_enough_1234",
     "github_pat_short",
+    `github_pat_${"a".repeat(20)} ${"b".repeat(20)}`,
+    `github_pat_${"a".repeat(30)}\u200b`,
+    `github_pat_${"a".repeat(30)}é`,
   ]) {
     assert.throws(
       () => requireFineGrainedToken({ GITHUB_TOKEN: invalid }),
@@ -373,6 +455,21 @@ test("workflow allowlisting and local-time gates keep the personal and paid lane
     calls += 1;
     return response();
   };
+
+  await assert.rejects(
+    dispatchGitHubWorkflow(
+      "personal",
+      token,
+      timestamp("2026-08-22T09:05:00Z"),
+      async () => response(204),
+    ),
+    (error) => {
+      assert.match(error.message, /HTTP 204/);
+      assert.equal(error.stage, "github-response");
+      assert.equal(error.httpStatus, 204);
+      return true;
+    },
+  );
 
   await assert.rejects(
     dispatchGitHubWorkflow(
@@ -419,12 +516,14 @@ test("individual GitHub failures are sanitized and fail the invocation", async (
     },
   );
 
+  let networkAttempts = 0;
   await assert.rejects(
     dispatchGitHubWorkflow(
       "personal",
       token,
       timestamp("2026-08-22T09:05:00Z"),
       async () => {
+        networkAttempts += 1;
         throw new Error(`network failure involving ${token}`);
       },
     ),
@@ -434,6 +533,7 @@ test("individual GitHub failures are sanitized and fail the invocation", async (
       return true;
     },
   );
+  assert.equal(networkAttempts, 2);
 
   await assert.rejects(
     dispatchGitHubWorkflow(
@@ -453,6 +553,54 @@ test("individual GitHub failures are sanitized and fail the invocation", async (
     ),
     /invalid success response/i,
   );
+});
+
+test("one bounded retry recovers a transient GitHub response", async () => {
+  let attempts = 0;
+  const result = await dispatchGitHubWorkflow(
+    "personal",
+    token,
+    timestamp("2026-08-22T09:05:00Z"),
+    async () => {
+      attempts += 1;
+      return attempts === 1 ? response(503) : response();
+    },
+  );
+
+  assert.equal(attempts, 2);
+  assert.deepEqual(result, {
+    dispatch: "personal",
+    workflowRunId: 123,
+    htmlUrl: "https://github.com/itworksinprod/first-fold/actions/runs/123",
+  });
+});
+
+test("rate limits fail without an immediate retry", async () => {
+  for (const limitedResponse of [
+    () => response(429),
+    () => ({
+      ...response(403),
+      headers: new Headers({ "x-ratelimit-remaining": "0" }),
+    }),
+  ]) {
+    let attempts = 0;
+    await assert.rejects(
+      dispatchGitHubWorkflow(
+        "personal",
+        token,
+        timestamp("2026-08-22T09:05:00Z"),
+        async () => {
+          attempts += 1;
+          return limitedResponse();
+        },
+      ),
+      (error) => {
+        assert.equal(error.stage, "github-rate-limit");
+        return true;
+      },
+    );
+    assert.equal(attempts, 1);
+  }
 });
 
 test("multi-dispatch attempts and awaits every due workflow before a sanitized failure", async () => {
@@ -489,7 +637,7 @@ test("multi-dispatch attempts and awaits every due workflow before a sanitized f
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(settled, false);
 
-  resolvers.get("morning-research.yml")(response(204));
+  resolvers.get("morning-research.yml")(response());
   await assert.rejects(
     pending,
     (error) => {
@@ -503,6 +651,51 @@ test("multi-dispatch attempts and awaits every due workflow before a sanitized f
   assert.equal(settled, true);
 });
 
+test("structured failure logs identify partial dispatches without secrets", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalInfo = console.info;
+  const originalError = console.error;
+  const errorRecords = [];
+
+  globalThis.fetch = async (url) =>
+    workflowFromUrl(url) === "personal-morning-paper.yml" ? response() : response(403);
+  console.info = () => {};
+  console.error = (record) => errorRecords.push(record);
+
+  try {
+    await assert.rejects(
+      worker.scheduled(
+        {
+          cron: "5 9 * * *",
+          scheduledTime: timestamp("2026-08-24T09:05:00Z"),
+        },
+        { GITHUB_TOKEN: token },
+      ),
+      /dispatches failed/i,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.info = originalInfo;
+    console.error = originalError;
+  }
+
+  assert.equal(errorRecords.length, 1);
+  const serialized = errorRecords[0];
+  const record = JSON.parse(serialized);
+  assert.deepEqual(record, {
+    component: "first-fold-morning-dispatcher",
+    event: "scheduled-failed",
+    cron: "5 9 * * *",
+    scheduled_at: "2026-08-24T09:05:00.000Z",
+    stage: "github-response",
+    http_status: 403,
+    failed_dispatches: ["research"],
+    workflow_run_ids: [123],
+  });
+  assert.equal(serialized.includes(token), false);
+  assert.equal(serialized.includes("paper content"), false);
+});
+
 test("Wrangler config is cron-only and declares exactly four daily UTC triggers", async () => {
   const config = JSON.parse(
     await readFile(new URL("../wrangler.jsonc", import.meta.url), "utf8"),
@@ -510,7 +703,9 @@ test("Wrangler config is cron-only and declares exactly four daily UTC triggers"
 
   assert.equal(config.main, "src/worker.mjs");
   assert.equal(config.workers_dev, false);
-  assert.deepEqual(config.observability, { enabled: false });
+  assert.deepEqual(config.observability, { enabled: true, head_sampling_rate: 1 });
+  assert.equal(config.compatibility_date, "2026-08-23");
+  assert.deepEqual(config.compatibility_flags, ["nodejs_compat"]);
   assert.deepEqual(config.secrets, { required: ["GITHUB_TOKEN"] });
   assert.deepEqual(config.triggers.crons, [
     "5 9 * * *",

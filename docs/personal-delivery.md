@@ -92,6 +92,12 @@ After the personal workflow and dispatcher changes are reviewed on `main`:
 
 Do not call the lane operational until that real scheduled run succeeds. The four Cron expressions are intentionally daily; the dispatcher's New York gate, rather than weekday-only cron syntax, keeps personal delivery daily while paid research and delivery remain weekdays only.
 
+The dispatcher persists secret-free structured logs at full sampling. A failed
+Cron Event records a sanitized stage such as `token-validation`,
+`github-network`, `github-rate-limit`, or `github-response` and, when available,
+the HTTP status. A successful dispatch records the returned GitHub run ID. These
+records must not include the token, recipient, response body, or paper content.
+
 ## Manual run and same-day recovery
 
 GitHub supports manual runs only for workflows with `workflow_dispatch`; its official [manual-run guide](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow) illustrates the controls below.

@@ -1,4 +1,5 @@
 const TIME_ZONE = "America/New_York";
+const MAX_DISPATCH_ATTEMPTS = 2;
 
 const REPOSITORY = Object.freeze({
   owner: "itworksinprod",
@@ -47,6 +48,37 @@ const newYorkFormatter = new Intl.DateTimeFormat("en-US", {
   minute: "2-digit",
   hourCycle: "h23",
 });
+
+class DispatcherError extends Error {
+  constructor(
+    stage,
+    message,
+    { httpStatus, failedDispatches = [], workflowRunIds = [] } = {},
+  ) {
+    super(message);
+    this.name = "DispatcherError";
+    this.stage = stage;
+    if (Number.isInteger(httpStatus)) this.httpStatus = httpStatus;
+    this.failedDispatches = Object.freeze([...failedDispatches]);
+    this.workflowRunIds = Object.freeze([...workflowRunIds]);
+  }
+}
+
+function logScheduledEvent(level, event, details = {}) {
+  const record = JSON.stringify({
+    component: "first-fold-morning-dispatcher",
+    event,
+    ...details,
+  });
+  if (level === "error") console.error(record);
+  else console.info(record);
+}
+
+function scheduledTimeForLog(value) {
+  if (!Number.isFinite(value) || !Number.isSafeInteger(value)) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
 
 function requireScheduledTime(value) {
   if (!Number.isFinite(value) || !Number.isSafeInteger(value)) {
@@ -114,14 +146,18 @@ export function dispatchesForScheduledTime(scheduledTime) {
 }
 
 export function requireFineGrainedToken(env) {
-  const token = env?.GITHUB_TOKEN;
+  const rawToken = env?.GITHUB_TOKEN;
+  const token = typeof rawToken === "string" ? rawToken.trim() : "";
   if (
-    typeof token !== "string" ||
     token.length < 32 ||
     token.length > 512 ||
-    !/^github_pat_[A-Za-z0-9_]+$/.test(token)
+    !token.startsWith("github_pat_") ||
+    !/^[\x21-\x7e]+$/.test(token)
   ) {
-    throw new Error("GITHUB_TOKEN must be a GitHub fine-grained personal access token.");
+    throw new DispatcherError(
+      "token-validation",
+      "GITHUB_TOKEN must be a GitHub fine-grained personal access token.",
+    );
   }
   return token;
 }
@@ -134,15 +170,24 @@ export async function dispatchGitHubWorkflow(
 ) {
   const dispatch = DISPATCHES[dispatchName];
   if (!dispatch) {
-    throw new Error("The requested GitHub workflow is not approved for dispatch.");
+    throw new DispatcherError(
+      "dispatch-validation",
+      "The requested GitHub workflow is not approved for dispatch.",
+    );
   }
-  requireFineGrainedToken({ GITHUB_TOKEN: token });
+  const normalizedToken = requireFineGrainedToken({ GITHUB_TOKEN: token });
   const scheduledDate = requireScheduledTime(scheduledTime);
   if (!dispatchesForScheduledTime(scheduledTime).includes(dispatchName)) {
-    throw new Error("The requested workflow does not match the scheduled New York time.");
+    throw new DispatcherError(
+      "dispatch-validation",
+      "The requested workflow does not match the scheduled New York time.",
+    );
   }
   if (typeof fetchImpl !== "function") {
-    throw new Error("A Fetch-compatible implementation is required.");
+    throw new DispatcherError(
+      "dispatch-validation",
+      "A Fetch-compatible implementation is required.",
+    );
   }
 
   const workflow = encodeURIComponent(dispatch.workflow);
@@ -161,38 +206,76 @@ export async function dispatchGitHubWorkflow(
     },
   };
 
+  const request = {
+    method: "POST",
+    redirect: "manual",
+    headers: {
+      accept: "application/vnd.github+json",
+      authorization: `Bearer ${normalizedToken}`,
+      "content-type": "application/json",
+      "user-agent": "first-fold-morning-dispatcher",
+      "x-github-api-version": "2026-03-10",
+    },
+    body: JSON.stringify(payload),
+  };
   let response;
-  try {
-    response = await fetchImpl(url, {
-      method: "POST",
-      redirect: "error",
-      headers: {
-        accept: "application/vnd.github+json",
-        authorization: `Bearer ${token}`,
-        "content-type": "application/json",
-        "user-agent": "first-fold-morning-dispatcher",
-        "x-github-api-version": "2026-03-10",
-      },
-      body: JSON.stringify(payload),
-    });
-  } catch {
-    // The request may have reached GitHub. Keep this error secret-free; a
-    // platform retry is serialized and deduplicated by the trusted workflows.
-    throw new Error("GitHub workflow dispatch could not be confirmed.");
+  for (let attempt = 1; attempt <= MAX_DISPATCH_ATTEMPTS; attempt += 1) {
+    try {
+      response = await fetchImpl(url, request);
+    } catch {
+      // The request may have reached GitHub. The trusted workflows serialize
+      // ambiguous duplicates and suppress an already successful delivery.
+      if (attempt < MAX_DISPATCH_ATTEMPTS) {
+        await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
+        continue;
+      }
+      throw new DispatcherError(
+        "github-network",
+        "GitHub workflow dispatch could not be confirmed.",
+      );
+    }
+    const retryAfter = response.headers?.get?.("retry-after");
+    const rateLimitRemaining = response.headers?.get?.("x-ratelimit-remaining");
+    const isRateLimited =
+      response.status === 429 ||
+      (response.status === 403 &&
+        (typeof retryAfter === "string" || rateLimitRemaining === "0"));
+    if (isRateLimited) {
+      throw new DispatcherError(
+        "github-rate-limit",
+        "GitHub workflow dispatch was rate limited.",
+        { httpStatus: response.status },
+      );
+    }
+    const retryableStatus = response.status >= 500;
+    if (retryableStatus && attempt < MAX_DISPATCH_ATTEMPTS) {
+      try {
+        await response.body?.cancel?.();
+      } catch {
+        // Discarding a retryable response body is best-effort only.
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
+      continue;
+    }
+    break;
   }
 
-  // GitHub's current API returns 200; 204 remains accepted for compatibility
-  // with the endpoint's earlier success contract.
-  if (response.status === 204) return;
   if (response.status !== 200) {
-    throw new Error(`GitHub workflow dispatch failed with HTTP ${response.status}.`);
+    throw new DispatcherError(
+      "github-response",
+      `GitHub workflow dispatch failed with HTTP ${response.status}.`,
+      { httpStatus: response.status },
+    );
   }
 
   let result;
   try {
     result = await response.json();
   } catch {
-    throw new Error("GitHub workflow dispatch returned an invalid success response.");
+    throw new DispatcherError(
+      "github-response-contract",
+      "GitHub workflow dispatch returned an invalid success response.",
+    );
   }
 
   const runId = result?.workflow_run_id;
@@ -206,8 +289,16 @@ export async function dispatchGitHubWorkflow(
     result.run_url !== expectedApiUrl ||
     result.html_url !== expectedHtmlUrl
   ) {
-    throw new Error("GitHub workflow dispatch returned an invalid success response.");
+    throw new DispatcherError(
+      "github-response-contract",
+      "GitHub workflow dispatch returned an invalid success response.",
+    );
   }
+  return Object.freeze({
+    dispatch: dispatchName,
+    workflowRunId: runId,
+    htmlUrl: expectedHtmlUrl,
+  });
 }
 
 export async function handleScheduled(controller, env, fetchImpl = globalThis.fetch) {
@@ -225,17 +316,67 @@ export async function handleScheduled(controller, env, fetchImpl = globalThis.fe
       dispatchGitHubWorkflow(dispatchName, token, controller.scheduledTime, fetchImpl),
     ),
   );
-  if (results.some(({ status }) => status === "rejected")) {
-    throw new Error("One or more GitHub workflow dispatches failed.");
+  const failed = results.filter(({ status }) => status === "rejected");
+  if (failed.length > 0) {
+    const failedDispatches = results.flatMap((result, index) =>
+      result.status === "rejected" ? [dispatchNames[index]] : [],
+    );
+    const workflowRunIds = results.flatMap((result) =>
+      result.status === "fulfilled" ? [result.value.workflowRunId] : [],
+    );
+    const stages = new Set(
+      failed.map(({ reason }) => reason?.stage).filter((stage) => typeof stage === "string"),
+    );
+    const statuses = new Set(
+      failed
+        .map(({ reason }) => reason?.httpStatus)
+        .filter((status) => Number.isInteger(status)),
+    );
+    throw new DispatcherError(
+      stages.size === 1 ? [...stages][0] : "github-dispatch",
+      "One or more GitHub workflow dispatches failed.",
+      {
+        httpStatus: statuses.size === 1 ? [...statuses][0] : undefined,
+        failedDispatches,
+        workflowRunIds,
+      },
+    );
   }
-  return Object.freeze({ status: "dispatched", dispatches: dispatchNames });
+  return Object.freeze({
+    status: "dispatched",
+    dispatches: dispatchNames,
+    workflowRuns: results.map(({ value }) => value),
+  });
 }
 
 export default {
   async scheduled(controller, env) {
     // There are two daily UTC companions for each Eastern time. Local-time and
-    // weekday gating select the due workflows. Platform retries remain enabled;
-    // the GitHub workflows serialize duplicate attempts by dispatch key.
-    await handleScheduled(controller, env);
+    // weekday gating select the due workflows. Each outbound dispatch gets one
+    // bounded retry; the GitHub workflows serialize duplicate attempts by key.
+    const scheduledAt = scheduledTimeForLog(controller?.scheduledTime);
+    logScheduledEvent("info", "scheduled-start", {
+      cron: typeof controller?.cron === "string" ? controller.cron : null,
+      scheduled_at: scheduledAt,
+    });
+    try {
+      const result = await handleScheduled(controller, env);
+      logScheduledEvent("info", `scheduled-${result.status}`, {
+        cron: controller.cron,
+        scheduled_at: scheduledAt,
+        dispatches: result.dispatches ?? [],
+        workflow_run_ids: result.workflowRuns?.map(({ workflowRunId }) => workflowRunId) ?? [],
+      });
+    } catch (error) {
+      logScheduledEvent("error", "scheduled-failed", {
+        cron: typeof controller?.cron === "string" ? controller.cron : null,
+        scheduled_at: scheduledAt,
+        stage: typeof error?.stage === "string" ? error.stage : "schedule-validation",
+        http_status: Number.isInteger(error?.httpStatus) ? error.httpStatus : null,
+        failed_dispatches: error?.failedDispatches ?? [],
+        workflow_run_ids: error?.workflowRunIds ?? [],
+      });
+      throw error;
+    }
   },
 };

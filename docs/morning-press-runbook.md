@@ -130,11 +130,13 @@ research remains separately billable.
    reuse it as `OPENAI_API_KEY`. If the shell has no `node`, use a trusted Node
    20-or-newer binary for the test command.
 3. Keep the four UTC Cron Triggers in
-   `cloudflare/morning-dispatcher/wrangler.jsonc`: `5 9 * * MON-FRI`,
-   `5 10 * * MON-FRI`, `0 10 * * MON-FRI`, and `0 11 * * MON-FRI`. These are the
+   `cloudflare/morning-dispatcher/wrangler.jsonc`: `5 9 * * *`,
+   `5 10 * * *`, `0 10 * * *`, and `0 11 * * *`. These are the
    daylight and standard-time candidates for 5:05 and 6:00 AM. The Worker uses
    each event's scheduled time in `America/New_York` and ignores the nonmatching
    UTC candidate, so daylight-saving changes do not double-dispatch a workflow.
+   Personal email is selected at 5:05 every day; paid research at 5:05 and paid
+   Pages delivery at 6:00 remain weekday-only.
    Cloudflare recommends managing Wrangler-owned
    [Cron Triggers in the Wrangler configuration](https://developers.cloudflare.com/workers/configuration/cron-triggers/).
 4. At the next trigger, verify a successful Cron Event in **Cloudflare →
@@ -142,8 +144,9 @@ research remains separately billable.
    the corresponding GitHub Actions run. Both dispatches identify their origin
    with `trigger_source: cloudflare`, preserve the Cron event as a canonical
    `.000Z` ISO timestamp in `scheduled_at`, and use a New York date-scoped label:
-   `research:YYYY-MM-DD` or `delivery:YYYY-MM-DD` in `dispatch_key`. The 5:05
-   event dispatches `morning-research.yml` on `main`; the 6:00 event dispatches
+   `personal:YYYY-MM-DD`, `research:YYYY-MM-DD`, or `delivery:YYYY-MM-DD` in
+   `dispatch_key`. The 5:05 event dispatches `personal-morning-paper.yml` every
+   day and `morning-research.yml` on weekdays; the weekday 6:00 event dispatches
    `pages.yml` on `main` and additionally sets `recovery_reason` to
    `Cloudflare 6:00 AM ET scheduled delivery`. These public inputs provide
    correlation and are not credentials or authentication; the workflows also
@@ -160,12 +163,18 @@ dispatches and make the audit trail ambiguous. Workers Free provides no
 exact-time service guarantee. During this bounded pilot, the operator remains
 responsible for checking both Cron Events and GitHub Actions promptly, watching
 the PAT expiration, and using the time-gated manual fallback when a dispatch is
-missing. Cloudflare retries remain enabled for transient failures. GitHub
-serializes duplicate attempts; repeated external research stops before another
+missing. The dispatcher requires GitHub's correlated run-ID response and makes
+one bounded retry for a network error or server error. It does not immediately
+retry a rate limit. The repository workflows' concurrency groups serialize
+ambiguous duplicate attempts; repeated external research stops before another
 model call once its correctly shaped same-day proposal exists, and duplicate
-delivery can only redeploy the same tested `main` revision. If the first attempt
-fails before creating its branch, a retry may still incur another model call,
-so retain the pilot spend cap and inspect ambiguous runs before manual recovery.
+delivery remains serialized and each selected `main` revision is tested. If the
+first attempt fails before creating its branch, a retry may still incur another
+model call, so retain the pilot spend cap and inspect ambiguous runs before
+manual recovery.
+Persisted Worker logs are enabled at full sampling and contain only the cron,
+scheduled time, sanitized failure stage or HTTP status, selected dispatch names,
+and returned GitHub run IDs. They must never contain the PAT or response body.
 
 ### Keep the prompt and provenance auditable
 

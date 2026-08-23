@@ -2,10 +2,12 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "first-fold-morning-dispatcher",
   "main": "src/worker.mjs",
-  "compatibility_date": "2026-08-20",
+  "compatibility_date": "2026-08-23",
+  "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
   "observability": {
-    "enabled": false
+    "enabled": true,
+    "head_sampling_rate": 1
   },
   "secrets": {
     "required": ["GITHUB_TOKEN"]
