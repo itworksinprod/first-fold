@@ -239,7 +239,8 @@ jobs:
           }
 
           const currentRunId = BigInt(process.env.GITHUB_RUN_ID);
-          const workflowPath = ".github/workflows/personal-morning-paper.yml@main";
+          const workflowPath = ".github/workflows/personal-morning-paper.yml";
+          const workflowPaths = new Set([workflowPath, `${workflowPath}@main`]);
           const current = await api(
             `/repos/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`,
           );
@@ -250,7 +251,7 @@ jobs:
             current.head_sha !== process.env.GITHUB_SHA ||
             current.repository?.full_name !== process.env.GITHUB_REPOSITORY ||
             current.actor?.login !== "itworksinprod" ||
-            current.path !== workflowPath ||
+            !workflowPaths.has(current.path) ||
             current.display_title !== process.env.EXPECTED_RUN_TITLE
           ) {
             throw new Error("The current personal-paper run failed its identity and title check.");
@@ -295,7 +296,7 @@ jobs:
               run.status === "completed" &&
               run.event === "workflow_dispatch" &&
               run.head_branch === "main" &&
-              run.path === workflowPath &&
+              workflowPaths.has(run.path) &&
               sameDispatchTitles.has(run.display_title) &&
               newYorkDate(run.created_at) === process.env.EDITION_DATE
             );

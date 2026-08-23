@@ -87,6 +87,12 @@ test("successful same-key runs are deduplicated before any credential or AI use"
   assert.match(job, /\/actions\/runs\/\$\{process\.env\.GITHUB_RUN_ID\}/);
   assert.match(job, /actions\/workflows\/personal-morning-paper\.yml\/runs/);
   assert.match(job, /current\.display_title !== process\.env\.EXPECTED_RUN_TITLE/);
+  assert.match(
+    job,
+    /const workflowPath = "\.github\/workflows\/personal-morning-paper\.yml";/,
+  );
+  assert.match(job, /new Set\(\[workflowPath, `\$\{workflowPath\}@main`\]\)/);
+  assert.equal(job.match(/workflowPaths\.has\((?:current|run)\.path\)/g)?.length, 2);
   assert.match(job, /current\.head_sha !== process\.env\.GITHUB_SHA/);
   assert.match(job, /current\.repository\?\.full_name !== process\.env\.GITHUB_REPOSITORY/);
   assert.match(job, /runId < currentRunId/);

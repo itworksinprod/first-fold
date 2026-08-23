@@ -268,12 +268,17 @@ jobs:
             },
           );
           const run = await response.json().catch(() => ({}));
+          const workflowPath = ".github/workflows/morning-research.yml";
+          const workflowPaths = new Set([
+            workflowPath,
+            `${workflowPath}@${process.env.DEFAULT_BRANCH}`,
+          ]);
           const valid =
             response.ok &&
             String(run.id) === process.env.ATTESTED_RUN_ID &&
             run.html_url === process.env.ATTESTED_RUN_URL &&
             run.repository?.full_name === repository &&
-            run.path === ".github/workflows/morning-research.yml@main" &&
+            workflowPaths.has(run.path) &&
             run.event === "workflow_dispatch" &&
             run.head_branch === process.env.DEFAULT_BRANCH &&
             run.head_sha === process.env.BASE_SHA &&
@@ -416,11 +421,16 @@ jobs:
           const run = await api(
             `/repos/${repository}/actions/runs/${process.env.ATTESTED_RUN_ID}`,
           );
+          const workflowPath = ".github/workflows/morning-research.yml";
+          const workflowPaths = new Set([
+            workflowPath,
+            `${workflowPath}@${process.env.DEFAULT_BRANCH}`,
+          ]);
           requireGate(
             String(run.id) === process.env.ATTESTED_RUN_ID &&
               run.html_url === process.env.ATTESTED_RUN_URL &&
               run.repository?.full_name === repository &&
-              run.path === ".github/workflows/morning-research.yml@main" &&
+              workflowPaths.has(run.path) &&
               run.event === "workflow_dispatch" &&
               run.head_branch === process.env.DEFAULT_BRANCH &&
               run.head_sha === process.env.BASE_SHA &&

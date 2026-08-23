@@ -140,7 +140,16 @@ test("one authorized exact-SHA review gates a trusted-data-only merge", () => {
     approval.match(/actions\/runs\/\$\{process\.env\.ATTESTED_RUN_ID\}/g)?.length,
     2,
   );
-  assert.match(approval, /run\.path === "\.github\/workflows\/morning-research\.yml@main"/);
+  assert.equal(
+    approval.match(/const workflowPath = "\.github\/workflows\/morning-research\.yml";/g)
+      ?.length,
+    2,
+  );
+  assert.equal(approval.match(/workflowPaths\.has\(run\.path\)/g)?.length, 2);
+  assert.equal(
+    approval.match(/`\$\{workflowPath\}@\$\{process\.env\.DEFAULT_BRANCH\}`/g)?.length,
+    2,
+  );
   assert.match(approval, /run\.head_sha === process\.env\.BASE_SHA/);
   assert.match(approval, /run\.status === "completed"/);
   assert.match(approval, /run\.conclusion === "success"/);
