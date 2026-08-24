@@ -155,7 +155,7 @@ test("deterministic newsroom QA returns a machine-readable pass", () => {
   });
 });
 
-test("late timestamps are exempt only for an explicitly marked free same-day backfill", () => {
+test("late timestamps are exempt only for an explicitly marked same-day backfill lane", () => {
   const edition = editionFixture();
   const lateInstant = "2026-08-20T18:15:00.000Z";
   edition.publication.generatedAt = lateInstant;
@@ -188,6 +188,26 @@ test("late timestamps are exempt only for an explicitly marked free same-day bac
   assert.equal(issueCodes(backfill).includes("GENERATED_AFTER_PUBLICATION"), false);
   assert.equal(issueCodes(backfill).includes("SOURCE_RETRIEVED_AFTER_PUBLICATION"), false);
   assert.equal(backfill.status, "passed");
+
+  edition.provenance = {
+    personalResearch: {
+      workflow: "personal-morning-paper",
+      runMode: "same_day_backfill",
+    },
+  };
+  const personalBackfill = validateNewsroomDraft(edition, {
+    checkedAt: lateInstant,
+    temporalMode: "personal-same-day-backfill",
+  });
+  assert.equal(issueCodes(personalBackfill).includes("GENERATED_AFTER_PUBLICATION"), false);
+  assert.equal(issueCodes(personalBackfill).includes("SOURCE_RETRIEVED_AFTER_PUBLICATION"), false);
+  assert.equal(personalBackfill.status, "passed");
+
+  const wrongLane = validateNewsroomDraft(edition, {
+    checkedAt: lateInstant,
+    temporalMode: "free-same-day-backfill",
+  });
+  assert.ok(issueCodes(wrongLane).includes("GENERATED_AFTER_PUBLICATION"));
 });
 
 test("source normalization supports exact Responses-search allowlists", () => {

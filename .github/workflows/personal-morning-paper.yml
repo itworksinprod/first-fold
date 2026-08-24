@@ -46,8 +46,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  CLOUDFLARE_AI_MODEL: "@cf/openai/gpt-oss-120b"
-  PERSONAL_OUTPUT_ROOT: content/free-candidates
+  PERSONAL_OUTPUT_ROOT: content/personal-candidates
 
 jobs:
   send:
@@ -347,29 +346,24 @@ jobs:
         id: preflight
         if: steps.dedupe.outputs.should_send == 'true'
         env:
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_AI_API_TOKEN: ${{ secrets.CLOUDFLARE_AI_API_TOKEN }}
-          PERSONAL_PAPER_EMAIL: ${{ secrets.PERSONAL_PAPER_EMAIL }}
-          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          HAS_OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY != '' }}
+          HAS_PERSONAL_PAPER_EMAIL: ${{ secrets.PERSONAL_PAPER_EMAIL != '' }}
+          HAS_RESEND_API_KEY: ${{ secrets.RESEND_API_KEY != '' }}
         shell: bash
         run: |
-          if [[ -z "${RESEND_API_KEY}" && -z "${PERSONAL_PAPER_EMAIL}" ]]; then
+          if [[ "${HAS_RESEND_API_KEY}" == "false" && "${HAS_PERSONAL_PAPER_EMAIL}" == "false" ]]; then
             echo "delivery_enabled=false" >> "${GITHUB_OUTPUT}"
             echo "### Personal Morning Paper — not enabled" >> "${GITHUB_STEP_SUMMARY}"
             echo "" >> "${GITHUB_STEP_SUMMARY}"
             echo "Both private-email settings are absent. Nothing was generated or sent, and no AI credential was used." >> "${GITHUB_STEP_SUMMARY}"
             exit 0
           fi
-          if [[ -z "${RESEND_API_KEY}" || -z "${PERSONAL_PAPER_EMAIL}" ]]; then
+          if [[ "${HAS_RESEND_API_KEY}" != "true" || "${HAS_PERSONAL_PAPER_EMAIL}" != "true" ]]; then
             echo "RESEND_API_KEY and PERSONAL_PAPER_EMAIL must either both be configured or both be absent."
             exit 1
           fi
-          if [[ ! "${CLOUDFLARE_ACCOUNT_ID}" =~ ^[A-Fa-f0-9]{32}$ ]]; then
-            echo "CLOUDFLARE_ACCOUNT_ID must be configured as a repository variable."
-            exit 1
-          fi
-          if [[ -z "${CLOUDFLARE_AI_API_TOKEN}" ]]; then
-            echo "CLOUDFLARE_AI_API_TOKEN must be configured as a repository secret."
+          if [[ "${HAS_OPENAI_API_KEY}" != "true" ]]; then
+            echo "OPENAI_API_KEY must be configured as a repository secret for web research."
             exit 1
           fi
           echo "delivery_enabled=true" >> "${GITHUB_OUTPUT}"
@@ -403,16 +397,16 @@ jobs:
           steps.dedupe.outputs.should_send == 'true' &&
           steps.preflight.outputs.delivery_enabled == 'true'
         env:
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_AI_API_TOKEN: ${{ secrets.CLOUDFLARE_AI_API_TOKEN }}
           EDITION_DATE: ${{ steps.gate.outputs.edition_date }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
           RUN_MODE: ${{ steps.gate.outputs.run_mode }}
         shell: bash
         run: |
           if [[ "${RUN_MODE}" == "same_day_backfill" ]]; then
-            node scripts/automation/generate-free-edition.mjs "${EDITION_DATE}" --same-day-backfill >/dev/null
+            node scripts/automation/personal-paid-edition.mjs "${EDITION_DATE}" --same-day-backfill >/dev/null
           elif [[ "${RUN_MODE}" == "on_time" ]]; then
-            node scripts/automation/generate-free-edition.mjs "${EDITION_DATE}" >/dev/null
+            node scripts/automation/personal-paid-edition.mjs "${EDITION_DATE}" >/dev/null
           else
             echo "The personal-paper run mode is invalid."
             exit 1

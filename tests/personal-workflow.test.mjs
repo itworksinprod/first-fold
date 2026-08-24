@@ -129,20 +129,24 @@ test("successful same-key runs are deduplicated before any credential or AI use"
 
 test("email setup no-ops only when wholly absent and secrets stay step-scoped", () => {
   for (const setting of [
-    "CLOUDFLARE_ACCOUNT_ID",
-    "CLOUDFLARE_AI_API_TOKEN",
-    "RESEND_API_KEY",
-    "PERSONAL_PAPER_EMAIL",
+    "HAS_OPENAI_API_KEY",
+    "HAS_RESEND_API_KEY",
+    "HAS_PERSONAL_PAPER_EMAIL",
   ]) {
     assert.match(preflight, new RegExp(`${setting}:`));
   }
-  assert.match(preflight, /-z "\$\{RESEND_API_KEY\}" && -z "\$\{PERSONAL_PAPER_EMAIL\}"/);
+  assert.match(preflight, /secrets\.OPENAI_API_KEY != ''/);
+  assert.match(preflight, /secrets\.RESEND_API_KEY != ''/);
+  assert.match(preflight, /secrets\.PERSONAL_PAPER_EMAIL != ''/);
+  assert.doesNotMatch(preflight, /OPENAI_API_KEY: \$\{\{ secrets\.OPENAI_API_KEY \}\}/);
+  assert.doesNotMatch(preflight, /RESEND_API_KEY: \$\{\{ secrets\.RESEND_API_KEY \}\}/);
+  assert.doesNotMatch(preflight, /PERSONAL_PAPER_EMAIL: \$\{\{ secrets\.PERSONAL_PAPER_EMAIL \}\}/);
+  assert.match(preflight, /"\$\{HAS_RESEND_API_KEY\}" == "false" && "\$\{HAS_PERSONAL_PAPER_EMAIL\}" == "false"/);
   assert.match(preflight, /delivery_enabled=false/);
   assert.match(preflight, /Nothing was generated or sent, and no AI credential was used/);
-  assert.match(preflight, /-z "\$\{RESEND_API_KEY\}" \|\| -z "\$\{PERSONAL_PAPER_EMAIL\}"/);
+  assert.match(preflight, /"\$\{HAS_RESEND_API_KEY\}" != "true" \|\| "\$\{HAS_PERSONAL_PAPER_EMAIL\}" != "true"/);
   assert.match(preflight, /must either both be configured or both be absent/);
-  assert.match(preflight, /CLOUDFLARE_ACCOUNT_ID must be configured/);
-  assert.match(preflight, /CLOUDFLARE_AI_API_TOKEN must be configured/);
+  assert.match(preflight, /OPENAI_API_KEY must be configured.*web research/);
   assert.match(preflight, /delivery_enabled=true/);
   assert.ok(
     job.indexOf("Require all private-delivery configuration") <
@@ -153,16 +157,17 @@ test("email setup no-ops only when wholly absent and secrets stay step-scoped", 
       job.indexOf("Generate the private source-checked candidate"),
   );
 
-  assert.match(generation, /CLOUDFLARE_ACCOUNT_ID: \$\{\{ vars\.CLOUDFLARE_ACCOUNT_ID \}\}/);
-  assert.match(generation, /CLOUDFLARE_AI_API_TOKEN: \$\{\{ secrets\.CLOUDFLARE_AI_API_TOKEN \}\}/);
+  assert.match(generation, /OPENAI_API_KEY: \$\{\{ secrets\.OPENAI_API_KEY \}\}/);
+  assert.match(generation, /OPENAI_MODEL: \$\{\{ vars\.OPENAI_MODEL \}\}/);
   assert.doesNotMatch(generation, /RESEND_API_KEY|PERSONAL_PAPER_EMAIL|github\.token|GH_TOKEN/);
   assert.match(email, /RESEND_API_KEY: \$\{\{ secrets\.RESEND_API_KEY \}\}/);
   assert.match(email, /PERSONAL_PAPER_EMAIL: \$\{\{ secrets\.PERSONAL_PAPER_EMAIL \}\}/);
-  assert.doesNotMatch(email, /CLOUDFLARE_AI_API_TOKEN|CLOUDFLARE_ACCOUNT_ID|github\.token|GH_TOKEN/);
-  assert.equal(workflow.match(/secrets\.CLOUDFLARE_AI_API_TOKEN/g)?.length, 2);
+  assert.doesNotMatch(email, /OPENAI_API_KEY|github\.token|GH_TOKEN/);
+  assert.equal(workflow.match(/secrets\.OPENAI_API_KEY/g)?.length, 2);
   assert.equal(workflow.match(/secrets\.RESEND_API_KEY/g)?.length, 2);
   assert.equal(workflow.match(/secrets\.PERSONAL_PAPER_EMAIL/g)?.length, 2);
   assert.equal(workflow.match(/\$\{\{ github\.token \}\}/g)?.length, 1);
+  assert.doesNotMatch(workflow, /CLOUDFLARE|generate-free-edition|freePilot/);
 });
 
 test("trusted pinned code generates, tests, and emails without persisting content", () => {
@@ -176,10 +181,10 @@ test("trusted pinned code generates, tests, and emails without persisting conten
   ]);
   assert.match(workflow, /ref: \$\{\{ github\.sha \}\}/);
   assert.match(workflow, /persist-credentials: false/);
-  assert.match(workflow, /PERSONAL_OUTPUT_ROOT: content\/free-candidates/);
+  assert.match(workflow, /PERSONAL_OUTPUT_ROOT: content\/personal-candidates/);
   assert.match(
     workflow,
-    /node scripts\/automation\/generate-free-edition\.mjs "\$\{EDITION_DATE\}"/,
+    /node scripts\/automation\/personal-paid-edition\.mjs "\$\{EDITION_DATE\}"/,
   );
   assert.match(
     workflow,

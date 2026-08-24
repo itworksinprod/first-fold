@@ -3,8 +3,6 @@
 import { readFile, stat } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { validateCanonicalEdition } from "../edition-content.mjs";
-import { validateFreePilotProvenance } from "./draft-free-edition.mjs";
-import { FREE_FEED_SOURCES } from "./free/feed-sources.mjs";
 
 export const RESEND_EMAIL_ENDPOINT = "https://api.resend.com/emails";
 export const PERSONAL_EMAIL_FROM = "First Fold <onboarding@resend.dev>";
@@ -14,8 +12,12 @@ export const MAX_RESEND_REQUEST_BYTES = 256 * 1024;
 export const MAX_RESEND_RESPONSE_BYTES = 64 * 1024;
 
 const MAX_CANDIDATE_FILE_BYTES = 1024 * 1024;
-const EXPECTED_FREE_REPOSITORY = "itworksinprod/first-fold";
-const EXPECTED_FREE_AI_MODEL = "@cf/openai/gpt-oss-120b";
+const EXPECTED_PERSONAL_REPOSITORY = "itworksinprod/first-fold";
+const PERSONAL_RESEARCH_WORKFLOW = "personal-morning-paper";
+const PERSONAL_RESEARCH_PROVIDER = "openai-responses";
+const PERSONAL_RESEARCH_TOOL = "web_search";
+const PERSONAL_WINDOW_POLICY =
+  "previous-day-05:00-to-edition-day-05:00-America/New_York";
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const RESEND_KEY_PATTERN = /^re_[A-Za-z0-9_-]{8,508}$/;
 const EMAIL_PATTERN = /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
@@ -87,7 +89,7 @@ function sourceRelationshipLabel(relationship) {
 }
 
 function validationFailure() {
-  return new Error("Personal email requires a canonical, source-checked free candidate.");
+  return new Error("Personal email requires a complete, source-checked web-research candidate.");
 }
 
 function isDisplayString(value, maximumLength) {
@@ -155,42 +157,48 @@ export function assertPersonalEmailCandidate(candidate) {
     candidate.status !== "validated" ||
     candidate.publication?.publishedAt !== null ||
     Object.hasOwn(candidate.provenance ?? {}, "automation") ||
+    Object.hasOwn(candidate.provenance ?? {}, "freePilot") ||
     !hasSafeDisplayFields(candidate)
   ) {
     throw validationFailure();
   }
 
-  const freePilot = candidate.provenance?.freePilot;
+  const research = candidate.provenance?.personalResearch;
   const sourceCheck = candidate.provenance?.sourceCheck;
+  const runId = typeof research?.runId === "string" ? research.runId : "";
+  const expectedRunUrl =
+    `https://github.com/${EXPECTED_PERSONAL_REPOSITORY}/actions/runs/${runId}`;
   if (
-    !freePilot ||
-    typeof freePilot !== "object" ||
-    freePilot.repository !== EXPECTED_FREE_REPOSITORY ||
-    freePilot.model !== EXPECTED_FREE_AI_MODEL ||
-    freePilot.feedSourceCount !== FREE_FEED_SOURCES.length ||
+    !research ||
+    typeof research !== "object" ||
+    research.workflow !== PERSONAL_RESEARCH_WORKFLOW ||
+    research.provider !== PERSONAL_RESEARCH_PROVIDER ||
+    research.researchTool !== PERSONAL_RESEARCH_TOOL ||
+    research.repository !== EXPECTED_PERSONAL_REPOSITORY ||
+    research.runUrl !== expectedRunUrl ||
+    !/^[1-9]\d*$/.test(runId) ||
+    !["on_time", "same_day_backfill"].includes(research.runMode) ||
+    research.generatedAt !== candidate.publication.generatedAt ||
+    typeof research.model !== "string" ||
+    !research.model.trim() ||
+    research.model.length > 200 ||
+    typeof research.responseId !== "string" ||
+    !RESPONSE_ID_PATTERN.test(research.responseId) ||
+    !/^[a-f0-9]{64}$/.test(research.promptSha256 ?? "") ||
+    !/^[a-f0-9]{64}$/.test(research.schemaSha256 ?? "") ||
+    research.windowPolicy !== PERSONAL_WINDOW_POLICY ||
+    research.ephemeral !== true ||
+    research.webSearchCompleted !== true ||
+    research.selectedStoryCount !== DESKS.length ||
     !sourceCheck ||
     typeof sourceCheck !== "object" ||
     sourceCheck.status !== "passed" ||
+    !Number.isInteger(sourceCheck.checkedSourceCount) ||
+    sourceCheck.checkedSourceCount < DESKS.length ||
     !Array.isArray(sourceCheck.issues) ||
-    sourceCheck.issues.length !== 0
+    sourceCheck.issues.length !== 0 ||
+    DESKS.some(([desk]) => candidate.desks?.[desk]?.story === null)
   ) {
-    throw validationFailure();
-  }
-
-  try {
-    validateFreePilotProvenance(
-      candidate,
-      {
-        runId: freePilot.runId,
-        runUrl: freePilot.runUrl,
-        repository: freePilot.repository,
-      },
-      {
-        expectedFeedSourceCount: FREE_FEED_SOURCES.length,
-        expectedRunMode: freePilot.runMode,
-      },
-    );
-  } catch {
     throw validationFailure();
   }
   return validation;

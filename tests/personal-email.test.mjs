@@ -11,7 +11,6 @@ import {
   renderPersonalEditionEmail,
   sendPersonalEditionEmail,
 } from "../scripts/automation/personal-email.mjs";
-import { FREE_FEED_SOURCES } from "../scripts/automation/free/feed-sources.mjs";
 
 const baseEdition = JSON.parse(
   await readFile(new URL("../content/editions/2026-08-19.json", import.meta.url), "utf8"),
@@ -19,32 +18,50 @@ const baseEdition = JSON.parse(
 const API_KEY = "re_personal_email_test_key_123456789";
 const RECIPIENT = "owner@example.com";
 
-function freeCandidate() {
+function personalCandidate() {
   const candidate = structuredClone(baseEdition);
   candidate.status = "validated";
   candidate.publication.publishedAt = null;
-  candidate.provenance.freePilot = {
-    workflow: "free-morning-press",
-    provider: "cloudflare-workers-ai",
-    model: "@cf/openai/gpt-oss-120b",
+  const platformStory = structuredClone(candidate.desks["work-and-tools"].story);
+  platformStory.id = "2026-08-19-test-platform-story";
+  platformStory.canonicalEventKey = "test-platform-story-2026-08-19";
+  platformStory.desk = "platforms-and-power";
+  platformStory.headline = "A test platform story fills the private edition";
+  platformStory.editorial.primaryEntity = "Test Platform Company";
+  platformStory.editorial.aiAdjacent = false;
+  platformStory.editorial.deskFit =
+    "This fixture represents a source-verified platform policy development.";
+  candidate.desks["platforms-and-power"] = {
+    desk: "platforms-and-power",
+    story: platformStory,
+    emptyReason: null,
+  };
+  candidate.frontPage.storyOrder.push(platformStory.id);
+  candidate.frontPage.note =
+    "Four source-verified developments cleared the private research contract.";
+  candidate.frontPage.estimatedMinutes = 8;
+  candidate.provenance.personalResearch = {
+    workflow: "personal-morning-paper",
+    provider: "openai-responses",
+    researchTool: "web_search",
+    model: "gpt-test-web-search",
     runId: "123456789",
     runUrl: "https://github.com/itworksinprod/first-fold/actions/runs/123456789",
     repository: "itworksinprod/first-fold",
     runMode: "on_time",
     generatedAt: candidate.publication.generatedAt,
-    feedSnapshotSha256: "a".repeat(64),
-    requestSha256: "b".repeat(64),
-    responseSha256: "c".repeat(64),
-    responseId: "workers-ai-test-response",
-    inference: "workers-ai",
-    feedSourceCount: FREE_FEED_SOURCES.length,
-    successfulFeedSourceCount: FREE_FEED_SOURCES.length,
-    candidateCount: 3,
+    promptSha256: "a".repeat(64),
+    schemaSha256: "b".repeat(64),
+    responseId: "resp_personal_web_test",
+    windowPolicy: "previous-day-05:00-to-edition-day-05:00-America/New_York",
+    ephemeral: true,
+    webSearchCompleted: true,
+    selectedStoryCount: 4,
   };
   candidate.provenance.sourceCheck = {
     status: "passed",
     checkedAt: candidate.publication.generatedAt,
-    checkedSourceCount: 7,
+    checkedSourceCount: 8,
     issues: [],
   };
   assert.equal(validateCanonicalEdition(candidate).valid, true);
@@ -60,7 +77,7 @@ function successResponse(id = "email_test_123") {
 
 async function capturedRejection(options) {
   try {
-    await sendPersonalEditionEmail(freeCandidate(), {
+    await sendPersonalEditionEmail(personalCandidate(), {
       apiKey: API_KEY,
       recipient: RECIPIENT,
       timeoutMs: 100,
@@ -72,8 +89,8 @@ async function capturedRejection(options) {
   assert.fail("Expected personal email delivery to reject.");
 }
 
-test("the renderer produces a static newspaper with stories, quiet desks, sources, and text fallback", () => {
-  const candidate = freeCandidate();
+test("the renderer produces a complete static newspaper with sources and text fallback", () => {
+  const candidate = personalCandidate();
   const rendered = renderPersonalEditionEmail(candidate);
 
   assert.equal(rendered.subject, "First Fold — Wednesday, August 19, 2026");
@@ -88,12 +105,10 @@ test("the renderer produces a static newspaper with stories, quiet desks, source
         assert.match(rendered.html, new RegExp(source.publisher.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
         assert.match(rendered.text, new RegExp(source.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
       }
-    } else {
-      assert.match(rendered.html, /Quiet desk/);
-      assert.match(rendered.text, /QUIET DESK/);
-      assert.match(rendered.text, new RegExp(page.emptyReason.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
     }
   }
+  assert.doesNotMatch(rendered.html, /Quiet desk/);
+  assert.doesNotMatch(rendered.text, /QUIET DESK/);
   assert.match(rendered.text, /WHAT HAPPENED/);
   assert.match(rendered.text, /WHY IT MATTERS/);
   assert.match(rendered.text, /WHAT TO DO OR WATCH/);
@@ -101,7 +116,7 @@ test("the renderer produces a static newspaper with stories, quiet desks, source
 });
 
 test("every rendered editorial and source field is HTML escaped", () => {
-  const candidate = freeCandidate();
+  const candidate = personalCandidate();
   const story = candidate.desks.ai.story;
   candidate.masthead.name = "First <script>alert(\"masthead\")</script>";
   candidate.masthead.tagline = "A & B's <b>paper</b>";
@@ -124,33 +139,67 @@ test("every rendered editorial and source field is HTML escaped", () => {
   assert.match(html, /report\?first=1&amp;next=/);
 });
 
-test("rendering fails closed for malformed, paid, unverified, or untrusted-lane candidates", () => {
-  assert.throws(() => renderPersonalEditionEmail(null), /canonical, source-checked free candidate/);
+test("rendering fails closed for malformed, public, free, incomplete, or unverified candidates", () => {
+  assert.throws(
+    () => renderPersonalEditionEmail(null),
+    /complete, source-checked web-research candidate/,
+  );
 
   const mutations = [
     (candidate) => { candidate.status = "published"; candidate.publication.publishedAt = candidate.publication.publishAt; },
     (candidate) => { candidate.provenance.automation = { workflow: "morning-press" }; },
+    (candidate) => { candidate.provenance.freePilot = { workflow: "free-morning-press" }; },
     (candidate) => { candidate.provenance.sourceCheck.status = "failed"; },
     (candidate) => { candidate.provenance.sourceCheck.issues = [{ code: "BAD" }]; },
-    (candidate) => { candidate.provenance.freePilot.repository = "attacker/fork"; },
-    (candidate) => { candidate.provenance.freePilot.model = "@cf/other/model"; },
-    (candidate) => { candidate.provenance.freePilot.feedSourceCount += 1; },
+    (candidate) => { candidate.provenance.sourceCheck.checkedSourceCount = 3; },
+    (candidate) => { candidate.provenance.personalResearch.workflow = "morning-press"; },
+    (candidate) => { candidate.provenance.personalResearch.provider = "other-provider"; },
+    (candidate) => { candidate.provenance.personalResearch.researchTool = "none"; },
+    (candidate) => { candidate.provenance.personalResearch.repository = "attacker/fork"; },
+    (candidate) => { candidate.provenance.personalResearch.runUrl = "https://github.com/attacker/fork/actions/runs/123456789"; },
+    (candidate) => { candidate.provenance.personalResearch.webSearchCompleted = false; },
+    (candidate) => { candidate.provenance.personalResearch.selectedStoryCount = 3; },
+    (candidate) => { candidate.provenance.personalResearch.promptSha256 = "not-a-digest"; },
+    (candidate) => { candidate.provenance.personalResearch.responseId = ""; },
     (candidate) => { candidate.frontPage.estimatedMinutes = "<img src=x onerror=alert(1)>"; },
     (candidate) => { candidate.desks.ai.story.whatHappened = "too short"; },
   ];
   for (const mutate of mutations) {
-    const candidate = freeCandidate();
+    const candidate = personalCandidate();
     mutate(candidate);
     assert.throws(
       () => renderPersonalEditionEmail(candidate),
-      /canonical, source-checked free candidate/,
+      /complete, source-checked web-research candidate/,
     );
+  }
+});
+
+test("every missing desk blocks delivery before Resend is called", async (t) => {
+  for (const desk of ["ai", "work-and-tools", "security-and-privacy", "platforms-and-power"]) {
+    await t.test(desk, async () => {
+      const candidate = personalCandidate();
+      candidate.desks[desk] = { desk, story: null, emptyReason: "No story was selected." };
+      let fetchCalls = 0;
+      await assert.rejects(
+        sendPersonalEditionEmail(candidate, {
+          apiKey: API_KEY,
+          recipient: RECIPIENT,
+          fetchImpl: async () => {
+            fetchCalls += 1;
+            return successResponse();
+          },
+        }),
+        /complete, source-checked web-research candidate/,
+      );
+      assert.equal(fetchCalls, 0);
+    });
   }
 });
 
 test("the sender posts one bounded Resend request with fixed identity and date idempotency", async () => {
   const calls = [];
-  const candidate = freeCandidate();
+  const candidate = personalCandidate();
+  const rendered = renderPersonalEditionEmail(candidate);
   const result = await sendPersonalEditionEmail(candidate, {
     apiKey: API_KEY,
     recipient: RECIPIENT,
@@ -179,9 +228,14 @@ test("the sender posts one bounded Resend request with fixed identity and date i
   const body = JSON.parse(request.body);
   assert.equal(body.from, PERSONAL_EMAIL_FROM);
   assert.deepEqual(body.to, [RECIPIENT]);
+  assert.equal(body.html, rendered.html);
+  assert.equal(body.text, rendered.text);
+  assert.match(body.html, /^<!doctype html>\n<html/);
+  assert.doesNotMatch(body.html, /\\</);
+  assert.doesNotMatch(body.html, /^&lt;!doctype/);
   assert.match(body.subject, /August 19, 2026/);
   assert.match(body.html, /Washington, D\.C\./);
-  assert.match(body.text, /QUIET DESK/);
+  assert.doesNotMatch(body.text, /QUIET DESK/);
 
   const observedKeys = [];
   for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -258,9 +312,8 @@ test("redirects, provider errors, oversized responses, malformed success, and ti
 });
 
 test("oversized request bodies are rejected before fetch", async () => {
-  const candidate = freeCandidate();
+  const candidate = personalCandidate();
   for (const page of Object.values(candidate.desks)) {
-    if (!page.story) continue;
     page.story.whatHappened = `${page.story.whatHappened} ${"x".repeat(9_000)}`;
     page.story.whyItMatters = `${page.story.whyItMatters} ${"y".repeat(9_000)}`;
     page.story.whatToDoOrWatch = `${page.story.whatToDoOrWatch} ${"z".repeat(9_000)}`;

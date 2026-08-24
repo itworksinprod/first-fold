@@ -423,10 +423,16 @@ function analyzeNewsroomDraft(edition, options = {}) {
     };
   }
 
-  const freeSameDayBackfill =
-    options.temporalMode === "free-same-day-backfill" &&
-    edition.provenance?.freePilot?.workflow === "free-morning-press" &&
-    edition.provenance?.freePilot?.runMode === "same_day_backfill";
+  const sameDayBackfill =
+    (
+      options.temporalMode === "free-same-day-backfill" &&
+      edition.provenance?.freePilot?.workflow === "free-morning-press" &&
+      edition.provenance?.freePilot?.runMode === "same_day_backfill"
+    ) || (
+      options.temporalMode === "personal-same-day-backfill" &&
+      edition.provenance?.personalResearch?.workflow === "personal-morning-paper" &&
+      edition.provenance?.personalResearch?.runMode === "same_day_backfill"
+    );
 
   const windowStart = parseInstant(edition.reportingWindow?.startInclusive);
   const windowEnd = parseInstant(edition.reportingWindow?.endExclusive);
@@ -467,7 +473,7 @@ function analyzeNewsroomDraft(edition, options = {}) {
   } else if (
     Number.isFinite(generatedAt) &&
     generatedAt > publishAt &&
-    !freeSameDayBackfill
+    !sameDayBackfill
   ) {
     issues.push(
       createIssue(
@@ -917,7 +923,7 @@ function analyzeNewsroomDraft(edition, options = {}) {
           if (
             Number.isFinite(publishAt) &&
             retrievedAt > publishAt &&
-            !freeSameDayBackfill
+            !sameDayBackfill
           ) {
             issues.push(
               createIssue(
