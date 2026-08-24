@@ -57,7 +57,7 @@ const STOP_WORDS = new Set([
 const EVENT_MATCH_STOP_WORDS = new Set([
   ...STOP_WORDS,
   "add", "added", "adds", "advisory", "ai", "announce", "announced", "announces",
-  "announcement", "app", "april", "august", "available", "bring", "brings",
+  "announcement", "app", "april", "august", "availability", "available", "bring", "brings",
   "antitrust", "cloud", "company", "court", "critical",
   "companies", "coupon", "coupons", "cut", "data", "developer", "developers",
   "debut", "debuted", "debuts", "december", "discount", "disruption",
@@ -65,7 +65,7 @@ const EVENT_MATCH_STOP_WORDS = new Set([
   "flagship", "hit", "introduce", "introduced", "introduces", "january",
   "job", "july", "june", "launch", "launched", "lawsuit", "laying", "layoff",
   "launches", "latest", "million", "billion", "promo",
-  "march", "may", "model", "models", "november", "now", "october",
+  "generally", "march", "may", "model", "models", "november", "now", "october",
   "down", "downtime", "off", "outage", "patch", "patched", "patches", "people", "plan", "plans",
   "platform", "product",
   "products", "release", "released", "releases", "report", "reported", "over",
@@ -76,13 +76,80 @@ const EVENT_MATCH_STOP_WORDS = new Set([
   "updates", "user", "users", "version", "versions",
 ]);
 
-const KNOWN_ENTITIES = [
-  "OpenAI", "Anthropic", "Google", "Microsoft", "GitHub", "Cloudflare",
-  "Amazon", "AWS", "Apple", "Meta", "Mozilla", "NVIDIA", "AMD", "Intel",
-  "Oracle", "CISA", "FTC", "CMA", "Hugging Face", "TikTok",
-];
-const KNOWN_ENTITY_TOKENS = new Set(KNOWN_ENTITIES.flatMap((entity) =>
-  entity.toLowerCase().split(/\s+/).map(normalizeEventToken)));
+const GENERIC_EVENT_CONTEXT_TOKENS = new Set([
+  "acquisition", "active", "actively", "against", "allow", "allows", "allowing", "app", "cloud", "code",
+  "back", "company", "confirm", "confirmed", "confirms", "cost", "costs", "critical",
+  "customer", "customers", "deal", "division", "employee", "employees",
+  "enterprise", "execution", "exploit", "exploited", "fee", "fees", "flaw",
+  "global", "go", "goes", "going", "investigate", "job", "jobs", "live", "online", "price", "prices", "pricing",
+  "probe", "regulatory", "remote", "restore", "retire", "restriction",
+  "restrictions", "review", "role", "roles", "rule", "rules", "service",
+  "staff", "startup", "store", "team", "unit", "workforce", "worker",
+  "workers", "zero-day",
+]);
+const ACQUISITION_TARGET_NOISE_TOKENS = new Set([
+  "corp", "corporation", "firm", "inc", "incorporated", "ltd", "maker",
+]);
+const SECURITY_IMPACT_NOISE_TOKENS = new Set([
+  "allow", "allowed", "allowing", "arbitrary", "attack", "attacker", "enable",
+  "enabled", "enabling", "impact", "impacted", "impacting", "permit",
+  "permitted", "permitting", "remote", "system",
+]);
+
+const EVENT_ENTITY_ALIASES = Object.freeze([
+  ["openai", ["OpenAI", "Open AI"]],
+  ["anthropic", ["Anthropic"]],
+  ["google", ["Google", "Google Chrome", "Chrome"]],
+  ["microsoft", ["Microsoft", "Azure", "Visual Studio Code", "VS Code", "VSCode"]],
+  ["github", ["GitHub"]],
+  ["cloudflare", ["Cloudflare"]],
+  ["amazon", ["Amazon", "AWS"]],
+  ["apple", ["Apple"]],
+  ["meta", ["Meta", "Facebook"]],
+  ["mozilla", ["Mozilla"]],
+  ["nvidia", ["NVIDIA"]],
+  ["amd", ["AMD"]],
+  ["intel", ["Intel"]],
+  ["oracle", ["Oracle"]],
+  ["cisa", ["CISA"]],
+  ["ftc", ["FTC"]],
+  ["cma", ["CMA"]],
+  ["hugging-face", ["Hugging Face"]],
+  ["tiktok", ["TikTok"]],
+  ["gitlab", ["GitLab"]],
+  ["atlassian", ["Atlassian"]],
+  ["salesforce", ["Salesforce"]],
+  ["slack", ["Slack"]],
+  ["adobe", ["Adobe"]],
+  ["zoom", ["Zoom"]],
+  ["docker", ["Docker"]],
+  ["ibm", ["IBM"]],
+  ["xai", ["xAI"]],
+  ["perplexity", ["Perplexity"]],
+  ["cohere", ["Cohere"]],
+  ["mistral-ai", ["Mistral AI"]],
+  ["deepseek", ["DeepSeek"]],
+  ["servicenow", ["ServiceNow"]],
+  ["sap", ["SAP"]],
+  ["cisco", ["Cisco"]],
+  ["fortinet", ["Fortinet"]],
+  ["palo-alto-networks", ["Palo Alto Networks", "Palo Alto"]],
+  ["ivanti", ["Ivanti"]],
+  ["broadcom", ["Broadcom", "VMware"]],
+  ["ai2", ["Ai2", "Allen Institute for AI"]],
+  ["mit", ["MIT"]],
+  ["uc-berkeley", ["UC Berkeley", "Berkeley AI Research", "BAIR"]],
+  ["jetbrains", ["JetBrains"]],
+  ["nodejs", ["Node.js", "NodeJS"]],
+  ["postman", ["Postman"]],
+  ["hashicorp", ["HashiCorp"]],
+  ["netlify", ["Netlify"]],
+  ["rust", ["Rust"]],
+  ["ieee", ["IEEE"]],
+]);
+const KNOWN_ENTITIES = EVENT_ENTITY_ALIASES.flatMap(([, aliases]) => aliases);
+const KNOWN_ENTITY_TOKENS = new Set(EVENT_ENTITY_ALIASES.flatMap(([, aliases]) =>
+  aliases.flatMap((entity) => entity.toLowerCase().split(/\s+/).map(normalizeEventToken))));
 
 const DESK_TERMS = {
   ai: [
@@ -808,8 +875,15 @@ export async function fetchFeedSource(source, options = {}) {
   }
 }
 
+function normalizeEventText(value, maxLength = 2_000) {
+  return cleanText(value, maxLength)
+    .normalize("NFKC")
+    .replace(/[\u2010-\u2015\u2212]/g, "-");
+}
+
 function tokenize(value) {
-  return cleanText(value, 2_000)
+  return normalizeEventText(value)
+    .replace(/\bnode\.js\b/gi, "nodejs")
     .toLowerCase()
     .replace(/[^a-z0-9-]+/g, " ")
     .split(/\s+/)
@@ -819,12 +893,16 @@ function tokenize(value) {
 function normalizeEventToken(token) {
   const aliases = {
     children: "child",
+    cuts: "cut",
     layoffs: "layoff",
     laid: "layoff",
+    lays: "layoff",
+    remembered: "memory",
+    remembering: "memory",
+    remembers: "memory",
+    remember: "memory",
   };
   if (aliases[token]) return aliases[token];
-  const compactMagnitude = /^(\d+)(?:m|bn|b)$/.exec(token);
-  if (compactMagnitude) return compactMagnitude[1];
   if (token.length > 5 && token.endsWith("ies")) return `${token.slice(0, -3)}y`;
   if (token.length > 4 && token.endsWith("s") && !/(?:ss|us|is)$/.test(token)) {
     return token.slice(0, -1);
@@ -834,45 +912,553 @@ function normalizeEventToken(token) {
 
 function meaningfulTitleTokenSet(item) {
   return new Set(tokenize(item.title)
+    .filter((token) => !EVENT_MATCH_STOP_WORDS.has(token))
     .map(normalizeEventToken)
     // A bare four-digit number in a headline is overwhelmingly a calendar
     // year. It can improve neither overlap nor anchoring: otherwise unrelated
     // monthly patch roundups can corroborate each other merely via "2026".
-    // Structured CVE/GHSA identifiers remain available through strongIdentifier.
+    // Structured CVE/GHSA identifiers remain available through strongIdentifiers.
     .filter((token) => token.length > 1 && !/^\d{4}$/.test(token) && !EVENT_MATCH_STOP_WORDS.has(token)));
 }
 
-function eventTitleTokenSet(item) {
-  return new Set([
-    ...[...meaningfulTitleTokenSet(item)].filter((token) => !KNOWN_ENTITY_TOKENS.has(token)),
-    ...[...productIdentifiers(item)].map((identifier) => `product:${identifier}`),
+function productIdentifiers(item) {
+  const normalizedTitle = normalizeEventText(item.title, 240);
+  const title = normalizedTitle.toLowerCase();
+  const identifiers = title.match(
+    /\b(?:gpt|claude|gemini|llama|mistral|deepseek|grok)[\s-]?\d+(?:\.\d+)*(?:[\s-](?:flash|haiku|max|mini|opus|pro|sonnet|ultra))?\b/g,
+  ) ?? [];
+  const products = new Set(identifiers.map((value) =>
+    `model:${value.replace(/\s+/g, "-").replace(/--+/g, "-")}`));
+  for (const match of title.matchAll(/\bo[134](?:[\s-]?(?:pro|mini))?\b/g)) {
+    products.add(`model:${match[0].replace(/\s+/g, "-")}`);
+  }
+  const namedProducts = [
+    [/\bclaude[\s-]+code\b/g, "claude-code"],
+    [/\bclaude\b/g, "claude"],
+    [/\b(?:github[\s-]+)?copilot[\s-]+coding[\s-]+agent\b/g, "github-copilot-coding-agent"],
+    [/\bcopilot[\s-]+spaces\b/g, "copilot-spaces"],
+    [/\bgemini[\s-]+code[\s-]+assist\b/g, "gemini-code-assist"],
+    [/\bchrome\b/g, "chrome"],
+    [/\bandroid\b/g, "android"],
+    [/\bwindows\b/g, "windows"],
+    [/\bfirefox\b/g, "firefox"],
+    [/\bgemini\b/g, "gemini"],
+    [/\bazure\b/g, "azure"],
+    [/\b(?:aws[\s-]+)?glue\b/g, "aws-glue"],
+    [/\b(?:aws[\s-]+)?lambda\b/g, "aws-lambda"],
+    [/\bazure[\s-]+devops\b/g, "azure-devops"],
+    [/\bxbox\b/g, "xbox"],
+    [/\bgithub[\s-]+actions\b/g, "github-actions"],
+    [/\bgithub[\s-]+codespaces\b/g, "github-codespaces"],
+    [/\bgithub[\s-]+projects\b/g, "github-projects"],
+    [/\bwhatsapp\b/g, "whatsapp"],
+    [/\binstagram\b/g, "instagram"],
+    [/\bslack\b/g, "slack"],
+    [/\btableau\b/g, "tableau"],
+    [/\bgoogle[\s-]+docs\b/g, "google-docs"],
+    [/\bgoogle[\s-]+sheets\b/g, "google-sheets"],
+    [/\b(?:aws[\s-]+)?ec2\b/g, "aws-ec2"],
+    [/\b(?:aws[\s-]+)?s3\b/g, "aws-s3"],
+    [/\b(?:aws[\s-]+)?redshift\b/g, "aws-redshift"],
+    [/\b(?:aws[\s-]+)?dynamodb\b/g, "aws-dynamodb"],
+    [/\bgoogle[\s-]+workspace\b/g, "google-workspace"],
+    [/\bvisual[\s-]+studio[\s-]+code\b/g, "visual-studio-code"],
+    [/\bnode(?:\.js|js)\b/g, "nodejs"],
+    [/\bios\b/g, "ios"],
+    [/\bchatgpt\b/g, "chatgpt"],
+  ];
+  for (const [pattern, identifier] of namedProducts) {
+    if (pattern.test(title)) products.add(`named:${identifier}`);
+  }
+  const googleContext = /\bgoogle\b/i.test(title) || canonicalEntityAlias(item.primaryEntity) === "google";
+  if (googleContext && /\bdocs\b/i.test(title)) products.add("named:google-docs");
+  if (googleContext && /\bsheets\b/i.test(title)) products.add("named:google-sheets");
+  if (googleContext && /\bworkspace\b/i.test(title)) products.add("named:google-workspace");
+  if (googleContext && /\bgmail\b/i.test(title)) products.add("named:google-gmail");
+  if (googleContext && /\bcalendar\b/i.test(title)) products.add("named:google-calendar");
+  if (googleContext && /\bmeet\b/i.test(title)) products.add("named:google-meet");
+  if (googleContext && /\bchat\b/i.test(title)) products.add("named:google-chat");
+  const acronymNoise = new Set([
+    "AI", "API", "AWS", "CISA", "CMA", "CVE", "EU", "FTC", "GA", "GHSA",
+    "GPT", "LLM", "RCE", "RSS", "UK", "US", "USD", "EUR", "GBP",
   ]);
+  for (const match of normalizedTitle.matchAll(/\b[A-Z][A-Z0-9]{1,9}\b/g)) {
+    if (!acronymNoise.has(match[0])) {
+      const acronym = /^(?:SMB|SME)$/.test(match[0]) ? "smb-sme" : match[0].toLowerCase();
+      products.add(`acronym:${acronym}`);
+    }
+  }
+  const featureProducts = [
+    [/\bchatgpt\s+tasks\b/g, "chatgpt-tasks"],
+    [/\bchatgpt\s+projects\b/g, "chatgpt-projects"],
+    [/\bclaude\s+projects\b/g, "claude-projects"],
+    [/\bclaude\b[^.!?]{0,40}\b(?:memory|remember(?:ed|ing|s)?)\b|\b(?:memory|remember(?:ed|ing|s)?)\b[^.!?]{0,40}\bclaude\b/g, "claude-memory"],
+    [/\b(?:chatgpt\s+)?study\s+mode\b/g, "chatgpt-study-mode"],
+    [/\b(?:chatgpt\s+)?voice\s+mode\b/g, "chatgpt-voice-mode"],
+    [/\bchatgpt\s+canvas\b|\bcanvas\s+in\s+chatgpt\b/g, "chatgpt-canvas"],
+    [/\bchatgpt\s+agent\b|\bagent\s+(?:mode\s+)?in\s+chatgpt\b/g, "chatgpt-agent"],
+    [/\bchatgpt\s+search\b|\bsearch\s+in\s+chatgpt\b/g, "chatgpt-search"],
+    [/\b(?:chatgpt\s+)?learn\s+mode\b/g, "chatgpt-learn-mode"],
+    [/\bmanifest\s+v?2\b/g, "chrome-manifest-v2"],
+    [/\bchrome\s+sync\b/g, "chrome-sync"],
+  ];
+  for (const [pattern, identifier] of featureProducts) {
+    if (pattern.test(title)) products.add(`feature:${identifier}`);
+  }
+  if (
+    products.has("named:chatgpt") &&
+    /\b(?:teen|teens|teenager|teenagers|younger\s+(?:people|users)|young\s+(?:people|users))\b/i.test(title)
+  ) products.add("feature:chatgpt-young-users");
+  const unitProducts = [
+    [/\blinkedin\b/g, "linkedin"],
+    [/\bnuance\b/g, "nuance"],
+  ];
+  for (const [pattern, identifier] of unitProducts) {
+    if (pattern.test(title)) products.add(`unit:${identifier}`);
+  }
+  const componentProducts = [
+    [/\bwebrtc\b/g, "webrtc"],
+    [/\bv8\b/g, "v8"],
+    [/\bkernel\b/g, "kernel"],
+    [/\bframework\b/g, "framework"],
+    [/\bbrowsers?\b/g, "browser"],
+  ];
+  for (const [pattern, identifier] of componentProducts) {
+    if (pattern.test(title)) products.add(`component:${identifier}`);
+  }
+  if ([...products].some((identifier) => identifier.startsWith("model:"))) {
+    if (/\bapi\b/i.test(title)) products.add("channel:api");
+    if (/\bchatgpt\b/i.test(title)) products.add("channel:chatgpt");
+  }
+  const softwareVersions = [
+    [/\bchrome\s+(?:version\s+|v)?(\d+(?:\.\d+){0,3})\b/gi, "chrome"],
+    [/\bfirefox\s+(?:version\s+|v)?(\d+(?:\.\d+){0,3})\b/gi, "firefox"],
+    [/\bwindows\s+(?:version\s+|v)?(\d+(?:\.\d+){0,3})\b/gi, "windows"],
+    [/\bandroid\s+(?:version\s+|v)?(\d+(?:\.\d+){0,3})\b/gi, "android"],
+    [/\b(?:ios|ipados|macos)\s+(?:version\s+|v)?(\d+(?:\.\d+){0,3})\b/gi, "apple-os"],
+    [/\bnode(?:\.js|js)\s+(?:version\s+|v)?(\d+(?:\.\d+){0,3})\b/gi, "nodejs"],
+    [/\b(?:visual studio code|vs code|vscode)\s+(?:version\s+)?(\d+(?:\.\d+){0,3})\b/gi, "visual-studio-code"],
+  ];
+  for (const [pattern, product] of softwareVersions) {
+    for (const match of title.matchAll(pattern)) products.add(`version:${product}:${match[1]}`);
+  }
+  for (const match of title.matchAll(/\bwindows\s+\d+(?:\.\d+)?\s+(\d{2}h[12])\b/gi)) {
+    products.add(`channel:windows-servicing:${match[1].toLowerCase()}`);
+  }
+  for (const match of title.matchAll(/\b(?:ios|ipados|macos)\s+\d+(?:\.\d+){0,3}\s+beta\s+(\d+)\b/gi)) {
+    products.add(`channel:apple-os-beta:${match[1]}`);
+  }
+  return products;
+}
+
+function identifiersWithPrefix(identifiers, prefix) {
+  return new Set([...identifiers].filter((identifier) => identifier.startsWith(prefix)));
+}
+
+function identifiersConflict(left, right) {
+  for (const prefix of ["channel:", "feature:", "unit:"]) {
+    const leftTyped = identifiersWithPrefix(left, prefix);
+    const rightTyped = identifiersWithPrefix(right, prefix);
+    if ((leftTyped.size > 0 || rightTyped.size > 0) && setIntersection(leftTyped, rightTyped).size === 0) {
+      return true;
+    }
+  }
+  const leftComponents = identifiersWithPrefix(left, "component:");
+  const rightComponents = identifiersWithPrefix(right, "component:");
+  if (
+    leftComponents.size > 0 &&
+    rightComponents.size > 0 &&
+    setIntersection(leftComponents, rightComponents).size === 0
+  ) return true;
+  const leftAcronyms = identifiersWithPrefix(left, "acronym:");
+  const rightAcronyms = identifiersWithPrefix(right, "acronym:");
+  if (
+    leftAcronyms.size > 0 &&
+    rightAcronyms.size > 0 &&
+    setIntersection(leftAcronyms, rightAcronyms).size === 0
+  ) return true;
+  const parentProducts = new Set(["named:chatgpt", "named:claude"]);
+  const leftSpecific = new Set([...left].filter((identifier) =>
+    identifier.startsWith("named:") && !parentProducts.has(identifier)));
+  const rightSpecific = new Set([...right].filter((identifier) =>
+    identifier.startsWith("named:") && !parentProducts.has(identifier)));
+  return (leftSpecific.size > 0 || rightSpecific.size > 0) &&
+    setIntersection(leftSpecific, rightSpecific).size === 0;
+}
+
+function eventActionFamilies(item) {
+  const title = normalizeEventText(item.title, 240);
+  const families = new Set();
+  if (
+    /\b(?:announce(?:d|s)?|debut(?:ed|s|ing)?|flagship|introduc(?:e|ed|es|ing)|launch(?:ed|es|ing)?|releas(?:e|ed|es|ing)|ship(?:ped|s|ping)?|unveil(?:ed|s|ing)?)\b/i.test(title) ||
+    /\broll(?:ed|s|ing)?\s+out\b/i.test(title) ||
+    /\b(?:general(?:ly)?\s+availab(?:ility|le)|now\s+available|goes?\s+live)\b/i.test(title) ||
+    /\breach(?:ed|es|ing)?\s+(?:general availability|ga|the\s+(?:api|web)|developers?|users?|customers?)\b/i.test(title)
+  ) {
+    families.add("release");
+  }
+  if (
+    /\b(?:disruption|downtime|offline|outage|service interruption|unavailable)\b/i.test(title) ||
+    /\b(?:api|network|platform|service|site)\s+(?:is\s+)?down\b/i.test(title) ||
+    /\b(?:recover(?:ed|s|ing)?|restor(?:e|ed|es|ing))\b[^.!?]{0,35}\b(?:availability|outage|service)\b/i.test(title) ||
+    /\b(?:availability|network|platform|service|site)\b[^.!?]{0,35}\b(?:back\s+(?:online|up)|return(?:ed|s|ing)?\s+to\s+normal)\b/i.test(title)
+  ) families.add("outage");
+  if (
+    /\b(?:layoff|layoffs|lay(?:s|ing)?\s+off|job\s+cuts?|workforce reduction|staff reduction)\b/i.test(title) ||
+    /\bcut(?:s|ting)?(?:\s+[a-z0-9-]+){0,4}\s+(?:employees?|jobs|roles|staff|staffers?|workers?)\b/i.test(title) ||
+    /\b(?:eliminat(?:e|ed|es|ing)|reduc(?:e|ed|es|ing)|shed(?:s|ding)?)\b[^.!?]{0,45}\b(?:employees?|jobs|roles|staff|workforce|workers?)\b/i.test(title)
+  ) {
+    families.add("layoff");
+  }
+  if (/\b(?:creat(?:e|ed|es|ing)|hir(?:e|ed|es|ing)|recruit(?:ed|s|ing)?|adds?)\b[^.!?]{0,35}\b(?:employees?|jobs?|positions?|roles?|staff|workers?)\b/i.test(title)) {
+    families.add("hiring");
+  }
+  if (
+    /\b(?:acquisition|acquir(?:e|ed|es|ing)|buy(?:s|ing)?|bought|merg(?:e|ed|es|ing|er)|purchas(?:e|ed|es|ing)|takeover)\b/i.test(title) ||
+    /\b(?:tak(?:e|es|ing)|took)\s+over\b/i.test(title) ||
+    /\b(?:bid|offer)\s+for\b/i.test(title)
+  ) families.add("acquisition");
+  if (/\b(?:accus(?:e|ed|es|ing)|alleg(?:e|ed|es|ing)|antitrust|case|charg(?:e|ed|es|ing)|complaint|court|fine(?:d|s|ing)?|lawsuit|legal\s+action|penalt(?:y|ies)|penaliz(?:e|ed|es|ing)|sanction(?:ed|s|ing)?|settlement|suit|sue|sued|sues|suing)\b/i.test(title)) {
+    families.add("legal");
+  }
+  if (
+    /\b(?:advisory|fix(?:ed|es)?|patch(?:ed|es)?|remediat(?:e|ed|es|ing)|vulnerabilit(?:y|ies))\b/i.test(title) ||
+    /\b(?:clos(?:e|ed|es|ing)|resolv(?:e|ed|es|ing))\b[^.!?]{0,35}\b(?:bug|cve|flaw|vulnerabilit(?:y|ies))\b/i.test(title)
+  ) families.add("security-fix");
+  if (
+    /\b(?:inquiry|investigat(?:e|ed|es|ing|ion)|probe|probes|probing)\b/i.test(title) ||
+    /\bunder\b[^.!?]{0,35}\binvestigation\b/i.test(title) ||
+    /\bfaces?\b[^.!?]{0,35}\bprobe\b/i.test(title)
+  ) {
+    families.add("investigation");
+  }
+  if (
+    /\b(?:cheaper|price reduction|pricing reduction)\b/i.test(title) ||
+    /\b(?:cut|cuts|cutting|lower|lowers|lowered|lowering|reduce|reduces|reduced|reducing)\b[^.!?]{0,35}\b(?:cost|costs|fee|fees|price|prices|pricing)\b/i.test(title) ||
+    /\b(?:cost|costs|fee|fees|price|prices|pricing)\b[^.!?]{0,25}\b(?:down|lower)\b/i.test(title)
+  ) families.add("pricing-decrease");
+  if (
+    /\b(?:increase|increases|increased|increasing|raise|raises|raised|raising|higher)\b[^.!?]{0,35}\b(?:cost|costs|fee|fees|price|prices|pricing)\b/i.test(title) ||
+    /\b(?:cost|costs|fee|fees|price|prices|pricing)\b[^.!?]{0,25}\b(?:higher|up)\b/i.test(title)
+  ) families.add("pricing-increase");
+  if (/\b(?:deprecat(?:e|ed|es|ing)|discontinu(?:e|ed|es|ing)|retir(?:e|ed|es|ing)|sunset(?:s|ted|ting)?|shut(?:s|ting)?\s+down)\b/i.test(title)) {
+    families.add("termination");
+  }
+  return families;
+}
+
+function eventArtifactFamilies(item) {
+  const title = normalizeEventText(item.title, 240);
+  const families = new Set();
+  if (/\b(?:model|system|safety)\s+(?:card|report)\b|\bsafety\s+evaluation\b/i.test(title)) {
+    families.add("safety-artifact");
+  }
+  if (/\b(?:benchmark|research paper|technical paper|white paper)\b/i.test(title)) {
+    families.add("research-artifact");
+  }
+  return families;
+}
+
+function eventLifecycleFamilies(item) {
+  const title = normalizeEventText(item.title, 240);
+  const families = new Set();
+  if (/\b(?:investigat(?:e|ed|es|ing|ion)|open(?:ed|s|ing)?\s+(?:an?\s+)?(?:inquiry|probe)|probe|probes|probing)\b/i.test(title)) {
+    families.add("investigation");
+  }
+  if (/\b(?:approv(?:e|ed|es|ing|al)|authoriz(?:e|ed|es|ing)|clear(?:ed|s|ing)|greenlight(?:ed|s|ing)?)\b/i.test(title)) {
+    families.add("approval");
+  }
+  if (/\b(?:block(?:ed|s|ing)?|prohibit(?:ed|s|ing)?|veto(?:ed|es|ing)?)\b/i.test(title)) {
+    families.add("blocked");
+  }
+  if (/\b(?:dismiss(?:ed|es|ing)?|toss(?:ed|es|ing)?(?:\s+out)?|throw(?:s|ing)?\s+out|threw\s+out)\b[^.!?]{0,35}\b(?:case|complaint|lawsuit)\b/i.test(title)) {
+    families.add("dismissed");
+  }
+  if (
+    /\b(?:file(?:d|s|ing)?|bring(?:s|ing)?|brought|lodg(?:e|ed|es|ing)|tak(?:e|es|ing)|took)\b[^.!?]{0,40}\b(?:case|complaint|lawsuit|legal\s+action|suit)\b/i.test(title) ||
+    /\b(?:sue(?:d|s)?|suing)\b/i.test(title) ||
+    /^[^.!?]+[’']?s?\s+(?:(?:[a-z0-9-]+)\s+){0,3}(?:complaint|lawsuit|suit)\s+against\b/i.test(title) ||
+    /\bfaces?\s+(?:an?\s+)?(?:complaint|lawsuit|legal\s+action|suit)\s+from\b/i.test(title)
+  ) {
+    families.add("filed");
+  }
+  if (/\bsettlement\b|\b(?:resolv(?:e|ed|es|ing)|settle(?:d|s|ment|ments|ing))\b[^.!?]{0,35}\b(?:case|complaint|dispute|lawsuit|suit)\b|\b(?:case|complaint|dispute|lawsuit|suit)\b[^.!?]{0,35}\bsettle(?:d|s|ment|ments|ing)\b/i.test(title)) {
+    families.add("settled");
+  }
+  return families;
+}
+
+function eventFacetFamilies(item) {
+  const title = normalizeEventText(item.title, 240);
+  const families = new Set();
+  if (/\b(?:data\s+)?retention\b|\b(?:retain|retains|retained|retaining)\s+(?:customer|enterprise|user|workspace)?\s*data\b/i.test(title)) {
+    families.add("retention");
+  }
+  if (/\b(?:price|prices|pricing|subscription cost|usage cost)\b/i.test(title)) {
+    families.add("pricing");
+  }
+  return families;
+}
+
+function canonicalDecimal(value) {
+  const cleaned = String(value ?? "").replace(/,/g, "");
+  if (!/^\d+(?:\.\d+)?$/.test(cleaned)) return null;
+  const [wholePart, fractionPart = ""] = cleaned.split(".");
+  const whole = wholePart.replace(/^0+(?=\d)/, "") || "0";
+  const fraction = fractionPart.replace(/0+$/, "");
+  return fraction ? `${whole}.${fraction}` : whole;
+}
+
+function scaledNumericValue(value, unit) {
+  const normalized = canonicalDecimal(value);
+  if (normalized === null) return null;
+  const multiplier = {
+    "": 1,
+    k: 1_000,
+    thousand: 1_000,
+    m: 1_000_000,
+    million: 1_000_000,
+    b: 1_000_000_000,
+    bn: 1_000_000_000,
+    billion: 1_000_000_000,
+    t: 1_000_000_000_000,
+    tn: 1_000_000_000_000,
+    trillion: 1_000_000_000_000,
+  }[String(unit ?? "").toLowerCase()];
+  if (!multiplier) return null;
+  const scaled = Number(normalized) * multiplier;
+  return Number.isSafeInteger(scaled) ? String(scaled) : `${normalized}:${multiplier}`;
+}
+
+function numericEventAnchors(item) {
+  const title = normalizeEventText(item.title, 240);
+  const anchors = new Map([
+    ["currency-usd", new Set()],
+    ["currency-eur", new Set()],
+    ["currency-gbp", new Set()],
+    ["percent", new Set()],
+    ["percentage-point", new Set()],
+    ["basis-point", new Set()],
+    ["headcount", new Set()],
+  ]);
+  const writtenValues = {
+    one: 1, two: 2, three: 3, four: 4, five: 5,
+    six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+  };
+  for (const match of title.matchAll(/\$\s*(\d[\d,]*(?:\.\d+)?)\s*(thousand|million|billion|trillion|k|m|bn|b|tn|t)?\b/gi)) {
+    const value = scaledNumericValue(match[1], match[2]);
+    if (value !== null) anchors.get("currency-usd").add(value);
+  }
+  for (const [kind, pattern] of [
+    ["currency-eur", /€\s*(\d[\d,]*(?:\.\d+)?)\s*(thousand|million|billion|trillion|k|m|bn|b|tn|t)?\b/gi],
+    ["currency-gbp", /£\s*(\d[\d,]*(?:\.\d+)?)\s*(thousand|million|billion|trillion|k|m|bn|b|tn|t)?\b/gi],
+  ]) {
+    for (const match of title.matchAll(pattern)) {
+      const value = scaledNumericValue(match[1], match[2]);
+      if (value !== null) anchors.get(kind).add(value);
+    }
+  }
+  for (const [kind, pattern] of [
+    ["currency-usd", /\bUSD\s*(\d[\d,]*(?:\.\d+)?)\s*(thousand|million|billion|trillion|k|m|bn|b|tn|t)?\b/gi],
+    ["currency-eur", /\bEUR\s*(\d[\d,]*(?:\.\d+)?)\s*(thousand|million|billion|trillion|k|m|bn|b|tn|t)?\b/gi],
+    ["currency-gbp", /\bGBP\s*(\d[\d,]*(?:\.\d+)?)\s*(thousand|million|billion|trillion|k|m|bn|b|tn|t)?\b/gi],
+  ]) {
+    for (const match of title.matchAll(pattern)) {
+      const value = scaledNumericValue(match[1], match[2]);
+      if (value !== null) anchors.get(kind).add(value);
+    }
+  }
+  for (const match of title.matchAll(/\b(one|two|three|four|five|six|seven|eight|nine|ten)\s+(thousand|million|billion|trillion)?\s*(dollars?|euros?|pounds?)\b/gi)) {
+    const unit = match[3].toLowerCase();
+    const kind = unit.startsWith("dollar")
+      ? "currency-usd"
+      : unit.startsWith("euro")
+        ? "currency-eur"
+        : "currency-gbp";
+    const value = scaledNumericValue(String(writtenValues[match[1].toLowerCase()]), match[2]);
+    if (value !== null) anchors.get(kind).add(value);
+  }
+  for (const [kind, pattern] of [
+    ["currency-usd", /\b(\d[\d,]*(?:\.\d+)?)\s*(thousand|million|billion|trillion|k|m|bn|b|tn|t)?\s*(?:u\.?s\.?\s+)?dollars?\b/gi],
+    ["currency-eur", /\b(\d[\d,]*(?:\.\d+)?)\s*(thousand|million|billion|trillion|k|m|bn|b|tn|t)?\s*euros?\b/gi],
+    ["currency-gbp", /\b(\d[\d,]*(?:\.\d+)?)\s*(thousand|million|billion|trillion|k|m|bn|b|tn|t)?\s*(?:british\s+)?pounds?\b/gi],
+  ]) {
+    for (const match of title.matchAll(pattern)) {
+      const value = scaledNumericValue(match[1], match[2]);
+      if (value !== null) anchors.get(kind).add(value);
+    }
+  }
+  for (const match of title.matchAll(/\b(\d[\d,]*(?:\.\d+)?)\s*percentage\s+points?\b/gi)) {
+    const value = canonicalDecimal(match[1]);
+    if (value !== null) anchors.get("percentage-point").add(value);
+  }
+  for (const match of title.matchAll(/\b(\d[\d,]*(?:\.\d+)?)\s*basis\s+points?\b/gi)) {
+    const value = canonicalDecimal(match[1]);
+    if (value !== null) anchors.get("basis-point").add(value);
+  }
+  for (const match of title.matchAll(/\b(\d[\d,]*(?:\.\d+)?)\s*(?:%(?!\w)|pct\.?\b|percent\b|per\s+cent\b)/gi)) {
+    const value = canonicalDecimal(match[1]);
+    if (value !== null) anchors.get("percent").add(value);
+  }
+  const headcountPattern = /\b(\d[\d,]*(?:\.\d+)?)\s*(thousand|million|k|m)?(?![\d,.])\s+(?!percent\b)(?:(?:[a-z][a-z-]*)\s+){0,2}(?:employees?|jobs?|people|positions?|posts?|roles?|staff(?:ers)?|workers?)\b/gi;
+  for (const match of title.matchAll(headcountPattern)) {
+    const value = scaledNumericValue(match[1], match[2]);
+    if (value !== null) anchors.get("headcount").add(value);
+  }
+  const writtenHeadcountPattern = /\b(one|two|three|four|five|six|seven|eight|nine|ten)(?:\s+(hundred|thousand))?\s+(?:(?:[a-z][a-z-]*)\s+){0,3}(?:employees?|jobs?|people|positions?|posts?|roles?|staff(?:ers)?|workers?)\b/gi;
+  for (const match of title.matchAll(writtenHeadcountPattern)) {
+    const base = writtenValues[match[1].toLowerCase()];
+    const multiplier = match[2]?.toLowerCase() === "hundred"
+      ? 100
+      : match[2]?.toLowerCase() === "thousand"
+        ? 1_000
+        : 1;
+    anchors.get("headcount").add(String(base * multiplier));
+  }
+  return anchors;
+}
+
+function flattenedNumericAnchors(item) {
+  const flattened = new Set();
+  for (const [kind, values] of numericEventAnchors(item)) {
+    for (const value of values) flattened.add(`${kind}:${value}`);
+  }
+  return flattened;
+}
+
+function setIntersection(left, right) {
+  return new Set([...left].filter((value) => right.has(value)));
 }
 
 function setsEqual(left, right) {
   return left.size === right.size && [...left].every((token) => right.has(token));
 }
 
-function productIdentifiers(item) {
-  const identifiers = String(item.title ?? "").toLowerCase().match(
-    /\b(?:gpt|claude|gemini|llama|mistral|deepseek|grok)[\s-]?\d+(?:\.\d+)*(?:[\s-](?:flash|haiku|max|mini|opus|pro|sonnet|ultra))?\b/g,
-  ) ?? [];
-  return new Set(identifiers.map((value) => value.replace(/\s+/g, "-").replace(/--+/g, "-")));
+function numericAnchorsConflict(left, right) {
+  for (const [kind, leftValues] of left) {
+    const rightValues = right.get(kind);
+    if (leftValues.size > 0 && rightValues?.size > 0 && setIntersection(leftValues, rightValues).size === 0) {
+      return true;
+    }
+  }
+  const leftKinds = new Set([...left]
+    .filter(([, values]) => values.size > 0)
+    .map(([kind]) => kind));
+  const rightKinds = new Set([...right]
+    .filter(([, values]) => values.size > 0)
+    .map(([kind]) => kind));
+  if (
+    leftKinds.size > 0 &&
+    rightKinds.size > 0 &&
+    setIntersection(leftKinds, rightKinds).size === 0
+  ) return true;
+  const leftCurrencies = new Set([...left]
+    .filter(([kind]) => kind.startsWith("currency-"))
+    .flatMap(([kind, values]) => [...values].map((value) => `${kind}:${value}`)));
+  const rightCurrencies = new Set([...right]
+    .filter(([kind]) => kind.startsWith("currency-"))
+    .flatMap(([kind, values]) => [...values].map((value) => `${kind}:${value}`)));
+  if (
+    leftCurrencies.size > 0 &&
+    rightCurrencies.size > 0 &&
+    setIntersection(leftCurrencies, rightCurrencies).size === 0
+  ) return true;
+  return false;
 }
 
-function eventActionFamilies(item) {
-  const title = String(item.title ?? "");
-  const families = new Set();
-  if (/\b(?:announce(?:d|s)?|debut(?:ed|s|ing)?|flagship|introduc(?:e|ed|es|ing)|launch(?:ed|es|ing)?|releas(?:e|ed|es|ing)|unveil(?:ed|s|ing)?)\b/i.test(title)) {
-    families.add("release");
+function eventNumericRoleAnchors(item) {
+  const title = normalizeEventText(item.title, 240);
+  const anchors = new Map([
+    ["deal-offer", new Set()],
+    ["workforce-change", new Set()],
+  ]);
+  const currencyAmount = String.raw`(?:(?:[$€£]\s*|(?:USD|EUR|GBP)\s*)\d[\d,]*(?:\.\d+)?\s*(?:thousand|million|billion|trillion|k|m|bn|b|tn|t)?)`;
+  const bidPatterns = [
+    new RegExp(`${currencyAmount}\\s+(?:bid|offer)\\b`, "gi"),
+    new RegExp(`\\b(?:bid|offer)\\b[^.!?]{0,18}\\b(?:of|worth|for)?\\s*${currencyAmount}`, "gi"),
+  ];
+  for (const pattern of bidPatterns) {
+    for (const match of title.matchAll(pattern)) {
+      for (const anchor of flattenedNumericAnchors({ title: match[0] })) {
+        if (anchor.startsWith("currency-")) anchors.get("deal-offer").add(anchor);
+      }
+    }
   }
-  if (/\b(?:disruption|down|downtime|outage)\b/i.test(title)) families.add("outage");
-  if (/\b(?:layoff|layoffs|laying\s+off|job\s+cuts?|cut(?:s|ting)?(?:\s+[a-z0-9-]+){0,4}\s+(?:employees?|jobs|roles|staff|staffers?|workers?))\b/i.test(title)) {
-    families.add("layoff");
+  const workforceChange = /\b(?:cut(?:s|ting)?|eliminat(?:e|ed|es|ing)|lay(?:s|ing)?\s+off|laid\s+off|reduc(?:e|ed|es|ing)|shed(?:s|ding)?)\s+(\d[\d,]*(?:\.\d+)?)\s*(thousand|million|k|m)?\b/gi;
+  for (const match of title.matchAll(workforceChange)) {
+    const value = scaledNumericValue(match[1], match[2]);
+    if (value !== null) anchors.get("workforce-change").add(value);
   }
-  if (/\b(?:antitrust|court|lawsuit|settlement)\b/i.test(title)) families.add("legal");
-  if (/\b(?:advisory|fix(?:ed|es)?|patch(?:ed|es)?|vulnerabilit(?:y|ies))\b/i.test(title)) families.add("security-fix");
-  return families;
+  return anchors;
+}
+
+function eventNumericRolesConflict(left, right) {
+  for (const [role, leftValues] of left) {
+    const rightValues = right.get(role);
+    if (
+      leftValues.size > 0 &&
+      rightValues?.size > 0 &&
+      setIntersection(leftValues, rightValues).size === 0
+    ) return true;
+  }
+  return false;
+}
+
+function productSurfaceTokenSet(item) {
+  const tokens = new Set();
+  const identifiers = productIdentifiers(item);
+  for (const identifier of identifiers) {
+    const surface = identifier.slice(identifier.indexOf(":") + 1);
+    for (const variant of [surface, surface.replace(/-/g, " ")]) {
+      for (const token of tokenize(variant).map(normalizeEventToken)) tokens.add(token);
+    }
+  }
+  if ([...identifiers].some((identifier) =>
+    identifier === "named:nodejs" || identifier.startsWith("version:nodejs:"))) {
+    tokens.add("node");
+    tokens.add("js");
+    tokens.add("nodejs");
+  }
+  return tokens;
+}
+
+function lexicalEventTokenSet(item) {
+  const productTokens = productSurfaceTokenSet(item);
+  return new Set([...meaningfulTitleTokenSet(item)].filter((token) =>
+    !KNOWN_ENTITY_TOKENS.has(token) &&
+    !productTokens.has(token) &&
+    !/^\d+(?:[.,]\d+)*(?:k|m|bn|b|tn|t)?$/i.test(token)));
+}
+
+function subjectEventTokenSet(item) {
+  const securityFix = eventActionFamilies(item).has("security-fix");
+  return new Set([...lexicalEventTokenSet(item)].filter((token) =>
+    !GENERIC_EVENT_CONTEXT_TOKENS.has(token) &&
+    !(securityFix && SECURITY_IMPACT_NOISE_TOKENS.has(token))));
+}
+
+function normalizedEntityName(value) {
+  return normalizeEventText(value, 120)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function canonicalEntityAlias(value) {
+  const normalized = normalizedEntityName(value);
+  if (!normalized) return null;
+  for (const [key, aliases] of EVENT_ENTITY_ALIASES) {
+    if (aliases.some((alias) => normalizedEntityName(alias) === normalized)) return key;
+  }
+  return null;
+}
+
+function eventTitleTokenSet(item) {
+  return new Set([
+    ...lexicalEventTokenSet(item),
+    ...[...productIdentifiers(item)].map((identifier) => `product:${identifier}`),
+    ...[...flattenedNumericAnchors(item)].map((anchor) => `number:${anchor}`),
+  ]);
 }
 
 function jaccard(left, right) {
@@ -881,20 +1467,544 @@ function jaccard(left, right) {
   return union === 0 ? 0 : intersection / union;
 }
 
-function strongIdentifier(item) {
-  const match = `${item.title} ${item.summary}`.match(/\b(?:CVE-\d{4}-\d{4,}|GHSA-[a-z0-9-]{8,})\b/i);
-  return match?.[0].toLowerCase() ?? null;
+function strongIdentifiersForText(value) {
+  const identifiers = normalizeEventText(value).match(/\b(?:CVE-\d{4}-\d{4,}|GHSA-[a-z0-9-]{8,})\b/gi) ?? [];
+  return new Set(identifiers.map((identifier) => identifier.toLowerCase()));
+}
+
+function strongIdentifiers(item) {
+  return strongIdentifiersForText(`${item.title ?? ""} ${item.summary ?? ""}`);
+}
+
+function titleStrongIdentifiers(item) {
+  return strongIdentifiersForText(item.title ?? "");
 }
 
 function titleEntityKeys(item) {
-  const title = String(item.title ?? "");
-  const aliases = { aws: "amazon" };
-  return new Set(KNOWN_ENTITIES.flatMap((entity) => {
-    const expression = entity.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
-    if (!new RegExp(`\\b${expression}\\b`, "i").test(title)) return [];
-    const key = entity.toLowerCase();
-    return [aliases[key] ?? key];
+  const title = normalizeEventText(item.title, 240);
+  const keys = new Set(EVENT_ENTITY_ALIASES.flatMap(([key, aliases]) => {
+    const matched = aliases.some((entity) => {
+      const expression = entity.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+      return new RegExp(`\\b${expression}\\b`, "i").test(title);
+    });
+    return matched ? [key] : [];
   }));
+  if (item.relationship === "originating") {
+    const primaryKey = canonicalEntityAlias(item.primaryEntity);
+    if (primaryKey) keys.add(primaryKey);
+  }
+  return keys;
+}
+
+function titleEntityMentions(item) {
+  const title = normalizeEventText(item.title, 240);
+  const mentions = [];
+  for (const [key, aliases] of EVENT_ENTITY_ALIASES) {
+    for (const entity of aliases) {
+      const expression = entity.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+      for (const match of title.matchAll(new RegExp(`\\b${expression}\\b`, "gi"))) {
+        mentions.push({ key, start: match.index, end: match.index + match[0].length });
+      }
+    }
+  }
+  return mentions.sort((left, right) => left.start - right.start || right.end - left.end);
+}
+
+function legalRoleAnchor(item) {
+  const title = normalizeEventText(item.title, 240);
+  const mentions = titleEntityMentions(item);
+  const before = (index) => mentions.filter((mention) => mention.end <= index).at(-1);
+  const after = (index) => mentions.find((mention) => mention.start >= index);
+  const roleBoundary = String.raw`(?=\s+(?:after|amid|as|at|before|for|following|from|in|over|target(?:s|ed|ing)?|under|with|worth)\b|[,;:]|$)`;
+  const directedEnforcement = new RegExp(
+    String.raw`^(.+?)\s+(?:accus(?:e|ed|es|ing)|charg(?:e|ed|es|ing)|sanction(?:ed|s|ing)?)\s+(.+?)\s+(?:of|over|with)\b`,
+    "i",
+  ).exec(title) ?? new RegExp(
+    String.raw`^(.+?)\s+alleg(?:e|ed|es|ing)\s+(.+?)\s+(?:breach(?:ed|es|ing)?|broke|violat(?:e|ed|es|ing))\b`,
+    "i",
+  ).exec(title);
+  if (directedEnforcement) {
+    const enforcer = normalizeActorAnchor(directedEnforcement[1]);
+    const defendant = normalizeActorAnchor(directedEnforcement[2]);
+    if (enforcer && defendant && enforcer !== defendant) return `enforcer:${enforcer}->${defendant}`;
+  }
+  const passiveClaim = new RegExp(
+    String.raw`^(.+?)\s+(?:(?:is|was|were|gets?|has\s+been)\s+)?sued\s+by\s+(.+?)${roleBoundary}`,
+    "i",
+  ).exec(title);
+  if (passiveClaim) {
+    const defendant = normalizeActorAnchor(passiveClaim[1]);
+    const claimant = normalizeActorAnchor(passiveClaim[2]);
+    if (claimant && defendant && claimant !== defendant) return `claimant:${claimant}->${defendant}`;
+  }
+  const filedByClaim = new RegExp(
+    String.raw`^(?:.+?\s+)?(?:lawsuit|suit|complaint|legal\s+action)\s+against\s+(.+?)\s+filed\s+by\s+(.+?)${roleBoundary}`,
+    "i",
+  ).exec(title);
+  if (filedByClaim) {
+    const defendant = normalizeActorAnchor(filedByClaim[1]);
+    const claimant = normalizeActorAnchor(filedByClaim[2]);
+    if (claimant && defendant && claimant !== defendant) return `claimant:${claimant}->${defendant}`;
+  }
+  const nounClaim = /\b(?:lawsuit|suit|complaint|legal\s+action)\s+against\b/i.exec(title);
+  if (nounClaim) {
+    const claimant = before(nounClaim.index);
+    const defendant = after(nounClaim.index + nounClaim[0].length);
+    if (claimant && defendant && claimant.key !== defendant.key) {
+      return `claimant:${claimant.key}->${defendant.key}`;
+    }
+  }
+  const possessiveClaim = new RegExp(
+    String.raw`^(.+?)[’']s\s+(?:(?:[a-z0-9-]+)\s+){0,3}(?:lawsuit|suit|complaint|legal\s+action)\s+against\s+(.+?)${roleBoundary}`,
+    "i",
+  ).exec(title);
+  if (possessiveClaim) {
+    const claimant = normalizeActorAnchor(possessiveClaim[1]);
+    const defendant = normalizeActorAnchor(possessiveClaim[2]);
+    if (claimant && defendant && claimant !== defendant) return `claimant:${claimant}->${defendant}`;
+  }
+  const activeClaim = new RegExp(
+    String.raw`^(.+?)\s+(?:(?:sue(?:d|s)?|suing)\s+|(?:file(?:d|s|ing)?|bring(?:s|ing)?|brought|lodg(?:e|ed|es|ing)|tak(?:e|es|ing)|took)\s+(?:an?\s+)?(?:(?:[a-z0-9-]+)\s+){0,3}(?:lawsuit|suit|complaint|legal\s+action)\s+against\s+)(.+?)${roleBoundary}`,
+    "i",
+  ).exec(title);
+  if (activeClaim) {
+    const claimant = normalizeActorAnchor(activeClaim[1]);
+    const defendant = normalizeActorAnchor(activeClaim[2]);
+    if (claimant && defendant && claimant !== defendant) return `claimant:${claimant}->${defendant}`;
+  }
+  const facesClaim = new RegExp(
+    String.raw`^(.+?)\s+faces?\s+(?:an?\s+)?(?:lawsuit|suit|complaint|legal\s+action)\s+from\s+(.+?)${roleBoundary}`,
+    "i",
+  ).exec(title);
+  if (facesClaim) {
+    const defendant = normalizeActorAnchor(facesClaim[1]);
+    const claimant = normalizeActorAnchor(facesClaim[2]);
+    if (claimant && defendant && claimant !== defendant) return `claimant:${claimant}->${defendant}`;
+  }
+  if (/\b(?:settle(?:d|s|ment|ments|ing)|reaches?\b[^.!?]{0,50}\bsettlement)\b/i.test(title)) {
+    const parties = [...new Set(mentions.map((mention) => mention.key))].sort();
+    if (parties.length === 2) return `settlement:${parties.join("+")}`;
+  }
+  const passiveEnforcement = /\b(?:(?:is|was|were|has\s+been)\s+)?(?:fined|penalized|hit\s+with\b[^.!?]{0,60}\b(?:fine|penalty))\b[^.!?]{0,60}\bby\b/i.exec(title);
+  if (passiveEnforcement) {
+    const defendant = before(passiveEnforcement.index);
+    const enforcer = after(passiveEnforcement.index + passiveEnforcement[0].length);
+    if (enforcer && defendant && enforcer.key !== defendant.key) {
+      return `enforcer:${enforcer.key}->${defendant.key}`;
+    }
+  }
+  const receivedEnforcement = /\breceiv(?:e|ed|es|ing)\b[^.!?]{0,60}\b(?:fine|penalty)\b/i.exec(title);
+  if (receivedEnforcement) {
+    const defendant = before(receivedEnforcement.index);
+    const enforcer = after(receivedEnforcement.index + /\breceiv(?:e|ed|es|ing)\b/i.exec(receivedEnforcement[0])[0].length);
+    if (enforcer && defendant && enforcer.key !== defendant.key) {
+      return `enforcer:${enforcer.key}->${defendant.key}`;
+    }
+  }
+  const leviedEnforcement = /\b(?:levy|levied|levies|levying|impose|imposed|imposes|imposing)\b[^.!?]{0,45}\b(?:fine|penalty)\b/i.exec(title);
+  if (leviedEnforcement) {
+    const enforcer = before(leviedEnforcement.index);
+    const defendant = after(leviedEnforcement.index + leviedEnforcement[0].length);
+    if (enforcer && defendant && enforcer.key !== defendant.key) {
+      return `enforcer:${enforcer.key}->${defendant.key}`;
+    }
+  }
+  const paymentOrder = /\borders?\b/i.exec(title);
+  const payment = /\bto\s+pay\b/i.exec(title);
+  if (paymentOrder && payment && payment.index > paymentOrder.index) {
+    const payer = after(paymentOrder.index + paymentOrder[0].length);
+    const payee = after(payment.index + payment[0].length);
+    if (payer && payee && payer.key !== payee.key) return `payer:${payer.key}->${payee.key}`;
+  }
+  const receivedPayment = /\breceiv(?:e|ed|es|ing)\b[^.!?]{0,50}\bfrom\b/i.exec(title);
+  if (receivedPayment && /\b(?:award|court|damages|judgment|payment)\b/i.test(title)) {
+    const payee = before(receivedPayment.index);
+    const payer = after(receivedPayment.index + receivedPayment[0].length);
+    if (payer && payee && payer.key !== payee.key) return `payer:${payer.key}->${payee.key}`;
+  }
+  const wonPayment = /\b(?:secure(?:d|s|ing)?|win(?:s|ning)?|won)\b[^.!?]{0,60}\b(?:award|damages|judgment|payment)\b[^.!?]{0,45}\bfrom\b/i.exec(title);
+  if (wonPayment) {
+    const payee = before(wonPayment.index);
+    const payer = after(wonPayment.index + wonPayment[0].length);
+    if (payer && payee && payer.key !== payee.key) return `payer:${payer.key}->${payee.key}`;
+  }
+  const enforcement = /\b(?:fine(?:d|s|ing)?|penaliz(?:e|ed|es|ing))\b/i.exec(title);
+  if (enforcement) {
+    const enforcer = before(enforcement.index);
+    const defendant = after(enforcement.index + enforcement[0].length);
+    if (enforcer && defendant && enforcer.key !== defendant.key) {
+      return `enforcer:${enforcer.key}->${defendant.key}`;
+    }
+  }
+  const passiveLawsuit = /\b(?:is|was|were|gets?|has\s+been)\s+sued\s+by\b/i.exec(title);
+  if (passiveLawsuit) {
+    const defendant = before(passiveLawsuit.index);
+    const claimant = after(passiveLawsuit.index + passiveLawsuit[0].length);
+    if (claimant && defendant) return `claimant:${claimant.key}->${defendant.key}`;
+  }
+  const filedBy = /\blawsuit\s+against\b[^.!?]{0,60}\bfiled\s+by\b/i.exec(title);
+  if (filedBy) {
+    const defendant = after(filedBy.index + "lawsuit against".length);
+    const claimant = after(filedBy.index + filedBy[0].length);
+    if (claimant && defendant && claimant.key !== defendant.key) {
+      return `claimant:${claimant.key}->${defendant.key}`;
+    }
+  }
+  const lawsuit = /\b(?:(?:sue(?:d|s)?|suing)|files?\s+(?:an?\s+)?lawsuit\s+against)\b/i.exec(title);
+  if (lawsuit) {
+    const subject = before(lawsuit.index);
+    const object = after(lawsuit.index + lawsuit[0].length);
+    if (subject && object) return `claimant:${subject.key}->${object.key}`;
+  }
+  const facesLawsuit = /\bfaces?\b/i.exec(title);
+  if (facesLawsuit && /\blawsuit\b/i.test(title.slice(facesLawsuit.index))) {
+    const defendant = before(facesLawsuit.index);
+    const claimant = after(facesLawsuit.index + facesLawsuit[0].length);
+    if (claimant && defendant && claimant.key !== defendant.key) {
+      return `claimant:${claimant.key}->${defendant.key}`;
+    }
+  }
+  const passiveOutcome = /\b(?:is|was|were|gets?|has\s+been)\s+(?:beaten|defeated)\s+by\b/i.exec(title);
+  if (passiveOutcome) {
+    const loser = before(passiveOutcome.index);
+    const winner = after(passiveOutcome.index + passiveOutcome[0].length);
+    if (winner && loser) return `winner:${winner.key}->${loser.key}`;
+  }
+  const victoryOver = /\b(?:secure(?:d|s|ing)?|score(?:d|s|ing)?)\b[^.!?]{0,35}\b(?:court\s+)?victory\s+over\b/i.exec(title);
+  if (victoryOver) {
+    const winner = before(victoryOver.index);
+    const loser = after(victoryOver.index + victoryOver[0].length);
+    if (winner && loser && winner.key !== loser.key) return `winner:${winner.key}->${loser.key}`;
+  }
+  const winnerOutcome = /\b(?:beat(?:s|ing)?|defeat(?:ed|s|ing)?|prevail(?:ed|s|ing)?\s+over)\b/i.exec(title);
+  if (winnerOutcome) {
+    const winner = before(winnerOutcome.index);
+    const loser = after(winnerOutcome.index + winnerOutcome[0].length);
+    if (winner && loser) return `winner:${winner.key}->${loser.key}`;
+  }
+  const winAgainst = /\b(?:win(?:s|ning)?|won)\b.{0,80}\bagainst\b/i.exec(title);
+  if (winAgainst) {
+    const winner = before(winAgainst.index);
+    const loser = after(winAgainst.index + winAgainst[0].length);
+    if (winner && loser) return `winner:${winner.key}->${loser.key}`;
+  }
+  const loseTo = /\b(?:lose(?:s|ing)?|lost)\b.{0,80}\bto\b/i.exec(title);
+  if (loseTo) {
+    const loser = before(loseTo.index);
+    const winner = after(loseTo.index + loseTo[0].length);
+    if (winner && loser) return `winner:${winner.key}->${loser.key}`;
+  }
+  const sidesWith = /\bsides?\s+with\b[^.!?]{0,60}\bagainst\b/i.exec(title);
+  if (sidesWith) {
+    const winner = after(sidesWith.index + "sides with".length);
+    const loser = after(sidesWith.index + sidesWith[0].length);
+    if (winner && loser && winner.key !== loser.key) return `winner:${winner.key}->${loser.key}`;
+  }
+  return null;
+}
+
+function hasDirectedLegalSyntax(item) {
+  const title = normalizeEventText(item.title, 240);
+  return /\b(?:accus(?:e|ed|es|ing)|alleg(?:e|ed|es|ing)|charg(?:e|ed|es|ing)|sanction(?:ed|s|ing)?|sue(?:d|s)?|suing)\b/i.test(title) ||
+    /\b(?:lawsuit|suit|complaint|legal\s+action)\s+against\b/i.test(title) ||
+    /\b(?:fined|penalized|fine|penalty)\b[^.!?]{0,60}\b(?:against|by)\b/i.test(title) ||
+    /\borders?\b[^.!?]{0,60}\bto\s+pay\b/i.test(title) ||
+    /\b(?:receiv(?:e|ed|es|ing)|secure(?:d|s|ing)?|win(?:s|ning)?|won)\b[^.!?]{0,70}\b(?:award|damages|judgment|payment)\b[^.!?]{0,45}\bfrom\b/i.test(title) ||
+    /\b(?:victory\s+over|win(?:s|ning)?\b[^.!?]{0,60}\bagainst|won\b[^.!?]{0,60}\bagainst|lose(?:s|ing)?\b[^.!?]{0,60}\bto|lost\b[^.!?]{0,60}\bto)\b/i.test(title) ||
+    /\bsides?\s+with\b[^.!?]{0,60}\bagainst\b/i.test(title);
+}
+
+function investigationRoleAnchor(item) {
+  const title = normalizeEventText(item.title, 240);
+  const mentions = titleEntityMentions(item);
+  const roleBoundary = String.raw`(?=\s+(?:after|amid|as|at|before|for|following|from|in|over|under|with|worth)\b|[,;:]|$)`;
+  const passive = new RegExp(
+    String.raw`^(.+?)\s+(?:(?:is|was|were|has\s+been)\s+)?investigated\s+by\s+(.+?)${roleBoundary}`,
+    "i",
+  ).exec(title);
+  if (passive) {
+    const target = normalizeActorAnchor(passive[1]);
+    const investigator = normalizeActorAnchor(passive[2]);
+    if (investigator && target && investigator !== target) {
+      return `investigator:${investigator}->${target}`;
+    }
+  }
+  const active = new RegExp(
+    String.raw`^(.+?)\s+(?:investigat(?:e|ed|es|ing)|probes|probing)\s+(.+?)${roleBoundary}`,
+    "i",
+  ).exec(title);
+  if (active) {
+    const investigator = normalizeActorAnchor(active[1]);
+    const target = normalizeActorAnchor(active[2]);
+    if (investigator && target && investigator !== target) {
+      return `investigator:${investigator}->${target}`;
+    }
+  }
+  const underInvestigation = new RegExp(
+    String.raw`^(.+?)\s+(?:is\s+)?under\s+(.+?)\s+investigation${roleBoundary}`,
+    "i",
+  ).exec(title);
+  if (underInvestigation) {
+    const target = normalizeActorAnchor(underInvestigation[1]);
+    const investigator = normalizeActorAnchor(underInvestigation[2]);
+    if (investigator && target && investigator !== target) {
+      return `investigator:${investigator}->${target}`;
+    }
+  }
+  const facesProbe = new RegExp(
+    String.raw`^(.+?)\s+faces?\s+(.+?)\s+probe${roleBoundary}`,
+    "i",
+  ).exec(title);
+  if (facesProbe) {
+    const target = normalizeActorAnchor(facesProbe[1]);
+    const investigator = normalizeActorAnchor(facesProbe[2]);
+    if (investigator && target && investigator !== target) {
+      return `investigator:${investigator}->${target}`;
+    }
+  }
+  const openedInquiryAction = /\bopen(?:ed|s|ing)?\s+(?:an?\s+)?(?:inquiry|probe)\s+into\b/i.exec(title);
+  if (openedInquiryAction) {
+    const investigator = mentions
+      .filter((mention) => mention.end <= openedInquiryAction.index)
+      .at(-1);
+    const target = mentions.find(
+      (mention) => mention.start >= openedInquiryAction.index + openedInquiryAction[0].length,
+    );
+    if (investigator && target && investigator.key !== target.key) {
+      return `investigator:${investigator.key}->${target.key}`;
+    }
+  }
+  const opensInquiry = new RegExp(
+    String.raw`^(.+?)\s+open(?:ed|s|ing)?\s+(?:an?\s+)?(?:inquiry|probe)\s+into\s+(.+?)${roleBoundary}`,
+    "i",
+  ).exec(title);
+  if (opensInquiry) {
+    const investigator = normalizeActorAnchor(opensInquiry[1]);
+    const target = normalizeActorAnchor(opensInquiry[2]);
+    if (investigator && target && investigator !== target) {
+      return `investigator:${investigator}->${target}`;
+    }
+  }
+  const action = /\b(?:investigat(?:e|ed|es|ing|ion)|open(?:ed|s|ing)?\b[^.!?]{0,25}\bprobe|probe|probes|probing)\b/i.exec(title);
+  if (!action) return null;
+  const investigator = mentions.filter((mention) => mention.end <= action.index).at(-1);
+  const target = mentions.find((mention) => mention.start >= action.index + action[0].length);
+  if (investigator && target && investigator.key !== target.key) {
+    return `investigator:${investigator.key}->${target.key}`;
+  }
+  return null;
+}
+
+const LEGAL_ISSUE_NOISE_TOKENS = new Set([
+  "action", "advertising", "award", "case", "child", "complaint", "consumer", "fine", "fined", "lawsuit", "legal", "levied",
+  "levy", "mobile", "order", "ordered", "pay", "penalty", "penalize", "policy",
+  "practice", "protect", "protected", "protecting", "protection", "receive",
+  "reache", "reach", "reached", "reaches", "received", "right", "secure", "secured", "settle", "settled", "settlement", "suit", "victory",
+  "beat", "beaten", "defeat", "defeated", "dismiss", "dismissed", "file",
+  "filed", "filing", "lose", "lost", "prevail", "sue", "sued", "suing",
+  "sues", "win", "winner", "wins", "won",
+]);
+
+function legalIssueTokenSet(item) {
+  if (!eventActionFamilies(item).has("legal")) return new Set();
+  return new Set([...subjectEventTokenSet(item)]
+    .map((token) => token === "billing" ? "payment" : token)
+    .filter((token) => !LEGAL_ISSUE_NOISE_TOKENS.has(token)));
+}
+
+function hasDenialPolarity(item) {
+  const title = normalizeEventText(item.title, 240);
+  return /\b(?:den(?:y|ies|ied|ying)|disput(?:e|ed|es|ing)|refut(?:e|ed|es|ing))\b/i.test(title) ||
+    /\b(?:debunk(?:ed|s|ing)?|rebut(?:s|ted|ting)?)\b/i.test(title) ||
+    /\b(?:bogus|fabricated|fake|hoax)\b/i.test(title) ||
+    /\b(?:allegation|claim|report|rumou?r)s?\b.{0,100}\b(?:false|not\s+true|untrue)\b/i.test(title) ||
+    /\bdismiss(?:ed|es|ing)?\b.{0,35}\b(?:allegation|claim|report|rumou?r)s?\b/i.test(title) ||
+    /\breject(?:s|ed|ing)?\b.{0,45}\b(?:allegation|claim|launch|release|report|rumou?r)s?\b/i.test(title) ||
+    /\bpush(?:ed|es|ing)?\s+back(?:\s+(?:against|on))?\b.{0,55}\b(?:allegation|claim|launch|release|report|rollout|rumou?r)s?\b/i.test(title) ||
+    /\bshoot(?:s|ing)?\s+down\b.{0,35}\b(?:allegation|claim|report|rumou?r)s?\b/i.test(title) ||
+    /\bcall(?:ed|s|ing)?\b.{0,45}\b(?:allegation|claim|report|rumou?r)s?\b.{0,20}\b(?:false|inaccurate|misleading|wrong)\b/i.test(title) ||
+    /\brules?\s+out\b|\b(?:has\s+no\s+intention\s+of|no\s+plans?\s+to|not\s+planning\s+to)\b/i.test(title) ||
+    /\b(?:does\s+not|doesn[’']t|is\s+not|isn[’']t|will\s+not|won[’']t|not\s+going\s+to)\b.{0,24}\b(?:acquire|build|buy|deploy|fix|launch|offer|patch|release|remediate|sell|ship|unveil)\b/i.test(title) ||
+    /\b(?:does\s+not|doesn[’']t|has\s+no|is\s+not|isn[’']t|not)\b.{0,18}\b(?:affect(?:ed)?|at\s+risk|expos(?:e|ed|ure)|exploitable|impact(?:ed)?|vulnerable)\b/i.test(title) ||
+    /\b(?:immune\s+to|not\s+(?:at\s+risk|exploitable|exposed\s+to)|unaffected\s+by)\b/i.test(title) ||
+    /\bunaffected\b/i.test(title);
+}
+
+function hasCancellationPolarity(item) {
+  const title = normalizeEventText(item.title, 240);
+  return /\b(?:abandon(?:ed|s|ing)?|abort(?:ed|s|ing)?|ax(?:e|ed|es|ing)|cancel(?:ed|led|s|ing|ling)?|nix(?:ed|es|ing)?|scrap(?:ped|s|ping)?|withdraw(?:n|s|ing)?|withdrew)\b/i.test(title) ||
+    /\bcall(?:ed|s|ing)?\s+off\b/i.test(title) ||
+    /\bend(?:ed|s|ing)?\s+(?:(?:deal|merger|takeover|acquisition)\s+)?(?:talks|negotiations)\b/i.test(title) ||
+    /\bwalk(?:ed|s|ing)?\s+away\s+from\b/i.test(title) ||
+    /\b(?:drop(?:ped|s|ping)?|withdraw(?:n|s|ing)?|withdrew)\s+(?:its\s+|the\s+)?(?:bid|case|complaint|lawsuit|offer)\b/i.test(title) ||
+    /\b(?:halt(?:ed|s|ing)?|stop(?:ped|s|ping)?|terminat(?:e|ed|es|ing))\b.{0,30}\b(?:acquisition|deal|lawsuit|launch|merger|rollout|takeover|talks)\b/i.test(title) ||
+    /\b(?:deal|merger|takeover|acquisition)\s+(?:collapse(?:d|s|ing)?|falls?\s+through|fell\s+through|is\s+dead)\b/i.test(title);
+}
+
+function hasDeferredPolarity(item) {
+  const title = normalizeEventText(item.title, 240);
+  return /\b(?:delay(?:ed|s|ing)?|defer(?:red|s|ring)?|postpone(?:d|s|ing)?|reschedul(?:e|ed|es|ing)|shelv(?:e|ed|es|ing)|suspend(?:ed|s|ing)?)\b.{0,35}\b(?:debut|deployment|launch|release|rollout|shipment|unveiling)\b/i.test(title) ||
+    /\b(?:pause(?:d|s|ing)?|put(?:s|ting)?\s+on\s+hold|freeze(?:s|ing)?|froze)\b.{0,35}\b(?:debut|deployment|launch|release|rollout|shipment|unveiling)\b/i.test(title);
+}
+
+function hasTerminationPolarity(item) {
+  const title = normalizeEventText(item.title, 240);
+  return /\b(?:deprecat(?:e|ed|es|ing)|discontinu(?:e|ed|es|ing)|retir(?:e|ed|es|ing)|sunset(?:s|ted|ting)?|shut(?:s|ting)?\s+down)\b/i.test(title) ||
+    /\bend(?:ed|s|ing)?\s+(?:support|service)\b/i.test(title);
+}
+
+function hasRecoveryPolarity(item) {
+  const title = normalizeEventText(item.title, 240);
+  return /\b(?:recover(?:ed|s|ing)?|restor(?:e|ed|es|ing)|resum(?:e|ed|es|ing))\b[^.!?]{0,45}\b(?:availability|network|outage|platform|service|site)\b/i.test(title) ||
+    /\b(?:availability|network|outage|platform|service|site)\b[^.!?]{0,55}\b(?:back\s+(?:online|up)|fully\s+operational|is\s+over|recover(?:ed|s|ing)?|resolv(?:e|ed|es|ing)|restor(?:e|ed|es|ing)|resum(?:e|ed|es|ing)|return(?:ed|s|ing)?\s+to\s+normal)\b/i.test(title);
+}
+
+function hasContradictorySecurityState(item) {
+  const title = normalizeEventText(item.title, 240);
+  return /\b(?:failed|failing|incomplete|unsuccessful)\s+(?:fix|patch|remediation)\b|\b(?:fix|patch|remediation)\b[^.!?]{0,30}\b(?:failed|fails|failing|incomplete|unsuccessful)\b/i.test(title) ||
+    /\b(?:remain(?:s|ed|ing)?|still)\b[^.!?]{0,25}\b(?:exposed|unpatched|vulnerable)\b|\b(?:not\s+fixed|unpatched)\b/i.test(title) ||
+    /\b(?:cve-\d{4}-\d{4,}|ghsa-[a-z0-9-]{8,}|bug|flaw|issue|vulnerabilit(?:y|ies))\b[^.!?]{0,55}\b(?:persist(?:ed|s|ing)?|remain(?:ed|s|ing)?)\b[^.!?]{0,45}\bafter\b[^.!?]{0,20}\b(?:fix|patch|remediation)\b/i.test(title) ||
+    /\b(?:cve-\d{4}-\d{4,}|ghsa-[a-z0-9-]{8,}|bug|flaw|issue|vulnerabilit(?:y|ies))\b[^.!?]{0,55}\b(?:is\s+)?(?:still\s+)?(?:exists?|exploitable)\b[^.!?]{0,45}\bafter\b[^.!?]{0,20}\b(?:fix|patch|remediation)\b/i.test(title) ||
+    /\b(?:roll(?:ed|s|ing)?\s+back|revert(?:ed|s|ing)?)\b[^.!?]{0,40}\b(?:fix|patch|remediation)\b|\b(?:fix|patch|remediation)\b[^.!?]{0,40}\b(?:roll(?:ed|s|ing)?\s+back|revert(?:ed|s|ing)?|(?:was\s+)?undone)\b/i.test(title) ||
+    /\b(?:cve-\d{4}-\d{4,}|ghsa-[a-z0-9-]{8,})\b[^.!?]{0,25}\b(?:invalid|rejected|withdrawn)\b|\b(?:invalid|rejected|withdrawn)\b[^.!?]{0,25}\b(?:cve-\d{4}-\d{4,}|ghsa-[a-z0-9-]{8,})\b/i.test(title);
+}
+
+function normalizeActorAnchor(value) {
+  const cleaned = normalizeEventText(value, 100)
+    .replace(/[’']s\b/gi, "")
+    .trim();
+  const canonical = canonicalEntityAlias(cleaned);
+  if (canonical) return canonical;
+  const tokens = tokenize(cleaned)
+    .map(normalizeEventToken)
+    .filter((token) =>
+      !EVENT_MATCH_STOP_WORDS.has(token) &&
+      !GENERIC_EVENT_CONTEXT_TOKENS.has(token) &&
+      !ACQUISITION_TARGET_NOISE_TOKENS.has(token) &&
+      !/^\d/.test(token));
+  return tokens.length > 0 ? [...new Set(tokens)].sort().join(":") : null;
+}
+
+function acquisitionRoleAnchor(item) {
+  const title = normalizeEventText(item.title, 240);
+  const boundary = String.raw`(?=\s+(?:after|amid|as|at|before|for|following|from|in|over|under|with|worth)\b|[,;:]|$)`;
+  const mentions = titleEntityMentions(item);
+  const partyBefore = (index, fallback) =>
+    mentions.filter((mention) => mention.end <= index).at(-1)?.key ?? normalizeActorAnchor(fallback);
+  const partiesAgreeToMerge = /^(.+?)\s+and\s+(.+?)\s+agree(?:d|s|ing)?\s+to\s+merge\b/i.exec(title);
+  if (partiesAgreeToMerge) {
+    const parties = [normalizeActorAnchor(partiesAgreeToMerge[1]), normalizeActorAnchor(partiesAgreeToMerge[2])]
+      .filter(Boolean)
+      .sort();
+    if (parties.length === 2 && parties[0] !== parties[1]) return `merger:${parties.join("+")}`;
+  }
+  const agreesToMergeWith = new RegExp(
+    String.raw`^(.+?)\s+agree(?:d|s|ing)?\s+to\s+merge\s+with\s+(.+?)${boundary}`,
+    "i",
+  ).exec(title);
+  if (agreesToMergeWith) {
+    const parties = [normalizeActorAnchor(agreesToMergeWith[1]), normalizeActorAnchor(agreesToMergeWith[2])]
+      .filter(Boolean)
+      .sort();
+    if (parties.length === 2 && parties[0] !== parties[1]) return `merger:${parties.join("+")}`;
+  }
+  const agreedMerger = /^(.+?)\s+and\s+(.+?)\s+(?:agree(?:d|s|ing)?(?:\s+to)?|announce(?:d|s)?|approv(?:e|ed|es|ing)|complete(?:d|s|ing)?)\s+(?:a\s+)?merger\b/i.exec(title);
+  if (agreedMerger) {
+    const parties = [normalizeActorAnchor(agreedMerger[1]), normalizeActorAnchor(agreedMerger[2])]
+      .filter(Boolean)
+      .sort();
+    if (parties.length === 2 && parties[0] !== parties[1]) return `merger:${parties.join("+")}`;
+  }
+  const possessive = new RegExp(
+    String.raw`^(.+?)[’']s\s+(.+?)\s+(?:acquisition|purchase|takeover)\s+(?:clos(?:e|ed|es|ing)|complet(?:e|ed|es|ing))\b`,
+    "i",
+  ).exec(title);
+  if (possessive) {
+    const buyer = normalizeActorAnchor(possessive[1]);
+    const target = normalizeActorAnchor(possessive[2]);
+    if (buyer && target) return `acquirer:${buyer}->${target}`;
+  }
+  const passive = new RegExp(
+    String.raw`^(.+?)\s+(?:(?:is|was|were|will\s+be|has\s+been)\s+)?(?:acquired|bought|purchased|taken\s+over)\s+by\s+(.+?)${boundary}`,
+    "i",
+  ).exec(title);
+  if (passive) {
+    const target = normalizeActorAnchor(passive[1]);
+    const buyer = normalizeActorAnchor(passive[2]);
+    if (buyer && target) return `acquirer:${buyer}->${target}`;
+  }
+  const active = new RegExp(
+    String.raw`^(.+?)\s+(?:acquir(?:e|ed|es|ing)|buy(?:s|ing)?|bought|purchas(?:e|ed|es|ing)|(?:tak(?:e|es|ing)|took)\s+over)\s+(.+?)${boundary}`,
+    "i",
+  ).exec(title);
+  if (active) {
+    const action = /\b(?:acquir(?:e|ed|es|ing)|buy(?:s|ing)?|bought|purchas(?:e|ed|es|ing)|(?:tak(?:e|es|ing)|took)\s+over)\b/i.exec(title);
+    const buyer = partyBefore(action.index, active[1]);
+    const target = normalizeActorAnchor(active[2]);
+    if (buyer && target) return `acquirer:${buyer}->${target}`;
+  }
+  const bid = new RegExp(
+    String.raw`^(.+?)\s+(?:(?:submits?|makes?)\s+)?(?:[$€£]\s*\d[\d,.]*\s*(?:million|billion|m|bn|b)?\s+)?(?:bid|offer)\s+for\s+(.+?)${boundary}`,
+    "i",
+  ).exec(title);
+  if (bid) {
+    const buyer = normalizeActorAnchor(bid[1]);
+    const target = normalizeActorAnchor(bid[2]);
+    if (buyer && target) return `acquirer:${buyer}->${target}`;
+  }
+  const noun = new RegExp(
+    String.raw`\b(?:acquisition|purchase|takeover)\s+of\s+(.+?)${boundary}`,
+    "i",
+  ).exec(title);
+  if (noun) {
+    const buyer = mentions.filter((mention) => mention.end <= noun.index).at(-1)?.key;
+    const target = normalizeActorAnchor(noun[1]);
+    if (buyer && target) return `acquirer:${buyer}->${target}`;
+  }
+  const prenominal = new RegExp(
+    String.raw`\b(?:announce(?:d|s)?|approv(?:e|ed|es|ing)|confirm(?:ed|s)?|complet(?:e|ed|es|ing))\s+(?:an?\s+)?(?:[$€£]\s*\d[\d,.]*\s*(?:million|billion|m|bn|b)?\s+)?(.+?)\s+(?:acquisition|purchase|takeover)\b`,
+    "i",
+  ).exec(title);
+  if (prenominal) {
+    const buyer = mentions.filter((mention) => mention.end <= prenominal.index).at(-1)?.key;
+    const target = normalizeActorAnchor(prenominal[1]);
+    if (buyer && target) return `acquirer:${buyer}->${target}`;
+  }
+  return null;
+}
+
+function acquisitionStageAnchor(item) {
+  const title = normalizeEventText(item.title, 240);
+  if (/\b(?:clos(?:e|ed|es|ing)|complet(?:e|ed|es|ing)|finaliz(?:e|ed|es|ing))\b[^.!?]{0,40}\b(?:acquisition|deal|merger|purchase|takeover)\b|\b(?:acquisition|deal|merger|purchase|takeover)\b[^.!?]{0,40}\b(?:clos(?:e|ed|es|ing)|complet(?:e|ed|es|ing)|finaliz(?:e|ed|es|ing))\b/i.test(title)) {
+    return "completed";
+  }
+  if (/\b(?:agree(?:d|s|ing)?\s+to\s+(?:a\s+)?(?:merge|merger)|agreement\s+to\s+merge)\b/i.test(title)) {
+    return "agreed";
+  }
+  if (/\b(?:bid|offer)\s+for\b|\b(?:submits?|makes?)\b[^.!?]{0,45}\b(?:bid|offer)\b/i.test(title)) {
+    return "proposed";
+  }
+  if (/\bapprov(?:e|ed|es|ing)\b[^.!?]{0,35}\bmerger\b/i.test(title)) {
+    return "approved";
+  }
+  if (/\bannounce(?:d|s|ment)?\b[^.!?]{0,45}\b(?:acquisition|deal|merger|purchase|takeover)\b|\b(?:acquisition|deal|merger|purchase|takeover)\b[^.!?]{0,45}\bannounc(?:e|ed|es|ement)\b/i.test(title)) {
+    return "announced";
+  }
+  if (/\b(?:acquir(?:e|ed|es|ing)|buy(?:s|ing)?|bought|purchas(?:e|ed|es|ing)|(?:tak(?:e|es|ing)|took)\s+over)\b|\bconfirms?\b[^.!?]{0,45}\b(?:acquisition|purchase|takeover)\b/i.test(title)) {
+    return "completed";
+  }
+  return null;
+}
+
+function entitySetsCompatible(left, right, sharedProducts) {
+  if (left.size === 0 || right.size === 0 || setIntersection(left, right).size > 0) return true;
+  const pair = new Set([...left, ...right]);
+  const githubMicrosoft = pair.size === 2 && pair.has("github") && pair.has("microsoft");
+  const githubProduct = [...sharedProducts].some((identifier) =>
+    identifier === "named:github-copilot-coding-agent" ||
+    identifier === "named:copilot-spaces" ||
+    identifier === "named:github-actions");
+  return githubMicrosoft && githubProduct;
 }
 
 function titleFingerprint(item) {
@@ -903,31 +2013,225 @@ function titleFingerprint(item) {
 
 function itemsMatch(left, right) {
   if (left.url === right.url) return true;
-  const leftIdentifier = strongIdentifier(left);
-  const rightIdentifier = strongIdentifier(right);
-  if (leftIdentifier && leftIdentifier === rightIdentifier) return true;
+  const leftIdentifiers = strongIdentifiers(left);
+  const rightIdentifiers = strongIdentifiers(right);
+  const sharedIdentifiers = setIntersection(leftIdentifiers, rightIdentifiers);
+  if (leftIdentifiers.size > 0 && rightIdentifiers.size > 0 && sharedIdentifiers.size === 0) {
+    return false;
+  }
+  const leftTitleIdentifiers = titleStrongIdentifiers(left);
+  const rightTitleIdentifiers = titleStrongIdentifiers(right);
+  const sharedTitleIdentifiers = setIntersection(leftTitleIdentifiers, rightTitleIdentifiers);
+  const sharedIdentifiersInAnyTitle = setIntersection(
+    sharedIdentifiers,
+    new Set([...leftTitleIdentifiers, ...rightTitleIdentifiers]),
+  );
+  const leftProducts = productIdentifiers(left);
+  const rightProducts = productIdentifiers(right);
+  const sharedProducts = setIntersection(leftProducts, rightProducts);
+  if (leftProducts.size > 0 && rightProducts.size > 0 && sharedProducts.size === 0) return false;
+  if (identifiersConflict(leftProducts, rightProducts)) return false;
+  const leftVersionedProducts = new Set([...leftProducts].filter((identifier) =>
+    identifier.startsWith("model:") || identifier.startsWith("version:")));
+  const rightVersionedProducts = new Set([...rightProducts].filter((identifier) =>
+    identifier.startsWith("model:") || identifier.startsWith("version:")));
+  if (
+    leftVersionedProducts.size > 0 &&
+    rightVersionedProducts.size > 0 &&
+    setIntersection(leftVersionedProducts, rightVersionedProducts).size === 0
+  ) return false;
   const leftEntities = titleEntityKeys(left);
   const rightEntities = titleEntityKeys(right);
-  if (leftEntities.size > 0 && rightEntities.size > 0 &&
-      ![...leftEntities].some((entity) => rightEntities.has(entity))) {
+  if (!entitySetsCompatible(leftEntities, rightEntities, sharedProducts)) return false;
+  const leftActions = eventActionFamilies(left);
+  const rightActions = eventActionFamilies(right);
+  const leftAcquisitionRole = acquisitionRoleAnchor(left);
+  const rightAcquisitionRole = acquisitionRoleAnchor(right);
+  const leftAcquisitionStage = acquisitionStageAnchor(left);
+  const rightAcquisitionStage = acquisitionStageAnchor(right);
+  const acquisitionInEither = leftActions.has("acquisition") || rightActions.has("acquisition");
+  if (
+    acquisitionInEither &&
+    (!leftActions.has("acquisition") ||
+      !rightActions.has("acquisition") ||
+      !leftAcquisitionRole ||
+      !rightAcquisitionRole)
+  ) return false;
+  if (
+    leftAcquisitionRole &&
+    rightAcquisitionRole &&
+    leftAcquisitionRole !== rightAcquisitionRole
+  ) return false;
+  if (
+    leftAcquisitionStage &&
+    rightAcquisitionStage &&
+    leftAcquisitionStage !== rightAcquisitionStage
+  ) return false;
+  const leftLegalRole = legalRoleAnchor(left);
+  const rightLegalRole = legalRoleAnchor(right);
+  const legalInEither = leftActions.has("legal") || rightActions.has("legal");
+  const directedLegalInEither = hasDirectedLegalSyntax(left) || hasDirectedLegalSyntax(right);
+  const multiPartyLegal = Math.max(leftEntities.size, rightEntities.size) >= 2;
+  if (
+    legalInEither &&
+    (multiPartyLegal || directedLegalInEither) &&
+    (!leftActions.has("legal") || !rightActions.has("legal") || !leftLegalRole || !rightLegalRole)
+  ) return false;
+  if (
+    Boolean(leftLegalRole) !== Boolean(rightLegalRole) &&
+    leftActions.has("legal") &&
+    rightActions.has("legal")
+  ) return false;
+  if (leftLegalRole && rightLegalRole && leftLegalRole !== rightLegalRole) return false;
+  const leftInvestigationRole = investigationRoleAnchor(left);
+  const rightInvestigationRole = investigationRoleAnchor(right);
+  const investigationInEither = leftActions.has("investigation") || rightActions.has("investigation");
+  if (
+    investigationInEither &&
+    (!leftActions.has("investigation") ||
+      !rightActions.has("investigation") ||
+      !leftInvestigationRole ||
+      !rightInvestigationRole ||
+      leftInvestigationRole !== rightInvestigationRole)
+  ) return false;
+  const leftLegalIssues = legalIssueTokenSet(left);
+  const rightLegalIssues = legalIssueTokenSet(right);
+  const sharedLegalIssues = setIntersection(leftLegalIssues, rightLegalIssues);
+  if (leftLegalIssues.size > 0 && rightLegalIssues.size > 0) {
+    const leftContained = [...leftLegalIssues].every((token) => rightLegalIssues.has(token));
+    const rightContained = [...rightLegalIssues].every((token) => leftLegalIssues.has(token));
+    if (sharedLegalIssues.size === 0 || (!leftContained && !rightContained)) return false;
+  }
+  if (hasDenialPolarity(left) !== hasDenialPolarity(right)) return false;
+  if (hasCancellationPolarity(left) !== hasCancellationPolarity(right)) return false;
+  if (hasDeferredPolarity(left) !== hasDeferredPolarity(right)) return false;
+  if (hasTerminationPolarity(left) !== hasTerminationPolarity(right)) return false;
+  const leftRecovered = hasRecoveryPolarity(left);
+  const rightRecovered = hasRecoveryPolarity(right);
+  if (leftRecovered !== rightRecovered) return false;
+  if (hasContradictorySecurityState(left) !== hasContradictorySecurityState(right)) return false;
+  const sharedActions = setIntersection(leftActions, rightActions);
+  if (leftActions.size > 0 && rightActions.size > 0 && sharedActions.size === 0) return false;
+  const leftLifecycle = eventLifecycleFamilies(left);
+  const rightLifecycle = eventLifecycleFamilies(right);
+  if (
+    (leftLifecycle.size > 0 || rightLifecycle.size > 0) &&
+    setIntersection(leftLifecycle, rightLifecycle).size === 0
+  ) return false;
+  const leftArtifacts = eventArtifactFamilies(left);
+  const rightArtifacts = eventArtifactFamilies(right);
+  if (
+    (leftArtifacts.size > 0 || rightArtifacts.size > 0) &&
+    setIntersection(leftArtifacts, rightArtifacts).size === 0
+  ) return false;
+  const leftFacets = eventFacetFamilies(left);
+  const rightFacets = eventFacetFamilies(right);
+  const sharedFacets = setIntersection(leftFacets, rightFacets);
+  if (leftFacets.size > 0 && rightFacets.size > 0 && sharedFacets.size === 0) {
+    return false;
+  }
+  const leftNumericAnchors = numericEventAnchors(left);
+  const rightNumericAnchors = numericEventAnchors(right);
+  if (numericAnchorsConflict(leftNumericAnchors, rightNumericAnchors)) return false;
+  if (eventNumericRolesConflict(eventNumericRoleAnchors(left), eventNumericRoleAnchors(right))) {
     return false;
   }
   const leftEventTokens = eventTitleTokenSet(left);
   const rightEventTokens = eventTitleTokenSet(right);
-  const sharedEventCount = [...leftEventTokens].filter((token) => rightEventTokens.has(token)).length;
+  const sharedEventCount = setIntersection(leftEventTokens, rightEventTokens).size;
   const eventSimilarity = jaccard(leftEventTokens, rightEventTokens);
-  const leftActions = eventActionFamilies(left);
-  const rightActions = eventActionFamilies(right);
-  const hasActionSignal = leftActions.size > 0 || rightActions.size > 0;
-  const sharesActionFamily = [...leftActions].some((family) => rightActions.has(family));
-  if (hasActionSignal && !sharesActionFamily) return false;
-  const leftProducts = productIdentifiers(left);
-  const rightProducts = productIdentifiers(right);
-  const sharesExactProduct = [...leftProducts].some((identifier) => rightProducts.has(identifier));
-  if (sharesExactProduct && sharesActionFamily) return true;
-  if (leftEventTokens.size >= 3 && setsEqual(leftEventTokens, rightEventTokens)) return true;
+  const leftSubjectTokens = subjectEventTokenSet(left);
+  const rightSubjectTokens = subjectEventTokenSet(right);
+  const sharedSubjectCount = setIntersection(leftSubjectTokens, rightSubjectTokens).size;
+  const subjectSimilarity = jaccard(leftSubjectTokens, rightSubjectTokens);
+  const sharesEntity = setIntersection(leftEntities, rightEntities).size > 0;
+  const sharesActionFamily = sharedActions.size > 0;
+  const sharesNumericAnchor = setIntersection(
+    flattenedNumericAnchors(left),
+    flattenedNumericAnchors(right),
+  ).size > 0;
+  const oneActionMissing = (leftActions.size === 0) !== (rightActions.size === 0);
+  const sharesFeatureProduct = setIntersection(
+    identifiersWithPrefix(leftProducts, "feature:"),
+    identifiersWithPrefix(rightProducts, "feature:"),
+  ).size > 0;
+  const sharesAcronymProduct = setIntersection(
+    identifiersWithPrefix(leftProducts, "acronym:"),
+    identifiersWithPrefix(rightProducts, "acronym:"),
+  ).size > 0;
+  const bothContextsSparse = leftSubjectTokens.size === 0 && rightSubjectTokens.size === 0;
+  const sharesProductContext =
+    (sharedSubjectCount >= 2 && subjectSimilarity >= 0.4) ||
+    (sharesAcronymProduct && sharedSubjectCount >= 1 && setsEqual(leftSubjectTokens, rightSubjectTokens)) ||
+    (leftRecovered && rightRecovered && sharedSubjectCount >= 1);
+  if (
+    sharedProducts.size > 0 &&
+    sharedIdentifiersInAnyTitle.size === 0 &&
+    leftSubjectTokens.size > 0 &&
+    rightSubjectTokens.size > 0 &&
+    !sharesProductContext &&
+    !sharesFeatureProduct &&
+    !(sharesNumericAnchor && sharesActionFamily)
+  ) return false;
+  if (
+    sharedIdentifiers.size > 0 &&
+    (sharedProducts.size > 0 ||
+      (sharesEntity && sharedSubjectCount >= 2) ||
+      sharedSubjectCount >= 3)
+  ) return true;
+  if (
+    sharedIdentifiersInAnyTitle.size > 0 &&
+    sharesEntity &&
+    sharedActions.has("security-fix")
+  ) return true;
+  if (sharedTitleIdentifiers.size > 0) return true;
+  if (
+    leftAcquisitionRole &&
+    leftAcquisitionRole === rightAcquisitionRole &&
+    sharesEntity &&
+    sharesActionFamily
+  ) return true;
+  if (
+    leftLegalRole &&
+    leftLegalRole === rightLegalRole &&
+    sharedLegalIssues.size >= 1 &&
+    sharesActionFamily
+  ) return true;
+  if (
+    sharedProducts.size > 0 &&
+    (sharesFeatureProduct || bothContextsSparse || sharesProductContext) &&
+    (sharesActionFamily || (
+      oneActionMissing &&
+      (sharesFeatureProduct || bothContextsSparse || sharesProductContext)
+    ))
+  ) return true;
+  if (
+    left.publisherKey !== right.publisherKey &&
+    sharesEntity &&
+    sharedFacets.size > 0 &&
+    (sharedProducts.size > 0 || sharedSubjectCount >= 2)
+  ) return true;
+  if (
+    left.publisherKey !== right.publisherKey &&
+    sharesEntity &&
+    sharesActionFamily &&
+    sharesNumericAnchor &&
+    (sharedProducts.size > 0 || sharedSubjectCount >= 2)
+  ) return true;
+  if (
+    left.publisherKey !== right.publisherKey &&
+    sharesEntity &&
+    sharesActionFamily &&
+    sharedSubjectCount >= 3 &&
+    subjectSimilarity >= 0.35
+  ) return true;
+  if (
+    leftEventTokens.size >= 3 &&
+    setsEqual(leftEventTokens, rightEventTokens) &&
+    (left.publisherKey === right.publisherKey || sharesEntity || sharedProducts.size > 0 || sharedIdentifiers.size > 0)
+  ) return true;
   if (left.publisherKey !== right.publisherKey) {
-    return sharedEventCount >= 3 && eventSimilarity >= 0.2;
+    return sharesEntity && sharedSubjectCount >= 3 && subjectSimilarity >= 0.35;
   }
   return sharedEventCount >= 3 && eventSimilarity >= 0.58;
 }
@@ -938,7 +2242,7 @@ export function deduplicateFeedItems(items) {
     left.title.localeCompare(right.title) || left.url.localeCompare(right.url) || left.sourceId.localeCompare(right.sourceId));
   const groups = [];
   for (const item of ordered) {
-    const existing = groups.find((group) => group.items.some((candidate) => itemsMatch(item, candidate)));
+    const existing = groups.find((group) => group.items.every((candidate) => itemsMatch(item, candidate)));
     if (existing) existing.items.push(item);
     else groups.push({ items: [item] });
   }
@@ -948,7 +2252,10 @@ export function deduplicateFeedItems(items) {
       Date.parse(right.eligibility?.instant ?? right.updatedAt ?? right.publishedAt) -
         Date.parse(left.eligibility?.instant ?? left.updatedAt ?? left.publishedAt) ||
       left.sourceId.localeCompare(right.sourceId));
-    const identifier = group.items.map(strongIdentifier).find(Boolean);
+    const commonIdentifiers = group.items
+      .map(strongIdentifiers)
+      .reduce((common, identifiers) => common === null ? identifiers : setIntersection(common, identifiers), null);
+    const identifier = [...(commonIdentifiers ?? [])].sort()[0];
     const seed = identifier ?? titleFingerprint(group.items[0]);
     return {
       canonicalEventKey: `free-${stableId(seed)}`,
@@ -1005,6 +2312,11 @@ function sourceEvidenceForItems(items) {
   };
 }
 
+function isOpinionItem(item) {
+  return OPINION_TITLE_PATTERN.test(item.title) ||
+    item.categories.some((category) => OPINION_CATEGORY_PATTERN.test(category));
+}
+
 function contentVetoReasons(items) {
   const titleCategoryText = items
     .map((item) => `${item.title} ${item.categories.join(" ")}`)
@@ -1028,9 +2340,7 @@ function contentVetoReasons(items) {
       "Advertising, affiliate promotions, shopping deals, and sales content are not editorial candidates.",
     ));
   }
-  if (items.some((item) =>
-    OPINION_TITLE_PATTERN.test(item.title) ||
-    item.categories.some((category) => OPINION_CATEGORY_PATTERN.test(category)))) {
+  if (items.some(isOpinionItem)) {
     reasons.push(rejectionReason(
       "OPINION_OR_COMMENTARY",
       "Opinion and commentary cannot serve as factual corroboration for the automatic paper.",
@@ -1114,7 +2424,7 @@ function scoreGroup(group, classification, evidence, reportingWindow) {
   const text = group.items.map((item) => `${item.title} ${item.summary}`.toLowerCase()).join(" ");
   const deskSignals = classification.signals[classification.desk];
   const hasSpecificNumber = /\b\d+(?:\.\d+)?(?:m|bn|b|million|billion|%)?\b/i.test(text);
-  const hasStrongIdentifier = Boolean(strongIdentifier(group.items[0]));
+  const hasStrongIdentifier = strongIdentifiers(group.items[0]).size > 0;
   const materialityNewsworthiness = Math.min(
     EDITORIAL_SCORECARD_MAXIMUMS.materialityNewsworthiness,
     8 + Math.min(16, countTerms(text, IMPACT_TERMS) * 4) +
@@ -1167,7 +2477,10 @@ function inferEntity(items) {
     }[originatingEntity] ?? [originatingEntity];
     if (entityTerms.some((term) => containsTerm(text, term))) return originatingEntity;
   }
-  const named = KNOWN_ENTITIES.find((entity) => new RegExp(`\\b${entity.replace(/\s+/g, "\\s+")}\\b`, "i").test(text));
+  const named = KNOWN_ENTITIES.find((entity) => {
+    const expression = entity.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+    return new RegExp(`\\b${expression}\\b`, "i").test(text);
+  });
   return named ?? originatingEntity ?? items[0].primaryEntity ?? items[0].publisher;
 }
 
@@ -1283,7 +2596,15 @@ export function assessFeedCandidates({
   if (recentRepeatHistory.length > 0) {
     assertPersonalStoryLedgerFingerprintKey(repeatFingerprintKey);
   }
-  return deduplicateFeedItems(eligibleItems).map((group) => {
+  const factualGroups = deduplicateFeedItems(eligibleItems.filter((item) => !isOpinionItem(item)));
+  const opinionGroups = eligibleItems
+    .filter(isOpinionItem)
+    .sort((left, right) => left.itemId.localeCompare(right.itemId))
+    .map((item) => ({
+      canonicalEventKey: `free-${stableId("opinion-only", item.itemId)}`,
+      items: [item],
+    }));
+  return [...factualGroups, ...opinionGroups].map((group) => {
     const reasons = contentVetoReasons(group.items);
     const candidate = groupToCandidate(group, assertReportingWindow(reportingWindow));
     if (!candidate) {
@@ -1580,6 +2901,13 @@ export async function ingestCuratedFeeds({
     while (true) {
       if (cursor >= sources.length) return;
       const availableBytes = maxTotalBytes - consumedBytes - reservedBytes;
+      if (availableBytes < perRequestMaxBytes && reservedBytes > 0) {
+        // Do not give a queued source an artificially small body allowance
+        // merely because other workers still hold worst-case reservations.
+        // An in-flight worker will refund its unused bytes, then continue the
+        // queue. The final source may use the genuine aggregate remainder.
+        return;
+      }
       if (availableBytes < 1_024) {
         // Another worker owns the remaining budget. It will continue the queue
         // after refunding unused bytes; if no request is active, the hard run

@@ -5,6 +5,7 @@ import {
   AUTHORITATIVE_FREE_EVIDENCE_POLICY,
   assessFeedCandidates,
   assertSufficientFeedCoverage,
+  DEFAULT_MAX_FEED_BYTES,
   DEFAULT_MAX_TOTAL_FEED_BYTES,
   deduplicateFeedItems,
   EDITORIAL_SCORECARD_MAXIMUMS,
@@ -93,11 +94,49 @@ function editorialItem({
   };
 }
 
-test("the reviewed manifest includes a bounded independent corroboration pool", () => {
-  assert.equal(FREE_FEED_SOURCES.length, 30);
+function matchingItem(title, publisherKey, suffix, {
+  summary = "",
+  relationship = "independent",
+  primaryEntity = null,
+  categories = [],
+} = {}) {
+  return {
+    itemId: `item-${suffix}`,
+    sourceId: `source-${suffix}`,
+    publisher: publisherKey,
+    publisherKey,
+    relationship,
+    primaryEntity,
+    title,
+    summary,
+    url: `https://news.example/${suffix}`,
+    feedUrl: `https://feeds.example/${suffix}.xml`,
+    publishedAt: "2026-08-21T12:00:00.000Z",
+    updatedAt: null,
+    retrievedAt,
+    categories,
+    deskPriors: Object.fromEntries(
+      ["ai", "work-and-tools", "security-and-privacy", "platforms-and-power"]
+        .map((desk) => [desk, 0]),
+    ),
+    feedPosition: 0,
+    eligibility: { instant: "2026-08-21T12:00:00.000Z", kind: "new-development" },
+  };
+}
+
+test("the reviewed manifest includes expanded bounded AI and work coverage", () => {
+  assert.equal(FREE_FEED_SOURCES.length, 46);
+  assert.equal(FREE_FEED_SOURCES.filter((item) => item.relationship === "originating").length, 33);
+  assert.equal(FREE_FEED_SOURCES.filter((item) => item.relationship === "independent").length, 13);
+  assert.equal(FREE_FEED_SOURCES.filter((item) => item.coverageDesks.includes("ai")).length, 26);
+  assert.equal(
+    FREE_FEED_SOURCES.filter((item) => item.coverageDesks.includes("work-and-tools")).length,
+    21,
+  );
   assert.equal(FREE_FEED_SOURCES.some((item) => item.id === "uk-cma"), false);
   assert.equal(FREE_FEED_SOURCES.some((item) => item.id === "ftc-competition"), false);
   assert.equal(DEFAULT_MAX_TOTAL_FEED_BYTES, 10_000_000);
+  assert.equal(DEFAULT_MAX_FEED_BYTES, 1_000_000);
   assert.deepEqual(
     FREE_FEED_SOURCES.filter((item) => item.relationship === "independent").map((item) => item.id),
     [
@@ -112,6 +151,8 @@ test("the reviewed manifest includes a bounded independent corroboration pool", 
       "npr-technology",
       "securityweek",
       "dark-reading",
+      "mit-technology-review-ai",
+      "ieee-spectrum-ai",
     ],
   );
   assert.equal(
@@ -123,8 +164,8 @@ test("the reviewed manifest includes a bounded independent corroboration pool", 
     new Set(FREE_FEED_SOURCES
       .filter((item) => item.relationship === "independent")
       .map((item) => item.publisherKey)).size,
-    10,
-    "the eleven independent outlets retain ten controlling publisher identities",
+    12,
+    "the thirteen independent outlets retain twelve controlling publisher identities",
   );
   const newIndependentOwners = {
     "the-register": "situation-publishing",
@@ -133,6 +174,8 @@ test("the reviewed manifest includes a bounded independent corroboration pool", 
     "npr-technology": "npr",
     securityweek: "wired-business-media",
     "dark-reading": "informa-techtarget",
+    "mit-technology-review-ai": "mit",
+    "ieee-spectrum-ai": "ieee",
   };
   for (const [id, publisherKey] of Object.entries(newIndependentOwners)) {
     assert.equal(
@@ -213,12 +256,118 @@ test("the reviewed manifest includes a bounded independent corroboration pool", 
       feedHosts: ["www.darkreading.com"],
       itemHosts: ["www.darkreading.com", "darkreading.com"],
     },
+    "google-deepmind": {
+      publisherKey: "google",
+      url: "https://deepmind.google/blog/rss.xml",
+      feedHosts: ["deepmind.google"],
+      itemHosts: ["deepmind.google"],
+    },
+    "ai2-research": {
+      publisherKey: "allen-institute-for-ai",
+      url: "https://allenai.org/rss.xml",
+      feedHosts: ["allenai.org"],
+      itemHosts: ["allenai.org"],
+    },
+    "mit-news-ai": {
+      publisherKey: "mit",
+      url: "https://news.mit.edu/rss/topic/artificial-intelligence2",
+      feedHosts: ["news.mit.edu"],
+      itemHosts: ["news.mit.edu"],
+    },
+    "berkeley-ai-research": {
+      publisherKey: "uc-berkeley",
+      url: "https://bair.berkeley.edu/blog/feed.xml",
+      feedHosts: ["bair.berkeley.edu"],
+      itemHosts: ["bair.berkeley.edu"],
+    },
+    "meta-engineering-ai": {
+      publisherKey: "meta",
+      url: "https://engineering.fb.com/category/ai-research/feed/",
+      feedHosts: ["engineering.fb.com"],
+      itemHosts: ["engineering.fb.com"],
+    },
+    "amazon-science": {
+      publisherKey: "amazon",
+      url: "https://www.amazon.science/index.rss",
+      feedHosts: ["www.amazon.science"],
+      itemHosts: ["www.amazon.science"],
+    },
+    "jetbrains-blog": {
+      publisherKey: "jetbrains",
+      url: "https://blog.jetbrains.com/feed/",
+      feedHosts: ["blog.jetbrains.com"],
+      itemHosts: ["blog.jetbrains.com"],
+    },
+    "github-engineering": {
+      publisherKey: "microsoft",
+      url: "https://github.blog/engineering/feed/",
+      feedHosts: ["github.blog"],
+      itemHosts: ["github.blog"],
+    },
+    "slack-engineering": {
+      publisherKey: "salesforce",
+      url: "https://slack.engineering/feed/",
+      feedHosts: ["slack.engineering"],
+      itemHosts: ["slack.engineering"],
+    },
+    "chrome-developers": {
+      publisherKey: "google",
+      url: "https://developer.chrome.com/static/blog/feed.xml",
+      feedHosts: ["developer.chrome.com"],
+      itemHosts: ["developer.chrome.com"],
+    },
+    "nodejs-blog": {
+      publisherKey: "openjs-foundation",
+      url: "https://nodejs.org/en/feed/blog.xml",
+      feedHosts: ["nodejs.org"],
+      itemHosts: ["nodejs.org"],
+    },
+    "postman-blog": {
+      publisherKey: "postman",
+      url: "https://blog.postman.com/feed/",
+      feedHosts: ["blog.postman.com"],
+      itemHosts: ["blog.postman.com"],
+    },
+    "rust-blog": {
+      publisherKey: "rust-foundation",
+      url: "https://blog.rust-lang.org/feed.xml",
+      feedHosts: ["blog.rust-lang.org"],
+      itemHosts: ["blog.rust-lang.org"],
+    },
+    "netlify-changelog": {
+      publisherKey: "netlify",
+      url: "https://www.netlify.com/changelog/feed.xml",
+      feedHosts: ["www.netlify.com"],
+      itemHosts: [
+        "www.netlify.com",
+        "developers.netlify.com",
+        "docs.netlify.com",
+        "answers.netlify.com",
+      ],
+    },
+    "mit-technology-review-ai": {
+      publisherKey: "mit",
+      url: "https://www.technologyreview.com/topic/artificial-intelligence/feed/",
+      feedHosts: ["www.technologyreview.com"],
+      itemHosts: ["www.technologyreview.com"],
+    },
+    "ieee-spectrum-ai": {
+      publisherKey: "ieee",
+      url: "https://spectrum.ieee.org/feeds/topic/artificial-intelligence.rss",
+      feedHosts: ["spectrum.ieee.org"],
+      itemHosts: ["spectrum.ieee.org"],
+    },
   };
   for (const [id, expected] of Object.entries(reviewedAdditions)) {
     const actual = FREE_FEED_SOURCES.find((item) => item.id === id);
     assert.ok(actual, `${id} is included in the reviewed manifest`);
     assert.deepEqual(
-      { url: actual.url, feedHosts: actual.feedHosts, itemHosts: actual.itemHosts },
+      {
+        ...(expected.publisherKey ? { publisherKey: actual.publisherKey } : {}),
+        url: actual.url,
+        feedHosts: actual.feedHosts,
+        itemHosts: actual.itemHosts,
+      },
       expected,
       `${id} retains exact reviewed feed and article hosts`,
     );
@@ -1016,26 +1165,7 @@ test("desk selection optimizes for a complete diverse slate before total score",
 });
 
 test("cross-publisher matching joins specific event headlines but rejects generic near-collisions", () => {
-  const item = (title, publisherKey, suffix) => ({
-    itemId: `item-${suffix}`,
-    sourceId: `source-${suffix}`,
-    publisher: publisherKey,
-    publisherKey,
-    relationship: "independent",
-    primaryEntity: null,
-    title,
-    summary: "",
-    url: `https://news.example/${suffix}`,
-    feedUrl: `https://feeds.example/${suffix}.xml`,
-    publishedAt: "2026-08-21T12:00:00.000Z",
-    updatedAt: null,
-    retrievedAt,
-    categories: [],
-    deskPriors: Object.fromEntries(["ai", "work-and-tools", "security-and-privacy", "platforms-and-power"]
-      .map((desk) => [desk, 0])),
-    feedPosition: 0,
-    eligibility: { instant: "2026-08-21T12:00:00.000Z", kind: "new-development" },
-  });
+  const item = matchingItem;
 
   const appleLayoffs = [
     item("Apple is reportedly cutting hundreds of jobs from Siri, Vision Pro teams", "regent", "apple-one"),
@@ -1129,6 +1259,1011 @@ test("cross-publisher matching joins specific event headlines but rejects generi
     0,
     "a platform desk prior cannot turn a retail-rewards item into technology news",
   );
+});
+
+test("anchored paraphrases normalize Unicode, action synonyms, products, identifiers, and amounts", () => {
+  const cases = [
+    {
+      label: "Unicode dash variants normalize inside an exact product identifier",
+      items: [
+        matchingItem("OpenAI launches GPT‑5", "publisher-one", "unicode-product-one"),
+        matchingItem("OpenAI GPT-5 is now generally available", "publisher-two", "unicode-product-two"),
+      ],
+    },
+    {
+      label: "a missing action is neutral when the unchanged general floor is independently met",
+      items: [
+        matchingItem("Google launches quantum error correction milestone", "publisher-one", "neutral-action-one"),
+        matchingItem("Google quantum error correction milestone detailed", "publisher-two", "neutral-action-two"),
+      ],
+    },
+    {
+      label: "release and availability wording identify the same named AI tool",
+      items: [
+        matchingItem("Anthropic launches Claude Code in the browser for developers", "publisher-one", "claude-code-one"),
+        matchingItem("Claude Code is now available in browsers for developers", "publisher-two", "claude-code-two"),
+      ],
+    },
+    {
+      label: "equivalent percentages plus a shared product and pricing action identify one event",
+      items: [
+        matchingItem("AWS cuts Glue prices by 30%", "publisher-one", "glue-price-one"),
+        matchingItem("AWS Glue is now 30 percent cheaper", "publisher-two", "glue-price-two"),
+      ],
+    },
+    {
+      label: "headcount and workforce synonyms identify one layoff event",
+      items: [
+        matchingItem("Microsoft lays off 500 employees in Azure DevOps division", "publisher-one", "azure-layoff-one"),
+        matchingItem("Microsoft eliminates 500 roles from its Azure DevOps unit", "publisher-two", "azure-layoff-two"),
+      ],
+    },
+    {
+      label: "a shared non-first CVE supports compatible title and remediation evidence",
+      items: [
+        matchingItem(
+          "Chrome patches exploited WebRTC zero-day",
+          "publisher-one",
+          "webrtc-cve-one",
+          { summary: "The release fixes CVE-2026-1111 and the exploited WebRTC issue CVE-2026-9999." },
+        ),
+        matchingItem(
+          "Google closes exploited WebRTC flaw in Chrome",
+          "publisher-two",
+          "webrtc-cve-two",
+          { summary: "The bulletin lists CVE-2026-2222 before CVE-2026-9999." },
+        ),
+      ],
+    },
+    {
+      label: "a central CVE can appear in one title and the corroborating summary",
+      items: [
+        matchingItem("Cisco patches router flaw CVE-2026-9090", "publisher-one", "title-summary-cve-one"),
+        matchingItem(
+          "Cisco closes a router vulnerability in its security update",
+          "publisher-two",
+          "title-summary-cve-two",
+          { summary: "The security update remediates CVE-2026-9090." },
+        ),
+      ],
+    },
+    {
+      label: "a reviewed product anchor permits GitHub and Microsoft naming for one Copilot event",
+      items: [
+        matchingItem("GitHub launches Copilot coding agent for pull requests", "publisher-one", "copilot-one"),
+        matchingItem("Microsoft launches Copilot coding agent for pull requests", "publisher-two", "copilot-two"),
+      ],
+    },
+    {
+      label: "an originating source entity plus a shared policy facet joins a real paraphrase",
+      items: [
+        matchingItem(
+          "Offering zero data retention for frontier models",
+          "openai",
+          "retention-originating",
+          { relationship: "originating", primaryEntity: "OpenAI" },
+        ),
+        matchingItem(
+          "OpenAI promises zero data retention for enterprise models",
+          "situation-publishing",
+          "retention-independent",
+        ),
+      ],
+    },
+    {
+      label: "a product-specific memory facet survives release-versus-capability wording",
+      items: [
+        matchingItem("Anthropic rolls out Claude memory for paid users", "publisher-one", "claude-memory-one"),
+        matchingItem("Claude can remember past chats", "publisher-two", "claude-memory-two"),
+      ],
+    },
+    {
+      label: "price-down wording is pricing rather than an outage",
+      items: [
+        matchingItem("AWS Glue prices down 30 percent", "publisher-one", "price-down-one"),
+        matchingItem("AWS cuts Glue prices by 30%", "publisher-two", "price-down-two"),
+      ],
+    },
+    {
+      label: "the same acquisition target survives buy-versus-acquisition wording",
+      items: [
+        matchingItem("Apple acquires Acme AI for $1 billion", "publisher-one", "acquisition-positive-one"),
+        matchingItem("Apple confirms $1 billion acquisition of AI startup Acme", "publisher-two", "acquisition-positive-two"),
+      ],
+    },
+    {
+      label: "active and passive acquisition voice preserve buyer and target roles",
+      items: [
+        matchingItem("Apple acquires Acme AI after regulatory review", "publisher-one", "acquisition-voice-one"),
+        matchingItem("Acme AI is acquired by Apple after regulatory review", "publisher-two", "acquisition-voice-two"),
+      ],
+    },
+    {
+      label: "takes over and acquires normalize to the same acquisition roles",
+      items: [
+        matchingItem("Apple takes over Acme AI after regulatory review", "publisher-one", "takeover-positive-one"),
+        matchingItem("Apple acquires Acme AI after regulatory review", "publisher-two", "takeover-positive-two"),
+      ],
+    },
+    {
+      label: "a possessive acquisition headline preserves buyer and target roles",
+      items: [
+        matchingItem("Apple's Acme AI acquisition closes after regulatory review", "publisher-one", "acquisition-possessive-one"),
+        matchingItem("Apple buys Acme AI after regulatory review", "publisher-two", "acquisition-possessive-two"),
+      ],
+    },
+    {
+      label: "an auxiliary-free passive acquisition preserves buyer and target roles",
+      items: [
+        matchingItem("Acme AI bought by Apple after regulatory review", "publisher-one", "acquisition-passive-short-one"),
+        matchingItem("Apple buys Acme AI after regulatory review", "publisher-two", "acquisition-passive-short-two"),
+      ],
+    },
+    {
+      label: "goes live and debuts identify the same model channel release",
+      items: [
+        matchingItem("OpenAI debuts GPT-5.4 API for enterprise developers", "publisher-one", "model-live-one"),
+        matchingItem("GPT-5.4 API goes live for enterprise developers", "publisher-two", "model-live-two"),
+      ],
+    },
+    {
+      label: "active and passive enforcement preserve enforcer and defendant roles",
+      items: [
+        matchingItem("FTC fines Meta $5 billion over child privacy violations", "publisher-one", "fine-voice-one"),
+        matchingItem("Meta is fined $5 billion by FTC over child privacy violations", "publisher-two", "fine-voice-two"),
+      ],
+    },
+    {
+      label: "auxiliary-free passive enforcement preserves enforcer and defendant roles",
+      items: [
+        matchingItem("FTC fines Meta $5 billion over child privacy violations", "publisher-one", "fine-short-one"),
+        matchingItem("Meta fined $5 billion by FTC over child privacy violations", "publisher-two", "fine-short-two"),
+      ],
+    },
+    {
+      label: "hit-with wording preserves enforcer and defendant roles",
+      items: [
+        matchingItem("FTC fines Meta $5 billion over child privacy violations", "publisher-one", "fine-hit-one"),
+        matchingItem("Meta hit with $5 billion fine by FTC over child privacy violations", "publisher-two", "fine-hit-two"),
+      ],
+    },
+    {
+      label: "a pay order and award receipt preserve payer and payee roles",
+      items: [
+        matchingItem("Court orders Apple to pay Google $1 billion in digital marketplace case", "publisher-one", "payment-voice-one"),
+        matchingItem("Google receives $1 billion from Apple after court award in digital marketplace case", "publisher-two", "payment-voice-two"),
+      ],
+    },
+    {
+      label: "a pay order and won payment preserve payer and payee roles",
+      items: [
+        matchingItem("Court orders Apple to pay Google $1 billion in digital marketplace case", "publisher-one", "payment-win-one"),
+        matchingItem("Google wins $1 billion payment from Apple in digital marketplace court case", "publisher-two", "payment-win-two"),
+      ],
+    },
+    {
+      label: "recovery paraphrases describe the same resolved outage",
+      items: [
+        matchingItem("Google restores Workspace service after global authentication outage", "publisher-one", "recovery-voice-one"),
+        matchingItem("Google Workspace service is back online after global authentication outage", "publisher-two", "recovery-voice-two"),
+      ],
+    },
+    {
+      label: "returns-to-normal wording describes the same resolved outage",
+      items: [
+        matchingItem("Google restores Workspace service after global authentication outage", "publisher-one", "recovery-normal-one"),
+        matchingItem("Google Workspace service returns to normal after global authentication outage", "publisher-two", "recovery-normal-two"),
+      ],
+    },
+    {
+      label: "resolved and fully-operational wording describe the same recovered outage",
+      items: [
+        matchingItem("Google Workspace authentication outage is resolved", "publisher-one", "recovery-resolved-one"),
+        matchingItem("Google Workspace service is fully operational after authentication outage", "publisher-two", "recovery-resolved-two"),
+      ],
+    },
+    {
+      label: "the retained ChatGPT-for-teens reports form one complete-link event",
+      items: [
+        matchingItem("Introducing ChatGPT for Teens: Built for learning, backed by protections", "openai", "teen-release-one", {
+          relationship: "originating",
+          primaryEntity: "OpenAI",
+        }),
+        matchingItem("OpenAI makes ChatGPT less 'human' for teens in new safety update", "bbc", "teen-release-two"),
+        matchingItem("Open AI launches ChatGPT designed for younger users", "npr", "teen-release-three"),
+      ],
+    },
+    {
+      label: "active and passive lawsuit voice preserve claimant and defendant roles",
+      items: [
+        matchingItem("Google sues Apple over App Store payment rules", "publisher-one", "lawsuit-voice-one"),
+        matchingItem("Apple is sued by Google over App Store payment rules", "publisher-two", "lawsuit-voice-two"),
+      ],
+    },
+    {
+      label: "suit wording and auxiliary-free passive voice preserve legal roles",
+      items: [
+        matchingItem("Google files suit against Apple over App Store payment rules", "publisher-one", "suit-voice-one"),
+        matchingItem("Apple sued by Google over App Store payment rules", "publisher-two", "suit-voice-two"),
+      ],
+    },
+    {
+      label: "a possessive lawsuit headline preserves claimant and defendant roles",
+      items: [
+        matchingItem("Google sues Apple over App Store payment rules", "publisher-one", "lawsuit-possessive-one"),
+        matchingItem("Google's lawsuit against Apple targets App Store payment rules", "publisher-two", "lawsuit-possessive-two"),
+      ],
+    },
+    {
+      label: "a claimant-led lawsuit noun preserves claimant and defendant roles",
+      items: [
+        matchingItem("Google sues Apple over App Store payment rules", "publisher-one", "lawsuit-noun-one"),
+        matchingItem("Google lawsuit against Apple targets App Store payment rules", "publisher-two", "lawsuit-noun-two"),
+      ],
+    },
+    {
+      label: "faces-suit wording preserves claimant and defendant roles",
+      items: [
+        matchingItem("Google sues Apple over App Store payment rules", "publisher-one", "lawsuit-faces-one"),
+        matchingItem("Apple faces suit from Google over App Store payment rules", "publisher-two", "lawsuit-faces-two"),
+      ],
+    },
+    {
+      label: "active and passive investigation voice preserve investigator and target roles",
+      items: [
+        matchingItem("FTC investigates Meta over child privacy practices", "publisher-one", "probe-voice-one"),
+        matchingItem("Meta investigated by FTC over child privacy practices", "publisher-two", "probe-voice-two"),
+      ],
+    },
+    {
+      label: "under-investigation and faces-probe wording preserve investigator and target roles",
+      items: [
+        matchingItem("Meta under FTC investigation over child privacy practices", "publisher-one", "probe-noun-one"),
+        matchingItem("Meta faces FTC probe over child privacy practices", "publisher-two", "probe-noun-two"),
+      ],
+    },
+    {
+      label: "opens-inquiry wording preserves investigator and target roles",
+      items: [
+        matchingItem("FTC investigates Meta over child privacy practices", "publisher-one", "inquiry-one"),
+        matchingItem("FTC opens inquiry into Meta child privacy practices", "publisher-two", "inquiry-two"),
+      ],
+    },
+    {
+      label: "multi-party settlement wording preserves the same participants",
+      items: [
+        matchingItem("FTC settles child privacy case with Meta for $5 billion", "publisher-one", "settlement-party-one"),
+        matchingItem("Meta reaches $5 billion child privacy settlement with FTC", "publisher-two", "settlement-party-two"),
+      ],
+    },
+    {
+      label: "same-stage merger wording preserves the same participants",
+      items: [
+        matchingItem("Apple and Acme AI agree to merger after board approval", "publisher-one", "merger-wording-one"),
+        matchingItem("Apple agrees to merge with Acme AI after board approval", "publisher-two", "merger-wording-two"),
+      ],
+    },
+    {
+      label: "SMB and SME normalize to the same business-size acronym",
+      items: [
+        matchingItem("Google launches AI workflow tools for SMB teams", "publisher-one", "smb-sme-one"),
+        matchingItem("Google launches AI workflow tools for SME teams", "publisher-two", "smb-sme-two"),
+      ],
+    },
+    {
+      label: "billing and payment wording preserve the same legal issue",
+      items: [
+        matchingItem("Google sues Apple over App Store payment rules", "publisher-one", "lawsuit-billing-one"),
+        matchingItem("Google sues Apple over App Store billing rules", "publisher-two", "lawsuit-billing-two"),
+      ],
+    },
+    {
+      label: "winning and losing phrasing preserve the same legal outcome",
+      items: [
+        matchingItem("Google wins antitrust case against Apple over App Store payments", "publisher-one", "outcome-positive-one"),
+        matchingItem("Apple loses antitrust case to Google over App Store payment rules", "publisher-two", "outcome-positive-two"),
+      ],
+    },
+    {
+      label: "court-sides-with wording preserves the same legal outcome",
+      items: [
+        matchingItem("Google wins antitrust case against Apple over App Store payments", "publisher-one", "outcome-sides-one"),
+        matchingItem("Court sides with Google against Apple in antitrust case over App Store payments", "publisher-two", "outcome-sides-two"),
+      ],
+    },
+  ];
+
+  for (const { label, items } of cases) {
+    assert.equal(deduplicateFeedItems(items).length, 1, label);
+  }
+});
+
+test("event anchors veto conflicting versions, amounts, entities, facets, and explicit identifiers", () => {
+  const genericImpactSummary =
+    "The development affects millions of enterprise customers and requires administrators, developers, and security teams to update workflows and controls.";
+  const cases = [
+    {
+      label: "different explicit model versions are different events",
+      items: [
+        matchingItem("Anthropic launches Claude 4.1 enterprise coding agent for code review", "publisher-one", "claude-version-one"),
+        matchingItem("Anthropic launches Claude 5 enterprise coding agent for code review", "publisher-two", "claude-version-two"),
+      ],
+    },
+    {
+      label: "currency magnitudes cannot collapse to the same bare number",
+      items: [
+        matchingItem("TikTok pays $400 million child privacy settlement", "publisher-one", "money-one"),
+        matchingItem("TikTok pays $400 billion child privacy settlement", "publisher-two", "money-two"),
+      ],
+    },
+    {
+      label: "different percentages and regions are different workforce events",
+      items: [
+        matchingItem("Microsoft cuts 10 percent of sales staff in Europe", "publisher-one", "percent-one"),
+        matchingItem("Microsoft cuts 20% of sales staff in Asia", "publisher-two", "percent-two"),
+      ],
+    },
+    {
+      label: "known company names prevent generic assistant coverage from corroborating",
+      items: [
+        matchingItem("GitLab launches Duo assistant for code review", "publisher-one", "entity-one"),
+        matchingItem("Atlassian launches Rovo assistant for code review", "publisher-two", "entity-two"),
+      ],
+    },
+    {
+      label: "retention and pricing are incompatible policy facets",
+      items: [
+        matchingItem("Slack changes enterprise retention policy for workspace administrators", "publisher-one", "facet-one"),
+        matchingItem("Slack changes enterprise pricing policy for workspace customers", "publisher-two", "facet-two"),
+      ],
+    },
+    {
+      label: "disjoint explicit identifiers veto otherwise similar patch headlines",
+      items: [
+        matchingItem("Google patches Chrome flaw CVE-2026-1111", "publisher-one", "id-conflict-one"),
+        matchingItem("Google patches Chrome flaw CVE-2026-2222", "publisher-two", "id-conflict-two"),
+      ],
+    },
+    {
+      label: "a peripheral roundup identifier cannot override incompatible entities",
+      items: [
+        matchingItem(
+          "Google releases Chrome stable update for browser flaws",
+          "publisher-one",
+          "peripheral-cve-one",
+          { summary: "CVE-2026-1111 and CVE-2026-2222 are fixed." },
+        ),
+        matchingItem(
+          "Microsoft patches SQL Server database vulnerabilities",
+          "publisher-two",
+          "peripheral-cve-two",
+          { summary: "A weekly roundup mentions CVE-2026-1111 before covering CVE-2026-3333." },
+        ),
+      ],
+    },
+    {
+      label: "the same model released into different cloud services remains two events",
+      items: [
+        matchingItem("GPT-5.6 is now available in Amazon Bedrock", "publisher-one", "deployment-one"),
+        matchingItem("GPT-5.6 is now available in Azure AI Foundry", "publisher-two", "deployment-two"),
+      ],
+    },
+    {
+      label: "reversed legal subjects and objects cannot corroborate each other",
+      items: [
+        matchingItem("Google sues Apple over app store payment rules", "publisher-one", "legal-role-one"),
+        matchingItem("Apple sues Google over app store payment rules", "publisher-two", "legal-role-two"),
+      ],
+    },
+    {
+      label: "a denial cannot corroborate an affirmative announcement",
+      items: [
+        matchingItem("OpenAI denies customer data retention policy", "publisher-one", "polarity-one"),
+        matchingItem("OpenAI announces customer data retention policy", "publisher-two", "polarity-two"),
+      ],
+    },
+    {
+      label: "dismissing a launch report cannot corroborate the reported launch",
+      items: [
+        matchingItem("OpenAI dismisses report that it will launch GPT-5.4 generative AI model for enterprise customers", "publisher-one", "dismissal-polarity-one"),
+        matchingItem("OpenAI launches GPT-5.4 generative AI model for enterprise customers", "publisher-two", "dismissal-polarity-two"),
+      ],
+    },
+    ...[
+      ["pushes back on report", "pushes-back"],
+      ["shoots down report", "shoots-down"],
+      ["calls launch report false", "calls-false"],
+      ["does not plan to launch", "does-not-plan"],
+    ].map(([stance, suffix]) => ({
+      label: `${stance} cannot corroborate the reported launch`,
+      items: [
+        matchingItem(`OpenAI ${stance} GPT-5.4 generative AI model for enterprise customers`, "publisher-one", `${suffix}-polarity-one`),
+        matchingItem("OpenAI launches GPT-5.4 generative AI model for enterprise customers", "publisher-two", `${suffix}-polarity-two`),
+      ],
+    })),
+    ...[
+      ["postpones", "postponed"],
+      ["delays", "delayed"],
+      ["shelves", "shelved"],
+    ].map(([stance, suffix]) => ({
+      label: `${stance} a launch cannot corroborate a completed launch`,
+      items: [
+        matchingItem(`OpenAI ${stance} GPT-5.4 launch for enterprise customers`, "publisher-one", `${suffix}-launch-one`),
+        matchingItem("OpenAI launches GPT-5.4 for enterprise customers", "publisher-two", `${suffix}-launch-two`),
+      ],
+    })),
+    {
+      label: "generic overlap does not merge two unknown vendors",
+      items: [
+        matchingItem("Acme launches AI assistant for code review", "publisher-one", "generic-vendor-one"),
+        matchingItem("Beta launches AI assistant for code review", "publisher-two", "generic-vendor-two"),
+      ],
+    },
+    {
+      label: "security boilerplate does not merge vulnerabilities at unknown vendors",
+      items: [
+        matchingItem("Cisco actively exploited zero-day allows remote code execution", "publisher-one", "vendor-zero-day-one"),
+        matchingItem("Fortinet actively exploited zero-day allows remote code execution", "publisher-two", "vendor-zero-day-two"),
+      ],
+    },
+    {
+      label: "different ChatGPT feature launches remain different events",
+      items: [
+        matchingItem("OpenAI launches ChatGPT Tasks for scheduled reminders", "publisher-one", "chatgpt-feature-one"),
+        matchingItem("OpenAI launches ChatGPT Study Mode for students", "publisher-two", "chatgpt-feature-two"),
+      ],
+    },
+    {
+      label: "different channels for the same model remain different deployments",
+      items: [
+        matchingItem("OpenAI launches GPT-5.4 API in Europe", "publisher-one", "model-channel-one"),
+        matchingItem("OpenAI launches GPT-5.4 in ChatGPT for education", "publisher-two", "model-channel-two"),
+      ],
+    },
+    {
+      label: "a model launch and its safety report remain different developments",
+      items: [
+        matchingItem("OpenAI launches GPT-5.4", "publisher-one", "model-artifact-one"),
+        matchingItem("OpenAI releases GPT-5.4 safety report", "publisher-two", "model-artifact-two"),
+      ],
+    },
+    {
+      label: "summary-only CVE mentions cannot bypass incompatible headline entities",
+      items: [
+        matchingItem(
+          "Google releases Chrome stable browser update",
+          "publisher-one",
+          "summary-cve-one",
+          { summary: "A roundup also mentions CVE-2026-1111." },
+        ),
+        matchingItem(
+          "Microsoft releases SQL Server database update",
+          "publisher-two",
+          "summary-cve-two",
+          { summary: "The notes incidentally mention CVE-2026-1111." },
+        ),
+      ],
+    },
+    {
+      label: "reversed legal winners cannot corroborate each other",
+      items: [
+        matchingItem("Google wins antitrust case against Apple", "publisher-one", "legal-winner-one"),
+        matchingItem("Apple wins antitrust case against Google", "publisher-two", "legal-winner-two"),
+      ],
+    },
+    {
+      label: "rules-out language conflicts with an affirmative product launch",
+      items: [
+        matchingItem("OpenAI rules out plans to launch GPT-5.4", "publisher-one", "denial-variant-one"),
+        matchingItem("OpenAI launches GPT-5.4", "publisher-two", "denial-variant-two"),
+      ],
+    },
+    {
+      label: "a cancelled acquisition cannot corroborate a confirmed acquisition",
+      items: [
+        matchingItem("Apple confirms $1 billion AI startup acquisition", "publisher-one", "cancelled-acquisition-one"),
+        matchingItem("Apple cancels $1 billion AI startup acquisition", "publisher-two", "cancelled-acquisition-two"),
+      ],
+    },
+    {
+      label: "ending acquisition talks cannot corroborate a confirmed acquisition",
+      items: [
+        matchingItem("Apple ends talks for $1 billion acquisition of Acme AI after regulatory review", "publisher-one", "ended-talks-one"),
+        matchingItem("Apple confirms $1 billion acquisition of Acme AI after regulatory review", "publisher-two", "ended-talks-two"),
+      ],
+    },
+    {
+      label: "halting an acquisition cannot corroborate a confirmed acquisition",
+      items: [
+        matchingItem("Apple halts $1 billion acquisition of Acme AI after regulatory review", "publisher-one", "halted-acquisition-one"),
+        matchingItem("Apple confirms $1 billion acquisition of Acme AI after regulatory review", "publisher-two", "halted-acquisition-two"),
+      ],
+    },
+    {
+      label: "the same amount and regulatory context cannot merge different acquisition targets",
+      items: [
+        matchingItem("Apple confirms $1 billion acquisition of Acme AI after regulatory review", "publisher-one", "acquisition-target-one"),
+        matchingItem("Apple confirms $1 billion acquisition of Beta AI after regulatory review", "publisher-two", "acquisition-target-two"),
+      ],
+    },
+    {
+      label: "the same company, action, and percentage cannot merge different cloud products",
+      items: [
+        matchingItem("AWS cuts Glue prices by 30%", "publisher-one", "aws-product-price-one"),
+        matchingItem("AWS cuts Lambda prices by 30%", "publisher-two", "aws-product-price-two"),
+      ],
+    },
+    {
+      label: "the same company, action, and headcount cannot merge different divisions",
+      items: [
+        matchingItem("Microsoft lays off 500 workers in Azure DevOps", "publisher-one", "microsoft-division-one"),
+        matchingItem("Microsoft lays off 500 workers in Xbox", "publisher-two", "microsoft-division-two"),
+      ],
+    },
+    {
+      label: "a shared geography cannot make different business units the same layoff event",
+      items: [
+        matchingItem("Microsoft lays off 500 Azure DevOps workers in Europe", "publisher-one", "microsoft-region-one"),
+        matchingItem("Microsoft lays off 500 Xbox workers in Europe", "publisher-two", "microsoft-region-two"),
+      ],
+    },
+    {
+      label: "disjoint named products cannot merge under generic enterprise wording",
+      items: [
+        matchingItem("GitHub launches GitHub Actions controls for enterprise customers", "publisher-one", "github-product-one"),
+        matchingItem("GitHub launches Visual Studio Code controls for enterprise customers", "publisher-two", "github-product-two"),
+      ],
+    },
+    {
+      label: "a shared title CVE cannot override incompatible vendors and denial polarity",
+      items: [
+        matchingItem("Google patches Chrome CVE-2026-4444", "publisher-one", "title-cve-vendor-one"),
+        matchingItem("Microsoft says SQL Server is not affected by CVE-2026-4444", "publisher-two", "title-cve-vendor-two"),
+      ],
+    },
+    {
+      label: "a shared title CVE cannot override incompatible vendors and actions",
+      items: [
+        matchingItem("Cisco patches CVE-2026-5555", "publisher-one", "title-cve-action-one"),
+        matchingItem("Fortinet investigates CVE-2026-5555", "publisher-two", "title-cve-action-two"),
+      ],
+    },
+    {
+      label: "no exposure to a CVE cannot corroborate a patch",
+      items: [
+        matchingItem("Google says Android has no exposure to CVE-2026-6666", "publisher-one", "no-exposure-cve-one"),
+        matchingItem("Google patches Android CVE-2026-6666", "publisher-two", "no-exposure-cve-two"),
+      ],
+    },
+    {
+      label: "immunity to a CVE cannot corroborate a patch",
+      items: [
+        matchingItem("Google says Android is immune to CVE-2026-7777", "publisher-one", "immune-cve-one"),
+        matchingItem("Google patches Android CVE-2026-7777", "publisher-two", "immune-cve-two"),
+      ],
+    },
+    {
+      label: "dropping a lawsuit cannot corroborate filing it",
+      items: [
+        matchingItem("Google drops antitrust lawsuit against Apple", "publisher-one", "dropped-lawsuit-one"),
+        matchingItem("Google sues Apple in antitrust lawsuit", "publisher-two", "dropped-lawsuit-two"),
+      ],
+    },
+    {
+      label: "prenominal acquisition targets remain distinct",
+      items: [
+        matchingItem("Apple confirms Acme AI acquisition after regulatory review", "publisher-one", "prenominal-target-one"),
+        matchingItem("Apple confirms Beta AI acquisition after regulatory review", "publisher-two", "prenominal-target-two"),
+      ],
+    },
+    {
+      label: "active and passive acquisition roles cannot reverse buyer and target",
+      items: [
+        matchingItem("Apple acquires Acme AI after regulatory review", "publisher-one", "acquisition-reversal-one"),
+        matchingItem("Apple is acquired by Acme AI after regulatory review", "publisher-two", "acquisition-reversal-two"),
+      ],
+    },
+    ...[
+      ["ChatGPT Tasks", "ChatGPT Projects", "chatgpt-feature"],
+      ["GitHub Codespaces", "GitHub Projects", "github-feature"],
+      ["LinkedIn", "Nuance", "microsoft-unit"],
+      ["Visual Studio Code", "Azure", "microsoft-product"],
+      ["Xbox", "Azure", "microsoft-platform"],
+      ["Chrome", "Gemini", "google-product"],
+      ["Claude Projects", "Claude memory", "claude-feature"],
+    ].map(([leftProduct, rightProduct, suffix]) => ({
+      label: `${leftProduct} and ${rightProduct} cannot merge through generic enterprise context`,
+      items: [
+        matchingItem(`Microsoft launches ${leftProduct} workflow controls for enterprise customers`, "publisher-one", `${suffix}-one`),
+        matchingItem(`Microsoft launches ${rightProduct} workflow controls for enterprise customers`, "publisher-two", `${suffix}-two`),
+      ],
+    })),
+    {
+      label: "model API and ChatGPT channels remain different deployments",
+      items: [
+        matchingItem("OpenAI launches GPT-5.4 API controls for millions of enterprise customers", "publisher-one", "model-channel-audience-one"),
+        matchingItem("OpenAI launches GPT-5.4 in ChatGPT with controls for millions of enterprise customers", "publisher-two", "model-channel-audience-two"),
+      ],
+    },
+    {
+      label: "a model safety artifact cannot corroborate the model launch",
+      items: [
+        matchingItem("OpenAI launches GPT-5.4 for millions of enterprise customers", "publisher-one", "model-launch-artifact-one"),
+        matchingItem("OpenAI releases GPT-5.4 safety report for millions of enterprise customers", "publisher-two", "model-launch-artifact-two"),
+      ],
+    },
+    ...[
+      ["Chrome", "WebRTC", "V8", "chrome-component"],
+      ["Android", "kernel", "framework", "android-component"],
+      ["Windows", "kernel", "browser", "windows-component"],
+    ].map(([product, leftComponent, rightComponent, suffix]) => ({
+      label: `${product} ${leftComponent} and ${rightComponent} vulnerabilities remain distinct`,
+      items: [
+        matchingItem(`${product} patches actively exploited ${leftComponent} zero-day`, "publisher-one", `${suffix}-one`),
+        matchingItem(`${product} patches actively exploited ${rightComponent} zero-day`, "publisher-two", `${suffix}-two`),
+      ],
+    })),
+    {
+      label: "separate lawsuits with the same parties retain their distinct legal issues",
+      items: [
+        matchingItem("Google sues Apple over App Store payment restrictions", "publisher-one", "lawsuit-issue-one"),
+        matchingItem("Google sues Apple over App Store privacy restrictions", "publisher-two", "lawsuit-issue-two"),
+      ],
+    },
+    ...[
+      ["defeats", "defeat-role"],
+      ["prevails over", "prevail-role"],
+    ].map(([verb, suffix]) => ({
+      label: `reversed ${verb} outcomes cannot corroborate`,
+      items: [
+        matchingItem(`Google ${verb} Apple in antitrust case over App Store payments`, "publisher-one", `${suffix}-one`),
+        matchingItem(`Apple ${verb} Google in antitrust case over App Store payments`, "publisher-two", `${suffix}-two`),
+      ],
+    })),
+    {
+      label: "no intention to launch cannot corroborate an affirmative launch",
+      items: [
+        matchingItem("OpenAI has no intention of launching GPT-5.4 for enterprise customers", "publisher-one", "no-intention-one"),
+        matchingItem("OpenAI launches GPT-5.4 for enterprise customers", "publisher-two", "no-intention-two"),
+      ],
+    },
+    {
+      label: "not exploitable cannot corroborate a patch for the same CVE",
+      items: [
+        matchingItem("Cisco says CVE-2026-8888 is not exploitable", "publisher-one", "not-exploitable-one"),
+        matchingItem("Cisco patches CVE-2026-8888", "publisher-two", "not-exploitable-two"),
+      ],
+    },
+    {
+      label: "decimal model versions do not interrupt denial detection",
+      items: [
+        matchingItem("OpenAI calls GPT-5.4 enterprise launch report false", "publisher-one", "decimal-denial-one"),
+        matchingItem("OpenAI launches GPT-5.4 for enterprise customers", "publisher-two", "decimal-denial-two"),
+      ],
+    },
+    {
+      label: "an entity-free exact-token bridge cannot manufacture corroboration",
+      items: [
+        matchingItem("New Company launches neural accelerator for enterprise inference", "publisher-one", "entity-free-bridge-one"),
+        matchingItem("Google launches neural accelerator for enterprise inference", "publisher-two", "entity-free-bridge-two"),
+      ],
+    },
+    ...[
+      ["€2 billion", "euro"],
+      ["£2 billion", "sterling"],
+    ].map(([amount, suffix]) => ({
+      label: `${suffix} and dollar acquisition amounts cannot corroborate`,
+      items: [
+        matchingItem("Apple acquires Acme AI for $1 billion", "publisher-one", `${suffix}-amount-one`),
+        matchingItem(`Apple acquires Acme AI for ${amount}`, "publisher-two", `${suffix}-amount-two`),
+      ],
+    })),
+    ...[
+      ["500 people", "1,000 people", "people-headcount"],
+      ["500 posts", "1,000 posts", "posts-headcount"],
+    ].map(([leftCount, rightCount, suffix]) => ({
+      label: `${suffix} differences remain conflicting headcounts`,
+      items: [
+        matchingItem(`Microsoft lays off ${leftCount} in Azure DevOps`, "publisher-one", `${suffix}-one`),
+        matchingItem(`Microsoft lays off ${rightCount} in Azure DevOps`, "publisher-two", `${suffix}-two`),
+      ],
+    })),
+    {
+      label: "per cent wording retains conflicting percentage anchors",
+      items: [
+        matchingItem("Microsoft cuts 10 per cent of Azure DevOps staff", "publisher-one", "per-cent-one"),
+        matchingItem("Microsoft cuts 20 per cent of Azure DevOps staff", "publisher-two", "per-cent-two"),
+      ],
+    },
+    ...[
+      ["Chrome 140", "Chrome 141", "chrome-version"],
+      ["iOS 19.1", "iOS 19.2", "ios-version"],
+      ["Node.js 24.1", "Node.js 24.2", "node-version"],
+    ].map(([leftVersion, rightVersion, suffix]) => ({
+      label: `${leftVersion} and ${rightVersion} remain different software releases`,
+      items: [
+        matchingItem(`${leftVersion} launches enterprise workflow controls`, "publisher-one", `${suffix}-one`),
+        matchingItem(`${rightVersion} launches enterprise workflow controls`, "publisher-two", `${suffix}-two`),
+      ],
+    })),
+    ...[
+      ["Google discontinues Chrome Sync", "Google launches Chrome Sync", "chrome-retirement"],
+      ["Microsoft shuts down Azure DevOps", "Microsoft launches Azure DevOps", "azure-retirement"],
+      ["OpenAI retires ChatGPT Tasks", "OpenAI launches ChatGPT Tasks", "chatgpt-retirement"],
+    ].map(([ended, launched, suffix]) => ({
+      label: `${suffix} termination cannot corroborate a launch`,
+      items: [
+        matchingItem(`${ended} for enterprise customers`, "publisher-one", `${suffix}-one`),
+        matchingItem(`${launched} for enterprise customers`, "publisher-two", `${suffix}-two`),
+      ],
+    })),
+    {
+      label: "a price increase cannot corroborate a price cut",
+      items: [
+        matchingItem("AWS raises Glue prices by 30%", "publisher-one", "pricing-direction-one"),
+        matchingItem("AWS cuts Glue prices by 30%", "publisher-two", "pricing-direction-two"),
+      ],
+    },
+    {
+      label: "hiring cannot corroborate a layoff",
+      items: [
+        matchingItem("Microsoft hires 500 Azure DevOps workers in Europe", "publisher-one", "workforce-direction-one"),
+        matchingItem("Microsoft lays off 500 Azure DevOps workers in Europe", "publisher-two", "workforce-direction-two"),
+      ],
+    },
+    ...[
+      ["CMA investigates Apple acquisition of Acme AI", "CMA clears Apple acquisition of Acme AI", "regulatory-investigate-clear"],
+      ["FTC blocks Apple acquisition of Acme AI", "FTC approves Apple acquisition of Acme AI", "regulatory-block-approve"],
+      ["Court dismisses Google antitrust lawsuit against Apple", "Google files antitrust lawsuit against Apple", "lawsuit-dismiss-file"],
+    ].map(([leftState, rightState, suffix]) => ({
+      label: `${suffix} lifecycle states cannot corroborate`,
+      items: [
+        matchingItem(leftState, "publisher-one", `${suffix}-one`),
+        matchingItem(rightState, "publisher-two", `${suffix}-two`),
+      ],
+    })),
+    {
+      label: "a one-sided legal-role parse cannot merge different claimants",
+      items: [
+        matchingItem("FTC sues Meta over child privacy", "publisher-one", "one-sided-legal-one"),
+        matchingItem("Meta faces Google lawsuit over child privacy", "publisher-two", "one-sided-legal-two"),
+      ],
+    },
+    {
+      label: "a bare infrastructure node is not the Node.js product",
+      items: [
+        matchingItem("Kubernetes launches new node autoscaling mode", "publisher-one", "bare-node-one"),
+        matchingItem("Linux releases secure node update", "publisher-two", "bare-node-two"),
+      ],
+    },
+    {
+      label: "a bare node cannot inherit a Node.js product anchor",
+      items: [
+        matchingItem("Kubernetes launches new node autoscaling mode", "publisher-one", "bare-node-direct-one"),
+        matchingItem("Node.js launches new autoscaling mode", "publisher-two", "bare-node-direct-two"),
+      ],
+    },
+    {
+      label: "distinct Node.js releases need shared event context",
+      items: [
+        matchingItem("Node.js releases security update for package signatures", "publisher-one", "node-release-one"),
+        matchingItem("Node.js releases new permission model for local applications", "publisher-two", "node-release-two"),
+      ],
+    },
+    {
+      label: "a shared investigation verb cannot merge different privacy probes",
+      items: [
+        matchingItem("FTC probes Meta over child privacy", "publisher-one", "probe-subject-one"),
+        matchingItem("FTC probes Meta over worker privacy", "publisher-two", "probe-subject-two"),
+      ],
+    },
+    {
+      label: "a shared retirement verb cannot merge different Chrome retirements",
+      items: [
+        matchingItem("Google Chrome retires Manifest V2", "publisher-one", "retire-subject-one"),
+        matchingItem("Google Chrome retires old sync service", "publisher-two", "retire-subject-two"),
+      ],
+    },
+    {
+      label: "retire is state rather than shared subject evidence",
+      items: [
+        matchingItem("Google Chrome retires Alpha service", "publisher-one", "retire-isolated-one"),
+        matchingItem("Google Chrome retires Beta service", "publisher-two", "retire-isolated-two"),
+      ],
+    },
+    {
+      label: "a percentage and a headcount are different numeric anchors",
+      items: [
+        matchingItem("Google Chrome cuts 10% of staff", "publisher-one", "numeric-kind-one"),
+        matchingItem("Google Chrome cuts 10 jobs", "publisher-two", "numeric-kind-two"),
+      ],
+    },
+    ...[
+      ["Chrome", "WebRTC", "V8", "chrome-component-impact"],
+      ["Android", "kernel", "framework", "android-component-impact"],
+      ["Windows", "kernel", "browser", "windows-component-impact"],
+    ].map(([product, leftComponent, rightComponent, suffix]) => ({
+      label: `${product} component conflicts survive generic remote-impact language`,
+      items: [
+        matchingItem(
+          `${product} patches actively exploited ${leftComponent} zero-day allowing remote code execution`,
+          "publisher-one",
+          `${suffix}-one`,
+          { summary: "Administrators should update affected systems immediately after reviewing the security advisory." },
+        ),
+        matchingItem(
+          `${product} patches actively exploited ${rightComponent} zero-day allowing remote code execution`,
+          "publisher-two",
+          `${suffix}-two`,
+          { summary: "Administrators should update affected systems immediately after reviewing the security advisory." },
+        ),
+      ],
+    })),
+    {
+      label: "incidental child-protection wording cannot merge different lawsuits",
+      items: [
+        matchingItem("Google sues Apple over child payment protections", "publisher-one", "legal-incidental-one"),
+        matchingItem("Google sues Apple over child privacy protections", "publisher-two", "legal-incidental-two"),
+      ],
+    },
+    {
+      label: "ChatGPT Canvas and Voice are distinct product features",
+      items: [
+        matchingItem("OpenAI launches ChatGPT Canvas with workflow controls", "publisher-one", "chatgpt-canvas-one"),
+        matchingItem("OpenAI launches ChatGPT Voice Mode with workflow controls", "publisher-two", "chatgpt-canvas-two"),
+      ],
+    },
+    ...[
+      ["Meta launches AI translation in WhatsApp for global creators", "Meta launches AI translation in Instagram for global creators", "meta-apps"],
+      ["Google launches Docs AI collaboration workflows for enterprise teams", "Google launches Sheets AI collaboration workflows for enterprise teams", "google-work-apps"],
+      ["AWS cuts EC2 cloud compute prices by 30% for enterprise workloads", "AWS cuts Redshift cloud compute prices by 30% for enterprise workloads", "aws-compute-products"],
+      ["Node.js v24.1 launches permission controls for enterprise workflows", "Node.js v24.2 launches permission controls for enterprise workflows", "node-v-prefix"],
+      ["Apple acquires Acme AI for $1 billion after regulatory approval", "Apple acquires Acme AI for 2 billion euros after regulatory approval", "currency-word"],
+      ["Microsoft Azure cloud market share rises 10% in enterprise computing", "Microsoft Azure cloud market share rises 10 percentage points in enterprise computing", "percentage-point"],
+      ["Court orders Apple to pay Google $1 billion in app marketplace case", "Court orders Google to pay Apple $1 billion in app marketplace case", "payment-role"],
+      ["FTC fines Meta $5 billion over child privacy violations", "FTC fines TikTok $5 billion over child privacy violations", "fine-defendant"],
+      ["OpenAI nixes GPT-5.4 rollout in Europe for enterprise customers", "OpenAI launches GPT-5.4 in Europe for enterprise customers", "nixes-launch"],
+      ["OpenAI pushes back GPT-5.4 launch in Europe for enterprise customers", "OpenAI launches GPT-5.4 in Europe for enterprise customers", "pushes-back-launch"],
+      ["Google files antitrust lawsuit against Apple over mobile advertising controls", "Google settles antitrust lawsuit with Apple over mobile advertising controls", "filed-settled"],
+      ["Google Workspace service down in global authentication outage", "Google restores Workspace service after global authentication outage", "outage-recovery"],
+      ["Apple submits $1 billion bid for Acme AI after board approval", "Apple submits $1 billion bid for Beta AI after board approval", "bid-target"],
+      ["OpenAI launches Study Mode in ChatGPT for college students", "OpenAI launches Voice Mode in ChatGPT for college students", "chatgpt-modes"],
+      ["Microsoft lays off five hundred Azure DevOps workers in Europe", "Microsoft lays off one thousand Azure DevOps workers in Europe", "written-headcount"],
+      ["Google sues Apple over search advertising restrictions", "Google sues Apple over display advertising restrictions", "advertising-lawsuits"],
+      ["Google sues Apple in antitrust lawsuit over teen payment safeguards", "Google sues Apple in antitrust lawsuit over teen privacy safeguards", "teen-legal-issues"],
+      ["AWS cuts ECS cloud compute prices by 30% for enterprise workloads", "AWS cuts EKS cloud compute prices by 30% for enterprise workloads", "aws-acronym-products"],
+      ["Meta receives a $5 billion FTC fine over child privacy violations", "TikTok receives a $5 billion FTC fine over child privacy violations", "received-fine-defendant"],
+      ["FTC levies a $5 billion penalty against Meta for child privacy violations", "FTC levies a $5 billion penalty against TikTok for child privacy violations", "levied-fine-defendant"],
+      ["Google receives $1 billion from Apple after court award in digital marketplace case", "Apple receives $1 billion from Google after court award in digital marketplace case", "received-payment-role"],
+      ["Antitrust lawsuit against Apple filed by Google over digital mobile payments", "Antitrust lawsuit against Google filed by Apple over digital mobile payments", "filed-by-role"],
+      ["Apple secures court victory over Google in digital mobile payments case", "Google secures court victory over Apple in digital mobile payments case", "victory-over-role"],
+      ["FTC opens privacy probe into Meta advertising practices", "FTC opens privacy probe into TikTok advertising practices", "probe-target-role"],
+      ["Salesforce launches AI workflow summaries in Slack for enterprise teams", "Salesforce launches AI workflow summaries in Tableau for enterprise teams", "salesforce-units"],
+      ["AWS cuts S3 cloud storage prices by 30% for enterprise workloads", "AWS cuts DynamoDB cloud storage prices by 30% for enterprise workloads", "aws-storage-products"],
+      ["Chrome v140 launches memory isolation controls", "Chrome v141 launches memory isolation controls", "chrome-v-version"],
+      ["iOS v19.1 launches privacy controls", "iOS v19.2 launches privacy controls", "ios-v-version"],
+      ["Apple acquires Acme AI for USD 1 billion", "Apple acquires Acme AI for EUR 2 billion", "currency-codes"],
+      ["Apple acquires Acme AI for one billion dollars", "Apple acquires Acme AI for two billion euros", "written-currencies"],
+      ["AWS cuts S3 prices by 10 pct", "AWS cuts S3 prices by 20 pct", "pct-values"],
+      ["Microsoft Azure cloud market share rises 10 basis points", "Microsoft Azure cloud market share rises 10%", "basis-v-percent"],
+      ["OpenAI axes GPT-5.4 launch in Europe", "OpenAI launches GPT-5.4 in Europe", "axes-launch"],
+      ["OpenAI reschedules GPT-5.4 launch in Europe", "OpenAI launches GPT-5.4 in Europe", "reschedules-launch"],
+      ["Google Workspace service is back up after global authentication outage", "Google Workspace service is down in global authentication outage", "back-up-outage"],
+      ["Court tosses Google antitrust case against Apple", "Google files antitrust case against Apple", "tosses-filed"],
+      ["Google says patch for CVE-2026-9191 failed and users remain vulnerable", "Google patches CVE-2026-9191", "failed-patch-state"],
+      ["Google says CVE-2026-9292 is invalid", "Google patches CVE-2026-9292", "invalid-cve-state"],
+      ["Microsoft creates 500 Azure DevOps jobs", "Microsoft eliminates 500 Azure DevOps jobs", "job-creation-elimination"],
+      ["Apple and Acme AI agree to merger after board approval", "Apple and Beta AI agree to merger after board approval", "merger-parties"],
+      ["Google patches CVE-2026-9191 in Chrome WebRTC", "Google says CVE-2026-9191 persists in Chrome WebRTC after patch", "persistent-cve-state"],
+      ["Google patches CVE-2026-9191 in Chrome WebRTC", "Google rolls back patch for CVE-2026-9191 in Chrome WebRTC", "rollback-patch-state"],
+      ["OpenAI launches GPT-5.4 developer workflow in Europe", "OpenAI says GPT-5.4 developer workflow launch in Europe is fake", "fake-launch-state"],
+      ["OpenAI releases GPT-5.4 developer workflow in Europe", "OpenAI calls GPT-5.4 developer workflow release in Europe bogus", "bogus-release-state"],
+      ["Apple makes $1 billion bid for Acme AI valued at $5 billion", "Apple makes $2 billion bid for Acme AI valued at $5 billion", "bid-context-amount"],
+      ["Microsoft cuts 500 of 5,000 Azure DevOps jobs", "Microsoft cuts 600 of 5,000 Azure DevOps jobs", "workforce-context-amount"],
+      ["Microsoft launches Windows 12 workflow controls", "Microsoft launches Windows 13 workflow controls", "windows-major-version"],
+      ["Google launches Android 17 privacy controls", "Google launches Android 18 privacy controls", "android-major-version"],
+      ["Apple and Meta agree to merger after board approval", "Apple and Meta complete merger after board approval", "merger-stage"],
+      ["Apple and Meta agree to merger after board approval", "Apple and Meta approve merger after board approval", "merger-agreement-approval-stage"],
+      ["FTC files suit against Meta over child privacy", "Google files suit against Meta over child privacy", "suit-claimant"],
+      ["FTC files complaint against Meta over child privacy", "Google files complaint against Meta over child privacy", "complaint-claimant"],
+      ["FTC brings legal action against Meta over child privacy", "Google brings legal action against Meta over child privacy", "legal-action-claimant"],
+      ["FTC lodges complaint against Meta over child privacy", "Google lodges complaint against Meta over child privacy", "lodged-claimant"],
+      ["FTC takes legal action against Meta over child privacy", "Google takes legal action against Meta over child privacy", "takes-action-claimant"],
+      ["FTC brings suit against Meta over child privacy", "Google brings suit against Meta over child privacy", "brings-suit-claimant"],
+      ["Google sues Acme over mobile privacy rules", "Acme sues Google over mobile privacy rules", "unknown-party-claimant"],
+      ["OpenAI launches GPT-5.4 developer workflow in Europe", "OpenAI says report of GPT-5.4 developer workflow launch in Europe is false", "false-launch-report"],
+      ["OpenAI launches GPT-5.4 developer workflow in Europe", "OpenAI says GPT-5.4 developer workflow launch report in Europe is not true", "untrue-launch-report"],
+      ["OpenAI launches GPT-5.4 developer workflow in Europe", "OpenAI rejects GPT-5.4 developer workflow launch rumor in Europe", "rejected-launch-rumor"],
+      ["Google patches CVE-2026-9191 in Chrome WebRTC", "Google says CVE-2026-9191 is still exploitable in Chrome WebRTC after patch", "still-exploitable-state"],
+      ["Google patches CVE-2026-9191 in Chrome WebRTC", "Google says CVE-2026-9191 still exists in Chrome WebRTC after patch", "still-exists-state"],
+      ["Google patches CVE-2026-9191 in Chrome WebRTC", "Google says patch for CVE-2026-9191 in Chrome WebRTC was undone", "undone-patch-state"],
+      ["Microsoft launches Windows 11 24H2 workflow controls", "Microsoft launches Windows 11 25H2 workflow controls", "windows-servicing-channel"],
+      ["Apple launches iOS 19.1 beta 1 privacy controls", "Apple launches iOS 19.1 beta 2 privacy controls", "ios-beta-channel"],
+      ["Apple announces acquisition of Acme AI after review", "Apple completes acquisition of Acme AI after review", "announced-completed-stage"],
+      ["Apple submits bid for Acme AI after review", "Apple acquires Acme AI after review", "bid-acquired-stage"],
+      ["FTC charges Meta with child privacy violations", "FTC charges TikTok with child privacy violations", "charged-defendant"],
+      ["FTC accuses Meta of child privacy violations", "FTC accuses TikTok of child privacy violations", "accused-defendant"],
+      ["FTC alleges Meta violated child privacy rules", "FTC alleges TikTok violated child privacy rules", "alleged-defendant"],
+      ["FTC sanctions Meta over child privacy violations", "FTC sanctions TikTok over child privacy violations", "sanctioned-defendant"],
+    ].map(([leftTitle, rightTitle, suffix]) => ({
+      label: `${suffix} keeps typed anchors, roles, and event state distinct`,
+      items: [
+        matchingItem(leftTitle, "publisher-one", `${suffix}-one`, { summary: genericImpactSummary }),
+        matchingItem(rightTitle, "publisher-two", `${suffix}-two`, { summary: genericImpactSummary }),
+      ],
+    })),
+  ];
+
+  for (const { label, items } of cases) {
+    assert.equal(deduplicateFeedItems(items).length, 2, label);
+    assert.equal(
+      rankFeedCandidates({ items, reportingWindow, minimumScore: 0 }).length,
+      0,
+      `${label}: split independent reports cannot manufacture corroborated evidence`,
+    );
+    assert.equal(
+      rankFeedCandidates({ items, reportingWindow, minimumScore: 70 }).length,
+      0,
+      `${label}: the production threshold cannot accept a false corroboration`,
+    );
+  }
+});
+
+test("complete-link event groups reject identifier bridges and remain permutation-stable", () => {
+  const bridge = [
+    matchingItem(
+      "Microsoft patches remote Windows kernel flaw CVE-2026-1111",
+      "publisher-one",
+      "bridge-windows",
+    ),
+    matchingItem(
+      "Microsoft patches remote Windows and Exchange flaws CVE-2026-1111 CVE-2026-2222",
+      "publisher-two",
+      "bridge-roundup",
+    ),
+    matchingItem(
+      "Microsoft patches remote Exchange mail flaw CVE-2026-2222",
+      "publisher-three",
+      "bridge-exchange",
+    ),
+  ];
+  const signature = (items) => deduplicateFeedItems(items)
+    .map((group) => ({
+      canonicalEventKey: group.canonicalEventKey,
+      itemIds: group.items.map((item) => item.itemId).sort(),
+    }))
+    .sort((left, right) => left.canonicalEventKey.localeCompare(right.canonicalEventKey));
+
+  const baseline = signature(bridge);
+  assert.equal(baseline.length, 2, "a roundup cannot bridge two explicitly different vulnerabilities");
+  assert.equal(Math.max(...baseline.map((group) => group.itemIds.length)), 2);
+  assert.deepEqual(signature([...bridge].reverse()), baseline);
+  assert.deepEqual(signature([bridge[1], bridge[2], bridge[0]]), baseline);
+});
+
+test("an opinion item cannot poison or rename a clean factual match", () => {
+  const factual = [
+    matchingItem("Apple cuts Vision Pro jobs after weak headset sales", "publisher-one", "opinion-safe-one"),
+    matchingItem("Apple lays off Vision Pro staff after weak headset sales", "publisher-two", "opinion-safe-two"),
+  ];
+  const baseline = rankFeedCandidates({ items: factual, reportingWindow, minimumScore: 0 });
+  assert.equal(baseline.length, 1);
+  const withOpinion = rankFeedCandidates({
+    items: [
+      ...factual,
+      matchingItem(
+        "Apple should abandon Vision Pro after weak headset sales | Opinion",
+        "publisher-three",
+        "opinion-poison",
+        { categories: ["Opinion"] },
+      ),
+    ],
+    reportingWindow,
+    minimumScore: 0,
+  });
+  assert.equal(withOpinion.length, 1);
+  assert.equal(withOpinion[0].canonicalEventKey, baseline[0].canonicalEventKey);
+  assert.deepEqual(withOpinion[0].ranking.publisherKeys, baseline[0].ranking.publisherKeys);
 });
 
 test("feed download pins approved public DNS and follows only allowlisted redirects", async () => {
@@ -1406,6 +2541,33 @@ test("XML complexity, DTDs, body size, and aggregate item limits are bounded", a
     assert.equal(result.sourceResults.filter((item) => item.status === "ok").length, 1);
     assert.equal(result.sourceResults.filter((item) => item.code === "TOTAL_BODY_LIMIT").length, 1);
     assert.ok(result.consumedBytes <= 1_024, "concurrent reservations must keep the aggregate cap hard");
+  });
+
+  await t.test("temporary concurrent reservations do not shrink a later feed allowance", async () => {
+    const body = `<?xml version="1.0"?><rss><channel><item>` +
+      `<guid>reservation-refund</guid><title>Developer platform release for administrators</title>` +
+      `<link>https://news.example/reservation-refund</link>` +
+      `<pubDate>Fri, 21 Aug 2026 12:00:00 GMT</pubDate>` +
+      `<description>${"bounded ".repeat(35)}</description></item></channel></rss>`;
+    const bodyBytes = Buffer.byteLength(body);
+    assert.ok(bodyBytes < 1_024);
+    const sources = ["one", "two", "three"].map((id) => source({ id: `refund-${id}` }));
+    const result = await ingestCuratedFeeds({
+      sources,
+      reportingWindow,
+      retrievedAt,
+      concurrency: 3,
+      maxBytes: 1_024,
+      maxTotalBytes: (2 * 1_024) + bodyBytes - 1,
+      lookupImpl: publicLookup,
+      requestImpl: async () => ({
+        status: 200,
+        headers: { "content-type": "application/rss+xml" },
+        body,
+      }),
+    });
+    assert.equal(result.sourceResults.filter((item) => item.status === "ok").length, 3);
+    assert.equal(result.consumedBytes, bodyBytes * sources.length);
   });
 });
 
