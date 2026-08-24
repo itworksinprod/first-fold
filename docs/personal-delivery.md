@@ -1,173 +1,304 @@
 # Personal Morning Paper delivery
 
-The Personal Morning Paper is an optional, owner-only delivery lane. It performs a private OpenAI Responses web-search pass and turns the validated result into one static newspaper email for the repository owner without changing either the paid public pilot or the manual free comparison.
+The Personal Morning Paper is the repository's only automatically researched
+edition. At **5:05 AM `America/New_York` every calendar day, including
+weekends**, Cloudflare dispatches one owner-only GitHub Actions job. That job
+reads current items from the curated feed catalog, asks the fixed Cloudflare
+Workers AI model `@cf/openai/gpt-oss-120b` to select and draft a complete paper,
+validates it, and sends it to one email address through Resend.
 
-The lane is not live merely because its files exist on `main`. If both personal-delivery secrets are absent, a scheduled run succeeds as a neutral **personal delivery not enabled** no-op before checkout or API use. Automatic delivery requires the paid `OPENAI_API_KEY`, both personal-delivery secrets below, and a deployed version of the Cloudflare dispatcher that includes the personal dispatch. Do not record a successful setup until both a manual run and a real scheduled run have been observed end to end.
+This automatic path does not call OpenAI, does not use general open-web search,
+and has no paid fallback. The separate OpenAI Morning Press generator remains
+available only as a deliberate manual, billable experiment. The separate Free
+Morning Press comparison also remains manual and keeps its stricter comparison
+rules.
+
+The lane is not live merely because its files exist on `main`. Do not record a
+successful setup until a manual run and a real 5:05 AM scheduled run have both
+succeeded end to end.
 
 ## Hard boundary
 
 | Property | Personal Morning Paper |
 | --- | --- |
-| Schedule | 5:05 AM `America/New_York` every calendar day, including weekends |
-| Reporting window | Previous New York calendar day's 5:00 AM, inclusive, through the edition date's 5:00 AM, exclusive |
-| Research | OpenAI Responses API with required `web_search`, strict structured output, exact search-source grounding, and local link/source QA |
-| Recipient | Exactly the one email address in the `PERSONAL_PAPER_EMAIL` repository secret |
+| Schedule | 5:05 AM `America/New_York` every day, including weekends |
+| Reporting window | The 72 elapsed hours ending at 5:00 AM New York time on the edition date; start inclusive and end exclusive |
+| Discovery | Live entries from the repository's curated, allowlisted feeds; no general web search |
+| Drafting | Fixed Cloudflare Workers AI model `@cf/openai/gpt-oss-120b` |
+| Completion rule | Exactly one validated story for each of the four desks; any quiet or missing desk means no email |
+| Recipient | Exactly the one address stored in `PERSONAL_PAPER_EMAIL` |
 | Sender | `First Fold <onboarding@resend.dev>`, Resend's self-only testing sender |
-| Message | Static, escaped HTML plus an equivalent plain-text part; no page-turn JavaScript or tracking requirement |
-| Repository permissions | Read-only contents; no pull-request, branch, commit, Pages, or artifact permission is needed |
-| Persistence | No candidate file is uploaded or committed; temporary job files remain only on the GitHub-hosted runner |
-| Disabled/failure | Both personal delivery secrets absent is a neutral no-op. Exactly one absent or a missing `OPENAI_API_KEY` is a hard misconfiguration. Any quiet desk, research, quota, validation, source, rendering, configuration, or send-precondition failure sends no email |
+| Message | Static, escaped HTML plus an equivalent plain-text part; no client-side JavaScript |
+| Repository permissions | Read-only contents and Actions metadata; no pull-request, branch, commit, Pages, or artifact write permission |
+| Persistence | The candidate exists only in `content/personal-candidates/` on the ephemeral runner and is never committed, uploaded, or published |
+| Failure | Feed, quota, model, four-desk, source, schema, rendering, configuration, or send-precondition failure sends no email |
 | Duplicate control | Suppress an earlier successful same-day workflow, then make at most one Resend request with `Idempotency-Key: first-fold-personal-YYYY-MM-DD`; no application-level send retry |
+| Paid fallback | None |
 
-The workflow file is `.github/workflows/personal-morning-paper.yml`, displayed in GitHub Actions as **Send personal Morning Paper**. It is intentionally independent of:
+The workflow is `.github/workflows/personal-morning-paper.yml`, displayed in
+GitHub Actions as **Send personal Morning Paper**. It is intentionally separate
+from:
 
-- the paid public workflow in `.github/workflows/morning-research.yml`, its approval pull request, and its GitHub Pages delivery;
-- the manual free comparison in `.github/workflows/free-morning-research.yml`, its `content/free-candidates/` file, artifact, and comparison pull request; and
-- the public reader, dated archive, service worker, and files under `dist/`.
+- `.github/workflows/morning-research.yml`, the manual OpenAI candidate and its
+  public approval pull request;
+- `.github/workflows/free-morning-research.yml`, the manual strict comparison
+  and its `content/free-candidates/` artifact; and
+- the public reader, archive, service worker, canonical `content/editions/`
+  files, and generated `dist/` files.
 
-See the [paid Morning Press runbook](morning-press-runbook.md) and [free comparison guide](free-pilot.md) for those lanes. A failure or disablement here does not authorize a free-feed fallback, public publication, or reuse of either lane's output.
+Neither of those other research lanes can be used as an automatic fallback.
 
 ## Daily execution
 
-Cloudflare Cron Triggers run in UTC, so the dispatcher retains four UTC companion schedules: `5 9 * * *`, `5 10 * * *`, `0 10 * * *`, and `0 11 * * *`. Its `America/New_York` gate selects only the companion that is actually 5:05 or 6:00 AM Eastern after daylight-saving changes.
+Cloudflare Cron Triggers use UTC, so the dispatcher retains four companion
+schedules: `5 9 * * *`, `5 10 * * *`, `0 10 * * *`, and `0 11 * * *`.
+Its `America/New_York` gate selects only the companion that represents 5:05 or
+6:00 AM Eastern after daylight-saving changes.
 
 At the matching 5:05 AM event on every day:
 
-1. The dispatcher requests `.github/workflows/personal-morning-paper.yml` on `main` with `trigger_source: cloudflare`, the canonical scheduled time, `dispatch_key: personal:YYYY-MM-DD`, `run_mode: on_time`, and blank backfill fields.
-2. The workflow checks only boolean secret-presence flags. If both `RESEND_API_KEY` and `PERSONAL_PAPER_EMAIL` are absent, it records the safe disabled no-op and stops before repository checkout or API use. If exactly one is present, or delivery is enabled without `OPENAI_API_KEY`, it fails as a partial configuration and sends nothing.
-3. On Monday through Friday, that same Cloudflare event also dispatches the separate paid research workflow. The personal workflow does not wait for, consume, or modify the paid candidate.
-4. With all three secrets present, GitHub provisions a fresh hosted runner for the personal job. The job calls the OpenAI Responses API with required web search, requests exactly one story for each desk, binds every cited URL to that run's returned search sources, and applies the canonical editorial, timing, evidence, and link checks locally.
-5. All four desks must contain a completely valid story. A quiet, ungrounded, unreachable, or otherwise incomplete result stops the job before Resend. Only a complete candidate is projected into static HTML and plain text, and all model-controlled values are escaped.
-6. The job sends one `POST https://api.resend.com/emails` request to the fixed recipient. Resend's self-only `resend.dev` sender accepts only the email associated with the Resend account. A recipient mismatch fails instead of widening delivery.
-7. The job writes the candidate only to the ephemeral runner, then ends without committing or uploading it, pushing a branch, opening a pull request, writing `content/editions/`, dispatching Pages, or updating the public archive.
+1. The dispatcher requests `.github/workflows/personal-morning-paper.yml` on
+   `main` with `trigger_source: cloudflare`, the canonical scheduled time,
+   `dispatch_key: personal:YYYY-MM-DD`, `run_mode: on_time`, and blank backfill
+   fields. It does **not** dispatch the paid OpenAI research workflow.
+2. The workflow validates its repository, actor, branch, New York time, and
+   date-scoped dispatch identity. When personal delivery is intentionally
+   disabled, it exits before checkout or provider use. A partial configuration
+   is a failure.
+3. The job fetches and parses the allowlisted live feeds. Every desk must have
+   healthy coverage from the configured publisher set. It considers only items
+   first published inside the bounded 72-hour lookback ending at the edition's
+   5:00 AM New York cutoff. Feed text is treated as untrusted data, not
+   instructions.
+4. The deterministic selector accepts either independently corroborated events
+   or an originating report from an authoritative publisher. A single-source
+   originating story must stay explicitly attributed and cannot be presented as
+   independently confirmed or critical. Independent allegations and critical
+   claims still require independent evidence. Corroborated candidates must
+   score at least 70; authoritative originating candidates must score at least
+   58.
+5. The fixed Workers AI model receives only the bounded feed dossier. It must
+   return one story for AI & Models, Work & Tools, Security & Privacy, and
+   Platforms & Power. Local validation binds the draft to the selected feed
+   URLs, enforces dates and story length, checks source reachability and evidence
+   mappings, and rejects duplicate events and incomplete desks.
+6. Only a four-story candidate that passes every deterministic check is rendered
+   as static HTML and plain text. All model-controlled values are escaped.
+7. The job sends one Resend request to the fixed recipient, then ends without a
+   commit, branch, pull request, artifact upload, Pages dispatch, or public
+   archive change.
 
-The 6:00 AM companion remains a weekday-only paid public delivery event. It has no personal-email action.
+The 6:00 AM companion is the separate weekday public Pages delivery gate. It
+contains no model call or research step and publishes only a valid edition
+already approved and present on `main`.
 
-GitHub documents that a standard GitHub-hosted job uses a fresh virtual machine that is decommissioned after the job. That makes the runner workspace ephemeral, but it does **not** make the whole transaction retention-free: GitHub retains workflow metadata and logs, OpenAI processes the research request and result, Resend processes the recipient and complete message, and the receiving mailbox provider stores the delivered email. The workflow must never print the recipient, API key, complete candidate, or message body to logs and must not upload them as artifacts. See GitHub's [hosted-runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners), Resend's [privacy policy](https://resend.com/legal/privacy-policy), and Resend's [legal and subprocessor index](https://resend.com/legal/).
+## Private candidate and provenance
+
+The generator writes `content/personal-candidates/YYYY-MM-DD.json` only inside
+the current GitHub-hosted runner. The workflow never uploads or commits that
+path. The email renderer accepts only a candidate with validated
+`provenance.personalFreeResearch`; it rejects public paid-pilot provenance,
+manual free-comparison provenance, and ordinary canonical-edition provenance.
+
+The private provenance records the fixed provider and model, reporting run,
+generation time and mode, bounded feed/inference hashes, coverage counts,
+evidence policy, and four selected stories. It contains no recipient or API
+credential. The distinction is intentional: a file prepared for a private email
+must never become a public publication candidate merely because its shape is
+similar.
+
+The privacy boundary has one editorial tradeoff: the 72-hour windows overlap,
+and private candidates are not retained as a cross-day sent-story ledger. The
+selector can compare against canonical public history, but it cannot guarantee
+that a story emailed yesterday will not be selected again today. Same-day
+workflow and Resend idempotency prevent a duplicate send for one edition date;
+they do not deduplicate across dates.
+
+GitHub-hosted runners are ephemeral, but the complete transaction is not
+retention-free. GitHub retains workflow metadata and logs; Cloudflare processes
+the bounded research request and response; Resend processes the recipient and
+message; and the mailbox provider stores the delivered email. The workflow must
+not print the recipient, API tokens, candidate, or email body to logs and must
+not upload them as artifacts. See GitHub's
+[hosted-runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners),
+Cloudflare's [privacy policy](https://www.cloudflare.com/privacypolicy/), and
+Resend's [privacy policy](https://resend.com/legal/privacy-policy).
 
 ## One-time owner setup
 
-Confirm—without exposing its value—that `OPENAI_API_KEY` exists under GitHub **Actions secrets**, following the [paid Morning Press setup](morning-press-runbook.md#one-time-github-setup). The optional `OPENAI_MODEL` Actions variable can override the cost-sensitive default. The personal workflow needs that existing research key in addition to the two delivery secrets below; it does not use the free lane's Cloudflare Workers AI token or account ID.
+The automatic lane uses one repository variable and three repository secrets:
 
-### 1. Create the self-only Resend credential
+| Name | GitHub type | Purpose |
+| --- | --- | --- |
+| `CLOUDFLARE_ACCOUNT_ID` | Actions variable | Account whose Workers AI free allocation is used |
+| `CLOUDFLARE_AI_API_TOKEN` | Actions secret | Narrow token allowed to call Workers AI |
+| `RESEND_API_KEY` | Actions secret | Sending-only Resend credential |
+| `PERSONAL_PAPER_EMAIL` | Actions secret | One self-only recipient address |
 
-Sign up for or open a Resend account using the exact mailbox that should receive the paper. The default `resend.dev` testing domain can send only to the email associated with that account; sending to anyone else requires a verified domain and is deliberately outside this owner-only design. Resend documents that restriction in its [`resend.dev` 403 guide](https://resend.com/docs/knowledge-base/403-error-resend-dev-domain).
+`OPENAI_API_KEY` is not required and is never read by this automatic workflow.
 
-In the Resend dashboard:
+### 1. Add the Cloudflare Workers AI variable and secret
 
-1. Open **API Keys**.
-2. Select **Create API Key**.
-3. Enter the name `First Fold Personal Delivery`.
-4. Select **Sending access**, not **Full access**. Do not grant management permissions.
-5. Create the key and copy the `re_...` value immediately; Resend displays it only once. Its [API-key guide](https://resend.com/docs/dashboard/api-keys/introduction) describes the same permission choices.
+In Cloudflare, create a narrowly scoped Workers AI token for the same account
+that owns the dispatcher. Prefer Cloudflare's Workers AI token template, or a
+custom account token with only **Workers AI Read** and **Workers AI Edit**.
+Copy its value when shown and copy the 32-character Account ID.
 
-Do not paste the key into chat, an issue, a pull request, a terminal command, a committed `.env` file, or a screenshot.
+In **GitHub → Settings → Secrets and variables → Actions**:
 
-### 2. Add the two personal-delivery GitHub repository secrets
+1. On the **Variables** tab, create `CLOUDFLARE_ACCOUNT_ID` with the Account ID.
+2. On the **Secrets** tab, create `CLOUDFLARE_AI_API_TOKEN` with the token.
 
-In `itworksinprod/first-fold`:
+The account ID is configuration, not a secret. The token is a credential: never
+paste it into chat, a terminal transcript, an issue, a pull request, a candidate
+file, a committed `.env` file, or a screenshot.
 
-1. Open **Settings**.
-2. In the left sidebar under **Security**, select **Secrets and variables**, then **Actions**.
-3. Select the **Secrets** tab.
-4. Select **New repository secret**.
-5. Enter `RESEND_API_KEY` as the name, paste the `re_...` value into **Secret**, and select **Add secret**.
-6. Select **New repository secret** again.
-7. Enter `PERSONAL_PAPER_EMAIL` as the name, enter the one bare email address associated with the Resend account as the value, and select **Add secret**.
+### 2. Add the Resend secrets
 
-Do not use a comma-separated list, display-name form, `CC`, `BCC`, repository variable, or workflow input for the recipient. The workflow accepts one address only and never exposes a recipient input in **Run workflow**. GitHub's official [repository-secret instructions](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets?tool=webui) show the same UI path. Secret values cannot be read back later; replace a secret if its value is uncertain.
+Use the Resend account associated with the exact mailbox that should receive the
+paper. Resend's default `resend.dev` testing domain is self-only; another
+recipient requires a verified domain and is outside this design. Resend explains
+that restriction in its [`resend.dev` 403 guide](https://resend.com/docs/knowledge-base/403-error-resend-dev-domain).
 
-Adding the secrets does not deploy the dispatcher. If the updated dispatcher is already deployed, adding both delivery secrets enables delivery at the next eligible daily run automatically, provided `OPENAI_API_KEY` is also present. Deploying while both delivery secrets are absent is safe: each personal run records a neutral no-op and consumes no research API usage. Configuring only one delivery secret, or enabling delivery without the OpenAI key, is a hard failure that sends nothing.
+1. In Resend **API Keys**, create `First Fold Personal Delivery` with
+   **Sending access** rather than full access.
+2. In GitHub Actions secrets, create `RESEND_API_KEY` with the `re_...` value.
+3. Create `PERSONAL_PAPER_EMAIL` with one bare email address associated with the
+   Resend account.
 
-### 3. Deploy and verify the updated dispatcher
+Do not use a display-name form, recipient list, `CC`, `BCC`, variable, or
+workflow input for the recipient. Resend shows an API key only once; replace the
+secret if its value is uncertain.
 
-The dispatcher still uses its existing encrypted Cloudflare `GITHUB_TOKEN` binding to invoke GitHub's workflow-dispatch API. The token must remain repository-scoped to `itworksinprod/first-fold` with only **Actions: Read and write**. Do not add the Resend key or recipient to Cloudflare; those belong only in GitHub repository secrets.
+### 3. Deploy and verify the dispatcher
 
-After the personal workflow and dispatcher changes are reviewed on `main`:
+The dispatcher uses its existing encrypted Cloudflare `GITHUB_TOKEN` binding to
+invoke GitHub. Keep that fine-grained GitHub token scoped to
+`itworksinprod/first-fold` with only **Actions: Read and write**. The Resend and
+Workers AI credentials stay in GitHub, not in the dispatcher.
 
-1. Follow the test and Wrangler deployment procedure in the [Morning Press runbook](morning-press-runbook.md#deploy-the-external-morning-dispatcher).
-2. Confirm the deployed Worker's Cron list contains exactly the four daily UTC companions above. Cloudflare recommends managing Wrangler-owned [Cron Triggers in Wrangler configuration](https://developers.cloudflare.com/workers/configuration/cron-triggers/) and notes that changes may take time to propagate.
-3. Before relying on automation, run one permitted manual `on_time` test using the steps below.
-4. At the next 5:05 AM Eastern event, verify a successful Cron Event in **Cloudflare → Workers & Pages → first-fold-morning-dispatcher → Triggers**, a corresponding **Send personal Morning Paper** run in GitHub Actions, and one received message.
+After the workflow and dispatcher changes are on `main`:
 
-Do not call the lane operational until that real scheduled run succeeds. The four Cron expressions are intentionally daily; the dispatcher's New York gate, rather than weekday-only cron syntax, keeps personal delivery daily while paid research and delivery remain weekdays only.
+1. Follow the test and Wrangler deployment procedure in the
+   [Morning Press runbook](morning-press-runbook.md#deploy-the-external-morning-dispatcher).
+2. Confirm the deployed Worker's Cron list contains exactly the four UTC
+   companions above.
+3. Run one permitted manual test using the instructions below.
+4. At the next 5:05 AM Eastern event, verify a successful Cron Event in
+   **Cloudflare → Workers & Pages → first-fold-morning-dispatcher → Triggers**, a
+   corresponding **Send personal Morning Paper** run in GitHub Actions, and one
+   received message.
 
-The dispatcher persists secret-free structured logs at full sampling. A failed
-Cron Event records a sanitized stage such as `token-validation`,
-`github-network`, `github-rate-limit`, or `github-response` and, when available,
-the HTTP status. A successful dispatch records the returned GitHub run ID. These
-records must not include the token, recipient, response body, or paper content.
+The dispatcher stores only secret-free structured status such as the Cron time,
+sanitized stage or HTTP status, dispatch name, and returned GitHub run ID. It
+must not log a token, recipient, provider body, or paper content.
 
 ## Manual run and same-day recovery
 
-GitHub supports manual runs only for workflows with `workflow_dispatch`; its official [manual-run guide](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow) illustrates the controls below.
-
 ### Normal `on_time` run
 
-Use this to test or recover the normal window before it closes:
+Use this only between 5:00 and 5:59 AM New York time:
 
-1. Open **Actions → Send personal Morning Paper**.
-2. Select **Run workflow** and keep **Branch: main**.
-3. Set `run_mode` to `on_time`.
-4. Leave `trigger_source`, `scheduled_at`, `dispatch_key`, `backfill_date`, `backfill_reason`, and `backfill_confirmation` blank.
-5. Select **Run workflow** between 5:00 and 5:59 AM `America/New_York`.
+1. Open **Actions → Send personal Morning Paper → Run workflow**.
+2. Keep **Branch: main** and `run_mode: on_time`.
+3. Leave the dispatcher and backfill fields blank.
+4. Select **Run workflow**.
 
-The workflow derives today's New York date itself and rejects an out-of-window manual `on_time` request. First inspect the day's runs and inbox: starting it after a successful delivery is unnecessary. If two same-day attempts reach Resend within its 24-hour idempotency window with the same payload, the key `first-fold-personal-YYYY-MM-DD` prevents a second delivery. Resend documents this behavior and its 24-hour window in [Idempotency Keys](https://resend.com/docs/dashboard/emails/idempotency-keys).
+The workflow derives today's date and rejects an out-of-window request. Check
+the day's runs and inbox first; a successful same-day delivery needs no rerun.
 
 ### Same-day backfill
 
-Use this only after the normal morning window was missed:
+Use this only after the normal window was missed:
 
 1. Open **Actions → Send personal Morning Paper → Run workflow** on `main`.
 2. Set `run_mode` to `same_day_backfill`.
-3. Enter today's New York date in `backfill_date` as `YYYY-MM-DD`.
-4. Enter an 8–200 character, one-line operational explanation in `backfill_reason`.
-5. Enter exactly `BACKFILL YYYY-MM-DD` in `backfill_confirmation`, using the same date.
-6. Leave `trigger_source`, `scheduled_at`, and `dispatch_key` blank, then select **Run workflow**.
+3. Enter today's New York date as `YYYY-MM-DD` in `backfill_date`.
+4. Enter an 8–200 character, one-line operational reason.
+5. Enter exactly `BACKFILL YYYY-MM-DD` in `backfill_confirmation`.
+6. Leave `trigger_source`, `scheduled_at`, and `dispatch_key` blank, then run.
 
-The backfill is allowed only from 6:00 AM through the end of that same `America/New_York` calendar date. It sends nothing for a past or future date, the wrong actor or repository, a non-`main` run, incomplete confirmation, or a reason outside the allowed shape. It records its actual execution time; it does not pretend to have run at 5:05 AM.
+Backfill is accepted only from 6:00 AM through the end of that same New York
+calendar date. It records the actual execution time. It cannot prepare or send
+a historical, future, or partially validated edition.
 
-Never weaken research or validation to force a late email. If a run fails before the Resend request, inspect the sanitized failing step and correct the external condition. If the send response is ambiguous, first check the Resend dashboard. A same-day rerun keeps the same idempotency key: Resend can return the original result when the payload is unchanged, or reject a regenerated payload with HTTP 409, but it must not create a second same-day delivery. Once the New York date changes, let the next normal edition run; this MVP has no historical-email override.
+If a send response is ambiguous, inspect Resend before rerunning. The same-day
+idempotency key can return the original result for the same payload or reject a
+changed payload; it must not create a second delivery. Once the date changes,
+wait for the next scheduled paper.
 
 ## Failure and privacy posture
 
-The lane sends nothing unless every prerequisite passes. Both personal secrets absent is the intentional disabled state, not an error. Once either secret is configured, expected fail-closed causes include:
+The lane sends nothing unless every prerequisite passes. Expected fail-closed
+causes include:
 
-- exactly one of `RESEND_API_KEY` and `PERSONAL_PAPER_EMAIL` is absent, or either configured value is malformed;
-- both personal delivery secrets are present but `OPENAI_API_KEY` is absent or rejected;
-- the recipient is not one bare email address or does not match Resend's self-only account address;
-- the Responses API does not complete its required web search or returns fewer than one qualified story for any desk;
-- the OpenAI request is unavailable, over budget, rejects the model, or returns output that fails schema, length, source binding, or editorial validation;
-- a citation is unsafe, absent from the exact web-search source set, redirected, unreachable, or not backed by sufficient evidence;
-- HTML/text rendering cannot safely represent the validated candidate; or
-- Resend rejects the one bounded send request before accepting it.
+- a missing or malformed Cloudflare account ID, Workers AI token, Resend key, or
+  recipient after delivery has been enabled;
+- a feed outage or inadequate publisher coverage for any desk;
+- fewer than four eligible selected events, including any quiet desk;
+- the Workers AI free allocation being unavailable or exhausted;
+- a malformed, incomplete, repetitive, or unsupported model response;
+- an unsafe, stale, unreachable, unbound, or insufficient source;
+- a critical or independent claim lacking independent evidence;
+- schema, word-count, temporal, duplicate, desk, evidence, or provenance
+  validation failure;
+- a candidate or message that cannot be rendered safely; or
+- Resend rejecting the single bounded request.
 
-No send request is made before all research, validation, configuration, and rendering checks pass. A transport timeout after the one request begins can still leave acceptance ambiguous; the fixed same-day idempotency key is the recovery control for that boundary. There is no failure-notice email because email is the operation whose safety is uncertain. GitHub records the failed run; the owner must inspect Actions or add a separate, non-email monitor later. There is no automatic switch to the free comparison, no partial paper, and no fallback to the previous day's message.
+No error sends an empty paper, yesterday's paper, a partial edition, an
+unverified feed summary, or a paid-model fallback. There is no failure-notice
+email because email is the operation being protected; inspect GitHub Actions or
+use a separate non-email monitor.
 
-“Sent only to me” describes the recipient boundary, not exclusive data possession. Public source metadata and generated summaries pass through GitHub Actions, OpenAI, Resend, and the receiving mailbox provider. Resend also receives the owner email address. Those services are independent processors or providers with their own logs, retention, subprocessors, security controls, and legal obligations. Do not put private notes, confidential business information, credentials, health data, or other sensitive personal data into prompts, edition copy, or the recipient field. Review the providers' current terms and privacy materials before enabling the lane; code-level non-persistence does not override provider retention.
+“Sent only to me” describes the recipient boundary, not exclusive data
+possession. Send only public source material. Never add confidential business
+information, credentials, health data, private notes, or other sensitive data
+to prompts, candidate copy, or the recipient field.
 
-In particular, Resend currently advertises 30-day data retention on its Free plan. Treat the complete delivered paper and recipient address as data processed outside the ephemeral GitHub runner, and recheck that policy on the linked [Resend pricing page](https://resend.com/pricing) before enabling delivery.
+## Zero-cost guardrail
 
-## Cost guardrail
+Keep the Cloudflare account on **Workers Free** and do not enable prepaid AI
+Gateway credits. Cloudflare currently includes **10,000 Workers AI neurons per
+account per day** at no charge. On Workers Free, exhausting that allocation
+makes inference fail; this workflow then sends no email. It must not switch to a
+paid model or provider. Other Workers AI activity on the same account shares the
+daily allocation, so no code can guarantee capacity for the paper if another
+job consumes it first. Check Cloudflare's current
+[Workers AI pricing and free allocation](https://developers.cloudflare.com/workers-ai/platform/pricing/)
+before changing plans or models.
 
-The research lane is intentionally the paid version. One successful run uses the OpenAI Responses API, required web search, and model tokens; usage is billed to the OpenAI API account behind `OPENAI_API_KEY`. The default is `gpt-5.6-luna`, and `OPENAI_MODEL` may change both quality and cost. Review the current [official OpenAI model and pricing information](https://developers.openai.com/api/docs/models/gpt-5.6-luna) before changing it.
+The automatic workflow fixes the model to `@cf/openai/gpt-oss-120b`; there is no
+model override. The model name includes `openai`, but it runs inside Cloudflare
+Workers AI and does not use an OpenAI API key or OpenAI API billing account.
+One edition permits at most two semantic model requests, caps each model output
+at 6,000 tokens, and caps the serialized request at 100 KB. These are capacity
+guards, not permission to spend beyond the free allocation.
 
-- Resend's current Free transactional plan includes 3,000 messages per month and a 100-message daily limit. One personal paper is well below those numbers, but other account activity shares the limits. Keep the account on Free and review [Resend pricing](https://resend.com/pricing) before changing the sender or recipient design.
-- Standard GitHub-hosted runners are currently free and unlimited for public repositories. Making the repository private or selecting a different runner can change Actions billing; consult GitHub's [hosted-runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
-
-Keep an OpenAI project budget/usage alert, retain the cost-sensitive model unless a deliberate quality test justifies a change, and leave the fail-closed behavior intact. A quota or billing failure must remain a failed run with no email; it must not silently switch models, relax the four-story rule, or fall back to unverified copy.
+Keep Resend on a free plan appropriate for one daily self-only message and keep
+the repository public if relying on public-repository GitHub Actions usage.
+Pricing and free limits can change, and other account usage shares them, so
+review [Resend pricing](https://resend.com/pricing) and GitHub's
+[Actions billing documentation](https://docs.github.com/en/billing/concepts/product-billing/github-actions)
+before changing either account. A provider limit remains a failed run with no
+email; it never authorizes spending.
 
 ## Emergency disable and rollback
 
 For the fastest personal-only stop:
 
 1. Open **GitHub → Actions → Send personal Morning Paper**.
-2. Open the workflow options menu (`…`) and choose **Disable workflow**. GitHub documents this reversible control in [Disabling and enabling a workflow](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/disable-and-enable-workflows).
-3. Cancel any personal run already in progress.
-4. In Resend, revoke the `First Fold Personal Delivery` API key. In GitHub, delete or replace `RESEND_API_KEY` if compromise is possible.
+2. Open `…`, choose **Disable workflow**, and cancel any in-progress personal
+   run.
+3. Revoke `First Fold Personal Delivery` in Resend and the Workers AI token in
+   Cloudflare if either may be exposed, then delete or replace the matching
+   GitHub secrets.
 
-Disabling only the GitHub workflow leaves paid Morning Press research and delivery available. The Cloudflare dispatcher may record a failed personal dispatch while the workflow is disabled, but it cannot send an email.
+This does not affect an already delivered email or the public Pages site. The
+dispatcher may log a failed personal dispatch while the workflow is disabled,
+but it cannot research or send.
 
-For a scheduler rollback while retaining the workflow for manual use, use **Cloudflare → Workers & Pages → first-fold-morning-dispatcher → Deployments** to roll back to the last known version before personal dispatch, or revert the reviewed dispatcher change and deploy it through the normal Wrangler procedure. Confirm that paid weekday 5:05 and 6:00 events still behave as intended after any rollback. Do not delete all Cron Triggers unless the goal is to stop the paid scheduler too.
-
-To restore service, create a new sending-only Resend key if the old one was revoked, update `RESEND_API_KEY`, re-enable **Send personal Morning Paper**, redeploy the reviewed personal-aware dispatcher if it was rolled back, and repeat manual plus real-schedule verification. A disable, revocation, or rollback cannot recall an email already delivered.
+To keep manual workflows while pausing all scheduled dispatch, disable the
+four Cron Triggers or roll the Worker back in **Cloudflare → Workers & Pages →
+first-fold-morning-dispatcher → Deployments**. Re-enable service only after the
+cause is fixed, credentials are rotated if necessary, the reviewed Worker is
+deployed, and manual plus real-schedule verification succeeds again.

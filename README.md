@@ -11,7 +11,7 @@ First Fold is a small, newspaper-inspired daily briefing for technology professi
 
 The interface borrows the ritual and pacing of a folded newspaper—masthead, sections, columns, and page turns—while keeping the reading experience accessible on phones, keyboards, touchscreens, and reduced-motion displays.
 
-This repository contains the **First Fold MVP and Morning Press pilot**: the finite reader, installable app, editorial contract, deterministic edition scaffolder, optional automatic research draft, human-review workflow, dated archive, and fail-closed 6:00 AM delivery gate. One canonical JSON document is the source of truth for each issue; the reader build validates every issue and derives the browser-facing edition and archive artifacts without runtime feeds or client-side AI credentials.
+This repository contains the **First Fold MVP and Morning Press pilot**: the finite reader, installable app, editorial contract, deterministic edition scaffolder, zero-cost private daily research lane, optional manual paid public draft, human-review workflow, dated archive, and fail-closed 6:00 AM delivery gate. One canonical JSON document is the source of truth for each public issue; the reader build validates every issue and derives the browser-facing edition and archive artifacts without runtime feeds or client-side AI credentials.
 
 ## Why this exists
 
@@ -41,10 +41,10 @@ Editors assign an overlapping story according to its primary consequence for the
 All editorial times use the IANA timezone `America/New_York`, including daylight-saving changes.
 
 - **5:00 AM ET — editorial cutoff.** The normal edition covers material developments at or after the previous edition's cutoff and before this cutoff; the reporting window is half-open.
-- **5:05 AM — automatic candidate preparation begins.** A small Cloudflare Worker dispatches the trusted GitHub research workflow after the 5:00 AM cutoff. It researches only developments eligible before that closed cutoff.
-- **5:05–5:45 AM — research and validation target.** Direct sources, dates, evidence mappings, desk assignments, and copy are assembled into a public candidate pull request.
-- **Candidate ready–5:59 AM — human copy lock.** The authorized editor opens the sources and preview, approves the exact current SHA, and the trusted merge workflow retests it.
-- **6:00 AM — delivery gate opens.** The Worker dispatches the trusted delivery workflow. An approved, valid current-day edition becomes public only after its final tests succeed. After a clean build and test, an absent current-day canonical edition is a neutral **Morning Press delivery — no action** only when the archive is empty or strictly older than today. A present but draft, invalid, future-dated, or test-failing state remains an error; the previous release stays live whenever no deployment succeeds.
+- **5:05 AM — the private paper begins.** A small Cloudflare Worker dispatches only the owner-only Personal Morning Paper. It gathers live items from curated feeds, uses the fixed Cloudflare Workers AI model `@cf/openai/gpt-oss-120b`, and sends nothing unless one source-checked story for every desk passes validation.
+- **Public research is deliberate.** The OpenAI web-search workflow can still prepare a public candidate pull request, but only after an operator manually starts that explicitly billable experiment. Cloudflare-triggered requests to that workflow are neutral no-ops.
+- **Candidate ready–5:59 AM — human copy lock.** When a manual public candidate exists, the authorized editor opens the sources and preview, approves the exact current SHA, and the trusted merge workflow retests it.
+- **6:00 AM — public delivery gate opens on weekdays.** The Worker dispatches the trusted delivery workflow, which contains no research or model call. An approved, valid current-day edition becomes public only after its final tests succeed. After a clean build and test, an absent current-day canonical edition is a neutral **Morning Press delivery — no action** only when the archive is empty or strictly older than today. A present but draft, invalid, future-dated, or test-failing state remains an error; the previous release stays live whenever no deployment succeeds.
 
 Ordinary developments after 5:00 AM roll into the following morning. A verified, time-sensitive security event may eventually use a separately labeled **Stop the Presses** bulletin; that exception is outside the MVP.
 
@@ -63,7 +63,11 @@ This is a feature, not an error. It makes the absence of filler visible and prot
 
 Promising developments that do not yet clear the story threshold may appear briefly in **Watch Next** on the back page. Watch Next is a small weak-signal list, not another desk and not a way to publish unsupported claims. It preserves the four-desk, six-minute edition while showing readers what the newsroom is monitoring.
 
-The five-edition automatic pilot leaves Watch Next empty. The current v2 item cannot retain claim-to-source mappings, so automated weak signals remain unpublished until that audit trail exists. Human-reviewed manual editions may still use the bounded Watch Next list.
+The manual five-edition paid pilot leaves Watch Next empty. The current v2 item
+cannot retain claim-to-source mappings, so assisted weak signals remain
+unpublished until that audit trail exists. Human-reviewed manual editions may
+still use the bounded Watch Next list. The private daily email is stricter: it
+sends nothing unless all four desks have a validated story.
 
 ## Run the MVP
 
@@ -88,11 +92,11 @@ Run the production build and test suite with:
 npm run build && npm test
 ```
 
-No environment variables or paid services are needed to build, read, preview, or publish a hand-written edition. The optional automatic-draft pilot calls the OpenAI Responses API during a trusted GitHub Actions research job, so that job requires an API key and incurs API usage. The key is never shipped to the PWA, exposed to pull-request code, or needed by readers. Automatic research prepares a source-grounded proposal; final editorial judgment remains human.
+No environment variables or paid services are needed to build, read, preview, or publish a hand-written edition. Automatic personal research uses curated live feeds and Cloudflare Workers AI under the account's free allocation; it has no paid fallback and sends nothing when that allowance or any validation gate is unavailable. Keep the Cloudflare account on Workers Free and do not enable prepaid AI Gateway credits if the requirement is a hard zero-dollar automatic path.
 
-A separate **Free Morning Press comparison** keeps the paid production lane unchanged while testing curated official feeds with Cloudflare Workers AI. It is manual, writes only to `content/free-candidates/`, cannot enter the production approval or delivery workflows, and fails closed when its free allowance or evidence checks are unavailable. Setup, operating limits, and comparison instructions are in [`docs/free-pilot.md`](docs/free-pilot.md).
+A separate **Free Morning Press comparison** manually tests the same feed-and-Workers-AI foundation under a stricter two-publisher comparison policy. It writes only to `content/free-candidates/`, cannot enter the production approval or delivery workflows, and fails closed when its free allowance or evidence checks are unavailable. Setup, operating limits, and comparison instructions are in [`docs/free-pilot.md`](docs/free-pilot.md).
 
-An optional **Personal Morning Paper** runs a private OpenAI Responses web-search pass for one owner-only email at 5:05 AM `America/New_York` every day, including weekends. It requires one source-checked story in each of the four desks; an incomplete research result fails without sending filler or an empty paper. The read-only lane sends static HTML and plain text through Resend's self-only testing sender and creates no branch, pull request, Actions artifact, Pages deployment, or public archive entry. It is not active merely because the code is present; when both personal-delivery secrets are absent, a scheduled run exits as a neutral no-op before checkout or API use. The OpenAI and Resend repository secrets plus the updated Cloudflare dispatcher must be configured and verified before delivery is live. Setup, privacy boundaries, recovery, cost guardrails, and emergency controls are in [`docs/personal-delivery.md`](docs/personal-delivery.md).
+The **Personal Morning Paper** is the only automatically researched lane. At 5:05 AM `America/New_York` every day, including weekends, it reads allowlisted live feeds and uses the fixed Workers AI model to prepare one private owner-only email. All four desks are mandatory for this lane: an incomplete result fails without sending filler or an empty paper. The read-only job sends static HTML and plain text through Resend and creates no branch, pull request, Actions artifact, Pages deployment, or public archive entry. Its ephemeral candidate uses private `personalFreeResearch` provenance under `content/personal-candidates/` and is never published. Setup requires `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_AI_API_TOKEN`, `RESEND_API_KEY`, `PERSONAL_PAPER_EMAIL`, and the deployed dispatcher—not an OpenAI key. See [`docs/personal-delivery.md`](docs/personal-delivery.md).
 
 For a fresh GitHub checkout, `npm ci` reproduces the lockfile exactly. Use `npm install` only when intentionally changing dependencies, and commit the resulting lockfile change. Generated output, local dependencies, logs, and environment files are ignored.
 
@@ -123,25 +127,32 @@ The manifest, service worker, and icon URLs are relative, so installation works 
 
 The press desk is intentionally not a production administration system and cannot approve or publish an issue. It reads the same revision-bound projection as the reader. Human approval is recorded by reviewing and merging the exact GitHub pull-request revision.
 
-## Five-edition automatic-draft pilot
+## Manual five-edition paid-draft pilot
 
-The assisted pilot automates research and first-draft assembly, not editorial authority:
+The OpenAI-assisted pilot remains available for deliberate, billable comparison
+work. It automates research and first-draft assembly after a human starts the
+workflow; it is not scheduled and never gains editorial authority:
 
-1. At 5:05 AM `America/New_York` on weekdays, the Cloudflare Morning Press dispatcher invokes **Prepare Morning Press candidate** through GitHub's `workflow_dispatch` API. The research job begins after the 5:00 AM reporting cutoff and calls `node scripts/automation/generate-edition.mjs "$EDITION_DATE"`.
+1. An operator manually invokes **Prepare Morning Press candidate** on `main` in a permitted New York research or recovery window. The workflow calls `node scripts/automation/generate-edition.mjs "$EDITION_DATE"`. A Cloudflare-triggered request to this paid workflow exits as a neutral no-op before checkout, secret access, or API use.
 2. The drafting prompt requires web research and inspection of direct sources, then maps material claims to evidence. Deterministic QA confirms that cited URLs came from the run's web-search results, checks link safety and reachability, validates the canonical edition, and writes `content/editions/YYYY-MM-DD.json` on `automation/morning-press-YYYY-MM-DD`. Those checks do not establish that the copy is true; the human still opens and verifies every source. The generator refuses to overwrite an existing edition and leaves Watch Next empty during this pilot.
-3. The workflow opens or refreshes a same-repository pull request labeled `morning-press-bot`. A duplicate Cloudflare dispatch finds the correctly shaped open same-day proposal and ends before another model call; a deliberate manual same-day rerun may refresh only that expected dated bot branch and pull request, using the observed head SHA as a force-with-lease guard. A mismatched branch or pull request fails closed. This is a public repository, so the branch, proposed JSON, copy, and source links are publicly visible in the pull request. They are not deployed or reader-facing in First Fold until approval. The proposed JSON is release-shaped so the deployment gate can validate the exact final payload, but its canonical `published` status is not an approval record by itself.
+3. The workflow opens or refreshes a same-repository pull request labeled `morning-press-bot`. A deliberate manual same-day rerun may refresh only that expected dated bot branch and pull request, using the observed head SHA as a force-with-lease guard. A mismatched branch or pull request fails closed. This is a public repository, so the branch, proposed JSON, copy, and source links are publicly visible in the pull request. They are not deployed or reader-facing in First Fold until approval. The proposed JSON is release-shaped so the delivery gate can validate the exact final payload, but its canonical `published` status is not an approval record by itself.
 4. A human listed in the `MORNING_PRESS_REVIEWERS` repository variable, who also currently has write, maintain, or admin permission, opens the sources and the downloadable exact-SHA review bundle linked from the pull request, confirms `provenance.sourceCheck.status` is `passed`, reviews the current commit, and submits an **Approve** review. Warnings have no override in this pilot. **Merge approved Morning Press edition** requires the exact-SHA status created by the successful trusted research run, reruns link/source QA and the test suite with code from `main`, and squash-merges only that approved revision. Any bot or human change invalidates the earlier approval.
 5. At 6:00 AM, the same Worker dispatches the separate delivery workflow. It publishes only a valid current-day edition already present on `main`; after tests pass, an absent current-day file is a neutral no-op only when the archive is empty or strictly older than today. A present but unpublished or invalid file, or a future-dated archive state, still fails. If the approved merge lands at or after 6:00 AM, the merge workflow explicitly requests delivery instead of waiting for another trigger.
 
-The pilot counter lives in canonical automation provenance. It counts five new automatic editions that were successfully approved and merged to `main`; manual editions and rejected or closed bot pull requests do not count. After `pilotSequence: 5` reaches `main`, research stops before another API call and no sixth automatic pull request is created. Full-auto publication remains disabled until the explicit post-pilot decision in the runbook.
+The pilot counter lives in canonical automation provenance. It counts five new
+OpenAI-assisted proposals that were successfully approved and merged to `main`;
+hand-written editions and rejected or closed bot pull requests do not count.
+After `pilotSequence: 5` reaches `main`, the workflow stops before another API
+call. This path uses paid OpenAI Responses and web search when deliberately run;
+it has no scheduled trigger and is never an automatic fallback.
 
 ## Publish with GitHub Pages
 
-The repository separates research, approval, and delivery. `.github/workflows/morning-research.yml` prepares a publicly reviewable proposal, `.github/workflows/approve-morning-edition.yml` accepts an authorized exact-revision approval, and `.github/workflows/pages.yml` validates and delivers from `main`. Human-authored pull requests and all pushes run the ordinary build-gated test suite; the exact dated bot proposal skips that duplicate job because the research job already tests and attests its SHA, and the trusted merge job reruns source QA and tests the approved JSON. None of those paths publishes early. A minimal Cloudflare Worker opens the two weekday operating windows by calling GitHub's `workflow_dispatch` API at 5:05 and 6:00 AM `America/New_York`. The delivery job rebuilds the latest `main` and deploys only when today's newest artifact is `published`. Only an absent current-day canonical file with an empty or strictly older valid archive is an expected neutral no-op; a present draft, invalid or future-dated state, or test failure remains a real failure. Either outcome leaves the previous successful Pages deployment intact when nothing new is released. Manual dispatch remains the documented fallback and still fails closed before the applicable New York time gate.
+The repository separates research, approval, and delivery. `.github/workflows/morning-research.yml` is a manual, paid OpenAI proposal tool; `.github/workflows/approve-morning-edition.yml` accepts an authorized exact-revision approval; and `.github/workflows/pages.yml` validates and delivers from `main`. Human-authored pull requests and pushes run the ordinary build-gated test suite, and the trusted merge job reruns source QA and tests the approved JSON. None of those paths publishes early. At 5:05 AM every day, the Cloudflare Worker dispatches only the private, free Personal Morning Paper. On weekdays at 6:00 AM it dispatches the public Pages delivery gate, which rebuilds the latest `main` and deploys only when today's newest artifact is `published`. An absent current-day canonical file with an empty or strictly older valid archive is a neutral no-op; a present draft, invalid or future-dated state, or test failure remains a real failure. Either result leaves the previous successful Pages deployment intact when nothing new is released.
 
-Open **Settings → Pages** and choose **GitHub Actions** as the publishing source. Protect `main`, require pull requests and one human approval, dismiss stale approvals when new commits are pushed, and do not let Actions bypass the branch rules. Configure `MORNING_PRESS_REVIEWERS`, the private drafting credential, and the optional model variable exactly as described in [`docs/morning-press-runbook.md`](docs/morning-press-runbook.md). Ordinary pull-request CI for a bot proposal created with `GITHUB_TOKEN` is not relied on and may not become usable automatically. The research job and trusted merge job supply the pilot's tests; the merge workflow binds the authorized review to the exact current SHA and validates the one JSON candidate with trusted code from `main` before merging it.
+Open **Settings → Pages** and choose **GitHub Actions** as the publishing source. Protect `main`, require pull requests and one human approval, dismiss stale approvals when new commits are pushed, and do not let Actions bypass the branch rules. Configure `MORNING_PRESS_REVIEWERS` for the approval boundary. Configure `OPENAI_API_KEY` and optional `OPENAI_MODEL` only if you deliberately intend to use the manual billable pilot described in [`docs/morning-press-runbook.md`](docs/morning-press-runbook.md). The merge workflow binds the authorized review to the exact current SHA and validates the one JSON candidate with trusted code from `main` before merging it.
 
-Automatic timing also requires deploying `cloudflare/morning-dispatcher` and storing a repository-scoped fine-grained GitHub token as its encrypted `GITHUB_TOKEN` secret. The dispatcher fits within current Cloudflare Workers Free limits but uses four Cron Trigger slots; OpenAI research remains separately billable. The exact least-privilege token, test, deployment, verification, manual fallback, and rollback steps are in the [Morning Press runbook](docs/morning-press-runbook.md). Without that external setup, the safety gates and manual **Run workflow** controls still work, but no automatic 5:05 or 6:00 dispatch occurs.
+Automatic timing requires deploying `cloudflare/morning-dispatcher` and storing a repository-scoped fine-grained GitHub token as its encrypted `GITHUB_TOKEN` secret. The dispatcher uses four Cron Trigger slots. Its 5:05 event is the private free personal job; its weekday 6:00 event is the model-free Pages delivery gate. It does not schedule OpenAI research. The exact least-privilege token, test, deployment, verification, manual fallback, and rollback steps are in the [Morning Press runbook](docs/morning-press-runbook.md). Without that external setup, the safety gates and manual **Run workflow** controls still work, but no automatic 5:05 personal email or 6:00 delivery dispatch occurs.
 
 Relative asset and data URLs keep the app working at a GitHub Pages project path such as `username.github.io/first-fold/`. The press desk remains a transparent review surface; Git and GitHub Actions are the authority for approval and delivery.
 
@@ -179,7 +190,8 @@ Presentation stays downstream of that contract:
 - Desktop page turns progressively enhance a mobile reading flow with keyboard navigation, accessible announcements, and reduced-motion support.
 - The back page closes the edition with a practical next step and a bounded Watch Next list; it does not continue into an open-ended feed.
 
-The production pipeline is designed to replace only the fixture input:
+The public-edition pipeline contract is designed to replace only the fixture
+input:
 
 ```text
 Curated RSS feeds and permitted APIs
@@ -206,7 +218,13 @@ Canonical edition JSON
 Build-time validation --> reader projection + archive artifact --> First Fold renderer
 ```
 
-The renderer never calls news or model APIs per visitor. During the assisted pilot, Cloudflare Cron Triggers dispatch a trusted research job that stages a canonical proposal in a public pull request, an editor approves the exact pull-request revision, and the separately dispatched delivery job validates and releases only approved content already on `main`. The build emits immutable, cacheable artifacts that the public site only reads and renders.
+The renderer never calls news or model APIs per visitor. The scheduled personal
+lane performs its free feed-and-Workers-AI work in a private, read-only job and
+never modifies this public content graph. A deliberate manual OpenAI pilot can
+stage a canonical proposal in a public pull request; an editor must approve its
+exact revision before the separately dispatched delivery job can release it
+from `main`. The build emits immutable, cacheable artifacts that the public site
+only reads and renders.
 
 ### Edition contract
 
@@ -276,8 +294,8 @@ Included:
 - A dated edition archive
 - A review-only press desk backed by the same revision-bound edition projection
 - Pull-request approval and a weekday 6:00 AM fail-closed GitHub Pages release gate
-- A five-edition, source-grounded automatic-draft pilot with an API-call stop, publicly visible bot pull requests that are not deployed until approval, and exact-revision human approval
-- An optional, isolated owner-only daily email lane that keeps generated content out of Git branches, artifacts, Pages, and the public archive
+- A five-edition, source-grounded manual paid-draft pilot with an API-call stop, publicly visible bot pull requests that are not deployed until approval, and exact-revision human approval
+- An isolated zero-cost owner-only daily email lane that uses curated feeds and Cloudflare Workers AI while keeping generated content out of Git branches, artifacts, Pages, and the public archive
 - New-edition detection on app resume, immutable edition sharing, and a feedback link
 - Responsive and reduced-motion behavior
 - Free home-screen installation on supported mobile and desktop browsers
@@ -295,8 +313,8 @@ Deliberately deferred:
 
 ## Roadmap
 
-1. **Morning Press pilot (current):** prepare and approve five new automatically researched weekday editions through source-grounded drafting, exact-revision pull-request approval, and the fail-closed 6:00 AM release gate.
-2. **Pilot stop and decision:** stop before a sixth API call, audit factual quality, edits, failures, cost, timing, and quiet-desk behavior, then explicitly stop, extend the assisted pilot, or authorize a separately reviewed automation change. Passing metrics never enables full auto by itself.
+1. **Free personal paper (current):** verify the private 5:05 AM daily feed-and-Workers-AI run across weekdays and weekends, including the four-desk failure gate, one-recipient Resend delivery, quota failure, and nonpublication boundary.
+2. **Manual paid pilot (optional):** deliberately prepare and approve up to five OpenAI-researched public candidates through source-grounded drafting, exact-revision pull-request approval, and the fail-closed 6:00 AM release gate. Stop before a sixth API call and audit quality, edits, failures, timing, and cost.
 3. **Pilot evidence:** test with at least five target readers and record completion, usefulness, editorial effort, quiet-desk rate, shares, and qualitative feedback without paid analytics.
 4. **Editorial engine:** if the pilot justifies further work, connect the edition contract to a curated-source registry, normalization, deduplication, scoring, and replayable research fixtures while retaining a reviewable evidence trail.
 5. **Archive depth and corrections:** grow the dated archive and add visible correction history, source suppression, and a rapid unpublish path.

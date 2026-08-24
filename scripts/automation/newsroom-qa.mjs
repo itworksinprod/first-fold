@@ -432,6 +432,10 @@ function analyzeNewsroomDraft(edition, options = {}) {
       options.temporalMode === "personal-same-day-backfill" &&
       edition.provenance?.personalResearch?.workflow === "personal-morning-paper" &&
       edition.provenance?.personalResearch?.runMode === "same_day_backfill"
+    ) || (
+      options.temporalMode === "personal-free-same-day-backfill" &&
+      edition.provenance?.personalFreeResearch?.workflow === "personal-morning-paper" &&
+      edition.provenance?.personalFreeResearch?.runMode === "same_day_backfill"
     );
 
   const windowStart = parseInstant(edition.reportingWindow?.startInclusive);

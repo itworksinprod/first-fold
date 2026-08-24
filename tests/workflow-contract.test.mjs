@@ -17,7 +17,7 @@ function permissionsBlock(workflow, jobName) {
   return job.slice(job.indexOf("    permissions:"), job.indexOf("    steps:"));
 }
 
-test("externally dispatched weekday research creates only a capped trusted candidate PR", () => {
+test("Cloudflare paid research stops before checkout while trusted manual weekday research remains available", () => {
   const triggers = triggerBlock(research);
   const permissions = permissionsBlock(research, "prepare");
 
@@ -35,12 +35,16 @@ test("externally dispatched weekday research creates only a capped trusted candi
 
   assert.match(research, /process\.env\.GITHUB_REPOSITORY === "itworksinprod\/first-fold"/);
   assert.match(research, /triggerSource === "cloudflare"/);
-  assert.match(research, /scheduledDate\.toISOString\(\) !== scheduledAt/);
-  assert.match(research, /scheduledParts\.hour !== "05"/);
-  assert.match(research, /scheduledParts\.minute !== "05"/);
-  assert.match(research, /dispatchKey !== `research:\$\{scheduledEditionDate\}`/);
-  assert.match(research, /process\.env\.GITHUB_ACTOR !== "itworksinprod"/);
+  assert.match(research, /const isManual = triggerSource === "" \|\| triggerSource === "manual"/);
   assert.match(research, /Manual research dispatches must leave scheduled_at and dispatch_key blank/);
+  assert.match(
+    research,
+    /const shouldPrepare =\s+isManual &&\s+isTrustedMain &&\s+isWeekday &&/,
+  );
+  assert.match(
+    research,
+    /if \(isCloudflare\) \{\s+reason = "automatic paid research is disabled; the free research pipeline remains available"/,
+  );
   assert.match(research, /needs: window/);
   assert.match(
     research,
@@ -59,11 +63,15 @@ test("externally dispatched weekday research creates only a capped trusted candi
     7,
   );
   assert.match(research, /process\.exit\(0\)/);
-  assert.doesNotMatch(research, /research (?:cannot|must not|must) start/);
+  assert.doesNotMatch(research, /Cloudflare scheduled_at must|Cloudflare research provenance is invalid/);
+  const automaticStop = research.indexOf("automatic paid research is disabled");
+  assert.notEqual(automaticStop, -1);
   assert.ok(
     research.indexOf("Decide whether research may begin") <
       research.indexOf("Check out trusted main"),
   );
+  assert.ok(automaticStop < research.indexOf("Check out trusted main"));
+  assert.ok(automaticStop < research.indexOf("OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}"));
   assert.ok(
     research.indexOf("Resolve today's pilot slot from merged provenance") <
       research.indexOf("OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}"),

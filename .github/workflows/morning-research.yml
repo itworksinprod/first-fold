@@ -78,50 +78,24 @@ jobs:
           if (!isCloudflare && !isManual) {
             throw new Error("trigger_source must be blank, manual, or cloudflare.");
           }
-          if (isCloudflare) {
-            const scheduledDate = new Date(scheduledAt);
-            if (Number.isNaN(scheduledDate.getTime()) || scheduledDate.toISOString() !== scheduledAt) {
-              throw new Error("Cloudflare scheduled_at must be a canonical ISO timestamp.");
-            }
-            const scheduledParts = Object.fromEntries(
-              new Intl.DateTimeFormat("en-US", {
-                timeZone: "America/New_York",
-                calendar: "gregory",
-                numberingSystem: "latn",
-                weekday: "short",
-                year: "numeric",
-                month: "2-digit",
-                day: "2-digit",
-                hour: "2-digit",
-                minute: "2-digit",
-                hourCycle: "h23",
-              })
-                .formatToParts(scheduledDate)
-                .filter(({ type }) => type !== "literal")
-                .map(({ type, value }) => [type, value]),
-            );
-            const scheduledEditionDate = `${scheduledParts.year}-${scheduledParts.month}-${scheduledParts.day}`;
-            if (
-              process.env.GITHUB_ACTOR !== "itworksinprod" ||
-              !["Mon", "Tue", "Wed", "Thu", "Fri"].includes(scheduledParts.weekday) ||
-              scheduledParts.hour !== "05" ||
-              scheduledParts.minute !== "05" ||
-              scheduledEditionDate !== editionDate ||
-              dispatchKey !== `research:${scheduledEditionDate}`
-            ) {
-              throw new Error("Cloudflare research provenance is invalid for today's 5:05 AM New York slot.");
-            }
-          } else if (scheduledAt !== "" || dispatchKey !== "") {
+          if (isManual && (scheduledAt !== "" || dispatchKey !== "")) {
             throw new Error("Manual research dispatches must leave scheduled_at and dispatch_key blank.");
           }
 
           const isTrustedMain =
             process.env.GITHUB_REPOSITORY === "itworksinprod/first-fold" &&
             process.env.GITHUB_REF === "refs/heads/main";
-          const shouldPrepare = isTrustedMain && isWeekday && minuteOfDay >= 5 * 60 && minuteOfDay < 6 * 60;
+          const shouldPrepare =
+            isManual &&
+            isTrustedMain &&
+            isWeekday &&
+            minuteOfDay >= 5 * 60 &&
+            minuteOfDay < 6 * 60;
 
           let reason = "the 5:00–6:00 AM New York weekday research window is open";
-          if (!isTrustedMain) reason = "this run is not the trusted main branch";
+          if (isCloudflare) {
+            reason = "automatic paid research is disabled; the free research pipeline remains available";
+          } else if (!isTrustedMain) reason = "this run is not the trusted main branch";
           else if (!isWeekday) reason = `${editionDate} is not a weekday`;
           else if (minuteOfDay < 5 * 60) reason = "the 5:00 AM New York research gate has not opened";
           else if (minuteOfDay >= 6 * 60) reason = "the 6:00 AM New York publication gate has already opened";

@@ -185,6 +185,113 @@ function researchResult({ candidates = [dossierForPayload()], failedSourceIds = 
   };
 }
 
+function completeAuthoritativeScenario() {
+  const desks = ["ai", "work-and-tools", "security-and-privacy", "platforms-and-power"];
+  const labels = {
+    ai: "AI Models",
+    "work-and-tools": "Work Tools",
+    "security-and-privacy": "Security Privacy",
+    "platforms-and-power": "Platforms Power",
+  };
+  const baseStory = buildEditorialPayload().desks["work-and-tools"].story;
+  const candidates = [];
+  const storyPages = {};
+  for (const [index, desk] of desks.entries()) {
+    const slug = desk.replaceAll("-", "");
+    const publisherKey = `${slug}-publisher`;
+    const originatingId = `${slug}-article`;
+    const contextId = `${slug}-feed`;
+    const story = structuredClone(baseStory);
+    story.id = `2026-08-20-${slug}-development`;
+    story.canonicalEventKey = `${slug}-development-2026-08-20`;
+    story.desk = desk;
+    story.headline = `${labels[desk]} publisher reports a new development`;
+    story.deck = `The reviewed ${labels[desk]} publisher describes a bounded update for readers.`;
+    story.priority = "notable";
+    story.confidence = {
+      level: "medium",
+      rationale: "This account relies on the named publisher's originating feed item.",
+    };
+    story.editorial.primaryEntity = `${labels[desk]} Entity`;
+    story.editorial.aiAdjacent = desk === "ai";
+    story.editorial.deskFit = `The reported development belongs on the ${labels[desk]} desk.`;
+    story.sources = [
+      {
+        id: originatingId,
+        title: `${labels[desk]} originating article`,
+        publisher: `${labels[desk]} Publisher`,
+        url: `https://${slug}.example/article`,
+        relationship: "originating",
+        publishedAt: "2026-08-20T08:00:00.000Z",
+        retrievedAt: generatedAt,
+      },
+      {
+        id: contextId,
+        title: `${labels[desk]} feed endpoint`,
+        publisher: `${labels[desk]} Publisher`,
+        url: `https://${slug}.example/feed`,
+        relationship: "context",
+        publishedAt: null,
+        retrievedAt: generatedAt,
+      },
+    ];
+    story.evidence = story.evidence.map((claim, claimIndex) => ({
+      ...claim,
+      id: `${slug}-claim-${claimIndex + 1}`,
+      statement: `${labels[desk]} Publisher reports the bounded development described in its feed item.`,
+      sourceIds: [originatingId],
+      verification: "company-claimed",
+    }));
+    storyPages[desk] = { desk, story, emptyReason: null };
+    candidates.push({
+      candidateId: `candidate-${slug}`,
+      canonicalEventKey: story.canonicalEventKey,
+      suggestedDesk: desk,
+      primaryEntity: `${labels[desk]} Entity`,
+      aiAdjacent: desk === "ai",
+      maturity: "verified-development",
+      title: story.headline,
+      eventAt: story.timing.eventAt,
+      firstPublishedAt: story.timing.firstPublishedAt,
+      materiallyUpdatedAt: null,
+      verifiedFacts: [`${labels[desk]} Publisher reports a new reader-facing development.`],
+      unresolvedQuestions: [],
+      sources: story.sources.map((source) => ({ ...source, publisherKey })),
+      ranking: {
+        score: 80 - index,
+        eligibility: "new-development",
+        corroborated: false,
+        evidenceTier: "authoritative-single",
+        itemSourceCount: 1,
+        publisherCount: 1,
+        publisherKeys: [publisherKey],
+      },
+    });
+  }
+  const payload = {
+    frontPage: {
+      note: "Four reviewed publishers reported developments for the private free edition.",
+      estimatedMinutes: 6,
+      leadStoryId: storyPages.ai.story.id,
+      storyOrder: desks.map((desk) => storyPages[desk].story.id),
+      stopThePressesStoryId: null,
+      diversityException: null,
+    },
+    desks: storyPages,
+    backPage: { tryThisTomorrow: null },
+  };
+  const research = researchResult({ candidates });
+  research.selectedCandidates = candidates;
+  research.desks = Object.fromEntries(candidates.map((candidate) => [candidate.suggestedDesk, {
+    desk: candidate.suggestedDesk,
+    candidates: [candidate],
+    selectedCandidate: candidate,
+    emptyReason: null,
+  }]));
+  research.diagnostics.selectedCount = candidates.length;
+  return { candidates, payload, research };
+}
+
 function aiResult(editorialPayload = buildEditorialPayload()) {
   return {
     editorialPayload,
@@ -262,6 +369,12 @@ test("draftFreeEdition creates a validated, unpublished, QA-passed comparison ca
   assert.equal(candidate.provenance.freePilot.feedSourceCount, feedSources.length);
   assert.equal(candidate.provenance.freePilot.successfulFeedSourceCount, feedSources.length);
   assert.equal(candidate.provenance.freePilot.candidateCount, 1);
+  assert.equal(candidate.provenance.freePilot.evidencePolicy, "corroborated");
+  assert.equal(candidate.provenance.freePilot.requiredStoryCount, 0);
+  assert.equal(candidate.provenance.freePilot.selectedStoryCount, 1);
+  assert.equal(candidate.provenance.freePilot.lookbackHours, 24);
+  assert.equal(candidate.provenance.freePilot.minimumScore, 70);
+  assert.equal(candidate.provenance.freePilot.minimumAuthoritativeScore, 70);
   assert.match(candidate.provenance.freePilot.feedSnapshotSha256, /^[a-f0-9]{64}$/);
   assert.equal(candidate.provenance.freePilot.requestSha256, "a".repeat(64));
   assert.equal(candidate.provenance.freePilot.responseSha256, "b".repeat(64));
@@ -280,10 +393,14 @@ test("draftFreeEdition creates a validated, unpublished, QA-passed comparison ca
   assert.deepEqual(researchOptions.reportingWindow, candidate.reportingWindow);
   assert.equal(researchOptions.retrievedAt, generatedAt);
   assert.equal(researchOptions.sources, feedSources);
+  assert.equal(researchOptions.evidencePolicy, "corroborated");
+  assert.equal(researchOptions.minimumScore, 70);
+  assert.equal(researchOptions.minimumAuthoritativeScore, 70);
   assert.equal(aiOptions.accountId, "a".repeat(32));
   assert.equal(aiOptions.apiToken, "cloudflare-test-token-do-not-log");
   assert.equal(aiOptions.model, "@cf/openai/gpt-oss-120b");
   assert.equal(aiOptions.maxAttempts, 1);
+  assert.equal(aiOptions.maxTokens, undefined);
   assert.equal(aiOptions.schema.type, "object");
   assert.match(aiOptions.messages[0].content, /POLICY_MARKER/);
   assert.match(aiOptions.messages[0].content, /PROMPT_MARKER/);
@@ -310,6 +427,113 @@ test("healthy zero-news coverage creates a deterministic quiet candidate without
   assert.equal(candidate.frontPage.leadStoryId, null);
   assert.equal(Object.values(candidate.desks).every((page) => page.story === null), true);
   assert.equal(validateCanonicalEdition(candidate).valid, true);
+});
+
+test("complete authoritative mode creates four desks with bounded model and research settings", async () => {
+  const { payload, research } = completeAuthoritativeScenario();
+  let researchOptions;
+  let aiOptions;
+  const candidate = await draftFreeEdition(draftOptions({
+    evidencePolicy: "authoritative-or-corroborated",
+    requireComplete: true,
+    lookbackHours: 72,
+    minimumScore: 70,
+    minimumAuthoritativeScore: 62,
+    maxTokens: 6_000,
+    researchImpl: async (options) => {
+      researchOptions = options;
+      research.reportingWindow = structuredClone(options.reportingWindow);
+      research.retrievedAt = options.retrievedAt;
+      return research;
+    },
+    aiRequestImpl: async (options) => {
+      aiOptions = options;
+      return aiResult(payload);
+    },
+  }));
+
+  assert.equal(researchOptions.evidencePolicy, "authoritative-or-corroborated");
+  assert.equal(researchOptions.minimumScore, 70);
+  assert.equal(researchOptions.minimumAuthoritativeScore, 62);
+  assert.equal(
+    Date.parse(researchOptions.reportingWindow.endExclusive) -
+      Date.parse(researchOptions.reportingWindow.startInclusive),
+    72 * 60 * 60 * 1_000,
+  );
+  assert.equal(aiOptions.maxTokens, 6_000);
+  assert.match(aiOptions.messages[0].content, /authoritative-single/);
+  assert.match(aiOptions.messages[0].content, /must not use critical priority or high confidence/);
+  assert.match(aiOptions.messages[0].content, /company-claimed or\s+preliminary, never confirmed/);
+  assert.match(aiOptions.messages[0].content, /cannot\s+be named by frontPage\.stopThePressesStoryId/);
+  assert.match(aiOptions.messages[1].content, /Select exactly one story in each of the four desks/);
+  assert.equal(candidate.provenance.freePilot.evidencePolicy, "authoritative-or-corroborated");
+  assert.equal(candidate.provenance.freePilot.requiredStoryCount, 4);
+  assert.equal(candidate.provenance.freePilot.selectedStoryCount, 4);
+  assert.equal(candidate.provenance.freePilot.lookbackHours, 72);
+  assert.equal(candidate.provenance.freePilot.minimumScore, 70);
+  assert.equal(candidate.provenance.freePilot.minimumAuthoritativeScore, 62);
+  assert.equal(Object.values(candidate.desks).every((page) => page.story !== null), true);
+  assert.equal(candidate.provenance.sourceCheck.checkedSourceCount, 8);
+  assert.equal(validateCanonicalEdition(candidate).valid, true);
+});
+
+test("complete mode fails before inference unless research selected one candidate per desk", async () => {
+  let aiCalls = 0;
+  let receivedResearchOptions;
+  await assert.rejects(
+    () => draftFreeEdition(draftOptions({
+      evidencePolicy: "authoritative-or-corroborated",
+      requireComplete: true,
+      lookbackHours: 72,
+      minimumScore: 70,
+      minimumAuthoritativeScore: 62,
+      researchImpl: async (options) => {
+        receivedResearchOptions = options;
+        const result = researchResult();
+        result.reportingWindow = structuredClone(options.reportingWindow);
+        return result;
+      },
+      aiRequestImpl: async () => {
+        aiCalls += 1;
+        return aiResult();
+      },
+    })),
+    /requires exactly four selected feed candidates before inference/,
+  );
+  assert.equal(receivedResearchOptions.evidencePolicy, "authoritative-or-corroborated");
+  assert.equal(receivedResearchOptions.minimumScore, 70);
+  assert.equal(receivedResearchOptions.minimumAuthoritativeScore, 62);
+  assert.equal(aiCalls, 0);
+});
+
+test("complete mode rejects a quiet model payload before source checks", async () => {
+  const { payload, research } = completeAuthoritativeScenario();
+  const quietPayload = structuredClone(payload);
+  for (const desk of ["ai", "security-and-privacy", "platforms-and-power"]) {
+    quietPayload.desks[desk] = {
+      desk,
+      story: null,
+      emptyReason: `The ${desk} desk was left quiet by the model.`,
+    };
+  }
+  const workStory = quietPayload.desks["work-and-tools"].story;
+  quietPayload.frontPage.leadStoryId = workStory.id;
+  quietPayload.frontPage.storyOrder = [workStory.id];
+  let sourceChecks = 0;
+  await assert.rejects(
+    () => draftFreeEdition(draftOptions({
+      evidencePolicy: "authoritative-or-corroborated",
+      requireComplete: true,
+      researchImpl: async () => research,
+      aiRequestImpl: async () => aiResult(quietPayload),
+      sourceRequestImpl: async () => {
+        sourceChecks += 1;
+        return { status: 200, headers: {} };
+      },
+    })),
+    /requires one model-authored story in every desk before delivery/,
+  );
+  assert.equal(sourceChecks, 0);
 });
 
 test("same-day backfill keeps the real late generation time while on-time mode stays gated", async () => {
@@ -375,6 +599,13 @@ test("free provenance rejects inference/count conflicts and registry-count drift
   assert.throws(
     () => validateFreePilotProvenance(candidate, automation, { expectedFeedSourceCount: 18 }),
     /does not match the reviewed registry/,
+  );
+
+  const forgedWindow = structuredClone(candidate);
+  forgedWindow.provenance.freePilot.lookbackHours = 72;
+  assert.throws(
+    () => validateFreePilotProvenance(forgedWindow, automation),
+    /reportingWindow does not match its recorded lookbackHours/,
   );
 });
 
@@ -630,6 +861,97 @@ test("an article plus its own feed endpoint cannot support a non-quiet story", (
   assert.throws(
     () => normalizeFreeEditorialAgainstCandidates(payload, [candidate], generatedAt),
     /selected uncorroborated free event/,
+  );
+});
+
+test("opt-in authoritative evidence accepts only an originating article plus its context feed", () => {
+  const { candidates, payload } = completeAuthoritativeScenario();
+  assert.doesNotThrow(() => normalizeFreeEditorialAgainstCandidates(
+    payload,
+    candidates,
+    generatedAt,
+    { evidencePolicy: "authoritative-or-corroborated" },
+  ));
+
+  const independent = structuredClone(candidates);
+  independent[0].sources[0].relationship = "independent";
+  assert.throws(
+    () => normalizeFreeEditorialAgainstCandidates(
+      payload,
+      independent,
+      generatedAt,
+      { evidencePolicy: "authoritative-or-corroborated" },
+    ),
+    /selected uncorroborated free event/,
+  );
+
+  const noContextPayload = structuredClone(payload);
+  noContextPayload.desks.ai.story.sources = [noContextPayload.desks.ai.story.sources[0]];
+  assert.throws(
+    () => normalizeFreeEditorialAgainstCandidates(
+      noContextPayload,
+      candidates,
+      generatedAt,
+      { evidencePolicy: "authoritative-or-corroborated" },
+    ),
+    /needs two distinct dossier sources/,
+  );
+});
+
+test("authoritative-single stories cannot imply independent confirmation or overstate certainty", () => {
+  const { candidates, payload } = completeAuthoritativeScenario();
+  for (const mutate of [
+    (story) => { story.priority = "critical"; },
+    (story) => { story.confidence.level = "high"; },
+    (story) => { story.deck = "Two independent sources confirmed the reported development."; },
+  ]) {
+    const invalid = structuredClone(payload);
+    mutate(invalid.desks.ai.story);
+    assert.throws(
+      () => normalizeFreeEditorialAgainstCandidates(
+        invalid,
+        candidates,
+        generatedAt,
+        { evidencePolicy: "authoritative-or-corroborated" },
+      ),
+      /violates authoritative-single evidence limits/,
+    );
+  }
+
+  const contextOnlyClaim = structuredClone(payload);
+  contextOnlyClaim.desks.ai.story.evidence[0].sourceIds = [candidates[0].sources[1].id];
+  assert.throws(
+    () => normalizeFreeEditorialAgainstCandidates(
+      contextOnlyClaim,
+      candidates,
+      generatedAt,
+      { evidencePolicy: "authoritative-or-corroborated" },
+    ),
+    /must cite its authoritative originating article for every claim/,
+  );
+
+  const confirmedClaim = structuredClone(payload);
+  confirmedClaim.desks.ai.story.evidence[0].verification = "confirmed";
+  assert.throws(
+    () => normalizeFreeEditorialAgainstCandidates(
+      confirmedClaim,
+      candidates,
+      generatedAt,
+      { evidencePolicy: "authoritative-or-corroborated" },
+    ),
+    /must label authoritative-single claims as company-claimed or preliminary/,
+  );
+
+  const stopThePresses = structuredClone(payload);
+  stopThePresses.frontPage.stopThePressesStoryId = stopThePresses.desks.ai.story.id;
+  assert.throws(
+    () => normalizeFreeEditorialAgainstCandidates(
+      stopThePresses,
+      candidates,
+      generatedAt,
+      { evidencePolicy: "authoritative-or-corroborated" },
+    ),
+    /violates authoritative-single evidence limits/,
   );
 });
 
@@ -928,6 +1250,20 @@ test("message construction forwards only bounded dossiers and trusted local inst
   assert.deepEqual(messages.map((message) => message.role), ["system", "user"]);
   assert.match(messages[1].content, /"editionDate":"2026-08-20"/);
   assert.doesNotMatch(messages[1].content, /"diagnostics"/);
+
+  const completeMessages = buildFreeWorkersAiMessages({
+    policyText: "POLICY_MARKER",
+    promptText: "PROMPT_MARKER",
+    scaffold,
+    priorEditions: [priorEdition],
+    candidates: [dossierForPayload()],
+    evidencePolicy: "authoritative-or-corroborated",
+    requireComplete: true,
+  });
+  assert.match(completeMessages[0].content, /Do not return a quiet desk/);
+  assert.match(completeMessages[0].content, /return no usable\s+editorial payload/);
+  assert.doesNotMatch(completeMessages[0].content, /leave (?:a|the) desk quiet/i);
+  assert.match(completeMessages[1].content, /Select exactly one story in each of the four desks/);
 });
 
 test("free prompt precedence and binder agree that deterministic suggestedDesk is fixed", () => {

@@ -20,12 +20,18 @@ export const DEFAULT_MAX_ENTRIES_PER_FEED = 80;
 export const DEFAULT_MAX_TOTAL_ITEMS = 320;
 export const DEFAULT_MAX_CANDIDATES_PER_DESK = 3;
 export const DEFAULT_MINIMUM_SCORE = 70;
+export const DEFAULT_FREE_EVIDENCE_POLICY = "corroborated";
+export const AUTHORITATIVE_FREE_EVIDENCE_POLICY = "authoritative-or-corroborated";
 export const FREE_FEED_USER_AGENT =
   "Mozilla/5.0 (compatible; First-Fold-Free-Pilot/1.0; +https://github.com/itworksinprod/first-fold)";
 
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const TRACKING_PARAMETER = /^(?:utm_.+|fbclid|gclid|msclkid|mc_cid|mc_eid)$/i;
 const SOURCE_RELATIONSHIPS = new Set(["originating", "independent", "context"]);
+const FREE_EVIDENCE_POLICIES = new Set([
+  DEFAULT_FREE_EVIDENCE_POLICY,
+  AUTHORITATIVE_FREE_EVIDENCE_POLICY,
+]);
 const DESK_LABELS = {
   ai: "AI & Models",
   "work-and-tools": "Work & Tools",
@@ -78,11 +84,16 @@ const DESK_TERMS = {
     ["artificial intelligence", 8], ["machine learning", 7], ["language model", 8],
     ["foundation model", 8], ["model", 4], ["llm", 7], ["benchmark", 5],
     ["inference", 5], ["training", 4], ["agent", 4], ["ai", 6],
+    ["ai model", 8], ["generative ai", 8], ["ai safety", 9],
+    ["ai safety bill", 10], ["model safety", 8],
   ],
   "work-and-tools": [
     ["workflow", 7], ["developer", 5], ["productivity", 7], ["workplace", 7],
     ["collaboration", 5], ["code", 4], ["tool", 5], ["github", 5],
     ["browser", 4], ["automation", 5], ["office", 4], ["api", 3],
+    ["browser engine", 9], ["code review", 9], ["work profile", 8],
+    ["developer tool", 8], ["source code", 6], ["google workspace", 9],
+    ["workspace", 6], ["gitlab", 6], ["devops", 7], ["ci cd", 7],
     ["layoff", 9], ["laying off", 9], ["job", 6], ["staff", 5],
     ["worker", 5], ["labor", 7], ["employment", 7],
   ],
@@ -91,14 +102,34 @@ const DESK_TERMS = {
     ["security", 6], ["privacy", 7], ["breach", 9], ["ransomware", 9],
     ["malware", 7], ["patch", 6], ["cve", 8], ["ghsa", 8],
     ["authentication", 5], ["surveillance", 6], ["data leak", 8],
+    ["memory isolation", 9], ["memory safety", 8], ["exploit", 7],
+    ["botnet", 8], ["threat actor", 8],
   ],
   "platforms-and-power": [
     ["antitrust", 9], ["competition", 7], ["regulator", 7], ["ruling", 7],
     ["court", 6], ["app store", 7], ["operating system", 6], ["cloud", 5],
     ["chip", 6], ["semiconductor", 7], ["infrastructure", 6], ["platform", 5],
     ["market access", 8], ["investigation", 6], ["merger", 7],
+    ["cloud infrastructure", 9], ["cloud computing", 8], ["data center", 7],
+    ["amazon ec2", 8], ["kubernetes", 6], ["serverless", 7], ["compute", 6],
   ],
 };
+
+// Source priors help break ties between genuinely topical items, but they are
+// never evidence that an item belongs on a desk. A story must carry at least
+// one strong signal in its title/categories or two strong signals in its
+// summary before a prior is allowed to influence classification.
+const MINIMUM_STRONG_DESK_TERM_WEIGHT = 5;
+const OFF_TOPIC_TITLE_PATTERNS = [
+  /\b(?:buying|shopping|gift) guide\b/i,
+  /\b(?:deal|deals|discount|discounts|coupon|coupons|promo|sale)\b/i,
+  /\b(?:price drop|shop now|save \$|black friday|cyber monday)\b/i,
+  /\b(?:mattress|bedding|recipe|restaurant|wildlife|birdwatch|gardening|horoscope)\b/i,
+  /\b(?:beauty|fashion|fitness|wellness|vacation|travel destination)\b/i,
+  /\b(?:movie|television|tv show|streaming picks) review\b/i,
+  /\b(?:phone|laptop|tablet|headphone|television|tv|camera|appliance|car) review\b/i,
+  /\breview:\s/i,
+];
 
 const IMPACT_TERMS = [
   "actively exploited", "zero-day", "breach", "ransomware", "critical",
@@ -128,6 +159,15 @@ class FeedError extends Error {
 
 function isObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function requireEvidencePolicy(value) {
+  if (!FREE_EVIDENCE_POLICIES.has(value)) {
+    throw new Error(
+      `evidencePolicy must be ${DEFAULT_FREE_EVIDENCE_POLICY} or ${AUTHORITATIVE_FREE_EVIDENCE_POLICY}.`,
+    );
+  }
+  return value;
 }
 
 function cleanText(value, maxLength = 1_200) {
@@ -883,11 +923,11 @@ function relationshipRank(value) {
 }
 
 function containsTerm(text, term) {
-  const parts = String(term).toLowerCase().split(/[\s-]+/).filter(Boolean);
+  const parts = String(term).toLowerCase().split(/[\s/-]+/).filter(Boolean);
   if (parts.length === 0) return false;
   const expression = parts
     .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
-    .join("[\\s-]+");
+    .join("[\\s/-]+");
   return new RegExp(`(?:^|[^a-z0-9])${expression}(?=$|[^a-z0-9])`, "i").test(text);
 }
 
@@ -895,17 +935,49 @@ function termScore(text, terms, multiplier = 1) {
   return terms.reduce((sum, [term, weight]) => sum + (containsTerm(text, term) ? weight * multiplier : 0), 0);
 }
 
+function matchedStrongDeskTerms(text, terms) {
+  return terms
+    .filter(([, weight]) => weight >= MINIMUM_STRONG_DESK_TERM_WEIGHT)
+    .filter(([term]) => containsTerm(text, term))
+    .map(([term]) => term);
+}
+
+function isObviousOffTopic(titleCategoryText) {
+  // Do not turn legitimate editorial processes such as code/security review
+  // into consumer-product-review false positives.
+  const normalized = titleCategoryText.replace(
+    /\b(?:code|security|privacy|antitrust|regulatory) review\b/gi,
+    "",
+  );
+  return OFF_TOPIC_TITLE_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
 function deskClassification(items) {
-  const titleText = items.map((item) => item.title.toLowerCase()).join(" ");
-  const allText = items.map((item) => `${item.title} ${item.summary} ${item.categories.join(" ")}`.toLowerCase()).join(" ");
+  const titleCategoryText = items
+    .map((item) => `${item.title} ${item.categories.join(" ")}`.toLowerCase())
+    .join(" ");
+  const summaryText = items.map((item) => item.summary.toLowerCase()).join(" ");
+  if (isObviousOffTopic(titleCategoryText)) return null;
+  const signals = Object.fromEntries(FREE_DESKS.map((desk) => {
+    const titleCategoryTerms = matchedStrongDeskTerms(titleCategoryText, DESK_TERMS[desk]);
+    const summaryTerms = matchedStrongDeskTerms(summaryText, DESK_TERMS[desk]);
+    return [desk, {
+      titleCategoryTerms,
+      summaryTerms,
+      eligible: titleCategoryTerms.length >= 1 || summaryTerms.length >= 2,
+    }];
+  }));
+  const eligibleDesks = FREE_DESKS.filter((desk) => signals[desk].eligible);
+  if (eligibleDesks.length === 0) return null;
   const scores = Object.fromEntries(FREE_DESKS.map((desk) => {
     const prior = Math.max(...items.map((item) => item.deskPriors?.[desk] ?? 0));
-    const titleSignals = termScore(titleText, DESK_TERMS[desk], 1.35);
-    const bodySignals = termScore(allText, DESK_TERMS[desk], 0.55);
-    return [desk, Math.round((prior + titleSignals + bodySignals) * 100) / 100];
+    const titleCategoryScore = termScore(titleCategoryText, DESK_TERMS[desk], 1.35);
+    const summaryScore = termScore(summaryText, DESK_TERMS[desk], 0.55);
+    return [desk, Math.round((prior + titleCategoryScore + summaryScore) * 100) / 100];
   }));
-  const desk = [...FREE_DESKS].sort((left, right) => scores[right] - scores[left] || FREE_DESKS.indexOf(left) - FREE_DESKS.indexOf(right))[0];
-  return { desk, scores };
+  const desk = eligibleDesks.sort((left, right) =>
+    scores[right] - scores[left] || FREE_DESKS.indexOf(left) - FREE_DESKS.indexOf(right))[0];
+  return { desk, scores, signals };
 }
 
 function countTerms(text, terms) {
@@ -933,8 +1005,19 @@ function scoreGroup(group, classification) {
 
 function inferEntity(items) {
   const text = items.map((item) => item.title).join(" ");
+  const originatingEntity = items.find((item) =>
+    item.relationship === "originating" && cleanText(item.primaryEntity, 120))?.primaryEntity;
+  if (originatingEntity) {
+    const entityTerms = {
+      Amazon: ["amazon", "aws"],
+      GitHub: ["github"],
+      Google: ["google"],
+      Microsoft: ["microsoft"],
+    }[originatingEntity] ?? [originatingEntity];
+    if (entityTerms.some((term) => containsTerm(text, term))) return originatingEntity;
+  }
   const named = KNOWN_ENTITIES.find((entity) => new RegExp(`\\b${entity.replace(/\s+/g, "\\s+")}\\b`, "i").test(text));
-  return named ?? items.find((item) => item.relationship === "originating")?.primaryEntity ?? items[0].primaryEntity ?? items[0].publisher;
+  return named ?? originatingEntity ?? items[0].primaryEntity ?? items[0].publisher;
 }
 
 function candidateSource(item, index) {
@@ -965,6 +1048,7 @@ function feedEndpointSource(item, index) {
 
 function groupToCandidate(group) {
   const classification = deskClassification(group.items);
+  if (!classification) return null;
   const ranking = scoreGroup(group, classification);
   const sources = [];
   const seenUrls = new Set();
@@ -984,6 +1068,13 @@ function groupToCandidate(group) {
   const itemSourceCount = new Set(emittedFactualSources.map((source) => source.url)).size;
   const publisherKeys = [...new Set(emittedFactualSources.map((source) => source.publisherKey))].sort();
   const corroborated = itemSourceCount >= 2 && publisherKeys.length >= 2;
+  const authoritativeSingle = itemSourceCount === 1 && publisherKeys.length === 1 &&
+    emittedFactualSources[0]?.relationship === "originating";
+  const evidenceTier = corroborated
+    ? "corroborated"
+    : authoritativeSingle
+      ? "authoritative-single"
+      : "insufficient";
   const facts = group.items.slice(0, 4).map((item) => {
     const detail = item.summary ? ` ${item.summary}` : "";
     return `${item.publisher}'s feed reports: ${item.title}.${detail}`.slice(0, 900);
@@ -1006,9 +1097,11 @@ function groupToCandidate(group) {
     ranking: {
       ...ranking,
       deskScores: classification.scores,
+      deskSignals: classification.signals,
       sourceIds: group.items.map((item) => item.itemId),
       eligibility: "new-development",
       corroborated,
+      evidenceTier,
       itemSourceCount,
       publisherCount: publisherKeys.length,
       publisherKeys,
@@ -1021,10 +1114,17 @@ export function rankFeedCandidates({
   reportingWindow,
   recentArchive = [],
   minimumScore = DEFAULT_MINIMUM_SCORE,
+  minimumAuthoritativeScore = minimumScore,
+  evidencePolicy = DEFAULT_FREE_EVIDENCE_POLICY,
 } = {}) {
   if (!Number.isFinite(minimumScore) || minimumScore < 0 || minimumScore > 100) {
     throw new Error("minimumScore must be between 0 and 100.");
   }
+  if (!Number.isFinite(minimumAuthoritativeScore) ||
+      minimumAuthoritativeScore < 0 || minimumAuthoritativeScore > 100) {
+    throw new Error("minimumAuthoritativeScore must be between 0 and 100.");
+  }
+  const normalizedEvidencePolicy = requireEvidencePolicy(evidencePolicy);
   const eligibleItems = filterItemsToReportingWindow(items, reportingWindow);
   const recentStories = (Array.isArray(recentArchive) ? recentArchive : []).flatMap((edition) =>
     Array.isArray(edition?.stories)
@@ -1033,8 +1133,15 @@ export function rankFeedCandidates({
   const recentKeys = new Set(recentStories.map((story) => story.canonicalEventKey).filter(Boolean));
   return deduplicateFeedItems(eligibleItems)
     .map(groupToCandidate)
-    .filter((candidate) => candidate.ranking.score >= minimumScore)
-    .filter((candidate) => candidate.ranking.corroborated === true)
+    .filter(Boolean)
+    .filter((candidate) => candidate.ranking.evidenceTier === "corroborated" ||
+      (normalizedEvidencePolicy === AUTHORITATIVE_FREE_EVIDENCE_POLICY &&
+        candidate.ranking.evidenceTier === "authoritative-single"))
+    .filter((candidate) => candidate.ranking.score >= (
+      candidate.ranking.evidenceTier === "authoritative-single"
+        ? minimumAuthoritativeScore
+        : minimumScore
+    ))
     .filter((candidate) => !recentKeys.has(candidate.canonicalEventKey))
     .filter((candidate) => !recentStories.some((story) => candidateMatchesRecentStory(candidate, story)))
     .sort((left, right) =>
@@ -1057,40 +1164,97 @@ function candidateMatchesRecentStory(candidate, story) {
     jaccard(new Set(tokenize(candidate.title)), new Set(tokenize(recentTitle))) >= 0.7;
 }
 
-export function selectFreeDeskCandidates(candidates, { maxCandidatesPerDesk = DEFAULT_MAX_CANDIDATES_PER_DESK } = {}) {
+function canonicalEntityKey(value) {
+  const normalized = cleanText(value, 120).toLowerCase();
+  const aliases = {
+    aws: "amazon",
+    github: "microsoft",
+    "google research": "google",
+    "google workspace": "google",
+    "google workspace updates": "google",
+    "microsoft research": "microsoft",
+    "microsoft security": "microsoft",
+  };
+  return aliases[normalized] ?? normalized;
+}
+
+export function selectFreeDeskCandidates(candidates, {
+  maxCandidatesPerDesk = DEFAULT_MAX_CANDIDATES_PER_DESK,
+  evidencePolicy = DEFAULT_FREE_EVIDENCE_POLICY,
+} = {}) {
   if (!Array.isArray(candidates)) throw new Error("candidates must be an array.");
   if (!Number.isInteger(maxCandidatesPerDesk) || maxCandidatesPerDesk < 1 || maxCandidatesPerDesk > 10) {
     throw new Error("maxCandidatesPerDesk must be an integer between 1 and 10.");
   }
+  const normalizedEvidencePolicy = requireEvidencePolicy(evidencePolicy);
   const shortlists = Object.fromEntries(FREE_DESKS.map((desk) => [desk,
     candidates.filter((candidate) => candidate.suggestedDesk === desk).slice(0, maxCandidatesPerDesk),
   ]));
-  const candidatePool = Object.values(shortlists).flat().sort((left, right) =>
-    right.ranking.score - left.ranking.score ||
-    Date.parse(right.firstPublishedAt) - Date.parse(left.firstPublishedAt) ||
-    left.canonicalEventKey.localeCompare(right.canonicalEventKey));
+  // Four desks and at most ten candidates per desk make exhaustive assignment
+  // tiny. Optimize for a complete, entity-diverse slate before aggregate score;
+  // a greedy global sort can otherwise spend Google/Amazon on an early desk and
+  // leave a later desk empty even when a safe four-story assignment exists.
+  let bestSelection = null;
   const selectedByDesk = new Map();
   const selectedEntities = new Set();
-  let selectedAiAdjacent = 0;
-  for (const candidate of candidatePool) {
-    if (selectedByDesk.has(candidate.suggestedDesk)) continue;
-    const entityKey = candidate.primaryEntity.toLowerCase();
-    if (selectedEntities.has(entityKey)) continue;
-    if (candidate.aiAdjacent && selectedAiAdjacent >= 2) continue;
-    selectedByDesk.set(candidate.suggestedDesk, candidate);
-    selectedEntities.add(entityKey);
-    if (candidate.aiAdjacent) selectedAiAdjacent += 1;
+  function considerSelection() {
+    const count = selectedByDesk.size;
+    const score = [...selectedByDesk.values()]
+      .reduce((sum, candidate) => sum + candidate.ranking.score, 0);
+    const identity = FREE_DESKS
+      .map((desk) => selectedByDesk.get(desk)?.canonicalEventKey ?? "~")
+      .join("\u0000");
+    if (
+      !bestSelection ||
+      count > bestSelection.count ||
+      (count === bestSelection.count && score > bestSelection.score) ||
+      (count === bestSelection.count && score === bestSelection.score &&
+        identity.localeCompare(bestSelection.identity) < 0)
+    ) {
+      bestSelection = {
+        count,
+        score,
+        identity,
+        selectedByDesk: new Map(selectedByDesk),
+      };
+    }
   }
+  function assignDesk(index, selectedAiAdjacent = 0) {
+    if (index === FREE_DESKS.length) {
+      considerSelection();
+      return;
+    }
+    const desk = FREE_DESKS[index];
+    for (const candidate of shortlists[desk]) {
+      const entityKey = canonicalEntityKey(candidate.primaryEntity) || candidate.canonicalEventKey;
+      if (selectedEntities.has(entityKey)) continue;
+      if (candidate.aiAdjacent && selectedAiAdjacent >= 2) continue;
+      selectedByDesk.set(desk, candidate);
+      selectedEntities.add(entityKey);
+      assignDesk(index + 1, selectedAiAdjacent + (candidate.aiAdjacent ? 1 : 0));
+      selectedEntities.delete(entityKey);
+      selectedByDesk.delete(desk);
+    }
+    assignDesk(index + 1, selectedAiAdjacent);
+  }
+  assignDesk(0);
+  const optimizedSelection = bestSelection?.selectedByDesk ?? new Map();
   const desks = Object.fromEntries(FREE_DESKS.map((desk) => {
-    const selectedCandidate = selectedByDesk.get(desk) ?? null;
+    const selectedCandidate = optimizedSelection.get(desk) ?? null;
     const emptyReason = selectedCandidate
       ? null
       : shortlists[desk].length === 0
-        ? `No independently corroborated ${DESK_LABELS[desk]} feed development cleared the editorial threshold.`
+        ? normalizedEvidencePolicy === AUTHORITATIVE_FREE_EVIDENCE_POLICY
+          ? `No authoritative or independently corroborated ${DESK_LABELS[desk]} feed development cleared the editorial threshold.`
+          : `No independently corroborated ${DESK_LABELS[desk]} feed development cleared the editorial threshold.`
         : `Qualifying ${DESK_LABELS[desk]} feed items overlapped with a stronger edition-wide selection.`;
     return [desk, { desk, candidates: shortlists[desk], selectedCandidate, emptyReason }];
   }));
-  return { desks, selectedCandidates: FREE_DESKS.flatMap((desk) => selectedByDesk.has(desk) ? [selectedByDesk.get(desk)] : []) };
+  return {
+    desks,
+    selectedCandidates: FREE_DESKS.flatMap((desk) =>
+      optimizedSelection.has(desk) ? [optimizedSelection.get(desk)] : []),
+  };
 }
 
 function sanitizeFailure(source, error) {
@@ -1254,7 +1418,12 @@ export async function ingestCuratedFeeds({
 }
 
 export async function researchFreeEdition(options = {}) {
-  const { sources: _ignoredSources, ...runtimeOptions } = options;
+  const {
+    sources: _ignoredSources,
+    evidencePolicy = DEFAULT_FREE_EVIDENCE_POLICY,
+    ...runtimeOptions
+  } = options;
+  const normalizedEvidencePolicy = requireEvidencePolicy(evidencePolicy);
   // The production entry point always uses the reviewed, checked-in manifest.
   // Tests can exercise custom fixtures through ingestCuratedFeeds directly.
   const ingestion = await ingestCuratedFeeds({ ...runtimeOptions, sources: FREE_FEED_SOURCES });
@@ -1264,9 +1433,12 @@ export async function researchFreeEdition(options = {}) {
     reportingWindow: ingestion.reportingWindow,
     recentArchive: options.recentArchive,
     minimumScore: options.minimumScore,
+    minimumAuthoritativeScore: options.minimumAuthoritativeScore,
+    evidencePolicy: normalizedEvidencePolicy,
   });
   const selection = selectFreeDeskCandidates(rankedCandidates, {
     maxCandidatesPerDesk: options.maxCandidatesPerDesk,
+    evidencePolicy: normalizedEvidencePolicy,
   });
   const candidates = Object.values(selection.desks)
     .flatMap((desk) => desk.candidates)
@@ -1285,7 +1457,8 @@ export async function researchFreeEdition(options = {}) {
       eligibleItemCount: ingestion.items.length,
       candidateCount: candidates.length,
       rankedCandidateCount: rankedCandidates.length,
-    selectedCount: selection.selectedCandidates.length,
+      selectedCount: selection.selectedCandidates.length,
+      evidencePolicy: normalizedEvidencePolicy,
       coverageByDesk: ingestion.coverageByDesk,
       consumedBytes: ingestion.consumedBytes,
     },

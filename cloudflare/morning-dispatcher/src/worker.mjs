@@ -24,10 +24,6 @@ const DISPATCHES = Object.freeze({
       backfill_confirmation: "",
     }),
   }),
-  research: Object.freeze({
-    workflow: "morning-research.yml",
-    inputs: undefined,
-  }),
   delivery: Object.freeze({
     workflow: "pages.yml",
     inputs: Object.freeze({
@@ -119,13 +115,14 @@ export function dispatchForScheduledTime(scheduledTime) {
   const scheduledDate = requireScheduledTime(scheduledTime);
   const parts = newYorkParts(scheduledDate);
 
-  if (!["Mon", "Tue", "Wed", "Thu", "Fri"].includes(parts.weekday)) {
-    return null;
-  }
   if (parts.hour === "05" && parts.minute === "05") {
-    return "research";
+    return "personal";
   }
-  if (parts.hour === "06" && parts.minute === "00") {
+  if (
+    ["Mon", "Tue", "Wed", "Thu", "Fri"].includes(parts.weekday) &&
+    parts.hour === "06" &&
+    parts.minute === "00"
+  ) {
     return "delivery";
   }
   return null;
@@ -134,12 +131,14 @@ export function dispatchForScheduledTime(scheduledTime) {
 export function dispatchesForScheduledTime(scheduledTime) {
   const scheduledDate = requireScheduledTime(scheduledTime);
   const parts = newYorkParts(scheduledDate);
-  const isWeekday = ["Mon", "Tue", "Wed", "Thu", "Fri"].includes(parts.weekday);
-
   if (parts.hour === "05" && parts.minute === "05") {
-    return Object.freeze(isWeekday ? ["personal", "research"] : ["personal"]);
+    return Object.freeze(["personal"]);
   }
-  if (isWeekday && parts.hour === "06" && parts.minute === "00") {
+  if (
+    ["Mon", "Tue", "Wed", "Thu", "Fri"].includes(parts.weekday) &&
+    parts.hour === "06" &&
+    parts.minute === "00"
+  ) {
     return Object.freeze(["delivery"]);
   }
   return Object.freeze([]);
@@ -198,6 +197,9 @@ export async function dispatchGitHubWorkflow(
   const editionDate = `${parts.year}-${parts.month}-${parts.day}`;
   const payload = {
     ref: REPOSITORY.ref,
+    // GitHub otherwise returns 204 with no run identity. The dispatcher treats
+    // an exact run URL/id as part of its fail-closed success contract.
+    return_run_details: true,
     inputs: {
       trigger_source: "cloudflare",
       scheduled_at: scheduledDate.toISOString(),

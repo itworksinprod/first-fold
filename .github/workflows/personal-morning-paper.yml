@@ -346,7 +346,8 @@ jobs:
         id: preflight
         if: steps.dedupe.outputs.should_send == 'true'
         env:
-          HAS_OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY != '' }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          HAS_CLOUDFLARE_AI_API_TOKEN: ${{ secrets.CLOUDFLARE_AI_API_TOKEN != '' }}
           HAS_PERSONAL_PAPER_EMAIL: ${{ secrets.PERSONAL_PAPER_EMAIL != '' }}
           HAS_RESEND_API_KEY: ${{ secrets.RESEND_API_KEY != '' }}
         shell: bash
@@ -362,8 +363,12 @@ jobs:
             echo "RESEND_API_KEY and PERSONAL_PAPER_EMAIL must either both be configured or both be absent."
             exit 1
           fi
-          if [[ "${HAS_OPENAI_API_KEY}" != "true" ]]; then
-            echo "OPENAI_API_KEY must be configured as a repository secret for web research."
+          if [[ ! "${CLOUDFLARE_ACCOUNT_ID}" =~ ^[A-Fa-f0-9]{32}$ ]]; then
+            echo "CLOUDFLARE_ACCOUNT_ID must be configured as a repository variable."
+            exit 1
+          fi
+          if [[ "${HAS_CLOUDFLARE_AI_API_TOKEN}" != "true" ]]; then
+            echo "CLOUDFLARE_AI_API_TOKEN must be configured as a repository secret for free research."
             exit 1
           fi
           echo "delivery_enabled=true" >> "${GITHUB_OUTPUT}"
@@ -397,16 +402,17 @@ jobs:
           steps.dedupe.outputs.should_send == 'true' &&
           steps.preflight.outputs.delivery_enabled == 'true'
         env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_AI_API_TOKEN: ${{ secrets.CLOUDFLARE_AI_API_TOKEN }}
+          CLOUDFLARE_AI_MODEL: '@cf/openai/gpt-oss-120b'
           EDITION_DATE: ${{ steps.gate.outputs.edition_date }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
           RUN_MODE: ${{ steps.gate.outputs.run_mode }}
         shell: bash
         run: |
           if [[ "${RUN_MODE}" == "same_day_backfill" ]]; then
-            node scripts/automation/personal-paid-edition.mjs "${EDITION_DATE}" --same-day-backfill >/dev/null
+            node scripts/automation/personal-free-edition.mjs "${EDITION_DATE}" --same-day-backfill >/dev/null
           elif [[ "${RUN_MODE}" == "on_time" ]]; then
-            node scripts/automation/personal-paid-edition.mjs "${EDITION_DATE}" >/dev/null
+            node scripts/automation/personal-free-edition.mjs "${EDITION_DATE}" >/dev/null
           else
             echo "The personal-paper run mode is invalid."
             exit 1

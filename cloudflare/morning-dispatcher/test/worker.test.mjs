@@ -35,10 +35,9 @@ function workflowFromUrl(url) {
   return new URL(url).pathname.split("/").at(-2);
 }
 
-test("New York gates select the daily personal and weekday paid dispatches across DST", () => {
+test("New York gates select only the daily personal and weekday delivery dispatches across DST", () => {
   assert.deepEqual(dispatchesForScheduledTime(timestamp("2026-08-24T09:05:00Z")), [
     "personal",
-    "research",
   ]);
   assert.deepEqual(dispatchesForScheduledTime(timestamp("2026-08-24T10:05:00Z")), []);
   assert.deepEqual(dispatchesForScheduledTime(timestamp("2026-08-24T10:00:00Z")), [
@@ -49,7 +48,6 @@ test("New York gates select the daily personal and weekday paid dispatches acros
   assert.deepEqual(dispatchesForScheduledTime(timestamp("2026-01-12T09:05:00Z")), []);
   assert.deepEqual(dispatchesForScheduledTime(timestamp("2026-01-12T10:05:00Z")), [
     "personal",
-    "research",
   ]);
   assert.deepEqual(dispatchesForScheduledTime(timestamp("2026-01-12T10:00:00Z")), []);
   assert.deepEqual(dispatchesForScheduledTime(timestamp("2026-01-12T11:00:00Z")), [
@@ -59,21 +57,18 @@ test("New York gates select the daily personal and weekday paid dispatches acros
   // The first weekdays after both 2026 clock changes use the correct companion.
   assert.deepEqual(dispatchesForScheduledTime(timestamp("2026-03-09T09:05:00Z")), [
     "personal",
-    "research",
   ]);
   assert.deepEqual(dispatchesForScheduledTime(timestamp("2026-03-09T10:00:00Z")), [
     "delivery",
   ]);
   assert.deepEqual(dispatchesForScheduledTime(timestamp("2026-11-02T10:05:00Z")), [
     "personal",
-    "research",
   ]);
   assert.deepEqual(dispatchesForScheduledTime(timestamp("2026-11-02T11:00:00Z")), [
     "delivery",
   ]);
 
-  // The legacy paid-only selector remains unchanged for existing callers.
-  assert.equal(dispatchForScheduledTime(timestamp("2026-08-24T09:05:00Z")), "research");
+  assert.equal(dispatchForScheduledTime(timestamp("2026-08-24T09:05:00Z")), "personal");
   assert.equal(dispatchForScheduledTime(timestamp("2026-01-12T11:00:00Z")), "delivery");
 });
 
@@ -95,12 +90,12 @@ test("weekends receive only the personal paper and inactive times stay quiet", (
     "personal",
   ]);
 
-  assert.equal(dispatchForScheduledTime(timestamp("2026-08-22T09:05:00Z")), null);
+  assert.equal(dispatchForScheduledTime(timestamp("2026-08-22T09:05:00Z")), "personal");
   assert.deepEqual(dispatchesForScheduledTime(timestamp("2026-08-24T09:04:00Z")), []);
   assert.throws(() => dispatchesForScheduledTime(Number.NaN), /scheduled event time/i);
 });
 
-test("weekday research time dispatches the personal and paid workflows with exact inputs", async () => {
+test("weekday morning dispatches only the personal workflow with exact inputs", async () => {
   const requests = [];
   const result = await handleScheduled(
     {
@@ -116,29 +111,21 @@ test("weekday research time dispatches the personal and paid workflows with exac
 
   assert.deepEqual(result, {
     status: "dispatched",
-    dispatches: ["personal", "research"],
+    dispatches: ["personal"],
     workflowRuns: [
       {
         dispatch: "personal",
         workflowRunId: 123,
         htmlUrl: "https://github.com/itworksinprod/first-fold/actions/runs/123",
       },
-      {
-        dispatch: "research",
-        workflowRunId: 123,
-        htmlUrl: "https://github.com/itworksinprod/first-fold/actions/runs/123",
-      },
     ],
   });
-  assert.equal(requests.length, 2);
+  assert.equal(requests.length, 1);
 
   const requestsByWorkflow = Object.fromEntries(
     requests.map(([url, options]) => [workflowFromUrl(url), { url, options }]),
   );
-  assert.deepEqual(Object.keys(requestsByWorkflow).sort(), [
-    "morning-research.yml",
-    "personal-morning-paper.yml",
-  ]);
+  assert.deepEqual(Object.keys(requestsByWorkflow), ["personal-morning-paper.yml"]);
 
   const personal = requestsByWorkflow["personal-morning-paper.yml"];
   assert.equal(
@@ -147,6 +134,7 @@ test("weekday research time dispatches the personal and paid workflows with exac
   );
   assert.deepEqual(JSON.parse(personal.options.body), {
     ref: "main",
+    return_run_details: true,
     inputs: {
       trigger_source: "cloudflare",
       scheduled_at: "2026-08-24T09:05:00.000Z",
@@ -158,31 +146,13 @@ test("weekday research time dispatches the personal and paid workflows with exac
     },
   });
 
-  const research = requestsByWorkflow["morning-research.yml"];
-  assert.equal(
-    research.url,
-    "https://api.github.com/repos/itworksinprod/first-fold/actions/workflows/morning-research.yml/dispatches",
-  );
-  assert.equal(research.options.method, "POST");
-  assert.equal(research.options.redirect, "manual");
-  assert.equal(research.options.headers.authorization, `Bearer ${token}`);
-  assert.equal(research.options.headers["x-github-api-version"], "2026-03-10");
-  assert.deepEqual(JSON.parse(research.options.body), {
-    ref: "main",
-    inputs: {
-      trigger_source: "cloudflare",
-      scheduled_at: "2026-08-24T09:05:00.000Z",
-      dispatch_key: "research:2026-08-24",
-    },
-  });
-
   for (const [url, options] of requests) {
     assert.equal(options.body.includes(token), false);
     assert.equal(url.includes(token), false);
   }
 });
 
-test("weekend research time dispatches only the personal workflow", async () => {
+test("weekend morning dispatches only the personal workflow", async () => {
   const requests = [];
   const result = await handleScheduled(
     {
@@ -211,6 +181,7 @@ test("weekend research time dispatches only the personal workflow", async () => 
   assert.equal(workflowFromUrl(requests[0][0]), "personal-morning-paper.yml");
   assert.deepEqual(JSON.parse(requests[0][1].body), {
     ref: "main",
+    return_run_details: true,
     inputs: {
       trigger_source: "cloudflare",
       scheduled_at: "2026-08-22T09:05:00.000Z",
@@ -244,6 +215,7 @@ test("the exact failed Sunday event normalizes the secret and reaches GitHub", a
   assert.equal(captured.options.headers.authorization, `Bearer ${token}`);
   assert.deepEqual(JSON.parse(captured.options.body), {
     ref: "main",
+    return_run_details: true,
     inputs: {
       trigger_source: "cloudflare",
       scheduled_at: "2026-08-23T09:05:51.000Z",
@@ -263,7 +235,7 @@ test("the exact failed Sunday event normalizes the secret and reaches GitHub", a
   ]);
 });
 
-test("weekday delivery dispatch keeps the paid recovery payload unchanged", async () => {
+test("weekday delivery dispatch keeps the recovery payload unchanged", async () => {
   let captured;
   const result = await handleScheduled(
     {
@@ -294,6 +266,7 @@ test("weekday delivery dispatch keeps the paid recovery payload unchanged", asyn
   );
   assert.deepEqual(JSON.parse(captured.options.body), {
     ref: "main",
+    return_run_details: true,
     inputs: {
       trigger_source: "cloudflare",
       scheduled_at: "2026-01-12T11:00:00.000Z",
@@ -338,16 +311,14 @@ test("inactive DST companions and weekend delivery are no-ops without a token", 
 test("the runtime handler awaits every dispatch before resolving", async () => {
   const originalFetch = globalThis.fetch;
   const events = [];
-  let finishResearch;
+  let finishPersonal;
 
   globalThis.fetch = async (url) => {
     const workflow = workflowFromUrl(url);
     events.push(`start:${workflow}`);
-    if (workflow === "morning-research.yml") {
-      await new Promise((resolve) => {
-        finishResearch = resolve;
-      });
-    }
+    await new Promise((resolve) => {
+      finishPersonal = resolve;
+    });
     events.push(`finish:${workflow}`);
     return response();
   };
@@ -371,10 +342,10 @@ test("the runtime handler awaits every dispatch before resolving", async () => {
 
     await new Promise((resolve) => setTimeout(resolve, 0));
     assert.equal(events.includes("start:personal-morning-paper.yml"), true);
-    assert.equal(events.includes("start:morning-research.yml"), true);
+    assert.equal(events.includes("start:morning-research.yml"), false);
     assert.equal(settled, false);
 
-    finishResearch();
+    finishPersonal();
     await scheduled;
     assert.equal(settled, true);
   } finally {
@@ -382,7 +353,7 @@ test("the runtime handler awaits every dispatch before resolving", async () => {
   }
 
   assert.equal(events.includes("noRetry"), false);
-  assert.equal(events.filter((event) => event.startsWith("finish:")).length, 2);
+  assert.equal(events.filter((event) => event.startsWith("finish:")).length, 1);
 });
 
 test("unknown and timestamp-mismatched cron events fail closed", async () => {
@@ -449,7 +420,7 @@ test("a fine-grained GitHub token is normalized without assuming its suffix form
   }
 });
 
-test("workflow allowlisting and local-time gates keep the personal and paid lanes separate", async () => {
+test("workflow allowlisting excludes paid research and keeps scheduled lanes separate", async () => {
   let calls = 0;
   const fetchImpl = async () => {
     calls += 1;
@@ -478,7 +449,7 @@ test("workflow allowlisting and local-time gates keep the personal and paid lane
       timestamp("2026-08-22T09:05:00Z"),
       fetchImpl,
     ),
-    /does not match the scheduled New York time/i,
+    /not approved for dispatch/i,
   );
   await assert.rejects(
     dispatchGitHubWorkflow(
@@ -504,7 +475,7 @@ test("workflow allowlisting and local-time gates keep the personal and paid lane
 test("individual GitHub failures are sanitized and fail the invocation", async () => {
   await assert.rejects(
     dispatchGitHubWorkflow(
-      "research",
+      "personal",
       token,
       timestamp("2026-08-24T09:05:00Z"),
       async () => response(403),
@@ -537,7 +508,7 @@ test("individual GitHub failures are sanitized and fail the invocation", async (
 
   await assert.rejects(
     dispatchGitHubWorkflow(
-      "research",
+      "personal",
       token,
       timestamp("2026-08-24T09:05:00Z"),
       async () => ({
@@ -603,9 +574,9 @@ test("rate limits fail without an immediate retry", async () => {
   }
 });
 
-test("multi-dispatch attempts and awaits every due workflow before a sanitized failure", async () => {
+test("scheduled morning failure reports only the personal dispatch", async () => {
   const calls = [];
-  const resolvers = new Map();
+  let resolveRequest;
   const pending = handleScheduled(
     {
       cron: "5 9 * * *",
@@ -616,28 +587,15 @@ test("multi-dispatch attempts and awaits every due workflow before a sanitized f
       const workflow = workflowFromUrl(url);
       calls.push(workflow);
       return new Promise((resolve) => {
-        resolvers.set(workflow, resolve);
+        resolveRequest = resolve;
       });
     },
   );
 
-  let settled = false;
-  const observed = pending.then(
-    () => {
-      settled = true;
-    },
-    () => {
-      settled = true;
-    },
-  );
   await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.deepEqual(calls.sort(), ["morning-research.yml", "personal-morning-paper.yml"]);
+  assert.deepEqual(calls, ["personal-morning-paper.yml"]);
 
-  resolvers.get("personal-morning-paper.yml")(response(403));
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.equal(settled, false);
-
-  resolvers.get("morning-research.yml")(response());
+  resolveRequest(response(403));
   await assert.rejects(
     pending,
     (error) => {
@@ -647,18 +605,15 @@ test("multi-dispatch attempts and awaits every due workflow before a sanitized f
       return true;
     },
   );
-  await observed;
-  assert.equal(settled, true);
 });
 
-test("structured failure logs identify partial dispatches without secrets", async () => {
+test("structured failure logs identify the personal dispatch without secrets", async () => {
   const originalFetch = globalThis.fetch;
   const originalInfo = console.info;
   const originalError = console.error;
   const errorRecords = [];
 
-  globalThis.fetch = async (url) =>
-    workflowFromUrl(url) === "personal-morning-paper.yml" ? response() : response(403);
+  globalThis.fetch = async () => response(403);
   console.info = () => {};
   console.error = (record) => errorRecords.push(record);
 
@@ -689,8 +644,8 @@ test("structured failure logs identify partial dispatches without secrets", asyn
     scheduled_at: "2026-08-24T09:05:00.000Z",
     stage: "github-response",
     http_status: 403,
-    failed_dispatches: ["research"],
-    workflow_run_ids: [123],
+    failed_dispatches: ["personal"],
+    workflow_run_ids: [],
   });
   assert.equal(serialized.includes(token), false);
   assert.equal(serialized.includes("paper content"), false);

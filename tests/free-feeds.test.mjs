@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
+  AUTHORITATIVE_FREE_EVIDENCE_POLICY,
   assertSufficientFeedCoverage,
   DEFAULT_MAX_TOTAL_FEED_BYTES,
   deduplicateFeedItems,
@@ -54,8 +55,9 @@ function source(overrides = {}) {
 const publicLookup = async () => [{ address: "8.8.8.8", family: 4 }];
 
 test("the reviewed manifest includes a bounded independent corroboration pool", () => {
-  assert.equal(FREE_FEED_SOURCES.length, 17);
+  assert.equal(FREE_FEED_SOURCES.length, 24);
   assert.equal(FREE_FEED_SOURCES.some((item) => item.id === "uk-cma"), false);
+  assert.equal(FREE_FEED_SOURCES.some((item) => item.id === "ftc-competition"), false);
   assert.equal(DEFAULT_MAX_TOTAL_FEED_BYTES, 10_000_000);
   assert.deepEqual(
     FREE_FEED_SOURCES.filter((item) => item.relationship === "independent").map((item) => item.id),
@@ -66,6 +68,66 @@ test("the reviewed manifest includes a bounded independent corroboration pool", 
     FREE_FEED_SOURCES.find((item) => item.id === "wired").publisherKey,
     "two Condé Nast/Advance brands remain one reviewed publisher identity",
   );
+
+  const reviewedAdditions = {
+    "apple-machine-learning": {
+      url: "https://machinelearning.apple.com/rss.xml",
+      feedHosts: ["machinelearning.apple.com"],
+      itemHosts: ["machinelearning.apple.com"],
+    },
+    "nvidia-deep-learning": {
+      url: "https://blogs.nvidia.com/blog/category/enterprise/deep-learning/feed/",
+      feedHosts: ["blogs.nvidia.com"],
+      itemHosts: ["blogs.nvidia.com"],
+    },
+    "google-workspace-updates": {
+      url: "https://feeds.feedburner.com/GoogleAppsUpdates",
+      feedHosts: ["feeds.feedburner.com"],
+      itemHosts: ["workspaceupdates.googleblog.com"],
+    },
+    "gitlab-blog": {
+      url: "https://about.gitlab.com/atom.xml",
+      feedHosts: ["about.gitlab.com"],
+      itemHosts: ["about.gitlab.com"],
+    },
+    "microsoft-security": {
+      url: "https://www.microsoft.com/en-us/security/blog/feed/",
+      feedHosts: ["www.microsoft.com"],
+      itemHosts: ["www.microsoft.com"],
+    },
+    "cert-cc-vulnerability-notes": {
+      url: "https://kb.cert.org/vuls/atomfeed/",
+      feedHosts: ["kb.cert.org"],
+      itemHosts: ["kb.cert.org"],
+    },
+    "doj-antitrust": {
+      url: "https://www.justice.gov/news/rss?field_component=376&require_all=0&search_api_language=en&show_public_archived=0&type%5B0%5D=image_gallery&type%5B1%5D=press_release&type%5B2%5D=speech&type%5B3%5D=youtube_video",
+      feedHosts: ["www.justice.gov"],
+      itemHosts: ["www.justice.gov"],
+    },
+    "federal-register-ftc": {
+      url: "https://www.federalregister.gov/api/v1/documents.rss?conditions%5Bagencies%5D%5B%5D=federal-trade-commission",
+      feedHosts: ["www.federalregister.gov"],
+      itemHosts: ["www.federalregister.gov"],
+    },
+  };
+  for (const [id, expected] of Object.entries(reviewedAdditions)) {
+    const actual = FREE_FEED_SOURCES.find((item) => item.id === id);
+    assert.ok(actual, `${id} is included in the reviewed manifest`);
+    assert.deepEqual(
+      { url: actual.url, feedHosts: actual.feedHosts, itemHosts: actual.itemHosts },
+      expected,
+      `${id} retains exact reviewed feed and article hosts`,
+    );
+  }
+  assert.equal(new Set(FREE_FEED_SOURCES.map((item) => item.id)).size, FREE_FEED_SOURCES.length);
+  for (const feed of FREE_FEED_SOURCES) {
+    const feedUrl = new URL(feed.url);
+    assert.equal(feedUrl.protocol, "https:");
+    assert.ok(feed.feedHosts.includes(feedUrl.hostname));
+    assert.ok([...feed.feedHosts, ...feed.itemHosts].every((host) =>
+      /^[a-z0-9.-]+$/.test(host) && !host.includes("*")));
+  }
 });
 
 test("RSS parsing admits only exact-host HTTPS items and normalizes inert text", () => {
@@ -212,6 +274,7 @@ test("ranking is deterministic, source-grounded, and keeps quiet desks honest", 
   assert.equal(first[0].materiallyUpdatedAt, null);
   assert.equal(first[0].ranking.eligibility, "new-development");
   assert.equal(first[0].ranking.corroborated, true);
+  assert.equal(first[0].ranking.evidenceTier, "corroborated");
   assert.equal(first[0].ranking.itemSourceCount, 2);
   assert.equal(first[0].ranking.publisherCount, 2);
   assert.ok(first[0].ranking.score >= 70);
@@ -304,6 +367,287 @@ test("feed context never substitutes for a second item from a distinct publisher
     "example-vendor",
     "independent-technology-desk",
   ]);
+});
+
+test("authoritative originating singletons require the opt-in personal evidence policy", () => {
+  const originatingItems = parseFeedPayload({
+    source: source({
+      id: "vendor-advisory",
+      publisher: "Example Vendor",
+      publisherKey: "example-vendor",
+      primaryEntity: "Example Vendor",
+      relationship: "originating",
+      url: "https://security.example/feed.xml",
+      feedHosts: ["security.example"],
+      itemHosts: ["security.example"],
+      coverageDesks: ["security-and-privacy"],
+      deskPriors: { "security-and-privacy": 30 },
+    }),
+    body: atomFixture,
+    retrievedAt,
+  });
+
+  assert.equal(
+    rankFeedCandidates({ items: originatingItems, reportingWindow, minimumScore: 0 }).length,
+    0,
+    "the manual comparison remains strict by default",
+  );
+
+  const authoritative = rankFeedCandidates({
+    items: originatingItems,
+    reportingWindow,
+    minimumScore: 0,
+    evidencePolicy: AUTHORITATIVE_FREE_EVIDENCE_POLICY,
+  });
+  assert.equal(authoritative.length, 1);
+  assert.equal(authoritative[0].ranking.corroborated, false);
+  assert.equal(authoritative[0].ranking.evidenceTier, "authoritative-single");
+  assert.equal(
+    authoritative[0].sources.filter((item) => item.relationship !== "context").length,
+    1,
+  );
+  assert.equal(
+    authoritative[0].sources.find((item) => item.relationship !== "context").relationship,
+    "originating",
+  );
+
+  const selection = selectFreeDeskCandidates(authoritative, {
+    evidencePolicy: AUTHORITATIVE_FREE_EVIDENCE_POLICY,
+  });
+  assert.equal(selection.selectedCandidates.length, 1);
+  assert.match(selection.desks.ai.emptyReason, /No authoritative or independently corroborated AI & Models/);
+});
+
+test("an independent singleton remains insufficient under the authoritative evidence policy", () => {
+  const independentItems = parseFeedPayload({
+    source: source({
+      id: "independent-only",
+      publisher: "Independent Technology Desk",
+      publisherKey: "independent-technology-desk",
+      primaryEntity: null,
+      relationship: "independent",
+      url: "https://security.example/feed.xml",
+      feedHosts: ["security.example"],
+      itemHosts: ["security.example"],
+      coverageDesks: ["security-and-privacy"],
+      deskPriors: { "security-and-privacy": 30 },
+    }),
+    body: atomFixture,
+    retrievedAt,
+  });
+
+  assert.equal(
+    rankFeedCandidates({
+      items: independentItems,
+      reportingWindow,
+      minimumScore: 0,
+      evidencePolicy: AUTHORITATIVE_FREE_EVIDENCE_POLICY,
+    }).length,
+    0,
+  );
+});
+
+test("desk classification requires topical evidence and rejects consumer/lifestyle noise", () => {
+  const item = ({ title, summary = "", categories = [], deskPriors = {} }, suffix) => ({
+    itemId: `classification-${suffix}`,
+    sourceId: `classification-source-${suffix}`,
+    publisher: `Publisher ${suffix}`,
+    publisherKey: `publisher-${suffix}`,
+    relationship: "originating",
+    primaryEntity: `Entity ${suffix}`,
+    title,
+    summary,
+    url: `https://news.example/classification-${suffix}`,
+    feedUrl: `https://feeds.example/classification-${suffix}.xml`,
+    publishedAt: "2026-08-21T12:00:00.000Z",
+    updatedAt: null,
+    retrievedAt,
+    categories,
+    deskPriors: Object.fromEntries(
+      ["ai", "work-and-tools", "security-and-privacy", "platforms-and-power"]
+        .map((desk) => [desk, deskPriors[desk] ?? 0]),
+    ),
+    feedPosition: 0,
+  });
+  const rankSingleton = (entry, suffix) => rankFeedCandidates({
+    items: [item(entry, suffix)],
+    reportingWindow,
+    minimumScore: 0,
+    minimumAuthoritativeScore: 0,
+    evidencePolicy: AUTHORITATIVE_FREE_EVIDENCE_POLICY,
+  });
+
+  const topicalCases = [
+    ["ai", {
+      title: "Senate advances an AI safety bill for foundation models",
+      deskPriors: { ai: 20, "platforms-and-power": 30 },
+    }],
+    ["work-and-tools", {
+      title: "Mozilla ships a browser engine with a new code review workflow",
+      deskPriors: { "work-and-tools": 12 },
+    }],
+    ["security-and-privacy", {
+      title: "Vendor adds memory isolation after a malware exploit",
+      deskPriors: { "security-and-privacy": 12 },
+    }],
+    ["platforms-and-power", {
+      title: "AWS changes cloud infrastructure pricing for data centers",
+      deskPriors: { "platforms-and-power": 12 },
+    }],
+  ];
+  for (const [expectedDesk, entry] of topicalCases) {
+    const ranked = rankSingleton(entry, expectedDesk);
+    assert.equal(ranked.length, 1, `${expectedDesk} fixture remains eligible`);
+    assert.equal(ranked[0].suggestedDesk, expectedDesk);
+  }
+
+  const summaryQualified = rankSingleton({
+    title: "Vendor announces its August update",
+    summary: "The developer workflow adds code review automation for teams.",
+    deskPriors: { "work-and-tools": 24 },
+  }, "summary-qualified");
+  assert.equal(summaryQualified[0].suggestedDesk, "work-and-tools");
+
+  const rejected = [
+    {
+      title: "Wildlife policy changes how rare birds are protected",
+      summary: "Officials published the latest research findings.",
+      deskPriors: { "security-and-privacy": 30 },
+    },
+    {
+      title: "AI-powered mattress review: the best deal for better sleep",
+      summary: "The model recommends a discount and coupon.",
+      deskPriors: { ai: 30 },
+    },
+    {
+      title: "Best laptop deals for developers in our buying guide",
+      summary: "A developer can save money on each sale.",
+      deskPriors: { "work-and-tools": 30 },
+    },
+    {
+      title: "Vendor announces its August update",
+      summary: "The workflow changed.",
+      deskPriors: { "work-and-tools": 30 },
+    },
+  ];
+  rejected.forEach((entry, index) => {
+    assert.deepEqual(
+      rankSingleton(entry, `rejected-${index}`),
+      [],
+      "desk priors and weak/off-topic language cannot make an item eligible",
+    );
+  });
+});
+
+test("authoritative singletons can use a separate bounded score floor", () => {
+  const originatingItems = parseFeedPayload({
+    source: source({
+      id: "browser-engine-feed",
+      publisher: "Example Browser Project",
+      publisherKey: "example-browser-project",
+      primaryEntity: "Example Browser Project",
+      relationship: "originating",
+      url: "https://feeds.example/feed.xml",
+      feedHosts: ["feeds.example"],
+      itemHosts: ["news.example"],
+      coverageDesks: ["work-and-tools"],
+      deskPriors: { "work-and-tools": 0 },
+    }),
+    body: rssFixture.replace(
+      "ExampleAI releases a new language model for developers",
+      "Example project updates its browser engine",
+    ),
+    retrievedAt,
+  });
+  const baseline = rankFeedCandidates({
+    items: originatingItems,
+    reportingWindow,
+    minimumScore: 0,
+    minimumAuthoritativeScore: 0,
+    evidencePolicy: AUTHORITATIVE_FREE_EVIDENCE_POLICY,
+  });
+  assert.equal(baseline.length, 1);
+  const score = baseline[0].ranking.score;
+  assert.ok(score < 100);
+
+  assert.equal(rankFeedCandidates({
+    items: originatingItems,
+    reportingWindow,
+    minimumScore: score + 1,
+    evidencePolicy: AUTHORITATIVE_FREE_EVIDENCE_POLICY,
+  }).length, 0, "the authoritative floor defaults to the global floor");
+  assert.equal(rankFeedCandidates({
+    items: originatingItems,
+    reportingWindow,
+    minimumScore: score + 1,
+    minimumAuthoritativeScore: score,
+    evidencePolicy: AUTHORITATIVE_FREE_EVIDENCE_POLICY,
+  }).length, 1, "personal research may opt into a lower authoritative-only floor");
+  assert.equal(rankFeedCandidates({
+    items: originatingItems,
+    reportingWindow,
+    minimumScore: score + 1,
+    minimumAuthoritativeScore: score + 1,
+    evidencePolicy: AUTHORITATIVE_FREE_EVIDENCE_POLICY,
+  }).length, 0);
+  assert.throws(
+    () => rankFeedCandidates({
+      items: originatingItems,
+      reportingWindow,
+      minimumAuthoritativeScore: 101,
+      evidencePolicy: AUTHORITATIVE_FREE_EVIDENCE_POLICY,
+    }),
+    /minimumAuthoritativeScore must be between 0 and 100/,
+  );
+});
+
+test("desk selection treats product aliases as the same primary entity", () => {
+  const candidate = ({ desk, entity, score, suffix }) => ({
+    candidateId: `candidate-${suffix}`,
+    canonicalEventKey: `event-${suffix}`,
+    suggestedDesk: desk,
+    primaryEntity: entity,
+    aiAdjacent: desk === "ai",
+    firstPublishedAt: "2026-08-21T12:00:00.000Z",
+    ranking: { score },
+  });
+  const selection = selectFreeDeskCandidates([
+    candidate({ desk: "ai", entity: "Amazon", score: 90, suffix: "amazon-ai" }),
+    candidate({ desk: "platforms-and-power", entity: "AWS", score: 89, suffix: "aws-platform" }),
+    candidate({ desk: "platforms-and-power", entity: "Cloudflare", score: 88, suffix: "cloudflare-platform" }),
+  ]);
+
+  assert.equal(selection.desks.ai.selectedCandidate.primaryEntity, "Amazon");
+  assert.equal(
+    selection.desks["platforms-and-power"].selectedCandidate.primaryEntity,
+    "Cloudflare",
+  );
+});
+
+test("desk selection optimizes for a complete diverse slate before total score", () => {
+  const candidate = ({ desk, entity, score, suffix, aiAdjacent = false }) => ({
+    candidateId: `candidate-${suffix}`,
+    canonicalEventKey: `event-${suffix}`,
+    suggestedDesk: desk,
+    primaryEntity: entity,
+    aiAdjacent,
+    firstPublishedAt: "2026-08-21T12:00:00.000Z",
+    ranking: { score },
+  });
+  const selection = selectFreeDeskCandidates([
+    candidate({ desk: "ai", entity: "Amazon", score: 60, suffix: "ai-amazon", aiAdjacent: true }),
+    candidate({ desk: "ai", entity: "Google", score: 58, suffix: "ai-google", aiAdjacent: true }),
+    candidate({ desk: "work-and-tools", entity: "Google", score: 65, suffix: "work-google" }),
+    candidate({ desk: "work-and-tools", entity: "GitHub", score: 60, suffix: "work-github" }),
+    candidate({ desk: "security-and-privacy", entity: "CISA", score: 69, suffix: "security-cisa" }),
+    candidate({ desk: "platforms-and-power", entity: "AWS", score: 64, suffix: "platform-aws" }),
+  ]);
+
+  assert.equal(selection.selectedCandidates.length, 4);
+  assert.equal(selection.desks.ai.selectedCandidate.primaryEntity, "Google");
+  assert.equal(selection.desks["work-and-tools"].selectedCandidate.primaryEntity, "GitHub");
+  assert.equal(selection.desks["security-and-privacy"].selectedCandidate.primaryEntity, "CISA");
+  assert.equal(selection.desks["platforms-and-power"].selectedCandidate.primaryEntity, "AWS");
 });
 
 test("cross-publisher matching joins specific event headlines but rejects generic near-collisions", () => {
@@ -415,10 +759,11 @@ test("cross-publisher matching joins specific event headlines but rejects generi
     },
   }));
   const rankedRetail = rankFeedCandidates({ items: retailRewards, reportingWindow, minimumScore: 0 });
-  assert.equal(rankedRetail.length, 1);
-  assert.equal(rankedRetail[0].ranking.deskScores.ai, 0, "AI must not match the substring in retail");
-  assert.equal(rankedRetail[0].suggestedDesk, "platforms-and-power");
-  assert.equal(rankedRetail[0].aiAdjacent, false);
+  assert.equal(
+    rankedRetail.length,
+    0,
+    "a platform desk prior cannot turn a retail-rewards item into technology news",
+  );
 });
 
 test("feed download pins approved public DNS and follows only allowlisted redirects", async () => {

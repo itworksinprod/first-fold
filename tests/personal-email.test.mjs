@@ -40,23 +40,31 @@ function personalCandidate() {
   candidate.frontPage.note =
     "Four source-verified developments cleared the private research contract.";
   candidate.frontPage.estimatedMinutes = 8;
-  candidate.provenance.personalResearch = {
+  candidate.provenance.personalFreeResearch = {
     workflow: "personal-morning-paper",
-    provider: "openai-responses",
-    researchTool: "web_search",
-    model: "gpt-test-web-search",
+    provider: "cloudflare-workers-ai",
+    researchMethod: "curated-live-feeds",
+    model: "@cf/openai/gpt-oss-120b",
     runId: "123456789",
     runUrl: "https://github.com/itworksinprod/first-fold/actions/runs/123456789",
     repository: "itworksinprod/first-fold",
     runMode: "on_time",
     generatedAt: candidate.publication.generatedAt,
-    promptSha256: "a".repeat(64),
-    schemaSha256: "b".repeat(64),
-    responseId: "resp_personal_web_test",
-    windowPolicy: "previous-day-05:00-to-edition-day-05:00-America/New_York",
+    inference: "workers-ai",
+    feedSnapshotSha256: "a".repeat(64),
+    requestSha256: "b".repeat(64),
+    responseSha256: "c".repeat(64),
+    responseId: "workers_ai_personal_test",
+    feedSourceCount: 17,
+    successfulFeedSourceCount: 17,
+    candidateCount: 8,
+    evidencePolicy: "authoritative-or-corroborated",
+    lookbackHours: 72,
+    minimumScore: 70,
+    minimumAuthoritativeScore: 58,
     ephemeral: true,
-    webSearchCompleted: true,
     selectedStoryCount: 4,
+    maxModelRequests: 2,
   };
   candidate.provenance.sourceCheck = {
     status: "passed",
@@ -142,25 +150,34 @@ test("every rendered editorial and source field is HTML escaped", () => {
 test("rendering fails closed for malformed, public, free, incomplete, or unverified candidates", () => {
   assert.throws(
     () => renderPersonalEditionEmail(null),
-    /complete, source-checked web-research candidate/,
+    /complete, source-checked free-research candidate/,
   );
 
   const mutations = [
     (candidate) => { candidate.status = "published"; candidate.publication.publishedAt = candidate.publication.publishAt; },
     (candidate) => { candidate.provenance.automation = { workflow: "morning-press" }; },
     (candidate) => { candidate.provenance.freePilot = { workflow: "free-morning-press" }; },
+    (candidate) => { candidate.provenance.personalResearch = { workflow: "personal-morning-paper" }; },
     (candidate) => { candidate.provenance.sourceCheck.status = "failed"; },
     (candidate) => { candidate.provenance.sourceCheck.issues = [{ code: "BAD" }]; },
-    (candidate) => { candidate.provenance.sourceCheck.checkedSourceCount = 3; },
-    (candidate) => { candidate.provenance.personalResearch.workflow = "morning-press"; },
-    (candidate) => { candidate.provenance.personalResearch.provider = "other-provider"; },
-    (candidate) => { candidate.provenance.personalResearch.researchTool = "none"; },
-    (candidate) => { candidate.provenance.personalResearch.repository = "attacker/fork"; },
-    (candidate) => { candidate.provenance.personalResearch.runUrl = "https://github.com/attacker/fork/actions/runs/123456789"; },
-    (candidate) => { candidate.provenance.personalResearch.webSearchCompleted = false; },
-    (candidate) => { candidate.provenance.personalResearch.selectedStoryCount = 3; },
-    (candidate) => { candidate.provenance.personalResearch.promptSha256 = "not-a-digest"; },
-    (candidate) => { candidate.provenance.personalResearch.responseId = ""; },
+    (candidate) => { candidate.provenance.sourceCheck.checkedSourceCount = 7; },
+    (candidate) => { candidate.provenance.personalFreeResearch.workflow = "morning-press"; },
+    (candidate) => { candidate.provenance.personalFreeResearch.provider = "other-provider"; },
+    (candidate) => { candidate.provenance.personalFreeResearch.researchMethod = "none"; },
+    (candidate) => { candidate.provenance.personalFreeResearch.repository = "attacker/fork"; },
+    (candidate) => { candidate.provenance.personalFreeResearch.runUrl = "https://github.com/attacker/fork/actions/runs/123456789"; },
+    (candidate) => { candidate.provenance.personalFreeResearch.inference = "skipped-no-eligible-candidates"; },
+    (candidate) => { candidate.provenance.personalFreeResearch.selectedStoryCount = 3; },
+    (candidate) => { candidate.provenance.personalFreeResearch.requestSha256 = "not-a-digest"; },
+    (candidate) => { candidate.provenance.personalFreeResearch.responseId = ""; },
+    (candidate) => { candidate.provenance.personalFreeResearch.lookbackHours = 24; },
+    (candidate) => { candidate.provenance.personalFreeResearch.minimumAuthoritativeScore = 10; },
+    (candidate) => {
+      candidate.desks.ai.story.sources[1].url = candidate.desks.ai.story.sources[0].url;
+    },
+    (candidate) => {
+      for (const source of candidate.desks.ai.story.sources) source.relationship = "context";
+    },
     (candidate) => { candidate.frontPage.estimatedMinutes = "<img src=x onerror=alert(1)>"; },
     (candidate) => { candidate.desks.ai.story.whatHappened = "too short"; },
   ];
@@ -169,7 +186,7 @@ test("rendering fails closed for malformed, public, free, incomplete, or unverif
     mutate(candidate);
     assert.throws(
       () => renderPersonalEditionEmail(candidate),
-      /complete, source-checked web-research candidate/,
+      /complete, source-checked free-research candidate/,
     );
   }
 });
@@ -189,7 +206,7 @@ test("every missing desk blocks delivery before Resend is called", async (t) => 
             return successResponse();
           },
         }),
-        /complete, source-checked web-research candidate/,
+        /complete, source-checked free-research candidate/,
       );
       assert.equal(fetchCalls, 0);
     });

@@ -203,6 +203,23 @@ test("late timestamps are exempt only for an explicitly marked same-day backfill
   assert.equal(issueCodes(personalBackfill).includes("SOURCE_RETRIEVED_AFTER_PUBLICATION"), false);
   assert.equal(personalBackfill.status, "passed");
 
+  edition.provenance = {
+    personalFreeResearch: {
+      workflow: "personal-morning-paper",
+      runMode: "same_day_backfill",
+    },
+  };
+  const personalFreeBackfill = validateNewsroomDraft(edition, {
+    checkedAt: lateInstant,
+    temporalMode: "personal-free-same-day-backfill",
+  });
+  assert.equal(issueCodes(personalFreeBackfill).includes("GENERATED_AFTER_PUBLICATION"), false);
+  assert.equal(
+    issueCodes(personalFreeBackfill).includes("SOURCE_RETRIEVED_AFTER_PUBLICATION"),
+    false,
+  );
+  assert.equal(personalFreeBackfill.status, "passed");
+
   const wrongLane = validateNewsroomDraft(edition, {
     checkedAt: lateInstant,
     temporalMode: "free-same-day-backfill",

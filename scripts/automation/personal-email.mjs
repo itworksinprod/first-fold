@@ -14,10 +14,14 @@ export const MAX_RESEND_RESPONSE_BYTES = 64 * 1024;
 const MAX_CANDIDATE_FILE_BYTES = 1024 * 1024;
 const EXPECTED_PERSONAL_REPOSITORY = "itworksinprod/first-fold";
 const PERSONAL_RESEARCH_WORKFLOW = "personal-morning-paper";
-const PERSONAL_RESEARCH_PROVIDER = "openai-responses";
-const PERSONAL_RESEARCH_TOOL = "web_search";
-const PERSONAL_WINDOW_POLICY =
-  "previous-day-05:00-to-edition-day-05:00-America/New_York";
+const PERSONAL_RESEARCH_PROVIDER = "cloudflare-workers-ai";
+const PERSONAL_RESEARCH_METHOD = "curated-live-feeds";
+const PERSONAL_RESEARCH_MODEL = "@cf/openai/gpt-oss-120b";
+const PERSONAL_RESEARCH_EVIDENCE_POLICY = "authoritative-or-corroborated";
+const PERSONAL_RESEARCH_MAX_MODEL_REQUESTS = 2;
+const PERSONAL_RESEARCH_LOOKBACK_HOURS = 72;
+const PERSONAL_RESEARCH_MINIMUM_SCORE = 70;
+const PERSONAL_RESEARCH_MINIMUM_AUTHORITATIVE_SCORE = 58;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const RESEND_KEY_PATTERN = /^re_[A-Za-z0-9_-]{8,508}$/;
 const EMAIL_PATTERN = /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
@@ -89,7 +93,7 @@ function sourceRelationshipLabel(relationship) {
 }
 
 function validationFailure() {
-  return new Error("Personal email requires a complete, source-checked web-research candidate.");
+  return new Error("Personal email requires a complete, source-checked free-research candidate.");
 }
 
 function isDisplayString(value, maximumLength) {
@@ -145,6 +149,26 @@ function hasSafeDisplayFields(candidate) {
   return true;
 }
 
+function hasCompleteStorySources(candidate) {
+  return DESKS.every(([desk]) => {
+    const sources = candidate.desks?.[desk]?.story?.sources;
+    if (!Array.isArray(sources) || sources.length < 2) return false;
+    const urls = new Set();
+    let hasDirectSource = false;
+    for (const source of sources) {
+      try {
+        urls.add(requireSourceUrl(source?.url));
+      } catch {
+        return false;
+      }
+      if (["originating", "independent"].includes(source?.relationship)) {
+        hasDirectSource = true;
+      }
+    }
+    return urls.size >= 2 && hasDirectSource;
+  });
+}
+
 export function assertPersonalEmailCandidate(candidate) {
   let validation;
   try {
@@ -158,12 +182,13 @@ export function assertPersonalEmailCandidate(candidate) {
     candidate.publication?.publishedAt !== null ||
     Object.hasOwn(candidate.provenance ?? {}, "automation") ||
     Object.hasOwn(candidate.provenance ?? {}, "freePilot") ||
+    Object.hasOwn(candidate.provenance ?? {}, "personalResearch") ||
     !hasSafeDisplayFields(candidate)
   ) {
     throw validationFailure();
   }
 
-  const research = candidate.provenance?.personalResearch;
+  const research = candidate.provenance?.personalFreeResearch;
   const sourceCheck = candidate.provenance?.sourceCheck;
   const runId = typeof research?.runId === "string" ? research.runId : "";
   const expectedRunUrl =
@@ -173,31 +198,43 @@ export function assertPersonalEmailCandidate(candidate) {
     typeof research !== "object" ||
     research.workflow !== PERSONAL_RESEARCH_WORKFLOW ||
     research.provider !== PERSONAL_RESEARCH_PROVIDER ||
-    research.researchTool !== PERSONAL_RESEARCH_TOOL ||
+    research.researchMethod !== PERSONAL_RESEARCH_METHOD ||
+    research.model !== PERSONAL_RESEARCH_MODEL ||
     research.repository !== EXPECTED_PERSONAL_REPOSITORY ||
     research.runUrl !== expectedRunUrl ||
     !/^[1-9]\d*$/.test(runId) ||
     !["on_time", "same_day_backfill"].includes(research.runMode) ||
     research.generatedAt !== candidate.publication.generatedAt ||
-    typeof research.model !== "string" ||
-    !research.model.trim() ||
-    research.model.length > 200 ||
+    research.inference !== "workers-ai" ||
     typeof research.responseId !== "string" ||
     !RESPONSE_ID_PATTERN.test(research.responseId) ||
-    !/^[a-f0-9]{64}$/.test(research.promptSha256 ?? "") ||
-    !/^[a-f0-9]{64}$/.test(research.schemaSha256 ?? "") ||
-    research.windowPolicy !== PERSONAL_WINDOW_POLICY ||
+    research.responseId === "not-invoked" ||
+    !/^[a-f0-9]{64}$/.test(research.feedSnapshotSha256 ?? "") ||
+    !/^[a-f0-9]{64}$/.test(research.requestSha256 ?? "") ||
+    !/^[a-f0-9]{64}$/.test(research.responseSha256 ?? "") ||
+    !Number.isInteger(research.feedSourceCount) ||
+    research.feedSourceCount < 1 ||
+    !Number.isInteger(research.successfulFeedSourceCount) ||
+    research.successfulFeedSourceCount < 1 ||
+    research.successfulFeedSourceCount > research.feedSourceCount ||
+    !Number.isInteger(research.candidateCount) ||
+    research.candidateCount < DESKS.length ||
+    research.evidencePolicy !== PERSONAL_RESEARCH_EVIDENCE_POLICY ||
+    research.lookbackHours !== PERSONAL_RESEARCH_LOOKBACK_HOURS ||
+    research.minimumScore !== PERSONAL_RESEARCH_MINIMUM_SCORE ||
+    research.minimumAuthoritativeScore !== PERSONAL_RESEARCH_MINIMUM_AUTHORITATIVE_SCORE ||
     research.ephemeral !== true ||
-    research.webSearchCompleted !== true ||
     research.selectedStoryCount !== DESKS.length ||
+    research.maxModelRequests !== PERSONAL_RESEARCH_MAX_MODEL_REQUESTS ||
     !sourceCheck ||
     typeof sourceCheck !== "object" ||
     sourceCheck.status !== "passed" ||
     !Number.isInteger(sourceCheck.checkedSourceCount) ||
-    sourceCheck.checkedSourceCount < DESKS.length ||
+    sourceCheck.checkedSourceCount < DESKS.length * 2 ||
     !Array.isArray(sourceCheck.issues) ||
     sourceCheck.issues.length !== 0 ||
-    DESKS.some(([desk]) => candidate.desks?.[desk]?.story === null)
+    DESKS.some(([desk]) => candidate.desks?.[desk]?.story === null) ||
+    !hasCompleteStorySources(candidate)
   ) {
     throw validationFailure();
   }

@@ -1,23 +1,35 @@
 # Free Morning Press pilot
 
-The free pilot is a separate research experiment. It does not replace, modify, or automatically fall back from the paid Morning Press workflow.
+The Free Morning Press pilot is a **manual, strict comparison experiment**. It
+shares the curated-feed and Cloudflare Workers AI foundation used by the
+automatic Personal Morning Paper, but it keeps a separate output, evidence
+policy, and purpose. It is never published or emailed and never falls back to a
+paid provider.
 
-| Path | Paid production pilot | Free research pilot |
-| --- | --- | --- |
-| Research model | OpenAI `gpt-5.6-luna` | Fixed Cloudflare Workers AI `@cf/openai/gpt-oss-120b` |
-| Discovery | Model-assisted web research | A bounded allowlist of curated RSS, Atom, and JSON feeds |
-| Start | Cloudflare's 5:05 AM New York dispatch or a permitted manual run | Manual GitHub Actions run only |
-| Output | A publication-shaped candidate pull request | A separate comparison pull request containing `content/free-candidates/YYYY-MM-DD.json` |
-| Publication authority | Existing exact-SHA review and merge gates | None |
-| Delivery | Existing 6:00 AM delivery workflow | Never |
+| Path | Automatic personal paper | Manual free comparison | Manual paid pilot |
+| --- | --- | --- | --- |
+| Model | Fixed Workers AI `@cf/openai/gpt-oss-120b` | Fixed Workers AI `@cf/openai/gpt-oss-120b` | OpenAI Responses model configured by the paid workflow |
+| Discovery | Curated RSS, Atom, and JSON feeds | Same bounded feed catalog | Model-assisted open-web research |
+| Start | Cloudflare at 5:05 AM New York every day | Manual GitHub Actions run only | Manual GitHub Actions run only |
+| Evidence policy | Corroborated events or explicitly attributed authoritative originating reports; four desks required | Strict two-publisher corroboration for every non-quiet story | Paid workflow's direct-source policy |
+| Output | Ephemeral `content/personal-candidates/` file and one private email | Comparison PR containing `content/free-candidates/YYYY-MM-DD.json` | Public, publication-shaped candidate PR |
+| Publication | Never | Never | Exact-SHA human review and merge required |
+| Paid fallback | None | None | This path is itself explicitly billable |
 
-The paid workflow in `.github/workflows/morning-research.yml` remains the production candidate generator. Its Cloudflare schedule, OpenAI secret, candidate branch, approval rule, and delivery path continue unchanged. The free workflow lives in `.github/workflows/free-morning-research.yml`; it uses the branch prefix `experiment/free-morning-press-`, label `free-morning-press-pilot`, candidate status `first-fold/free-morning-press-candidate`, and a separate output directory so it cannot be mistaken for a production edition.
+The comparison workflow lives in `.github/workflows/free-morning-research.yml`.
+It uses branch prefix `experiment/free-morning-press-`, label
+`free-morning-press-pilot`, candidate status
+`first-fold/free-morning-press-candidate`, and a separate output directory so
+it cannot be mistaken for a production or private-email edition. The paid
+workflow in `.github/workflows/morning-research.yml` remains available only for
+deliberate manual use; Cloudflare-triggered paid runs are neutral no-ops before
+API access. Its OpenAI call can incur charges.
 
 ## What the free pilot does
 
 The pilot:
 
-1. Reads only the project's checked-in, 17-source manifest. Twelve first-party or regulator feeds cover AI research and releases, developer tools, security advisories, cloud platforms, and competition policy. Five reviewed independent outlets—Ars Technica, The Verge, TechCrunch, BleepingComputer, and WIRED—supply a bounded corroboration pool representing four controlling publisher identities; Ars Technica and WIRED share one identity.
+1. Reads only the project's checked-in, 24-source manifest. Nineteen first-party or regulator feeds cover AI research and releases, developer tools, security advisories, cloud platforms, and competition policy. Five reviewed independent outlets—Ars Technica, The Verge, TechCrunch, BleepingComputer, and WIRED—supply a bounded corroboration pool representing four controlling publisher identities; Ars Technica and WIRED share one identity.
 2. Fetches and normalizes eligible feed items inside the edition's reporting window. Only an item's first-published timestamp qualifies; a later `updatedAt` value does not invent a material update.
 3. Deduplicates and ranks those items before the model call. Publisher aliases under the same controlling organization collapse to one reviewed publisher identity—for example, the Google family is one publisher, and GitHub and Microsoft are one publisher.
 4. Requires every non-quiet story dossier to contain at least two distinct factual article URLs controlled by two distinct reviewed publisher identities. A feed endpoint is retained only as context and provenance; it never counts as corroboration for its article.
@@ -26,7 +38,10 @@ The pilot:
 7. Writes a comparison candidate to `content/free-candidates/YYYY-MM-DD.json` and uploads the exact candidate as a run artifact from a read-only research job.
 8. Downloads and revalidates that artifact in a separate staging job, which has GitHub write permission but receives no Cloudflare AI token, then opens the comparison pull request.
 
-It does **not** add a canonical file under `content/editions/`, approve a candidate, merge to `main`, deploy GitHub Pages, or dispatch the production delivery workflow. A free-pilot result is research material until a human deliberately evaluates it.
+It does **not** add a canonical file under `content/editions/`, approve a
+candidate, merge to `main`, deploy GitHub Pages, dispatch delivery, or send the
+personal email. A free-pilot result is research material until a human
+deliberately evaluates it.
 
 When every desk has usable parsed-feed coverage from at least two controlling publisher identities but no event clears the two-publisher evidence rule, the pipeline creates a deterministic all-quiet preview without calling Workers AI. If any desk falls below that coverage floor, the run fails before writing a candidate file. An HTTP `200` response containing zero valid allowlisted entries does not count as a successful feed. This distinction keeps a genuinely quiet news window separate from missing research coverage.
 
@@ -34,7 +49,9 @@ When every desk has usable parsed-feed coverage from at least two controlling pu
 
 Every free candidate covers one complete New York local day: from **5:00 AM on the previous `America/New_York` calendar date, inclusive, through 5:00 AM on the edition date, exclusive**. The boundary is calculated in the named timezone, so it remains correct across daylight-saving changes.
 
-This free window never inherits the latest paid edition's cutoff. Weekend and Monday free runs therefore remain one-local-calendar-day editions instead of expanding to cover days skipped by the weekday paid schedule.
+This free window never inherits the latest public edition's cutoff. Weekend and
+Monday comparison runs therefore remain one-local-calendar-day editions even
+when no public edition was prepared.
 
 ## One-time Cloudflare setup
 
@@ -78,16 +95,27 @@ Keep the Cloudflare account on the **Workers Free** plan for this pilot. Cloudfl
 
 This guarantee depends on the account remaining on Workers Free and on using a model available to that plan. Do not upgrade the Workers plan, enable prepaid AI Gateway credits, or change to a paid-only model if the goal is a hard zero-dollar pilot. Check the current [Workers AI pricing and free allocation](https://developers.cloudflare.com/workers-ai/platform/pricing/) before changing models because model availability and limits can change.
 
+The allocation is shared across the Cloudflare account. A manual comparison
+uses some of the same daily pool needed by the next automatic personal paper.
+If there is not enough free capacity, the affected run fails and produces no
+email or candidate rather than charging a paid fallback. Avoid unnecessary
+manual comparisons when preserving capacity for the daily personal run matters.
+
 A failed run is safe:
 
-- The existing paid workflow is unaffected.
+- The automatic personal lane is not switched to another model or provider.
+- The manual paid workflow is not started.
 - The prior public edition remains live.
 - No incomplete free candidate is promoted into `content/editions/`.
 - No retry should bypass validation or switch automatically to the paid OpenAI path.
 
 ## What to compare
 
-Run the paid and free paths across several editions. Use strict story-discovery comparisons only when their reporting boundaries match exactly; otherwise record the different windows and compare editorial choices and output quality. Score them independently on:
+Run the manual paid and free paths across several editions only when you have
+deliberately accepted the paid API cost. Use strict story-discovery comparisons
+only when their reporting boundaries match exactly; otherwise record the
+different windows and compare editorial choices and output quality. Score them
+independently on:
 
 - consequential stories found;
 - important stories missed;
@@ -114,4 +142,7 @@ Do not judge the free pilot only by how polished its prose sounds. The more impo
 - **Quiet editions are expected.** When the source pool contains too little eligible evidence, the correct result is a quiet desk or a failed experiment—not filler.
 - **No automatic publication.** Even a strong free result remains outside the production approval and delivery chain during this pilot.
 
-The free path should earn broader responsibility only after repeated side-by-side review shows that it is accurate, useful, and predictable. Until then, paid Morning Press remains production and the free pilot remains a manual comparison tool.
+The strict free comparison remains a manual evaluation tool. The automatic
+Personal Morning Paper is separately fail-closed: it sends only after all four
+desks validate, keeps `personalFreeResearch` provenance private, and never turns
+a comparison artifact into an email or public edition.

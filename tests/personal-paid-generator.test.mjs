@@ -169,7 +169,10 @@ test("paid personal generation uses real archive context, exact daily window, an
 
   assert.equal(validateCanonicalEdition(candidate).valid, true);
   assert.equal(validatePersonalPaidCandidate(candidate, { runMode: "on_time" }), true);
-  assert.equal(assertPersonalEmailCandidate(candidate).valid, true);
+  assert.throws(
+    () => assertPersonalEmailCandidate(candidate),
+    /free-research candidate/,
+  );
   assert.equal(candidate.status, "validated");
   assert.equal(candidate.publication.publishedAt, null);
   assert.deepEqual(candidate.reportingWindow, {
