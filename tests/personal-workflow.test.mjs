@@ -25,6 +25,14 @@ const generation = job.slice(
   job.indexOf("Generate the private source-checked candidate"),
   job.indexOf("Test the exact private candidate"),
 );
+const ledgerPrepare = job.slice(
+  job.indexOf("Prepare the private 30-day repeat ledger"),
+  job.indexOf("Generate the private source-checked candidate"),
+);
+const ledgerRecord = job.slice(
+  job.indexOf("Record only validated story fingerprints in the repeat ledger"),
+  job.indexOf("Stage the immutable hash-only repeat ledger before delivery"),
+);
 const emailStepName = "Send only the validated paper to its private recipient";
 const emailStepIndex = job.lastIndexOf(emailStepName);
 const ledgerUploadIndex = job.indexOf("Stage the immutable hash-only repeat ledger before delivery");
@@ -175,7 +183,10 @@ test("email setup no-ops only when wholly absent and secrets stay step-scoped", 
   assert.match(email, /RESEND_API_KEY: \$\{\{ secrets\.RESEND_API_KEY \}\}/);
   assert.match(email, /PERSONAL_PAPER_EMAIL: \$\{\{ secrets\.PERSONAL_PAPER_EMAIL \}\}/);
   assert.doesNotMatch(email, /CLOUDFLARE_AI_API_TOKEN|github\.token|GH_TOKEN/);
-  assert.equal(workflow.match(/secrets\.CLOUDFLARE_AI_API_TOKEN/g)?.length, 2);
+  assert.match(ledgerPrepare, /CLOUDFLARE_AI_API_TOKEN: \$\{\{ secrets\.CLOUDFLARE_AI_API_TOKEN \}\}/);
+  assert.match(ledgerRecord, /CLOUDFLARE_AI_API_TOKEN: \$\{\{ secrets\.CLOUDFLARE_AI_API_TOKEN \}\}/);
+  assert.doesNotMatch(ledgerLookup, /secrets\.CLOUDFLARE_AI_API_TOKEN/);
+  assert.equal(workflow.match(/secrets\.CLOUDFLARE_AI_API_TOKEN/g)?.length, 4);
   assert.equal(workflow.match(/vars\.CLOUDFLARE_ACCOUNT_ID/g)?.length, 2);
   assert.equal(workflow.match(/secrets\.RESEND_API_KEY/g)?.length, 2);
   assert.equal(workflow.match(/secrets\.PERSONAL_PAPER_EMAIL/g)?.length, 2);
@@ -259,10 +270,12 @@ test("the 30-day ledger restores and uploads one bounded hash-only artifact", ()
   assert.match(workflow, /artifact-ids: \$\{\{ steps\.ledger\.outputs\.artifact_id \}\}/);
   assert.match(workflow, /run-id: \$\{\{ steps\.ledger\.outputs\.run_id \}\}/);
   assert.match(workflow, /node scripts\/automation\/personal-story-ledger\.mjs prepare/);
+  assert.match(ledgerPrepare, /node scripts\/automation\/personal-story-ledger\.mjs prepare/);
   assert.match(workflow, /--rollout-date 2026-08-24/);
   assert.equal(workflow.match(/--allow-bootstrap/g)?.length, 1);
   assert.match(workflow, /--recorded-edition-count "\$\{LEDGER_BOOTSTRAP_COUNT\}"/);
   assert.match(workflow, /node scripts\/automation\/personal-story-ledger\.mjs record/);
+  assert.match(ledgerRecord, /node scripts\/automation\/personal-story-ledger\.mjs record/);
   assert.match(ledgerUpload, /name: personal-repeat-ledger-v1/);
   assert.match(ledgerUpload, /path: \$\{\{ runner\.temp \}\}\/first-fold-ledger\/repeat-ledger\.json/);
   assert.match(ledgerUpload, /if-no-files-found: error/);

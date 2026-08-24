@@ -97,7 +97,7 @@ No environment variables or paid services are needed to build, read, preview, or
 
 A separate **Free Morning Press comparison** manually tests the same feed-and-Workers-AI foundation under a stricter two-publisher comparison policy. It writes only to `content/free-candidates/`, cannot enter the production approval or delivery workflows, and fails closed when its free allowance or evidence checks are unavailable. Setup, operating limits, and comparison instructions are in [`docs/free-pilot.md`](docs/free-pilot.md).
 
-The **Personal Morning Paper** is the only automatically researched lane. At 5:05 AM `America/New_York` every day, including weekends, it reads allowlisted live feeds and uses the fixed Workers AI model to prepare one private owner-only email. Each candidate passes a 100-point editorial scorecard, hard editorial vetoes, evidence checks, and a privacy-safe 30-day repeat check. The lane sends three or four stories, never more than one per desk, and permits at most one honest quiet desk; fewer than three stories means no email. The job sends static HTML and plain text through Resend and creates no branch, pull request, Pages deployment, or public archive entry. Its full candidate remains ephemeral and is never uploaded, while a bounded hash-only Actions artifact preserves repeat fingerprints and the first-five quality-pilot count without retaining story text, headlines, URLs, publishers, recipient data, or provider IDs. Setup requires `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_AI_API_TOKEN`, `RESEND_API_KEY`, `PERSONAL_PAPER_EMAIL`, and the deployed dispatcher—not an OpenAI key. See [`docs/personal-delivery.md`](docs/personal-delivery.md).
+The **Personal Morning Paper** is the only automatically researched lane. At 5:05 AM `America/New_York` every day, including weekends, it reads allowlisted live feeds and uses the fixed Workers AI model to prepare one private owner-only email. Each candidate passes a 100-point editorial scorecard, hard editorial vetoes, evidence checks, and a privacy-safe 30-day repeat check. The lane sends three or four stories, never more than one per desk, and permits at most one honest quiet desk; fewer than three stories means no email. The job sends static HTML and plain text through Resend and creates no branch, pull request, Pages deployment, or public archive entry. Its full candidate remains ephemeral and is never uploaded, while a bounded keyed-HMAC-only Actions artifact preserves repeat fingerprints and the first-five quality-pilot count without retaining reusable unkeyed story hashes, story text, headlines, URLs, publishers, recipient data, or provider IDs. The existing `CLOUDFLARE_AI_API_TOKEN` keys those fingerprints as well as authorizing Workers AI, so no additional secret is required. Setup requires `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_AI_API_TOKEN`, `RESEND_API_KEY`, `PERSONAL_PAPER_EMAIL`, and the deployed dispatcher—not an OpenAI key. See [`docs/personal-delivery.md`](docs/personal-delivery.md).
 
 For a fresh GitHub checkout, `npm ci` reproduces the lockfile exactly. Use `npm install` only when intentionally changing dependencies, and commit the resulting lockfile change. Generated output, local dependencies, logs, and environment files are ignored.
 
@@ -222,7 +222,7 @@ Build-time validation --> reader projection + archive artifact --> First Fold re
 The renderer never calls news or model APIs per visitor. The scheduled personal
 lane performs its free feed-and-Workers-AI work in a private,
 repository-content-read-only job and never modifies this public content graph.
-It retains only a bounded hash ledger for duplicate control; no candidate or
+It retains only a bounded keyed-HMAC ledger for duplicate control; no candidate or
 email content enters that artifact. A deliberate manual OpenAI pilot can
 stage a canonical proposal in a public pull request; an editor must approve its
 exact revision before the separately dispatched delivery job can release it
@@ -298,7 +298,7 @@ Included:
 - A review-only press desk backed by the same revision-bound edition projection
 - Pull-request approval and a weekday 6:00 AM fail-closed GitHub Pages release gate
 - A five-edition, source-grounded manual paid-draft pilot with an API-call stop, publicly visible bot pull requests that are not deployed until approval, and exact-revision human approval
-- An isolated zero-cost owner-only daily email lane that uses curated feeds and Cloudflare Workers AI, retains only bounded story-identity hashes for 30-day duplicate control, and keeps generated paper content out of Git branches, artifacts, Pages, and the public archive
+- An isolated zero-cost owner-only daily email lane that uses curated feeds and Cloudflare Workers AI, retains only bounded keyed story-identity HMACs for 30-day duplicate control, and keeps generated paper content out of Git branches, artifacts, Pages, and the public archive
 - New-edition detection on app resume, immutable edition sharing, and a feedback link
 - Responsive and reduced-motion behavior
 - Free home-screen installation on supported mobile and desktop browsers
@@ -319,7 +319,7 @@ Deliberately deferred:
 1. **Free personal paper (current):** verify the private 5:05 AM daily feed-and-Workers-AI run across weekdays and weekends, including the three-of-four completion gate, one-quiet-desk limit, 70-point score floor, 30-day repeat suppression, validation receipts, one-recipient Resend delivery, quota failure, and nonpublication boundary. Review the first five successful emails before proposing any scoring change.
 2. **Manual paid pilot (optional):** deliberately prepare and approve up to five OpenAI-researched public candidates through source-grounded drafting, exact-revision pull-request approval, and the fail-closed 6:00 AM release gate. Stop before a sixth API call and audit quality, edits, failures, timing, and cost.
 3. **Pilot evidence:** test with at least five target readers and record completion, usefulness, editorial effort, quiet-desk rate, shares, and qualitative feedback without paid analytics.
-4. **Editorial engine:** if the pilot justifies further work, extend the personal lane's curated-source registry, normalization, scoring, vetoes, and hash-based deduplication into a replayable public editorial engine while retaining a reviewable evidence trail.
+4. **Editorial engine:** if the pilot justifies further work, extend the personal lane's curated-source registry, normalization, scoring, vetoes, and keyed-fingerprint deduplication into a replayable public editorial engine while retaining a reviewable evidence trail.
 5. **Archive depth and corrections:** grow the dated archive and add visible correction history, source suppression, and a rapid unpublish path.
 6. **Reader refinements:** improve typography, accessibility, and completion cues while preserving the same four-desk, six-minute edition.
 7. **Optional subscriber delivery:** add email or notifications for other readers only after consent, unsubscribe, privacy, and retention controls are in place. The self-only owner lane is not a subscriber system.

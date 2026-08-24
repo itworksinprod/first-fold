@@ -6,19 +6,45 @@ import test from "node:test";
 import {
   PERSONAL_STORY_LEDGER_MAX_BYTES,
   PERSONAL_STORY_LEDGER_RETENTION_DAYS,
-  buildPersonalRepeatHistory,
-  createEmptyPersonalStoryLedger,
-  fingerprintFeedCandidate,
-  fingerprintPersonalStory,
-  fingerprintRepeatIdentity,
-  parsePersonalStoryLedger,
-  runPersonalStoryLedgerCli,
-  serializePersonalStoryLedger,
-  updatePersonalStoryLedger,
-  validatePersonalStoryLedger,
+  buildPersonalRepeatHistory as buildPersonalRepeatHistoryImpl,
+  createEmptyPersonalStoryLedger as createEmptyPersonalStoryLedgerImpl,
+  fingerprintFeedCandidate as fingerprintFeedCandidateImpl,
+  fingerprintPersonalStory as fingerprintPersonalStoryImpl,
+  fingerprintRepeatIdentity as fingerprintRepeatIdentityImpl,
+  parsePersonalStoryLedger as parsePersonalStoryLedgerImpl,
+  runPersonalStoryLedgerCli as runPersonalStoryLedgerCliImpl,
+  serializePersonalStoryLedger as serializePersonalStoryLedgerImpl,
+  updatePersonalStoryLedger as updatePersonalStoryLedgerImpl,
+  validatePersonalStoryLedger as validatePersonalStoryLedgerImpl,
 } from "../scripts/automation/personal-story-ledger.mjs";
 
 const DESKS = ["ai", "work-and-tools", "security-and-privacy", "platforms-and-power"];
+const FINGERPRINT_KEY = "cloudflare-workers-ai-test-token-that-is-long-enough";
+
+const keyedOptions = (options = {}) => ({ ...options, fingerprintKey: FINGERPRINT_KEY });
+const createEmptyPersonalStoryLedger = (options = {}) =>
+  createEmptyPersonalStoryLedgerImpl({ ...options, fingerprintKey: FINGERPRINT_KEY });
+const fingerprintRepeatIdentity = (identity, options = {}) =>
+  fingerprintRepeatIdentityImpl(identity, keyedOptions(options));
+const fingerprintFeedCandidate = (candidate, options = {}) =>
+  fingerprintFeedCandidateImpl(candidate, keyedOptions(options));
+const fingerprintPersonalStory = (story, options = {}) =>
+  fingerprintPersonalStoryImpl(story, keyedOptions(options));
+const validatePersonalStoryLedger = (ledger, options = {}) =>
+  validatePersonalStoryLedgerImpl(ledger, keyedOptions(options));
+const parsePersonalStoryLedger = (text, options = {}) =>
+  parsePersonalStoryLedgerImpl(text, keyedOptions(options));
+const serializePersonalStoryLedger = (ledger, options = {}) =>
+  serializePersonalStoryLedgerImpl(ledger, keyedOptions(options));
+const buildPersonalRepeatHistory = (ledger, options = {}) =>
+  buildPersonalRepeatHistoryImpl(ledger, keyedOptions(options));
+const updatePersonalStoryLedger = (ledger, edition, options = {}) =>
+  updatePersonalStoryLedgerImpl(ledger, edition, keyedOptions(options));
+const runPersonalStoryLedgerCli = (args, options = {}) =>
+  runPersonalStoryLedgerCliImpl(args, {
+    ...options,
+    env: { ...options.env, CLOUDFLARE_AI_API_TOKEN: FINGERPRINT_KEY },
+  });
 
 function storyFor({
   desk = "ai",
@@ -88,7 +114,7 @@ function utcDate(offset) {
     .slice(0, 10);
 }
 
-test("repeat identities are deterministic, domain-separated SHA-256 fingerprints", () => {
+test("repeat identities are deterministic, domain-separated HMAC-SHA-256 fingerprints", () => {
   const first = fingerprintRepeatIdentity({
     canonicalEventKey: "  Event-Key  ".trim(),
     sourceUrls: [
@@ -122,6 +148,17 @@ test("repeat identities are deterministic, domain-separated SHA-256 fingerprints
   assert.notEqual(first.eventKeySha256, first.entitySha256);
   assert.equal(JSON.stringify(first).includes("event-key"), false);
   assert.equal(JSON.stringify(first).includes("example.com"), false);
+  const otherKeyIdentity = fingerprintRepeatIdentityImpl({
+    canonicalEventKey: "event-key",
+    sourceUrls: [
+      "https://other.example/report",
+      "https://example.com/report?a=1&b=2",
+    ],
+    strongIdentifier: "cve-2026-4000",
+    primaryEntity: "Amazon",
+    title: "AWS launches safer tools for children in 2026",
+  }, { fingerprintKey: "a-different-cloudflare-token-with-enough-entropy" });
+  assert.notDeepEqual(first, otherKeyIdentity);
 });
 
 test("feed candidates and canonical stories produce compatible private identities", () => {
@@ -163,10 +200,34 @@ test("the ledger persists no headlines, URLs, publishers, identifiers, or articl
   ]) {
     assert.equal(serialized.includes(secret), false, `serialized ledger leaked ${secret}`);
   }
-  assert.match(serialized, /"schemaVersion": 1/);
+  assert.match(serialized, /"schemaVersion": 2/);
+  assert.match(serialized, /"fingerprintAlgorithm": "hmac-sha256-v1"/);
   assert.match(serialized, /"retentionDays": 30/);
   assert.equal(updated.recordedEditionCount, 1);
   assert.equal(updated.editions[0].stories.length, 3);
+});
+
+test("keyed ledgers and story recording fail closed without the exact high-entropy key", () => {
+  assert.throws(
+    () => createEmptyPersonalStoryLedgerImpl(),
+    /fingerprint key is required/,
+  );
+  assert.throws(
+    () => fingerprintPersonalStoryImpl(storyFor()),
+    /fingerprint key is required/,
+  );
+  const ledger = createEmptyPersonalStoryLedger();
+  assert.throws(
+    () => updatePersonalStoryLedgerImpl(ledger, editionFor("2026-08-24")),
+    /fingerprint key is required/,
+  );
+  assert.throws(
+    () => validatePersonalStoryLedgerImpl(ledger, {
+      asOfDate: "2026-08-24",
+      fingerprintKey: "a-different-cloudflare-token-with-enough-entropy",
+    }),
+    /does not match this ledger/,
+  );
 });
 
 test("repeat history exposes bounded fingerprints, counts, pilot ordinal, and state digest", () => {
@@ -326,6 +387,18 @@ test("prepare bootstraps only on rollout day and record atomically stores a vali
   const stdout = { write(value) { output.push(value); } };
 
   await assert.rejects(
+    runPersonalStoryLedgerCliImpl([
+      "prepare",
+      path.join(root, "missing-key.json"),
+      "--edition-date",
+      "2026-08-24",
+      "--rollout-date",
+      "2026-08-24",
+    ], { stdout, env: {} }),
+    /fingerprint key is required/,
+  );
+
+  await assert.rejects(
     runPersonalStoryLedgerCli([
       "prepare",
       path.join(root, "missing-after-rollout.json"),
@@ -375,6 +448,16 @@ test("prepare bootstraps only on rollout day and record atomically stores a vali
   ], { stdout });
   const candidate = await readFile(new URL("../content/editions/2026-08-19.json", import.meta.url), "utf8");
   await writeFile(candidatePath, candidate);
+  await assert.rejects(
+    runPersonalStoryLedgerCliImpl([
+      "record",
+      ledgerPath,
+      candidatePath,
+      "--edition-date",
+      "2026-08-19",
+    ], { stdout, env: {} }),
+    /fingerprint key is required/,
+  );
   await runPersonalStoryLedgerCli([
     "record",
     ledgerPath,
@@ -392,4 +475,26 @@ test("prepare bootstraps only on rollout day and record atomically stores a vali
   for (const desk of Object.values(JSON.parse(candidate).desks)) {
     if (desk.story) assert.equal(output.join("").includes(desk.story.headline), false);
   }
+
+  const legacyPath = path.join(root, "legacy-repeat-ledger.json");
+  const legacy = structuredClone(stored);
+  legacy.schemaVersion = 1;
+  delete legacy.fingerprintAlgorithm;
+  delete legacy.keyCheckHmacSha256;
+  await writeFile(legacyPath, `${JSON.stringify(legacy, null, 2)}\n`);
+  await runPersonalStoryLedgerCli([
+    "prepare",
+    legacyPath,
+    "--edition-date",
+    "2026-08-19",
+    "--rollout-date",
+    "2026-08-19",
+  ], { stdout });
+  const migrated = parsePersonalStoryLedger(await readFile(legacyPath, "utf8"), {
+    asOfDate: "2026-08-19",
+  });
+  assert.equal(migrated.schemaVersion, 2);
+  assert.equal(migrated.recordedEditionCount, 1);
+  assert.deepEqual(migrated.editions, []);
+  assert.match(output.join(""), /legacy unkeyed repeat ledger to keyed HMAC fingerprints/);
 });

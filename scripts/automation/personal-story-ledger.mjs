@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { lstat, mkdir, open, readFile, rename } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { validateCanonicalEdition } from "../edition-content.mjs";
 
-export const PERSONAL_STORY_LEDGER_SCHEMA_VERSION = 1;
+export const PERSONAL_STORY_LEDGER_SCHEMA_VERSION = 2;
 export const PERSONAL_STORY_LEDGER_RETENTION_DAYS = 30;
 export const PERSONAL_STORY_LEDGER_MAX_BYTES = 256 * 1024;
+export const PERSONAL_STORY_LEDGER_FINGERPRINT_ALGORITHM = "hmac-sha256-v1";
 // Persist the current edition plus the 30 prior calendar dates. Before the
 // current edition is recorded, this exposes exactly the previous 30 days to
 // repeat matching.
@@ -19,6 +20,8 @@ const MAX_STORIES_PER_EDITION = 4;
 const MAX_SOURCE_FINGERPRINTS = 8;
 const MAX_TITLE_TOKEN_FINGERPRINTS = 12;
 const MAX_RECORDED_EDITION_COUNT = 1_000_000;
+const MINIMUM_FINGERPRINT_KEY_BYTES = 32;
+const MAXIMUM_FINGERPRINT_KEY_BYTES = 4_096;
 const DIGEST_PATTERN = /^[a-f0-9]{64}$/;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const STRONG_IDENTIFIER_PATTERN = /\b(?:CVE-\d{4}-\d{4,}|GHSA-[a-z0-9-]{8,})\b/i;
@@ -39,6 +42,15 @@ const STOP_WORDS = new Set([
 ]);
 
 const TOP_LEVEL_KEYS = Object.freeze([
+  "schemaVersion",
+  "retentionDays",
+  "fingerprintAlgorithm",
+  "keyCheckHmacSha256",
+  "recordedEditionCount",
+  "updatedThrough",
+  "editions",
+]);
+const LEGACY_TOP_LEVEL_KEYS = Object.freeze([
   "schemaVersion",
   "retentionDays",
   "recordedEditionCount",
@@ -123,10 +135,54 @@ function requireBoundedText(value, label, maximum) {
   return value;
 }
 
-function sha256(label, value) {
-  return createHash("sha256")
-    .update(`first-fold:personal-story-ledger:v1:${label}\u0000${value}`, "utf8")
+function requireFingerprintKey(value) {
+  if (
+    typeof value !== "string" ||
+    value !== value.trim() ||
+    /[\u0000-\u001f\u007f]/.test(value)
+  ) {
+    throw new Error("A valid personal repeat-ledger fingerprint key is required.");
+  }
+  const byteLength = Buffer.byteLength(value, "utf8");
+  if (
+    byteLength < MINIMUM_FINGERPRINT_KEY_BYTES ||
+    byteLength > MAXIMUM_FINGERPRINT_KEY_BYTES
+  ) {
+    throw new Error("A valid personal repeat-ledger fingerprint key is required.");
+  }
+  return value;
+}
+
+export function assertPersonalStoryLedgerFingerprintKey(value) {
+  requireFingerprintKey(value);
+  return true;
+}
+
+function derivedFingerprintKey(fingerprintKey) {
+  const key = requireFingerprintKey(fingerprintKey);
+  return createHmac("sha256", key)
+    .update("first-fold:personal-story-ledger:v2:key-derivation\u0000repeat-identities", "utf8")
+    .digest();
+}
+
+function hmacSha256(label, value, fingerprintKey) {
+  return createHmac("sha256", derivedFingerprintKey(fingerprintKey))
+    .update(`first-fold:personal-story-ledger:v2:${label}\u0000${value}`, "utf8")
     .digest("hex");
+}
+
+function fingerprintKeyCheck(fingerprintKey) {
+  return createHmac("sha256", derivedFingerprintKey(fingerprintKey))
+    .update("first-fold:personal-story-ledger:v2:key-check\u0000bound-ledger", "utf8")
+    .digest("hex");
+}
+
+function requireMatchingFingerprintKey(keyCheck, fingerprintKey) {
+  const stored = Buffer.from(requireDigest(keyCheck, "Personal story ledger key check"), "hex");
+  const expected = Buffer.from(fingerprintKeyCheck(fingerprintKey), "hex");
+  if (stored.length !== expected.length || !timingSafeEqual(stored, expected)) {
+    throw new Error("The personal repeat-ledger fingerprint key does not match this ledger.");
+  }
 }
 
 function normalizedIdentityText(value, label, maximum) {
@@ -214,8 +270,8 @@ function extractStrongIdentifier(values) {
 }
 
 /**
- * Produces domain-separated SHA-256 identities. No supplied cleartext is
- * returned or persisted.
+ * Produces domain-separated HMAC-SHA-256 identities. No supplied cleartext or
+ * reusable unkeyed digest is returned or persisted.
  */
 export function fingerprintRepeatIdentity({
   canonicalEventKey,
@@ -223,7 +279,7 @@ export function fingerprintRepeatIdentity({
   strongIdentifier = null,
   primaryEntity,
   title,
-} = {}) {
+} = {}, { fingerprintKey } = {}) {
   const normalizedEventKey = normalizedIdentityText(canonicalEventKey, "Canonical event key", 240);
   if (!Array.isArray(sourceUrls) || sourceUrls.length < 1 || sourceUrls.length > MAX_SOURCE_FINGERPRINTS) {
     throw new Error("sourceUrls must contain between one and eight factual source URLs.");
@@ -236,11 +292,17 @@ export function fingerprintRepeatIdentity({
   const tokens = titleTokens(title);
   if (tokens.length === 0) throw new Error("Title must contain at least one identifying token.");
   return {
-    eventKeySha256: sha256("event-key", normalizedEventKey),
-    sourceUrlSha256: normalizedUrls.map((url) => sha256("source-url", url)).sort(),
-    strongIdentifierSha256: identifier === null ? null : sha256("strong-identifier", identifier),
-    entitySha256: sha256("entity", normalizedEntity(primaryEntity)),
-    titleTokenSha256: tokens.map((token) => sha256("title-token", token)).sort(),
+    eventKeySha256: hmacSha256("event-key", normalizedEventKey, fingerprintKey),
+    sourceUrlSha256: normalizedUrls
+      .map((url) => hmacSha256("source-url", url, fingerprintKey))
+      .sort(),
+    strongIdentifierSha256: identifier === null
+      ? null
+      : hmacSha256("strong-identifier", identifier, fingerprintKey),
+    entitySha256: hmacSha256("entity", normalizedEntity(primaryEntity), fingerprintKey),
+    titleTokenSha256: tokens
+      .map((token) => hmacSha256("title-token", token, fingerprintKey))
+      .sort(),
   };
 }
 
@@ -251,7 +313,7 @@ function factualSourceUrls(sources) {
     .map((source) => source.url);
 }
 
-export function fingerprintFeedCandidate(candidate) {
+export function fingerprintFeedCandidate(candidate, { fingerprintKey } = {}) {
   if (!isObject(candidate)) throw new Error("Feed candidate must be an object.");
   return fingerprintRepeatIdentity({
     canonicalEventKey: candidate.canonicalEventKey,
@@ -262,7 +324,7 @@ export function fingerprintFeedCandidate(candidate) {
     ]),
     primaryEntity: candidate.primaryEntity,
     title: candidate.title,
-  });
+  }, { fingerprintKey });
 }
 
 function inferEvidenceTier(story, factualSources) {
@@ -274,7 +336,7 @@ function inferEvidenceTier(story, factualSources) {
   throw new Error("Story does not have authoritative or corroborated factual evidence.");
 }
 
-export function fingerprintPersonalStory(story) {
+export function fingerprintPersonalStory(story, { fingerprintKey } = {}) {
   if (!isObject(story)) throw new Error("Personal story must be an object.");
   const factualSources = Array.isArray(story.sources)
     ? story.sources.filter((source) => isObject(source) && source.relationship !== "context")
@@ -292,7 +354,7 @@ export function fingerprintPersonalStory(story) {
     ]),
     primaryEntity: story.editorial?.primaryEntity,
     title: story.headline,
-  });
+  }, { fingerprintKey });
   const score = story.selection?.score;
   if (!Number.isInteger(score) || score < 70 || score > 100) {
     throw new Error("Story score must be an integer between 70 and 100.");
@@ -306,7 +368,10 @@ export function fingerprintPersonalStory(story) {
   };
 }
 
-export function createEmptyPersonalStoryLedger({ recordedEditionCount = 0 } = {}) {
+export function createEmptyPersonalStoryLedger({
+  recordedEditionCount = 0,
+  fingerprintKey,
+} = {}) {
   if (
     !Number.isInteger(recordedEditionCount) ||
     recordedEditionCount < 0 ||
@@ -317,6 +382,8 @@ export function createEmptyPersonalStoryLedger({ recordedEditionCount = 0 } = {}
   return {
     schemaVersion: PERSONAL_STORY_LEDGER_SCHEMA_VERSION,
     retentionDays: PERSONAL_STORY_LEDGER_RETENTION_DAYS,
+    fingerprintAlgorithm: PERSONAL_STORY_LEDGER_FINGERPRINT_ALGORITHM,
+    keyCheckHmacSha256: fingerprintKeyCheck(fingerprintKey),
     recordedEditionCount,
     updatedThrough: null,
     editions: [],
@@ -364,14 +431,7 @@ function canonicalStoryFingerprint(story, label) {
   return canonical;
 }
 
-function canonicalizeLedger(value, { asOfDate, prune = true } = {}) {
-  requireExactKeys(value, TOP_LEVEL_KEYS, "Personal story ledger");
-  if (value.schemaVersion !== PERSONAL_STORY_LEDGER_SCHEMA_VERSION) {
-    throw new Error("Personal story ledger schemaVersion is unsupported.");
-  }
-  if (value.retentionDays !== PERSONAL_STORY_LEDGER_RETENTION_DAYS) {
-    throw new Error("Personal story ledger retentionDays is invalid.");
-  }
+function canonicalizeLedgerContents(value, { asOfDate, prune = true } = {}) {
   if (
     !Number.isInteger(value.recordedEditionCount) ||
     value.recordedEditionCount < 0 ||
@@ -432,11 +492,45 @@ function canonicalizeLedger(value, { asOfDate, prune = true } = {}) {
     ? editions.filter((edition) => edition.editionDate >= cutoff)
     : editions;
   return {
-    schemaVersion: PERSONAL_STORY_LEDGER_SCHEMA_VERSION,
-    retentionDays: PERSONAL_STORY_LEDGER_RETENTION_DAYS,
     recordedEditionCount: value.recordedEditionCount,
     updatedThrough: value.updatedThrough,
     editions: retainedEditions,
+  };
+}
+
+function canonicalizeLedger(value, { asOfDate, prune = true, fingerprintKey } = {}) {
+  requireExactKeys(value, TOP_LEVEL_KEYS, "Personal story ledger");
+  if (value.schemaVersion !== PERSONAL_STORY_LEDGER_SCHEMA_VERSION) {
+    throw new Error("Personal story ledger schemaVersion is unsupported.");
+  }
+  if (value.retentionDays !== PERSONAL_STORY_LEDGER_RETENTION_DAYS) {
+    throw new Error("Personal story ledger retentionDays is invalid.");
+  }
+  if (value.fingerprintAlgorithm !== PERSONAL_STORY_LEDGER_FINGERPRINT_ALGORITHM) {
+    throw new Error("Personal story ledger fingerprintAlgorithm is unsupported.");
+  }
+  requireMatchingFingerprintKey(value.keyCheckHmacSha256, fingerprintKey);
+  return {
+    schemaVersion: PERSONAL_STORY_LEDGER_SCHEMA_VERSION,
+    retentionDays: PERSONAL_STORY_LEDGER_RETENTION_DAYS,
+    fingerprintAlgorithm: PERSONAL_STORY_LEDGER_FINGERPRINT_ALGORITHM,
+    keyCheckHmacSha256: value.keyCheckHmacSha256,
+    ...canonicalizeLedgerContents(value, { asOfDate, prune }),
+  };
+}
+
+function canonicalizeLegacyLedger(value, { asOfDate, prune = true } = {}) {
+  requireExactKeys(value, LEGACY_TOP_LEVEL_KEYS, "Legacy personal story ledger");
+  if (value.schemaVersion !== 1) {
+    throw new Error("Legacy personal story ledger schemaVersion is unsupported.");
+  }
+  if (value.retentionDays !== PERSONAL_STORY_LEDGER_RETENTION_DAYS) {
+    throw new Error("Legacy personal story ledger retentionDays is invalid.");
+  }
+  return {
+    schemaVersion: 1,
+    retentionDays: PERSONAL_STORY_LEDGER_RETENTION_DAYS,
+    ...canonicalizeLedgerContents(value, { asOfDate, prune }),
   };
 }
 
@@ -445,11 +539,11 @@ export function validatePersonalStoryLedger(value, options = {}) {
   return canonicalizeLedger(value, options);
 }
 
-export function prunePersonalStoryLedger(value, { asOfDate } = {}) {
-  return canonicalizeLedger(value, { asOfDate, prune: true });
+export function prunePersonalStoryLedger(value, { asOfDate, fingerprintKey } = {}) {
+  return canonicalizeLedger(value, { asOfDate, prune: true, fingerprintKey });
 }
 
-export function parsePersonalStoryLedger(text, { asOfDate } = {}) {
+export function parsePersonalStoryLedger(text, { asOfDate, fingerprintKey } = {}) {
   if (typeof text !== "string" || Buffer.byteLength(text, "utf8") > PERSONAL_STORY_LEDGER_MAX_BYTES) {
     throw new Error("Personal story ledger exceeds the byte limit.");
   }
@@ -459,11 +553,11 @@ export function parsePersonalStoryLedger(text, { asOfDate } = {}) {
   } catch {
     throw new Error("Personal story ledger is not valid JSON.");
   }
-  return canonicalizeLedger(parsed, { asOfDate, prune: true });
+  return canonicalizeLedger(parsed, { asOfDate, prune: true, fingerprintKey });
 }
 
-export function serializePersonalStoryLedger(value, { asOfDate } = {}) {
-  const canonical = canonicalizeLedger(value, { asOfDate, prune: true });
+export function serializePersonalStoryLedger(value, { asOfDate, fingerprintKey } = {}) {
+  const canonical = canonicalizeLedger(value, { asOfDate, prune: true, fingerprintKey });
   const serialized = `${JSON.stringify(canonical, null, 2)}\n`;
   if (Buffer.byteLength(serialized, "utf8") > PERSONAL_STORY_LEDGER_MAX_BYTES) {
     throw new Error("Personal story ledger exceeds the byte limit.");
@@ -471,8 +565,8 @@ export function serializePersonalStoryLedger(value, { asOfDate } = {}) {
   return serialized;
 }
 
-export function buildPersonalRepeatHistory(value, { asOfDate } = {}) {
-  const ledger = canonicalizeLedger(value, { asOfDate, prune: true });
+export function buildPersonalRepeatHistory(value, { asOfDate, fingerprintKey } = {}) {
+  const ledger = canonicalizeLedger(value, { asOfDate, prune: true, fingerprintKey });
   const entries = ledger.editions.flatMap((edition) => edition.stories.map((story) => ({
     editionDate: edition.editionDate,
     desk: story.desk,
@@ -486,7 +580,7 @@ export function buildPersonalRepeatHistory(value, { asOfDate } = {}) {
     factualSourceCount: story.factualSourceCount,
   })));
   const stateSha256 = createHash("sha256")
-    .update(serializePersonalStoryLedger(ledger, { asOfDate }), "utf8")
+    .update(serializePersonalStoryLedger(ledger, { asOfDate, fingerprintKey }), "utf8")
     .digest("hex");
   return {
     entries,
@@ -497,12 +591,20 @@ export function buildPersonalRepeatHistory(value, { asOfDate } = {}) {
   };
 }
 
-export function updatePersonalStoryLedger(value, edition, { asOfDate = edition?.editionDate } = {}) {
+export function updatePersonalStoryLedger(
+  value,
+  edition,
+  { asOfDate = edition?.editionDate, fingerprintKey } = {},
+) {
   const editionDate = requireDate(edition?.editionDate, "Candidate editionDate");
   if (editionDate !== requireDate(asOfDate, "asOfDate")) {
     throw new Error("Candidate editionDate must match asOfDate.");
   }
-  const ledger = canonicalizeLedger(value, { asOfDate: editionDate, prune: true });
+  const ledger = canonicalizeLedger(value, {
+    asOfDate: editionDate,
+    prune: true,
+    fingerprintKey,
+  });
   if (ledger.updatedThrough !== null && editionDate < ledger.updatedThrough) {
     throw new Error("Candidate edition predates the ledger's latest recorded edition.");
   }
@@ -510,7 +612,7 @@ export function updatePersonalStoryLedger(value, edition, { asOfDate = edition?.
   const stories = DESKS
     .map((desk) => edition.desks[desk]?.story)
     .filter((story) => story !== null && story !== undefined)
-    .map(fingerprintPersonalStory)
+    .map((story) => fingerprintPersonalStory(story, { fingerprintKey }))
     .sort((left, right) => DESK_ORDER.get(left.desk) - DESK_ORDER.get(right.desk));
   if (stories.length < 1 || stories.length > MAX_STORIES_PER_EDITION) {
     throw new Error("Candidate edition must contain between one and four selected stories.");
@@ -531,7 +633,11 @@ export function updatePersonalStoryLedger(value, edition, { asOfDate = edition?.
     updatedThrough: editionDate,
     editions: [...ledger.editions, { editionDate, stories }],
   };
-  return canonicalizeLedger(next, { asOfDate: editionDate, prune: true });
+  return canonicalizeLedger(next, {
+    asOfDate: editionDate,
+    prune: true,
+    fingerprintKey,
+  });
 }
 
 async function readBoundedRegularFile(filename, maximumBytes, label) {
@@ -576,7 +682,20 @@ function parseCliOptions(args, requiredNames, allowedNames = requiredNames) {
   return values;
 }
 
-export async function runPersonalStoryLedgerCli(args, { stdout = process.stdout } = {}) {
+function parseLegacyPersonalStoryLedger(text, { asOfDate } = {}) {
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error("Legacy personal story ledger is not valid JSON.");
+  }
+  return canonicalizeLegacyLedger(parsed, { asOfDate, prune: true });
+}
+
+export async function runPersonalStoryLedgerCli(
+  args,
+  { stdout = process.stdout, env = process.env } = {},
+) {
   if (!Array.isArray(args) || args.length < 1) throw new Error("Ledger CLI command is required.");
   const command = args[0];
   if (command === "prepare") {
@@ -595,6 +714,7 @@ export async function runPersonalStoryLedgerCli(args, { stdout = process.stdout 
     );
     const editionDate = requireDate(options["--edition-date"], "edition date");
     const rolloutDate = requireDate(options["--rollout-date"], "rollout date");
+    const fingerprintKey = requireFingerprintKey(env.CLOUDFLARE_AI_API_TOKEN);
     const requestedRecordedEditionCount = options["--recorded-edition-count"] === undefined
       ? null
       : Number(options["--recorded-edition-count"]);
@@ -616,14 +736,42 @@ export async function runPersonalStoryLedgerCli(args, { stdout = process.stdout 
     if (text !== null && requestedRecordedEditionCount !== null) {
       throw new Error("A bootstrap recorded-edition count cannot replace an existing ledger.");
     }
-    const ledger = text === null
-      ? createEmptyPersonalStoryLedger({
-          recordedEditionCount: requestedRecordedEditionCount ?? 0,
-        })
-      : parsePersonalStoryLedger(text, { asOfDate: editionDate });
-    const serialized = serializePersonalStoryLedger(ledger, { asOfDate: editionDate });
+    let ledger;
+    let migratedLegacyLedger = false;
+    if (text === null) {
+      ledger = createEmptyPersonalStoryLedger({
+        recordedEditionCount: requestedRecordedEditionCount ?? 0,
+        fingerprintKey,
+      });
+    } else {
+      let schemaVersion;
+      try {
+        schemaVersion = JSON.parse(text)?.schemaVersion;
+      } catch {
+        throw new Error("Personal story ledger is not valid JSON.");
+      }
+      if (schemaVersion === 1) {
+        const legacy = parseLegacyPersonalStoryLedger(text, { asOfDate: editionDate });
+        ledger = createEmptyPersonalStoryLedger({
+          recordedEditionCount: legacy.recordedEditionCount,
+          fingerprintKey,
+        });
+        migratedLegacyLedger = true;
+      } else {
+        ledger = parsePersonalStoryLedger(text, { asOfDate: editionDate, fingerprintKey });
+      }
+    }
+    const serialized = serializePersonalStoryLedger(ledger, {
+      asOfDate: editionDate,
+      fingerprintKey,
+    });
     await writeAtomic(ledgerPath, serialized);
-    const history = buildPersonalRepeatHistory(ledger, { asOfDate: editionDate });
+    const history = buildPersonalRepeatHistory(ledger, { asOfDate: editionDate, fingerprintKey });
+    if (migratedLegacyLedger) {
+      stdout.write(
+        "Migrated the legacy unkeyed repeat ledger to keyed HMAC fingerprints; prior unkeyed story identities were discarded.\n",
+      );
+    }
     stdout.write(
       `Prepared personal repeat ledger through ${editionDate}: ${history.priorEditionCount} editions, ${history.priorStoryCount} stories.\n`,
     );
@@ -635,6 +783,7 @@ export async function runPersonalStoryLedgerCli(args, { stdout = process.stdout 
     const candidatePath = requireBoundedText(args[2], "Candidate path", 4_096);
     const options = parseCliOptions(args.slice(3), ["--edition-date"]);
     const editionDate = requireDate(options["--edition-date"], "edition date");
+    const fingerprintKey = requireFingerprintKey(env.CLOUDFLARE_AI_API_TOKEN);
     const ledgerText = await readBoundedRegularFile(
       ledgerPath,
       PERSONAL_STORY_LEDGER_MAX_BYTES,
@@ -652,10 +801,19 @@ export async function runPersonalStoryLedgerCli(args, { stdout = process.stdout 
     const validation = validateCanonicalEdition(candidate);
     if (!validation.valid) throw new Error("Candidate edition is not a valid canonical edition.");
     if (candidate.editionDate !== editionDate) throw new Error("Candidate editionDate does not match the CLI edition date.");
-    const ledger = parsePersonalStoryLedger(ledgerText, { asOfDate: editionDate });
-    const updated = updatePersonalStoryLedger(ledger, candidate, { asOfDate: editionDate });
-    await writeAtomic(ledgerPath, serializePersonalStoryLedger(updated, { asOfDate: editionDate }));
-    const history = buildPersonalRepeatHistory(updated, { asOfDate: editionDate });
+    const ledger = parsePersonalStoryLedger(ledgerText, { asOfDate: editionDate, fingerprintKey });
+    const updated = updatePersonalStoryLedger(ledger, candidate, {
+      asOfDate: editionDate,
+      fingerprintKey,
+    });
+    await writeAtomic(
+      ledgerPath,
+      serializePersonalStoryLedger(updated, { asOfDate: editionDate, fingerprintKey }),
+    );
+    const history = buildPersonalRepeatHistory(updated, {
+      asOfDate: editionDate,
+      fingerprintKey,
+    });
     stdout.write(
       `Recorded personal repeat ledger for ${editionDate}: ${history.priorEditionCount} editions, ${history.priorStoryCount} stories.\n`,
     );

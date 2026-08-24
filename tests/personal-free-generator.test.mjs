@@ -235,7 +235,9 @@ test("private free generation fixes the model, evidence lane, lookback, and requ
     env: automationEnv,
     now: GENERATED_AT,
     feedSources,
-    personalStoryLedger: createEmptyPersonalStoryLedger(),
+    personalStoryLedger: createEmptyPersonalStoryLedger({
+      fingerprintKey: automationEnv.CLOUDFLARE_AI_API_TOKEN,
+    }),
     draftFreeEditionImpl: async (options) => {
       draftOptions = options;
       return freeCandidate();
@@ -260,7 +262,7 @@ test("private free generation fixes the model, evidence lane, lookback, and requ
   );
   assert.equal(candidate.provenance.personalFreeResearch.maxModelRequests, 2);
   assert.equal(candidate.provenance.personalFreeResearch.ephemeral, true);
-  assert.equal(candidate.provenance.personalFreeResearch.repeatLedgerSchemaVersion, 1);
+  assert.equal(candidate.provenance.personalFreeResearch.repeatLedgerSchemaVersion, 2);
   assert.equal(candidate.provenance.personalFreeResearch.repeatLookbackDays, 30);
   assert.equal(candidate.provenance.personalFreeResearch.priorLedgerEditionCount, 0);
   assert.equal(candidate.provenance.personalFreeResearch.priorLedgerStoryCount, 0);
@@ -281,6 +283,10 @@ test("private free generation fixes the model, evidence lane, lookback, and requ
   assert.equal(draftOptions.maxTokens, PERSONAL_FREE_MAX_TOKENS);
   assert.equal(draftOptions.maxRequestBytes, PERSONAL_FREE_MAX_REQUEST_BYTES);
   assert.deepEqual(draftOptions.recentRepeatHistory, []);
+  assert.equal(
+    draftOptions.repeatFingerprintKey,
+    automationEnv.CLOUDFLARE_AI_API_TOKEN,
+  );
 });
 
 test("one explained quiet desk is deliverable but fewer than three stories or skipped inference fail", async (t) => {
@@ -291,7 +297,9 @@ test("one explained quiet desk is deliverable but fewer than three stories or sk
     env: automationEnv,
     now: GENERATED_AT,
     feedSources,
-    personalStoryLedger: createEmptyPersonalStoryLedger(),
+    personalStoryLedger: createEmptyPersonalStoryLedger({
+      fingerprintKey: automationEnv.CLOUDFLARE_AI_API_TOKEN,
+    }),
     draftFreeEditionImpl: async () => freeCandidate({ quietDesks: ["ai"] }),
   });
   assert.equal(threeStoryCandidate.provenance.personalFreeResearch.selectedStoryCount, 3);
@@ -310,7 +318,9 @@ test("one explained quiet desk is deliverable but fewer than three stories or sk
         env: automationEnv,
         now: GENERATED_AT,
         feedSources,
-        personalStoryLedger: createEmptyPersonalStoryLedger(),
+        personalStoryLedger: createEmptyPersonalStoryLedger({
+          fingerprintKey: automationEnv.CLOUDFLARE_AI_API_TOKEN,
+        }),
         draftFreeEditionImpl: async () => draft,
       }),
       /candidate|three|provenance|Workers AI/i,
@@ -330,7 +340,9 @@ test("the private writer is exclusive and never writes a public or comparison ar
     env: automationEnv,
     now: GENERATED_AT,
     feedSources,
-    personalStoryLedger: createEmptyPersonalStoryLedger(),
+    personalStoryLedger: createEmptyPersonalStoryLedger({
+      fingerprintKey: automationEnv.CLOUDFLARE_AI_API_TOKEN,
+    }),
     draftFreeEditionImpl: async () => freeCandidate(),
   };
   const result = await generatePersonalFreeEditionFile(options);

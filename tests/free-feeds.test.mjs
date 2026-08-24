@@ -19,6 +19,8 @@ import {
 import { FREE_FEED_SOURCES } from "../scripts/automation/free/feed-sources.mjs";
 import { fingerprintFeedCandidate } from "../scripts/automation/personal-story-ledger.mjs";
 
+const REPEAT_FINGERPRINT_KEY = "cloudflare-workers-ai-test-token-that-is-long-enough";
+
 const rssFixture = await readFile(
   new URL("../scripts/automation/free/fixtures/sample-rss.xml", import.meta.url),
   "utf8",
@@ -399,7 +401,9 @@ test("the private 30-day ledger vetoes event, source, identifier, and fuzzy-titl
   };
   const candidate = rankFeedCandidates(options)[0];
   assert.ok(candidate);
-  const identity = fingerprintFeedCandidate(candidate);
+  const identity = fingerprintFeedCandidate(candidate, {
+    fingerprintKey: REPEAT_FINGERPRINT_KEY,
+  });
   const digest = (character) => character.repeat(64);
   const unrelated = {
     eventKeySha256: digest("1"),
@@ -419,7 +423,11 @@ test("the private 30-day ledger vetoes event, source, identifier, and fuzzy-titl
     },
   ];
   for (const history of histories) {
-    const assessment = assessFeedCandidates({ ...options, recentRepeatHistory: [history] })[0];
+    const assessment = assessFeedCandidates({
+      ...options,
+      recentRepeatHistory: [history],
+      repeatFingerprintKey: REPEAT_FINGERPRINT_KEY,
+    })[0];
     assert.equal(assessment.decision, "rejected");
     assert.ok(assessment.rejectionReasons.some(({ code }) => code === "RECENT_DUPLICATE"));
   }
@@ -432,13 +440,22 @@ test("the private 30-day ledger vetoes event, source, identifier, and fuzzy-titl
         entitySha256: identity.entitySha256,
         titleTokenSha256: [digest("5"), digest("6")],
       }],
+      repeatFingerprintKey: REPEAT_FINGERPRINT_KEY,
     }).length,
     1,
     "a different event about the same canonical entity remains eligible",
   );
   assert.throws(
-    () => rankFeedCandidates({ ...options, recentRepeatHistory: [{ ...unrelated, eventKeySha256: "bad" }] }),
+    () => rankFeedCandidates({
+      ...options,
+      recentRepeatHistory: [{ ...unrelated, eventKeySha256: "bad" }],
+      repeatFingerprintKey: REPEAT_FINGERPRINT_KEY,
+    }),
     /invalid entry/,
+  );
+  assert.throws(
+    () => rankFeedCandidates({ ...options, recentRepeatHistory: [identity] }),
+    /fingerprint key is required/,
   );
 });
 

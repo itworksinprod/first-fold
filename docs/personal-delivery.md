@@ -30,7 +30,7 @@ succeeded end to end.
 | Sender | `First Fold <onboarding@resend.dev>`, Resend's self-only testing sender |
 | Message | Static, escaped HTML plus an equivalent plain-text part; no client-side JavaScript |
 | Repository permissions | Read-only contents and Actions metadata; no pull-request, branch, commit, Pages, or public-content write permission; the workflow may download and upload only its bounded private-state ledger artifact |
-| Persistence | The candidate remains on the ephemeral runner; a hash-only ledger artifact retains at most the previous 30 dates plus first-five-pilot progress, never paper copy, headlines, source URLs, publisher names, recipient data, or provider IDs |
+| Persistence | The candidate remains on the ephemeral runner; a keyed-HMAC-only ledger artifact retains at most the previous 30 dates plus first-five-pilot progress, never reusable unkeyed story hashes, paper copy, headlines, source URLs, publisher names, recipient data, or provider IDs |
 | Failure | Feed, quota, model, scoring, repeat-ledger, three-story, source, schema, rendering, configuration, or send-precondition failure sends no email |
 | Duplicate control | Suppress an earlier successful same-day workflow, veto matching story fingerprints from the previous 30 calendar dates, then make at most one Resend request with `Idempotency-Key: first-fold-personal-YYYY-MM-DD`; no application-level send retry |
 | Paid fallback | None |
@@ -97,7 +97,8 @@ At the matching 5:05 AM event on every day:
    and publisher counts. The email renderer recomputes and validates that receipt
    rather than trusting model-controlled display text.
 8. After all deterministic checks pass, the workflow records only domain-separated
-   SHA-256 story fingerprints and stages that immutable ledger as an artifact
+   HMAC-SHA-256 story fingerprints keyed by the existing Workers AI token and
+   stages that immutable ledger as an artifact
    before delivery. It then sends one escaped HTML and plain-text message through
    Resend. A later run trusts the staged artifact only when GitHub records that
    run's exact send step as successful; artifacts from unsent runs are ignored.
@@ -126,16 +127,28 @@ distinction is intentional: a file prepared for a private email must never
 become a public publication candidate merely because its shape is similar.
 
 The private candidate and email body are still ephemeral, but duplicate control
-now persists a bounded hash-only ledger named `personal-repeat-ledger-v1`. The
+now persists a bounded keyed-HMAC-only ledger named
+`personal-repeat-ledger-v1`. The
 ledger covers exactly the previous 30 calendar dates and stores only
-domain-separated SHA-256 fingerprints derived from event identity, factual
+domain-separated HMAC-SHA-256 fingerprints derived from event identity, factual
 source URLs, strong vulnerability identifiers, canonical entities, and title
 tokens, plus bounded counts and score metadata. It does not retain cleartext
 headlines, copy, URLs, publishers, CVE or GHSA identifiers, recipients, or Resend
-IDs. Because this repository is public, treat workflow artifacts as potentially
-readable by repository visitors even though their contents are pseudonymous.
+IDs. It also stores a one-way key check so a missing or rotated token cannot
+silently disable repeat matching. The token itself and reusable unkeyed identity
+hashes are never stored. Because this repository is public, treat workflow
+artifacts as potentially readable by repository visitors even though their
+contents are pseudonymous.
 Same-day workflow and Resend idempotency remain a separate defense against a
 second delivery for one edition date.
+
+Ledger schema 2 introduced keyed fingerprints. During that one-time upgrade, a
+structurally valid schema-1 artifact is replaced with an empty keyed ledger while
+preserving only its lifetime edition count; the old unkeyed story hashes cannot
+be securely transformed and are discarded. A later Workers AI token rotation
+does not auto-reset state: its key check fails closed so an operator can make a
+deliberate recovery decision rather than silently losing the 30-day repeat
+window.
 
 Ledger artifacts are retained for 35 days. If the paper has not sent for longer
 than the 30-day repeat window and every old artifact has expired, the next run
@@ -149,7 +162,7 @@ retention-free. GitHub retains workflow metadata and logs; Cloudflare processes
 the bounded research request and response; Resend processes the recipient and
 message; and the mailbox provider stores the delivered email. The workflow must
 not print the recipient, API tokens, candidate, or email body to logs and must
-not upload them as artifacts. Only the bounded hash ledger may be uploaded. See
+not upload them as artifacts. Only the bounded keyed-HMAC ledger may be uploaded. See
 GitHub's
 [hosted-runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners),
 Cloudflare's [privacy policy](https://www.cloudflare.com/privacypolicy/), and
@@ -161,7 +174,7 @@ The first five successfully sent editions are labeled privately as **Quality
 pilot · Edition N of 5**. Review each received paper for importance, relevance,
 source quality, reader usefulness, freshness, desk assignment, and repeat
 accuracy. Record false positives, missed stories, and any claim that needed
-correction. The software tracks only the ordinal in its hash ledger; it does not
+correction. The software tracks only the ordinal in its keyed ledger; it does not
 store your editorial feedback in the repository.
 
 After five reviewed deliveries, summarize the evidence and propose any weight,
@@ -176,7 +189,7 @@ The automatic lane uses one repository variable and three repository secrets:
 | Name | GitHub type | Purpose |
 | --- | --- | --- |
 | `CLOUDFLARE_ACCOUNT_ID` | Actions variable | Account whose Workers AI free allocation is used |
-| `CLOUDFLARE_AI_API_TOKEN` | Actions secret | Narrow token allowed to call Workers AI |
+| `CLOUDFLARE_AI_API_TOKEN` | Actions secret | Narrow token allowed to call Workers AI and the HMAC key for repeat identities |
 | `RESEND_API_KEY` | Actions secret | Sending-only Resend credential |
 | `PERSONAL_PAPER_EMAIL` | Actions secret | One self-only recipient address |
 
@@ -283,7 +296,7 @@ causes include:
 - fewer than three eligible selected events or more than one quiet desk;
 - a hard editorial veto, score below 70, recent-repeat match, missing validation
   receipt, or receipt mismatch;
-- a missing, malformed, ambiguous, or untrusted repeat-ledger artifact after the
+- a missing, malformed, key-mismatched, ambiguous, or untrusted repeat-ledger artifact after the
   guarded bootstrap run;
 - the Workers AI free allocation being unavailable or exhausted;
 - a malformed, incomplete, repetitive, or unsupported model response;

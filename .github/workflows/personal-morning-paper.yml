@@ -639,6 +639,7 @@ jobs:
           steps.dedupe.outputs.should_send == 'true' &&
           steps.preflight.outputs.delivery_enabled == 'true'
         env:
+          CLOUDFLARE_AI_API_TOKEN: ${{ secrets.CLOUDFLARE_AI_API_TOKEN }}
           EDITION_DATE: ${{ steps.gate.outputs.edition_date }}
           LEDGER_BOOTSTRAP_COUNT: ${{ steps.ledger.outputs.bootstrap_count }}
           LEDGER_BOOTSTRAP_ALLOWED: ${{ steps.ledger.outputs.allow_bootstrap }}
@@ -705,6 +706,7 @@ jobs:
           steps.preflight.outputs.delivery_enabled == 'true'
         env:
           CANDIDATE_PATH: ${{ steps.gate.outputs.candidate_path }}
+          CLOUDFLARE_AI_API_TOKEN: ${{ secrets.CLOUDFLARE_AI_API_TOKEN }}
           EDITION_DATE: ${{ steps.gate.outputs.edition_date }}
           PERSONAL_STORY_LEDGER_PATH: ${{ runner.temp }}/first-fold-ledger/repeat-ledger.json
         run: >-

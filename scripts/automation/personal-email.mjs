@@ -3,6 +3,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { validateCanonicalEdition } from "../edition-content.mjs";
+import { PERSONAL_STORY_LEDGER_SCHEMA_VERSION } from "./personal-story-ledger.mjs";
 
 export const RESEND_EMAIL_ENDPOINT = "https://api.resend.com/emails";
 export const PERSONAL_EMAIL_FROM = "First Fold <onboarding@resend.dev>";
@@ -23,7 +24,6 @@ const PERSONAL_RESEARCH_LOOKBACK_HOURS = 72;
 const PERSONAL_RESEARCH_MINIMUM_SCORE = 70;
 const PERSONAL_RESEARCH_MINIMUM_AUTHORITATIVE_SCORE = 70;
 const PERSONAL_RESEARCH_MINIMUM_STORY_COUNT = 3;
-const PERSONAL_REPEAT_LEDGER_SCHEMA_VERSION = 1;
 const PERSONAL_REPEAT_LOOKBACK_DAYS = 30;
 const RECEIPT_COMPONENT_MAXIMUMS = Object.freeze({
   materialityNewsworthiness: 30,
@@ -359,7 +359,7 @@ export function assertPersonalEmailCandidate(candidate) {
     research.ephemeral !== true ||
     research.requiredStoryCount !== PERSONAL_RESEARCH_MINIMUM_STORY_COUNT ||
     research.selectedStoryCount !== selectedStoryCount ||
-    research.repeatLedgerSchemaVersion !== PERSONAL_REPEAT_LEDGER_SCHEMA_VERSION ||
+    research.repeatLedgerSchemaVersion !== PERSONAL_STORY_LEDGER_SCHEMA_VERSION ||
     research.repeatLookbackDays !== PERSONAL_REPEAT_LOOKBACK_DAYS ||
     !/^[a-f0-9]{64}$/.test(research.repeatStateSha256 ?? "") ||
     !Number.isInteger(research.priorLedgerEditionCount) ||

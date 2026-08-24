@@ -123,7 +123,7 @@ function personalCandidate() {
     ephemeral: true,
     requiredStoryCount: 3,
     selectedStoryCount: 4,
-    repeatLedgerSchemaVersion: 1,
+    repeatLedgerSchemaVersion: 2,
     repeatLookbackDays: 30,
     repeatStateSha256: "d".repeat(64),
     priorLedgerEditionCount: 0,

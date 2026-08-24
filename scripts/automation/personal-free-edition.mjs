@@ -84,7 +84,7 @@ async function pathExists(filename) {
   }
 }
 
-async function loadPersonalStoryLedger(env, editionDate) {
+async function loadPersonalStoryLedger(env, editionDate, fingerprintKey) {
   const ledgerPath = requireNonBlank(
     env.PERSONAL_STORY_LEDGER_PATH,
     "PERSONAL_STORY_LEDGER_PATH",
@@ -103,7 +103,10 @@ async function loadPersonalStoryLedger(env, editionDate) {
   ) {
     throw new Error("PERSONAL_STORY_LEDGER_PATH must identify the prepared repeat ledger.");
   }
-  return parsePersonalStoryLedger(await readFile(ledgerPath, "utf8"), { asOfDate: editionDate });
+  return parsePersonalStoryLedger(await readFile(ledgerPath, "utf8"), {
+    asOfDate: editionDate,
+    fingerprintKey,
+  });
 }
 
 async function loadCanonicalHistory(projectRoot) {
@@ -381,8 +384,15 @@ export async function generatePersonalFreeEdition({
   const automation = personalFreeAutomationFromEnvironment(env);
   const { accountId, apiToken } = requireCloudflareConfiguration(env);
   const priorEditions = await loadCanonicalHistory(projectRoot);
-  const repeatLedger = personalStoryLedger ?? await loadPersonalStoryLedger(env, editionDate);
-  const repeatHistory = buildPersonalRepeatHistory(repeatLedger, { asOfDate: editionDate });
+  const repeatLedger = personalStoryLedger ?? await loadPersonalStoryLedger(
+    env,
+    editionDate,
+    apiToken,
+  );
+  const repeatHistory = buildPersonalRepeatHistory(repeatLedger, {
+    asOfDate: editionDate,
+    fingerprintKey: apiToken,
+  });
   const effectiveFeedSources = feedSources ?? FREE_FEED_SOURCES;
   const [policyText, promptText] = await Promise.all([
     readFile(path.join(projectRoot, "lib", "editorial", "prompts", "policy.ts"), "utf8"),
@@ -406,6 +416,7 @@ export async function generatePersonalFreeEdition({
     minimumScore: PERSONAL_FREE_MINIMUM_SCORE,
     minimumAuthoritativeScore: PERSONAL_FREE_MINIMUM_AUTHORITATIVE_SCORE,
     recentRepeatHistory: repeatHistory.entries,
+    repeatFingerprintKey: apiToken,
     maxTokens: PERSONAL_FREE_MAX_TOKENS,
     maxRequestBytes: PERSONAL_FREE_MAX_REQUEST_BYTES,
     researchImpl,

@@ -3,7 +3,10 @@ import { lookup as dnsLookup } from "node:dns/promises";
 import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
 import { isPublicNetworkAddress } from "../newsroom-qa.mjs";
-import { fingerprintFeedCandidate } from "../personal-story-ledger.mjs";
+import {
+  assertPersonalStoryLedgerFingerprintKey,
+  fingerprintFeedCandidate,
+} from "../personal-story-ledger.mjs";
 import { FREE_FEED_SOURCES } from "./feed-sources.mjs";
 
 export const FREE_DESKS = Object.freeze([
@@ -1235,6 +1238,7 @@ export function assessFeedCandidates({
   reportingWindow,
   recentArchive = [],
   recentRepeatHistory = [],
+  repeatFingerprintKey,
   minimumScore = DEFAULT_MINIMUM_SCORE,
   minimumAuthoritativeScore = minimumScore,
   evidencePolicy = DEFAULT_FREE_EVIDENCE_POLICY,
@@ -1255,6 +1259,9 @@ export function assessFeedCandidates({
   const recentKeys = new Set(recentStories.map((story) => story.canonicalEventKey).filter(Boolean));
   if (!Array.isArray(recentRepeatHistory) || recentRepeatHistory.length > 124) {
     throw new Error("recentRepeatHistory must be a bounded array.");
+  }
+  if (recentRepeatHistory.length > 0) {
+    assertPersonalStoryLedgerFingerprintKey(repeatFingerprintKey);
   }
   return deduplicateFeedItems(eligibleItems).map((group) => {
     const reasons = contentVetoReasons(group.items);
@@ -1287,7 +1294,9 @@ export function assessFeedCandidates({
       }
       if (recentKeys.has(candidate.canonicalEventKey) ||
           recentStories.some((story) => candidateMatchesRecentStory(candidate, story)) ||
-          candidateMatchesRepeatHistory(candidate, recentRepeatHistory)) {
+          candidateMatchesRepeatHistory(candidate, recentRepeatHistory, {
+            fingerprintKey: repeatFingerprintKey,
+          })) {
         reasons.push(rejectionReason(
           "RECENT_DUPLICATE",
           "The same development already appeared in the supplied recent-edition archive.",
@@ -1337,12 +1346,17 @@ function validatedRepeatEntry(value) {
   return value;
 }
 
-export function candidateMatchesRepeatHistory(candidate, recentRepeatHistory = []) {
+export function candidateMatchesRepeatHistory(
+  candidate,
+  recentRepeatHistory = [],
+  { fingerprintKey } = {},
+) {
   if (!Array.isArray(recentRepeatHistory) || recentRepeatHistory.length > 124) {
     throw new Error("recentRepeatHistory must be a bounded array.");
   }
   if (recentRepeatHistory.length === 0) return false;
-  const identity = fingerprintFeedCandidate(candidate);
+  assertPersonalStoryLedgerFingerprintKey(fingerprintKey);
+  const identity = fingerprintFeedCandidate(candidate, { fingerprintKey });
   return recentRepeatHistory.some((rawEntry) => {
     const entry = validatedRepeatEntry(rawEntry);
     if (identity.eventKeySha256 === entry.eventKeySha256) return true;
@@ -1656,6 +1670,7 @@ export async function researchFreeEdition(options = {}) {
     reportingWindow: ingestion.reportingWindow,
     recentArchive: options.recentArchive,
     recentRepeatHistory: options.recentRepeatHistory,
+    repeatFingerprintKey: options.repeatFingerprintKey,
     minimumScore: options.minimumScore,
     minimumAuthoritativeScore: options.minimumAuthoritativeScore,
     evidencePolicy: normalizedEvidencePolicy,
