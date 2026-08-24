@@ -12,6 +12,8 @@ import {
 import { buildEditionDraft } from "../scripts/new-edition.mjs";
 import {
   FREE_AUTOMATION_WORKFLOW,
+  INSUFFICIENT_QUALIFYING_STORIES,
+  InsufficientFreeCandidatesError,
   assertOriginalFreeStoryCopy,
   assertFreeEditionGenerationTime,
   buildFreeReportingWindow,
@@ -565,11 +567,39 @@ test("complete mode fails before inference unless research selected one candidat
         return aiResult();
       },
     })),
-    /requires at least 4 selected feed candidates before inference/,
+    (error) =>
+      error instanceof InsufficientFreeCandidatesError &&
+      error.code === INSUFFICIENT_QUALIFYING_STORIES &&
+      error.availableCount === 1 &&
+      error.requiredCount === 4,
   );
   assert.equal(receivedResearchOptions.evidencePolicy, "authoritative-or-corroborated");
   assert.equal(receivedResearchOptions.minimumScore, 70);
   assert.equal(receivedResearchOptions.minimumAuthoritativeScore, 62);
+  assert.equal(aiCalls, 0);
+});
+
+test("malformed selection diagnostics remain a hard failure, not a quiet edition", async () => {
+  let aiCalls = 0;
+  await assert.rejects(
+    () => draftFreeEdition(draftOptions({
+      evidencePolicy: "authoritative-or-corroborated",
+      minimumStoryCount: 3,
+      researchImpl: async (options) => {
+        const result = researchResult();
+        result.reportingWindow = structuredClone(options.reportingWindow);
+        result.diagnostics.selectedCount = 0;
+        return result;
+      },
+      aiRequestImpl: async () => {
+        aiCalls += 1;
+        return aiResult();
+      },
+    })),
+    (error) =>
+      !(error instanceof InsufficientFreeCandidatesError) &&
+      /invalid selected feed-candidate diagnostics/.test(error.message),
+  );
   assert.equal(aiCalls, 0);
 });
 

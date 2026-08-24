@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 
 import { createHash } from "node:crypto";
-import { lstat, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { appendFile, lstat, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 import { validateCanonicalEdition } from "../edition-content.mjs";
 import {
   FREE_AUTOMATION_WORKFLOW,
+  InsufficientFreeCandidatesError,
   draftFreeEdition,
   validateFreePilotProvenance,
 } from "./draft-free-edition.mjs";
@@ -43,6 +44,7 @@ export const PERSONAL_FREE_LOOKBACK_HOURS = 72;
 export const PERSONAL_FREE_MINIMUM_SCORE = 70;
 export const PERSONAL_FREE_MINIMUM_AUTHORITATIVE_SCORE = 70;
 export const PERSONAL_FREE_MINIMUM_STORY_COUNT = 3;
+export const PERSONAL_FREE_GITHUB_OUTCOME_FLAG = "--github-actions-outcome";
 export const PERSONAL_FREE_RUN_MODES = Object.freeze(["on_time", "same_day_backfill"]);
 export const PERSONAL_FREE_DESKS = Object.freeze([
   "ai",
@@ -467,28 +469,120 @@ export async function generatePersonalFreeEditionFile(options = {}) {
   };
 }
 
-async function main() {
-  const [editionDate, ...extraArguments] = process.argv.slice(2);
-  const isSameDayBackfill =
-    extraArguments.length === 1 && extraArguments[0] === "--same-day-backfill";
+export async function generatePersonalFreeEditionOutcome(options = {}) {
+  try {
+    return {
+      status: "created",
+      result: await generatePersonalFreeEditionFile(options),
+    };
+  } catch (error) {
+    if (!(error instanceof InsufficientFreeCandidatesError)) throw error;
+    return {
+      status: "no-edition",
+      availableCount: error.availableCount,
+      requiredCount: error.requiredCount,
+    };
+  }
+}
+
+function parseCliArguments(argv) {
+  const [editionDate, ...extraArguments] = argv;
+  const allowedArguments = new Set(["--same-day-backfill", PERSONAL_FREE_GITHUB_OUTCOME_FLAG]);
+  const hasUnknownArgument = extraArguments.some((argument) => !allowedArguments.has(argument));
+  const hasDuplicateArgument = new Set(extraArguments).size !== extraArguments.length;
   if (
     !editionDate ||
-    extraArguments.length > (isSameDayBackfill ? 1 : 0) ||
-    (extraArguments.length > 0 && !isSameDayBackfill) ||
+    extraArguments.length > allowedArguments.size ||
+    hasUnknownArgument ||
+    hasDuplicateArgument ||
     editionDate === "--help" ||
     editionDate === "-h"
   ) {
     throw new Error(
-      "Usage: node scripts/automation/personal-free-edition.mjs YYYY-MM-DD [--same-day-backfill]",
+      "Usage: node scripts/automation/personal-free-edition.mjs YYYY-MM-DD " +
+        "[--same-day-backfill] [--github-actions-outcome]",
     );
   }
-  const runMode = isSameDayBackfill ? "same_day_backfill" : "on_time";
-  const result = await generatePersonalFreeEditionFile({ editionDate, runMode });
-  console.log(`Created private free candidate ${result.relativePath} · sha256 ${result.sha256}`);
+  return {
+    editionDate,
+    runMode: extraArguments.includes("--same-day-backfill")
+      ? "same_day_backfill"
+      : "on_time",
+    reportGitHubOutcome: extraArguments.includes(PERSONAL_FREE_GITHUB_OUTCOME_FLAG),
+  };
+}
+
+function validateGenerationOutcome(outcome) {
+  if (
+    outcome?.status === "created" &&
+    typeof outcome.result?.relativePath === "string" &&
+    SHA256_PATTERN.test(outcome.result?.sha256 ?? "")
+  ) {
+    return outcome;
+  }
+  if (
+    outcome?.status === "no-edition" &&
+    Number.isInteger(outcome.availableCount) &&
+    Number.isInteger(outcome.requiredCount) &&
+    outcome.availableCount >= 0 &&
+    outcome.availableCount < outcome.requiredCount &&
+    outcome.requiredCount === PERSONAL_FREE_MINIMUM_STORY_COUNT
+  ) {
+    return outcome;
+  }
+  throw new Error("Personal free generation returned an invalid orchestration outcome.");
+}
+
+export async function runPersonalFreeEditionCli({
+  argv = process.argv.slice(2),
+  env = process.env,
+  generateFileImpl = generatePersonalFreeEditionFile,
+  generateOutcomeImpl = generatePersonalFreeEditionOutcome,
+  logImpl = console.log,
+} = {}) {
+  const { editionDate, runMode, reportGitHubOutcome } = parseCliArguments(argv);
+  const generationOptions = { editionDate, runMode, env };
+  if (!reportGitHubOutcome) {
+    const result = await generateFileImpl(generationOptions);
+    logImpl(`Created private free candidate ${result.relativePath} · sha256 ${result.sha256}`);
+    return { status: "created", result };
+  }
+
+  const githubOutputPath = requireNonBlank(env.GITHUB_OUTPUT, "GITHUB_OUTPUT");
+  const githubSummaryPath = requireNonBlank(env.GITHUB_STEP_SUMMARY, "GITHUB_STEP_SUMMARY");
+  const outcome = validateGenerationOutcome(await generateOutcomeImpl(generationOptions));
+  if (outcome.status === "created") {
+    await appendFile(githubOutputPath, "candidate_created=true\n", "utf8");
+    logImpl(
+      `Created private free candidate ${outcome.result.relativePath} · ` +
+        `sha256 ${outcome.result.sha256}`,
+    );
+    return outcome;
+  }
+
+  await appendFile(
+    githubOutputPath,
+    `candidate_created=false\nqualified_story_count=${outcome.availableCount}\n` +
+      `required_story_count=${outcome.requiredCount}\n`,
+    "utf8",
+  );
+  await appendFile(
+    githubSummaryPath,
+    "### No personal paper sent\n\n" +
+      `${outcome.availableCount} of ${outcome.requiredCount} required source-checked stories ` +
+      "cleared the editorial threshold. This is an expected no-edition result; " +
+      "the quality bar was not lowered, the repeat ledger was not advanced, and no email was sent.\n",
+    "utf8",
+  );
+  logImpl(
+    `No private edition created: ${outcome.availableCount} of ${outcome.requiredCount} ` +
+      "required source-checked stories cleared the editorial threshold.",
+  );
+  return outcome;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main().catch((error) => {
+  runPersonalFreeEditionCli().catch((error) => {
     console.error(`Personal free edition generation failed: ${error.message}`);
     process.exitCode = 1;
   });

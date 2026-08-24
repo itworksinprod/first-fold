@@ -94,19 +94,53 @@ function editorialItem({
 }
 
 test("the reviewed manifest includes a bounded independent corroboration pool", () => {
-  assert.equal(FREE_FEED_SOURCES.length, 24);
+  assert.equal(FREE_FEED_SOURCES.length, 30);
   assert.equal(FREE_FEED_SOURCES.some((item) => item.id === "uk-cma"), false);
   assert.equal(FREE_FEED_SOURCES.some((item) => item.id === "ftc-competition"), false);
   assert.equal(DEFAULT_MAX_TOTAL_FEED_BYTES, 10_000_000);
   assert.deepEqual(
     FREE_FEED_SOURCES.filter((item) => item.relationship === "independent").map((item) => item.id),
-    ["ars-technica", "the-verge", "techcrunch", "bleepingcomputer", "wired"],
+    [
+      "ars-technica",
+      "the-verge",
+      "techcrunch",
+      "bleepingcomputer",
+      "wired",
+      "the-register",
+      "guardian-technology",
+      "bbc-technology",
+      "npr-technology",
+      "securityweek",
+      "dark-reading",
+    ],
   );
   assert.equal(
     FREE_FEED_SOURCES.find((item) => item.id === "ars-technica").publisherKey,
     FREE_FEED_SOURCES.find((item) => item.id === "wired").publisherKey,
     "two Condé Nast/Advance brands remain one reviewed publisher identity",
   );
+  assert.equal(
+    new Set(FREE_FEED_SOURCES
+      .filter((item) => item.relationship === "independent")
+      .map((item) => item.publisherKey)).size,
+    10,
+    "the eleven independent outlets retain ten controlling publisher identities",
+  );
+  const newIndependentOwners = {
+    "the-register": "situation-publishing",
+    "guardian-technology": "guardian-media-group",
+    "bbc-technology": "bbc",
+    "npr-technology": "npr",
+    securityweek: "wired-business-media",
+    "dark-reading": "informa-techtarget",
+  };
+  for (const [id, publisherKey] of Object.entries(newIndependentOwners)) {
+    assert.equal(
+      FREE_FEED_SOURCES.find((item) => item.id === id)?.publisherKey,
+      publisherKey,
+      `${id} retains its reviewed controlling publisher identity`,
+    );
+  }
 
   const reviewedAdditions = {
     "apple-machine-learning": {
@@ -149,6 +183,36 @@ test("the reviewed manifest includes a bounded independent corroboration pool", 
       feedHosts: ["www.federalregister.gov"],
       itemHosts: ["www.federalregister.gov"],
     },
+    "the-register": {
+      url: "https://www.theregister.com/?lab_viewport=rss",
+      feedHosts: ["www.theregister.com"],
+      itemHosts: ["www.theregister.com"],
+    },
+    "guardian-technology": {
+      url: "https://www.theguardian.com/us/technology/rss",
+      feedHosts: ["www.theguardian.com"],
+      itemHosts: ["www.theguardian.com"],
+    },
+    "bbc-technology": {
+      url: "https://feeds.bbci.co.uk/news/technology/rss.xml",
+      feedHosts: ["feeds.bbci.co.uk"],
+      itemHosts: ["www.bbc.com", "www.bbc.co.uk"],
+    },
+    "npr-technology": {
+      url: "https://feeds.npr.org/1019/rss.xml",
+      feedHosts: ["feeds.npr.org"],
+      itemHosts: ["www.npr.org", "npr.org"],
+    },
+    securityweek: {
+      url: "https://www.securityweek.com/feed/",
+      feedHosts: ["www.securityweek.com"],
+      itemHosts: ["www.securityweek.com", "securityweek.com"],
+    },
+    "dark-reading": {
+      url: "https://www.darkreading.com/rss.xml",
+      feedHosts: ["www.darkreading.com"],
+      itemHosts: ["www.darkreading.com", "darkreading.com"],
+    },
   };
   for (const [id, expected] of Object.entries(reviewedAdditions)) {
     const actual = FREE_FEED_SOURCES.find((item) => item.id === id);
@@ -183,7 +247,7 @@ test("RSS parsing admits only exact-host HTTPS items and normalizes inert text",
 test("legacy HTTP item links upgrade only on the exact reviewed host and default port", () => {
   const body = `<?xml version="1.0"?><rss><channel>
     <item><guid>safe-upgrade</guid><title>Reviewed host item</title>
-      <link>http://news.example/safe?utm_source=feed</link>
+      <link>http://news.example/safe?utm_source=feed&amp;at_campaign=rss&amp;at_medium=RSS</link>
       <pubDate>Fri, 21 Aug 2026 12:00:00 GMT</pubDate></item>
     <item><guid>off-host</guid><title>Off-host item</title>
       <link>http://attacker.invalid/story</link>
@@ -476,6 +540,29 @@ test("editorial hard vetoes return stable, reader-clear rejection reasons", () =
         summary: "Shop now for a limited-time promotional offer.",
         categories: ["AI"],
         deskPriors: { ai: 30 },
+      }),
+    ],
+    [
+      "PROMOTIONAL_OR_DEAL_CONTENT",
+      {
+        ...editorialItem({
+          suffix: "sponsored-metadata",
+          title: "New cloud system improves data center performance",
+          summary: "SPONSORED FEATURE: The vendor describes its latest platform.",
+          categories: ["Cloud infrastructure"],
+          deskPriors: { "platforms-and-power": 30 },
+        }),
+        url: "https://news.example/sponsored-feature/cloud-system",
+      },
+    ],
+    [
+      "OPINION_OR_COMMENTARY",
+      editorialItem({
+        suffix: "opinion",
+        title: "Regulators should rethink platform competition | Opinion",
+        summary: "A columnist argues for a different antitrust approach.",
+        categories: ["Technology", "Opinion"],
+        deskPriors: { "platforms-and-power": 30 },
       }),
     ],
     [

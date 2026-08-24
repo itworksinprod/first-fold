@@ -25,6 +25,10 @@ const generation = job.slice(
   job.indexOf("Generate the private source-checked candidate"),
   job.indexOf("Test the exact private candidate"),
 );
+const candidateTest = job.slice(
+  job.indexOf("Test the exact private candidate"),
+  job.indexOf("Record only validated story fingerprints in the repeat ledger"),
+);
 const ledgerPrepare = job.slice(
   job.indexOf("Prepare the private 30-day repeat ledger"),
   job.indexOf("Generate the private source-checked candidate"),
@@ -179,6 +183,9 @@ test("email setup no-ops only when wholly absent and secrets stay step-scoped", 
   assert.match(generation, /CLOUDFLARE_ACCOUNT_ID: \$\{\{ vars\.CLOUDFLARE_ACCOUNT_ID \}\}/);
   assert.match(generation, /CLOUDFLARE_AI_API_TOKEN: \$\{\{ secrets\.CLOUDFLARE_AI_API_TOKEN \}\}/);
   assert.match(generation, /CLOUDFLARE_AI_MODEL: '@cf\/openai\/gpt-oss-120b'/);
+  assert.match(generation, /^        id: candidate$/m);
+  assert.match(generation, /--github-actions-outcome/);
+  assert.doesNotMatch(generation, />\/dev\/null/);
   assert.doesNotMatch(generation, /RESEND_API_KEY|PERSONAL_PAPER_EMAIL|github\.token|GH_TOKEN/);
   assert.match(email, /RESEND_API_KEY: \$\{\{ secrets\.RESEND_API_KEY \}\}/);
   assert.match(email, /PERSONAL_PAPER_EMAIL: \$\{\{ secrets\.PERSONAL_PAPER_EMAIL \}\}/);
@@ -235,6 +242,17 @@ test("trusted pinned code generates, tests, and emails while persisting only rep
   assert.ok(
     ledgerUploadIndex < emailStepIndex,
   );
+  for (const candidateDependentStep of [candidateTest, ledgerRecord, ledgerUpload, email]) {
+    assert.match(
+      candidateDependentStep,
+      /steps\.candidate\.outputs\.candidate_created == 'true'/,
+    );
+  }
+  assert.equal(
+    job.match(/steps\.candidate\.outputs\.candidate_created == 'true'/g)?.length,
+    4,
+  );
+  assert.doesNotMatch(ledgerPrepare, /steps\.candidate\.outputs\.candidate_created/);
   assert.doesNotMatch(workflow, /content\/editions\/|console\.log\(|cat\s+.*candidate|tee\s+/);
 });
 

@@ -7,7 +7,10 @@ import { validateCanonicalEdition } from "../scripts/edition-content.mjs";
 import { buildEditionDraft } from "../scripts/new-edition.mjs";
 import { assertPersonalEmailCandidate } from "../scripts/automation/personal-email.mjs";
 import { createEmptyPersonalStoryLedger } from "../scripts/automation/personal-story-ledger.mjs";
-import { buildFreeReportingWindow } from "../scripts/automation/draft-free-edition.mjs";
+import {
+  InsufficientFreeCandidatesError,
+  buildFreeReportingWindow,
+} from "../scripts/automation/draft-free-edition.mjs";
 import {
   PERSONAL_FREE_EVIDENCE_POLICY,
   PERSONAL_FREE_LOOKBACK_HOURS,
@@ -20,6 +23,8 @@ import {
   PERSONAL_FREE_MODEL,
   generatePersonalFreeEdition,
   generatePersonalFreeEditionFile,
+  generatePersonalFreeEditionOutcome,
+  runPersonalFreeEditionCli,
   validatePersonalFreeCandidate,
 } from "../scripts/automation/personal-free-edition.mjs";
 
@@ -330,6 +335,117 @@ test("one explained quiet desk is deliverable but fewer than three stories or sk
     access(path.join(projectRoot, "content", "personal-candidates", "2026-08-20.json")),
     (error) => error?.code === "ENOENT",
   );
+});
+
+test("a healthy sub-three selection becomes an explicit no-edition outcome without writing", async (t) => {
+  const projectRoot = await createProject(t);
+  const candidatePath = path.join(
+    projectRoot,
+    "content",
+    "personal-candidates",
+    "2026-08-20.json",
+  );
+  for (const availableCount of [0, 1, 2]) {
+    const outcome = await generatePersonalFreeEditionOutcome({
+      editionDate: "2026-08-20",
+      projectRoot,
+      env: automationEnv,
+      now: GENERATED_AT,
+      feedSources,
+      personalStoryLedger: createEmptyPersonalStoryLedger({
+        fingerprintKey: automationEnv.CLOUDFLARE_AI_API_TOKEN,
+      }),
+      draftFreeEditionImpl: async () => {
+        throw new InsufficientFreeCandidatesError({ availableCount, requiredCount: 3 });
+      },
+    });
+    assert.deepEqual(outcome, {
+      status: "no-edition",
+      availableCount,
+      requiredCount: 3,
+    });
+  }
+  await assert.rejects(
+    access(candidatePath),
+    (error) => error?.code === "ENOENT",
+  );
+});
+
+test("the GitHub CLI outcome reports a no-edition day without hiding real failures", async (t) => {
+  const projectRoot = await createProject(t);
+  const outputPath = path.join(projectRoot, "github-output.txt");
+  const summaryPath = path.join(projectRoot, "github-summary.md");
+  await writeFile(outputPath, "");
+  await writeFile(summaryPath, "");
+  const logs = [];
+  const outcome = await runPersonalFreeEditionCli({
+    argv: ["2026-08-20", "--github-actions-outcome"],
+    env: {
+      ...automationEnv,
+      GITHUB_OUTPUT: outputPath,
+      GITHUB_STEP_SUMMARY: summaryPath,
+    },
+    generateOutcomeImpl: async () => ({
+      status: "no-edition",
+      availableCount: 1,
+      requiredCount: 3,
+    }),
+    logImpl: (message) => logs.push(message),
+  });
+  assert.equal(outcome.status, "no-edition");
+  assert.equal(
+    await readFile(outputPath, "utf8"),
+    "candidate_created=false\nqualified_story_count=1\nrequired_story_count=3\n",
+  );
+  const summary = await readFile(summaryPath, "utf8");
+  assert.match(summary, /^### No personal paper sent/m);
+  assert.match(summary, /1 of 3 required source-checked stories/);
+  assert.match(summary, /repeat ledger was not advanced/);
+  assert.equal(logs.length, 1);
+  assert.doesNotMatch(`${summary}\n${logs.join("\n")}`, /headline|publisher|https?:\/\//i);
+
+  await assert.rejects(
+    runPersonalFreeEditionCli({
+      argv: ["2026-08-20", "--github-actions-outcome"],
+      env: {
+        ...automationEnv,
+        GITHUB_OUTPUT: outputPath,
+        GITHUB_STEP_SUMMARY: summaryPath,
+      },
+      generateOutcomeImpl: async () => {
+        throw new Error("Workers AI request failed safely.");
+      },
+      logImpl: () => {},
+    }),
+    /Workers AI request failed safely/,
+  );
+});
+
+test("the GitHub CLI outcome marks a real candidate as ready", async (t) => {
+  const projectRoot = await createProject(t);
+  const outputPath = path.join(projectRoot, "github-output.txt");
+  const summaryPath = path.join(projectRoot, "github-summary.md");
+  await writeFile(outputPath, "");
+  await writeFile(summaryPath, "");
+  const outcome = await runPersonalFreeEditionCli({
+    argv: ["2026-08-20", "--github-actions-outcome"],
+    env: {
+      ...automationEnv,
+      GITHUB_OUTPUT: outputPath,
+      GITHUB_STEP_SUMMARY: summaryPath,
+    },
+    generateOutcomeImpl: async () => ({
+      status: "created",
+      result: {
+        relativePath: "content/personal-candidates/2026-08-20.json",
+        sha256: "a".repeat(64),
+      },
+    }),
+    logImpl: () => {},
+  });
+  assert.equal(outcome.status, "created");
+  assert.equal(await readFile(outputPath, "utf8"), "candidate_created=true\n");
+  assert.equal(await readFile(summaryPath, "utf8"), "");
 });
 
 test("the private writer is exclusive and never writes a public or comparison artifact", async (t) => {

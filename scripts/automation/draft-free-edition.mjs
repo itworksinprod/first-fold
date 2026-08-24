@@ -31,10 +31,34 @@ export const MAX_FREE_MODEL_CANDIDATES = 24;
 export const FREE_RUN_MODES = Object.freeze(["on_time", "same_day_backfill"]);
 export const DEFAULT_FREE_LOOKBACK_HOURS = 24;
 export const MAX_FREE_LOOKBACK_HOURS = 72;
+export const INSUFFICIENT_QUALIFYING_STORIES = "INSUFFICIENT_QUALIFYING_STORIES";
 export const FREE_EVIDENCE_POLICIES = Object.freeze([
   "corroborated",
   "authoritative-or-corroborated",
 ]);
+
+export class InsufficientFreeCandidatesError extends Error {
+  constructor({ availableCount, requiredCount }) {
+    if (
+      !Number.isInteger(availableCount) ||
+      !Number.isInteger(requiredCount) ||
+      availableCount < 0 ||
+      requiredCount < 1 ||
+      availableCount >= requiredCount ||
+      requiredCount > 4
+    ) {
+      throw new TypeError("Insufficient candidate counts are invalid.");
+    }
+    super(
+      `Free generation found ${availableCount} qualifying ${availableCount === 1 ? "story" : "stories"}; ` +
+        `${requiredCount} are required before inference.`,
+    );
+    this.name = "InsufficientFreeCandidatesError";
+    this.code = INSUFFICIENT_QUALIFYING_STORIES;
+    this.availableCount = availableCount;
+    this.requiredCount = requiredCount;
+  }
+}
 
 const FREE_COPY_OVERLAP_WORDS = 12;
 
@@ -1204,13 +1228,10 @@ function candidatesForDraft(research, requiredStoryCount) {
   const selectedCandidates = research.selectedCandidates;
   if (
     !Array.isArray(selectedCandidates) ||
-    selectedCandidates.length < requiredStoryCount ||
     selectedCandidates.length > FREE_DESKS.length ||
     research.diagnostics?.selectedCount !== selectedCandidates.length
   ) {
-    throw new Error(
-      `Free generation requires at least ${requiredStoryCount} selected feed candidates before inference.`,
-    );
+    throw new Error("Free generation returned invalid selected feed-candidate diagnostics.");
   }
   const researchedEventKeys = new Set(research.candidates.map((candidate) => candidate?.canonicalEventKey));
   const selectedEventKeys = new Set();
@@ -1237,6 +1258,12 @@ function candidatesForDraft(research, requiredStoryCount) {
     [...listedEventKeys].some((eventKey) => !selectedEventKeys.has(eventKey))
   ) {
     throw new Error("Free generation returned inconsistent selected feed candidates.");
+  }
+  if (selectedCandidates.length < requiredStoryCount) {
+    throw new InsufficientFreeCandidatesError({
+      availableCount: selectedCandidates.length,
+      requiredCount: requiredStoryCount,
+    });
   }
   return selectedCandidates;
 }

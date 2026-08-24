@@ -673,6 +673,7 @@ jobs:
           fi
 
       - name: Generate the private source-checked candidate
+        id: candidate
         if: >-
           steps.dedupe.outputs.should_send == 'true' &&
           steps.preflight.outputs.delivery_enabled == 'true'
@@ -686,9 +687,11 @@ jobs:
         shell: bash
         run: |
           if [[ "${RUN_MODE}" == "same_day_backfill" ]]; then
-            node scripts/automation/personal-free-edition.mjs "${EDITION_DATE}" --same-day-backfill >/dev/null
+            node scripts/automation/personal-free-edition.mjs "${EDITION_DATE}" \
+              --same-day-backfill --github-actions-outcome
           elif [[ "${RUN_MODE}" == "on_time" ]]; then
-            node scripts/automation/personal-free-edition.mjs "${EDITION_DATE}" >/dev/null
+            node scripts/automation/personal-free-edition.mjs "${EDITION_DATE}" \
+              --github-actions-outcome
           else
             echo "The personal-paper run mode is invalid."
             exit 1
@@ -697,13 +700,15 @@ jobs:
       - name: Test the exact private candidate
         if: >-
           steps.dedupe.outputs.should_send == 'true' &&
-          steps.preflight.outputs.delivery_enabled == 'true'
+          steps.preflight.outputs.delivery_enabled == 'true' &&
+          steps.candidate.outputs.candidate_created == 'true'
         run: npm test
 
       - name: Record only validated story fingerprints in the repeat ledger
         if: >-
           steps.dedupe.outputs.should_send == 'true' &&
-          steps.preflight.outputs.delivery_enabled == 'true'
+          steps.preflight.outputs.delivery_enabled == 'true' &&
+          steps.candidate.outputs.candidate_created == 'true'
         env:
           CANDIDATE_PATH: ${{ steps.gate.outputs.candidate_path }}
           CLOUDFLARE_AI_API_TOKEN: ${{ secrets.CLOUDFLARE_AI_API_TOKEN }}
@@ -717,7 +722,8 @@ jobs:
       - name: Stage the immutable hash-only repeat ledger before delivery
         if: >-
           steps.dedupe.outputs.should_send == 'true' &&
-          steps.preflight.outputs.delivery_enabled == 'true'
+          steps.preflight.outputs.delivery_enabled == 'true' &&
+          steps.candidate.outputs.candidate_created == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: personal-repeat-ledger-v1
@@ -731,7 +737,8 @@ jobs:
       - name: Send only the validated paper to its private recipient
         if: >-
           steps.dedupe.outputs.should_send == 'true' &&
-          steps.preflight.outputs.delivery_enabled == 'true'
+          steps.preflight.outputs.delivery_enabled == 'true' &&
+          steps.candidate.outputs.candidate_created == 'true'
         env:
           PERSONAL_PAPER_EMAIL: ${{ secrets.PERSONAL_PAPER_EMAIL }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}

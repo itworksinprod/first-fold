@@ -31,7 +31,8 @@ succeeded end to end.
 | Message | Static, escaped HTML plus an equivalent plain-text part; no client-side JavaScript |
 | Repository permissions | Read-only contents and Actions metadata; no pull-request, branch, commit, Pages, or public-content write permission; the workflow may download and upload only its bounded private-state ledger artifact |
 | Persistence | The candidate remains on the ephemeral runner; a keyed-HMAC-only ledger artifact retains at most the previous 30 dates plus first-five-pilot progress, never reusable unkeyed story hashes, paper copy, headlines, source URLs, publisher names, recipient data, or provider IDs |
-| Failure | Feed, quota, model, scoring, repeat-ledger, three-story, source, schema, rendering, configuration, or send-precondition failure sends no email |
+| No edition | Healthy, internally consistent research with fewer than three qualifying desks ends successfully with a trusted-count-only job summary; it does not call the model, advance or upload the ledger, or send email |
+| Failure | Feed coverage, quota, model, repeat-ledger, source, schema, rendering, configuration, or send-precondition errors remain failed runs and send no email |
 | Duplicate control | Suppress an earlier successful same-day workflow, veto matching story fingerprints from the previous 30 calendar dates, then make at most one Resend request with `Idempotency-Key: first-fold-personal-YYYY-MM-DD`; no application-level send retry |
 | Paid fallback | None |
 
@@ -86,17 +87,24 @@ At the matching 5:05 AM event on every day:
    must stay explicitly attributed and cannot be presented as independently
    confirmed or critical. Independent allegations and critical claims still
    require independent evidence.
-6. The fixed Workers AI model receives only the bounded, selected feed dossiers.
+6. If healthy, internally consistent research selects fewer than three desks,
+   the job records a trusted-count-only **No personal paper sent** summary and
+   finishes successfully. It does not call Workers AI, write a candidate,
+   advance or upload the repeat ledger, or call Resend. Malformed research,
+   missing feed coverage, and provider errors remain hard failures. A later
+   same-day recovery is still eligible because deduplication recognizes only an
+   actually successful send step.
+7. The fixed Workers AI model receives only the bounded, selected feed dossiers.
    It must return three or four stories with no more than one story per desk and
    no more than one honest quiet desk. It may not lower the quality threshold to
    fill a page. Local validation binds every draft to its selected feed URLs,
    enforces dates and story length, checks source reachability and evidence
    mappings, and rejects duplicate events or two quiet desks.
-7. Each story receives a trusted validation receipt containing its total score,
+8. Each story receives a trusted validation receipt containing its total score,
    five component scores, required threshold, evidence tier, and factual source
    and publisher counts. The email renderer recomputes and validates that receipt
    rather than trusting model-controlled display text.
-8. After all deterministic checks pass, the workflow records only domain-separated
+9. After all deterministic checks pass, the workflow records only domain-separated
    HMAC-SHA-256 story fingerprints keyed by the existing Workers AI token and
    stages that immutable ledger as an artifact
    before delivery. It then sends one escaped HTML and plain-text message through

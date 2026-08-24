@@ -30,7 +30,8 @@ export const FREE_FEED_USER_AGENT =
   "Mozilla/5.0 (compatible; First-Fold-Free-Pilot/1.0; +https://github.com/itworksinprod/first-fold)";
 
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
-const TRACKING_PARAMETER = /^(?:utm_.+|fbclid|gclid|msclkid|mc_cid|mc_eid)$/i;
+const TRACKING_PARAMETER =
+  /^(?:utm_.+|fbclid|gclid|msclkid|mc_cid|mc_eid|at_campaign|at_medium)$/i;
 const SOURCE_RELATIONSHIPS = new Set(["originating", "independent", "context"]);
 const FREE_EVIDENCE_POLICIES = new Set([
   DEFAULT_FREE_EVIDENCE_POLICY,
@@ -132,6 +133,11 @@ const PROMOTIONAL_TITLE_PATTERNS = [
   /\b(?:deal|deals|discount|discounts|sale)\b[^.!?]{0,60}\b(?:off|coupon|save|shop|buy)\b/i,
   /\b(?:sponsored|advertorial|paid content|partner content)\b/i,
 ];
+const SPONSORED_METADATA_PATTERN =
+  /\b(?:sponsored feature|sponsored post|advertorial|paid content|partner content)\b/i;
+const SPONSORED_PATH_PATTERN = /\/(?:sponsored|paid-content)(?:[-/]|$)/i;
+const OPINION_TITLE_PATTERN = /\|\s*(?:opinion|commentary)\s*$/i;
+const OPINION_CATEGORY_PATTERN = /^(?:opinion|commentary)$/i;
 const REVIEW_OR_LIFESTYLE_TITLE_PATTERNS = [
   /\b(?:mattress|bedding|recipe|restaurant|wildlife|birdwatch|gardening|horoscope)\b/i,
   /\b(?:beauty|fashion|fitness|wellness|vacation|travel destination)\b/i,
@@ -1010,10 +1016,24 @@ function contentVetoReasons(items) {
     "",
   );
   const reasons = [];
-  if (PROMOTIONAL_TITLE_PATTERNS.some((pattern) => pattern.test(titleCategoryText))) {
+  const hasSponsoredMetadata = items.some((item) =>
+    SPONSORED_METADATA_PATTERN.test(`${item.title} ${item.summary} ${item.categories.join(" ")}`) ||
+    SPONSORED_PATH_PATTERN.test(new URL(item.url).pathname));
+  if (
+    hasSponsoredMetadata ||
+    PROMOTIONAL_TITLE_PATTERNS.some((pattern) => pattern.test(titleCategoryText))
+  ) {
     reasons.push(rejectionReason(
       "PROMOTIONAL_OR_DEAL_CONTENT",
       "Advertising, affiliate promotions, shopping deals, and sales content are not editorial candidates.",
+    ));
+  }
+  if (items.some((item) =>
+    OPINION_TITLE_PATTERN.test(item.title) ||
+    item.categories.some((category) => OPINION_CATEGORY_PATTERN.test(category)))) {
+    reasons.push(rejectionReason(
+      "OPINION_OR_COMMENTARY",
+      "Opinion and commentary cannot serve as factual corroboration for the automatic paper.",
     ));
   }
   if (REVIEW_OR_LIFESTYLE_TITLE_PATTERNS.some((pattern) => pattern.test(reviewSafeText))) {
