@@ -21,7 +21,24 @@ const PERSONAL_RESEARCH_EVIDENCE_POLICY = "authoritative-or-corroborated";
 const PERSONAL_RESEARCH_MAX_MODEL_REQUESTS = 2;
 const PERSONAL_RESEARCH_LOOKBACK_HOURS = 72;
 const PERSONAL_RESEARCH_MINIMUM_SCORE = 70;
-const PERSONAL_RESEARCH_MINIMUM_AUTHORITATIVE_SCORE = 58;
+const PERSONAL_RESEARCH_MINIMUM_AUTHORITATIVE_SCORE = 70;
+const PERSONAL_RESEARCH_MINIMUM_STORY_COUNT = 3;
+const PERSONAL_REPEAT_LEDGER_SCHEMA_VERSION = 1;
+const PERSONAL_REPEAT_LOOKBACK_DAYS = 30;
+const RECEIPT_COMPONENT_MAXIMUMS = Object.freeze({
+  materialityNewsworthiness: 30,
+  deskRelevance: 20,
+  sourceStrength: 20,
+  readerUsefulnessActionability: 15,
+  freshness: 15,
+});
+const RECEIPT_COMPONENT_LABELS = Object.freeze({
+  materialityNewsworthiness: "Importance",
+  deskRelevance: "Relevance",
+  sourceStrength: "Source quality",
+  readerUsefulnessActionability: "Reader usefulness",
+  freshness: "Freshness",
+});
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const RESEND_KEY_PATTERN = /^re_[A-Za-z0-9_-]{8,508}$/;
 const EMAIL_PATTERN = /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
@@ -93,7 +110,7 @@ function sourceRelationshipLabel(relationship) {
 }
 
 function validationFailure() {
-  return new Error("Personal email requires a complete, source-checked free-research candidate.");
+  return new Error("Personal email requires at least three source-checked stories in a free-research candidate.");
 }
 
 function isDisplayString(value, maximumLength) {
@@ -149,9 +166,116 @@ function hasSafeDisplayFields(candidate) {
   return true;
 }
 
+function buildStoryValidationReceipt(story) {
+  const score = story?.selection?.score;
+  const trustedReceipt = story?.selection?.validationReceipt;
+  if (
+    !Number.isFinite(score) ||
+    score < PERSONAL_RESEARCH_MINIMUM_SCORE ||
+    score > 100 ||
+    !trustedReceipt ||
+    typeof trustedReceipt !== "object" ||
+    Array.isArray(trustedReceipt) ||
+    trustedReceipt.version !== "editorial-v1" ||
+    trustedReceipt.score !== score ||
+    !Number.isFinite(trustedReceipt.requiredScore) ||
+    trustedReceipt.requiredScore < PERSONAL_RESEARCH_MINIMUM_SCORE ||
+    trustedReceipt.requiredScore > score ||
+    !trustedReceipt.components ||
+    typeof trustedReceipt.components !== "object" ||
+    Array.isArray(trustedReceipt.components) ||
+    !trustedReceipt.componentMaximums ||
+    typeof trustedReceipt.componentMaximums !== "object" ||
+    Array.isArray(trustedReceipt.componentMaximums)
+  ) {
+    throw validationFailure();
+  }
+  let componentTotal = 0;
+  for (const [component, maximum] of Object.entries(RECEIPT_COMPONENT_MAXIMUMS)) {
+    const componentScore = trustedReceipt.components[component];
+    if (
+      !Number.isInteger(componentScore) ||
+      componentScore < 0 ||
+      componentScore > maximum ||
+      trustedReceipt.componentMaximums[component] !== maximum
+    ) {
+      throw validationFailure();
+    }
+    componentTotal += componentScore;
+  }
+  if (
+    componentTotal !== score ||
+    Object.keys(trustedReceipt.components).length !== Object.keys(RECEIPT_COMPONENT_MAXIMUMS).length ||
+    Object.keys(trustedReceipt.componentMaximums).length !== Object.keys(RECEIPT_COMPONENT_MAXIMUMS).length
+  ) {
+    throw validationFailure();
+  }
+  const sourceById = new Map();
+  for (const source of story?.sources ?? []) {
+    if (typeof source?.id !== "string" || sourceById.has(source.id)) {
+      throw validationFailure();
+    }
+    sourceById.set(source.id, source);
+  }
+  const citedSourceIds = new Set(
+    (story?.evidence ?? []).flatMap((claim) =>
+      Array.isArray(claim?.sourceIds) ? claim.sourceIds : []),
+  );
+  const factualSources = [];
+  const seenUrls = new Set();
+  for (const sourceId of citedSourceIds) {
+    const source = sourceById.get(sourceId);
+    if (!source || source.relationship === "context") continue;
+    const url = requireSourceUrl(source.url);
+    if (seenUrls.has(url)) continue;
+    seenUrls.add(url);
+    factualSources.push(source);
+  }
+  if (
+    trustedReceipt.factualSourceCount !== factualSources.length ||
+    !Number.isInteger(trustedReceipt.publisherCount) ||
+    trustedReceipt.publisherCount < 1 ||
+    trustedReceipt.publisherCount > factualSources.length
+  ) {
+    throw validationFailure();
+  }
+  let evidenceTier;
+  if (
+    trustedReceipt.evidenceTier === "corroborated" &&
+    factualSources.length >= 2 &&
+    trustedReceipt.publisherCount >= 2
+  ) {
+    evidenceTier = "Independently corroborated";
+  } else if (
+    trustedReceipt.evidenceTier === "authoritative-single" &&
+    factualSources.length === 1 &&
+    trustedReceipt.publisherCount === 1 &&
+    factualSources[0].relationship === "originating" &&
+    story.priority !== "critical" &&
+    story.confidence?.level !== "high" &&
+    (story.evidence ?? []).every((claim) =>
+      ["company-claimed", "preliminary"].includes(claim?.verification))
+  ) {
+    evidenceTier = "Reviewed originating source";
+  } else {
+    throw validationFailure();
+  }
+  return {
+    score: String(score),
+    evidenceTier,
+    factualSourceCount: factualSources.length,
+    componentSummary: Object.entries(trustedReceipt.components)
+      .map(([component, value]) =>
+        `${RECEIPT_COMPONENT_LABELS[component]}: ${value}/${RECEIPT_COMPONENT_MAXIMUMS[component]}`)
+      .join(" · "),
+  };
+}
+
 function hasCompleteStorySources(candidate) {
   return DESKS.every(([desk]) => {
-    const sources = candidate.desks?.[desk]?.story?.sources;
+    const story = candidate.desks?.[desk]?.story;
+    if (story === null) return true;
+    const sources = story?.sources;
     if (!Array.isArray(sources) || sources.length < 2) return false;
     const urls = new Set();
     let hasDirectSource = false;
@@ -165,7 +289,13 @@ function hasCompleteStorySources(candidate) {
         hasDirectSource = true;
       }
     }
-    return urls.size >= 2 && hasDirectSource;
+    if (urls.size < 2 || !hasDirectSource) return false;
+    try {
+      buildStoryValidationReceipt(story);
+    } catch {
+      return false;
+    }
+    return true;
   });
 }
 
@@ -190,6 +320,8 @@ export function assertPersonalEmailCandidate(candidate) {
 
   const research = candidate.provenance?.personalFreeResearch;
   const sourceCheck = candidate.provenance?.sourceCheck;
+  const selectedStoryCount = DESKS.filter(([desk]) =>
+    candidate.desks?.[desk]?.story !== null).length;
   const runId = typeof research?.runId === "string" ? research.runId : "";
   const expectedRunUrl =
     `https://github.com/${EXPECTED_PERSONAL_REPOSITORY}/actions/runs/${runId}`;
@@ -218,22 +350,49 @@ export function assertPersonalEmailCandidate(candidate) {
     research.successfulFeedSourceCount < 1 ||
     research.successfulFeedSourceCount > research.feedSourceCount ||
     !Number.isInteger(research.candidateCount) ||
-    research.candidateCount < DESKS.length ||
+    research.candidateCount < PERSONAL_RESEARCH_MINIMUM_STORY_COUNT ||
+    research.candidateCount < selectedStoryCount ||
     research.evidencePolicy !== PERSONAL_RESEARCH_EVIDENCE_POLICY ||
     research.lookbackHours !== PERSONAL_RESEARCH_LOOKBACK_HOURS ||
     research.minimumScore !== PERSONAL_RESEARCH_MINIMUM_SCORE ||
     research.minimumAuthoritativeScore !== PERSONAL_RESEARCH_MINIMUM_AUTHORITATIVE_SCORE ||
     research.ephemeral !== true ||
-    research.selectedStoryCount !== DESKS.length ||
+    research.requiredStoryCount !== PERSONAL_RESEARCH_MINIMUM_STORY_COUNT ||
+    research.selectedStoryCount !== selectedStoryCount ||
+    research.repeatLedgerSchemaVersion !== PERSONAL_REPEAT_LEDGER_SCHEMA_VERSION ||
+    research.repeatLookbackDays !== PERSONAL_REPEAT_LOOKBACK_DAYS ||
+    !/^[a-f0-9]{64}$/.test(research.repeatStateSha256 ?? "") ||
+    !Number.isInteger(research.priorLedgerEditionCount) ||
+    research.priorLedgerEditionCount < 0 ||
+    !Number.isInteger(research.priorLedgerStoryCount) ||
+    research.priorLedgerStoryCount < 0 ||
+    !(
+      research.qualityPilotOrdinal === null ||
+      (Number.isInteger(research.qualityPilotOrdinal) &&
+        research.qualityPilotOrdinal >= 1 &&
+        research.qualityPilotOrdinal <= 5)
+    ) ||
+    research.qualityPilotOrdinal !== (
+      research.priorLedgerEditionCount < 5
+        ? research.priorLedgerEditionCount + 1
+        : null
+    ) ||
+    selectedStoryCount < PERSONAL_RESEARCH_MINIMUM_STORY_COUNT ||
+    selectedStoryCount > DESKS.length ||
     research.maxModelRequests !== PERSONAL_RESEARCH_MAX_MODEL_REQUESTS ||
     !sourceCheck ||
     typeof sourceCheck !== "object" ||
     sourceCheck.status !== "passed" ||
     !Number.isInteger(sourceCheck.checkedSourceCount) ||
-    sourceCheck.checkedSourceCount < DESKS.length * 2 ||
+    sourceCheck.checkedSourceCount < selectedStoryCount * 2 ||
     !Array.isArray(sourceCheck.issues) ||
     sourceCheck.issues.length !== 0 ||
-    DESKS.some(([desk]) => candidate.desks?.[desk]?.story === null) ||
+    DESKS.some(([desk]) => {
+      const story = candidate.desks?.[desk]?.story;
+      return story !== null &&
+        story?.selection?.validationReceipt?.evidenceTier === "authoritative-single" &&
+        candidate.frontPage?.stopThePressesStoryId === story.id;
+    }) ||
     !hasCompleteStorySources(candidate)
   ) {
     throw validationFailure();
@@ -242,6 +401,7 @@ export function assertPersonalEmailCandidate(candidate) {
 }
 
 function renderStoryHtml(story) {
+  const receipt = buildStoryValidationReceipt(story);
   const sources = story.sources.map((source) => {
     const href = escapeHtml(requireSourceUrl(source.url));
     return `
@@ -260,12 +420,18 @@ function renderStoryHtml(story) {
     <p style="margin:0 0 18px;color:#24211d;font:16px/1.62 Georgia,Times New Roman,serif;">${escapeHtml(story.whyItMatters)}</p>
     <h3 style="margin:0 0 6px;color:#712b27;font:700 12px/1.2 Arial,Helvetica,sans-serif;letter-spacing:1.1px;text-transform:uppercase;">What to do or watch</h3>
     <p style="margin:0 0 22px;color:#24211d;font:16px/1.62 Georgia,Times New Roman,serif;">${escapeHtml(story.whatToDoOrWatch)}</p>
+    <div style="margin:0 0 22px;padding:12px 14px;background:#e9e2d5;border-left:3px solid #712b27;">
+      <p style="margin:0 0 5px;color:#712b27;font:700 11px/1.2 Arial,Helvetica,sans-serif;letter-spacing:1.1px;text-transform:uppercase;">Validation receipt</p>
+      <p style="margin:0;color:#4f493f;font:13px/1.45 Arial,Helvetica,sans-serif;">Editorial score: ${escapeHtml(receipt.score)}/100 · Evidence: ${escapeHtml(receipt.evidenceTier)} · ${receipt.factualSourceCount} factual ${receipt.factualSourceCount === 1 ? "source" : "sources"}</p>
+      <p style="margin:5px 0 0;color:#6b6358;font:11px/1.45 Arial,Helvetica,sans-serif;">${escapeHtml(receipt.componentSummary)}</p>
+    </div>
     <p style="margin:0 0 8px;color:#171512;font:700 12px/1.2 Arial,Helvetica,sans-serif;letter-spacing:1.1px;text-transform:uppercase;">Sources</p>
     <ul style="margin:0;padding:0;">${sources}
     </ul>`;
 }
 
 function renderStoryText(story) {
+  const receipt = buildStoryValidationReceipt(story);
   const sources = story.sources.map((source) => {
     const url = requireSourceUrl(source.url);
     return `- ${compactText(source.publisher)} — ${compactText(source.title)} [${sourceRelationshipLabel(source.relationship)}]\n  ${url}`;
@@ -282,6 +448,10 @@ function renderStoryText(story) {
     "",
     "WHAT TO DO OR WATCH",
     compactText(story.whatToDoOrWatch),
+    "",
+    "VALIDATION RECEIPT",
+    `Editorial score: ${receipt.score}/100 · Evidence: ${receipt.evidenceTier} · Factual sources: ${receipt.factualSourceCount}`,
+    receipt.componentSummary,
     "",
     "SOURCES",
     sources,
@@ -318,6 +488,25 @@ export function renderPersonalEditionEmail(candidate) {
   assertPersonalEmailCandidate(candidate);
   const displayDate = formatEditionDate(candidate.editionDate);
   const subject = `First Fold — ${displayDate}`;
+  const research = candidate.provenance.personalFreeResearch;
+  const pilotOrdinal = research.qualityPilotOrdinal;
+  const pilotHtml = pilotOrdinal === null
+    ? ""
+    : `
+        <tr>
+          <td style="padding:14px 34px;background:#e9e2d5;border-top:1px solid #b9b09f;border-bottom:1px solid #b9b09f;">
+            <p style="margin:0;color:#712b27;font:700 11px/1.2 Arial,Helvetica,sans-serif;letter-spacing:1.2px;text-transform:uppercase;">Quality pilot · Edition ${pilotOrdinal} of 5</p>
+            <p style="margin:6px 0 0;color:#4f493f;font:13px/1.45 Arial,Helvetica,sans-serif;">Please review relevance, importance, source quality, freshness, and usefulness. <a href="${escapeHtml(research.runUrl)}" style="color:#712b27;text-decoration:underline;">View the trusted run</a>.</p>
+          </td>
+        </tr>`;
+  const pilotText = pilotOrdinal === null
+    ? []
+    : [
+      `QUALITY PILOT · EDITION ${pilotOrdinal} OF 5`,
+      "Please review relevance, importance, source quality, freshness, and usefulness.",
+      research.runUrl,
+      "",
+    ];
   const deskHtml = DESKS.map(([key, label]) => renderDeskHtml(candidate, key, label)).join("");
   const deskText = DESKS.map(([key, label]) => renderDeskText(candidate, key, label)).join("\n\n----------------------------------------\n\n");
 
@@ -342,7 +531,7 @@ export function renderPersonalEditionEmail(candidate) {
             <p style="margin:0;color:#24211d;font:22px/1.35 Georgia,Times New Roman,serif;">${escapeHtml(candidate.frontPage.note)}</p>
             <p style="margin:14px 0 0;color:#6d665c;font:13px/1.4 Arial,Helvetica,sans-serif;">${escapeHtml(String(candidate.frontPage.estimatedMinutes))} minute read · Source checked before delivery</p>
           </td>
-        </tr>${deskHtml}
+        </tr>${pilotHtml}${deskHtml}
         <tr>
           <td style="padding:24px 34px;border-top:3px double #24211d;text-align:center;">
             <p style="margin:0;color:#171512;font:700 18px/1.2 Georgia,Times New Roman,serif;">You’re caught up.</p>
@@ -364,6 +553,7 @@ export function renderPersonalEditionEmail(candidate) {
     compactText(candidate.frontPage.note),
     `${candidate.frontPage.estimatedMinutes} minute read · Source checked before delivery`,
     "",
+    ...pilotText,
     "========================================",
     "",
     deskText,

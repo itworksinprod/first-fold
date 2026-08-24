@@ -15,6 +15,7 @@ import {
 } from "./newsroom-qa.mjs";
 import {
   DEFAULT_MINIMUM_SCORE,
+  EDITORIAL_SCORECARD_MAXIMUMS,
   FREE_DESKS,
   researchFreeEdition,
 } from "./free/feed-engine.mjs";
@@ -418,8 +419,52 @@ function boundedText(value, maximum, label) {
     .slice(0, maximum);
 }
 
+function compactEditorialScorecard(ranking, index) {
+  const label = `Free candidate ${index + 1} editorial scorecard`;
+  if (!isObject(ranking) || ranking.version !== "editorial-v1") {
+    throw new Error(`${label} must use editorial-v1.`);
+  }
+  const components = {};
+  const maximums = {};
+  for (const [component, expectedMaximum] of Object.entries(EDITORIAL_SCORECARD_MAXIMUMS)) {
+    const value = ranking.components?.[component];
+    const maximum = ranking.componentMaximums?.[component];
+    if (!Number.isInteger(value) || value < 0 || value > expectedMaximum || maximum !== expectedMaximum) {
+      throw new Error(`${label} has an invalid ${component} component.`);
+    }
+    components[component] = value;
+    maximums[component] = maximum;
+  }
+  const score = Object.values(components).reduce((sum, value) => sum + value, 0);
+  const validation = ranking.editorialValidation;
+  if (
+    score !== ranking.score ||
+    !isObject(validation) ||
+    validation.decision !== "accepted" ||
+    !Number.isFinite(validation.requiredScore) ||
+    validation.requiredScore < DEFAULT_MINIMUM_SCORE ||
+    validation.requiredScore > score ||
+    !Array.isArray(validation.rejectionReasons) ||
+    validation.rejectionReasons.length !== 0
+  ) {
+    throw new Error(`${label} is inconsistent with its accepted score.`);
+  }
+  return {
+    score,
+    version: ranking.version,
+    components,
+    componentMaximums: maximums,
+    editorialValidation: {
+      decision: "accepted",
+      requiredScore: validation.requiredScore,
+      rejectionReasons: [],
+    },
+  };
+}
+
 function compactCandidate(candidate, index) {
   if (!isObject(candidate)) throw new Error(`Free candidate ${index + 1} must be an object.`);
+  const scorecard = compactEditorialScorecard(candidate.ranking, index);
   const sources = Array.isArray(candidate.sources) ? candidate.sources.slice(0, 8).map((source, sourceIndex) => ({
     id: boundedText(source?.id, 160, `Free candidate ${index + 1} source ${sourceIndex + 1} id`),
     title: boundedText(source?.title, 300, `Free candidate ${index + 1} source ${sourceIndex + 1} title`),
@@ -449,7 +494,7 @@ function compactCandidate(candidate, index) {
       .map((question, questionIndex) => boundedText(question, 400, `Free candidate ${index + 1} question ${questionIndex + 1}`)),
     sources,
     ranking: {
-      score: candidate.ranking?.score,
+      ...scorecard,
       eligibility: candidate.ranking?.eligibility,
       corroborated: candidate.ranking?.corroborated,
       evidenceTier: candidate.ranking?.evidenceTier,
@@ -570,7 +615,12 @@ export function assertFreeResearchCoverage(research, { feedSources, reportingWin
   };
 }
 
-function buildSystemInstructions(policyText, promptText, evidencePolicy, requireComplete) {
+function buildSystemInstructions(
+  policyText,
+  promptText,
+  evidencePolicy,
+  requiredStoryCount,
+) {
   const evidenceInstructions = evidencePolicy === "authoritative-or-corroborated"
     ? `A dossier may be used when ranking.evidenceTier is corroborated or
 authoritative-single. Corroborated dossiers retain the normal two-article,
@@ -588,21 +638,27 @@ be named by frontPage.stopThePressesStoryId.`
 non-context article sources from two distinct publishers and all material
 claims map to those sources. A publisher's item page plus its own feed endpoint
 is one record, not independent corroboration.`;
-  const completionInstructions = requireComplete
+  const completionInstructions = requiredStoryCount === FREE_DESKS.length
     ? `This private run requires exactly one selected story in every one of the
 four desks. Do not return a quiet desk. If a dossier cannot support a safe,
 complete story under these rules, the run must fail rather than imply that
 independent confirmation exists.`
-    : "Leave a desk quiet when its bounded dossier cannot support a safe story.";
-  const boundedFactInstructions = requireComplete
-    ? `If the bounded facts cannot support a required story, return no usable
-editorial payload so trusted local validation fails; never fabricate facts or
-omit the required story.`
+    : requiredStoryCount > 0
+      ? `This private run requires at least ${requiredStoryCount} selected stories and
+no more than one story per desk. You may return exactly one quiet desk only
+when no safe dossier clears the bar for that desk, and its emptyReason must
+briefly explain that no qualifying development cleared the editorial threshold.
+Never lower the evidence or quality bar merely to fill the fourth desk.`
+      : "Leave a desk quiet when its bounded dossier cannot support a safe story.";
+  const boundedFactInstructions = requiredStoryCount > 0
+    ? `If the bounded facts cannot support at least ${requiredStoryCount} required stories,
+return no usable editorial payload so trusted local validation fails; never
+fabricate facts or omit a required story.`
     : "Attribute dossier facts as feed reports and leave the desk quiet when those bounded facts are insufficient.";
-  const boundedLengthInstructions = requireComplete
-    ? `If a dossier cannot support that length, return no usable editorial
-payload so the run fails safely; never pad with unsupported facts or omit the
-required story.`
+  const boundedLengthInstructions = requiredStoryCount > 0
+    ? `If the dossiers cannot support that length for at least ${requiredStoryCount} stories,
+return no usable editorial payload so the run fails safely; never pad with
+unsupported facts or omit a required story.`
     : "Leave a desk quiet if its dossier cannot support that length.";
   return `
 You are the free comparison newsroom drafting component for First Fold.
@@ -697,6 +753,7 @@ export function buildFreeWorkersAiMessages({
   candidates,
   evidencePolicy = "corroborated",
   requireComplete = false,
+  minimumStoryCount = 0,
 }) {
   requireNonBlank(policyText, "Editorial policy text");
   requireNonBlank(promptText, "Daily prompt text");
@@ -704,6 +761,15 @@ export function buildFreeWorkersAiMessages({
   if (typeof requireComplete !== "boolean") {
     throw new Error("Free requireComplete must be a boolean.");
   }
+  if (
+    !Number.isInteger(minimumStoryCount) ||
+    minimumStoryCount < 0 ||
+    minimumStoryCount > FREE_DESKS.length ||
+    (requireComplete && ![0, FREE_DESKS.length].includes(minimumStoryCount))
+  ) {
+    throw new Error("Free minimumStoryCount must be an integer from 0 through 4.");
+  }
+  const requiredStoryCount = requireComplete ? FREE_DESKS.length : minimumStoryCount;
   const runContext = buildRunContext(scaffold, priorEditions, compactResearchCandidates(candidates));
   return [
     {
@@ -712,13 +778,17 @@ export function buildFreeWorkersAiMessages({
         policyText,
         promptText,
         normalizedEvidencePolicy,
-        requireComplete,
+        requiredStoryCount,
       ),
     },
     {
       role: "user",
       content: `Draft the free comparison edition from RUN_CONTEXT. ` +
-        `${requireComplete ? "Select exactly one story in each of the four desks." : "Select no more than one story per desk."} ` +
+        `${requiredStoryCount === FREE_DESKS.length
+          ? "Select exactly one story in each of the four desks."
+          : requiredStoryCount > 0
+            ? `Select at least ${requiredStoryCount} stories, no more than one per desk, and leave at most one desk quiet with an explanation.`
+            : "Select no more than one story per desk."} ` +
         `Use 150-225 reader-facing words per selected story, preserve the half-open reporting window, ` +
         `and return JSON only.\n\nRUN_CONTEXT:\n${JSON.stringify(runContext)}`,
     },
@@ -1021,9 +1091,15 @@ export function normalizeFreeEditorialAgainstCandidates(
     const citedCorroboratingSources = [...citedSourceIds]
       .map((sourceId) => candidateSources.get(sourceId))
       .filter((source) => source?.relationship !== "context");
+    const citedFactualSourceCount = new Set(
+      citedCorroboratingSources.map((source) => source.url),
+    ).size;
+    const citedPublisherCount = new Set(
+      citedCorroboratingSources.map((source) => source.publisherKey),
+    ).size;
     if (isCorroborated && (
-      new Set(citedCorroboratingSources.map((source) => source.url)).size < 2 ||
-      new Set(citedCorroboratingSources.map((source) => source.publisherKey)).size < 2
+      citedFactualSourceCount < 2 ||
+      citedPublisherCount < 2
     )) {
       throw new Error(`Workers AI story ${story.id} does not cite both corroborating publishers.`);
     }
@@ -1049,6 +1125,16 @@ export function normalizeFreeEditorialAgainstCandidates(
       ...story.selection,
       score: candidate.ranking.score,
       materialDelta: expectedStatus === "material-update" ? story.selection.materialDelta : null,
+      validationReceipt: {
+        version: candidate.ranking.version,
+        score: candidate.ranking.score,
+        requiredScore: candidate.ranking.editorialValidation.requiredScore,
+        components: structuredClone(candidate.ranking.components),
+        componentMaximums: structuredClone(candidate.ranking.componentMaximums),
+        evidenceTier: candidate.ranking.evidenceTier,
+        factualSourceCount: citedFactualSourceCount,
+        publisherCount: citedPublisherCount,
+      },
     };
     if (expectedStatus === "material-update" && !story.selection.materialDelta?.trim()) {
       throw new Error(`Workers AI story ${story.id} omitted the material delta for its matched dossier.`);
@@ -1098,26 +1184,39 @@ function buildQuietEditorial(research) {
   };
 }
 
+function applyTrustedQuietReasons(editorial, research) {
+  for (const desk of FREE_DESKS) {
+    const page = editorial.desks?.[desk];
+    if (page?.story !== null) continue;
+    page.emptyReason = research.desks?.[desk]?.emptyReason ||
+      `No qualifying ${DESK_LABELS[desk]} development cleared the final editorial drafting pass.`;
+  }
+  return editorial;
+}
+
 function sourceUrlsFromCandidates(candidates) {
   return candidates.flatMap((candidate) =>
     Array.isArray(candidate.sources) ? candidate.sources.map((source) => source.url) : []);
 }
 
-function candidatesForDraft(research, requireComplete) {
-  if (!requireComplete) return research.candidates;
+function candidatesForDraft(research, requiredStoryCount) {
+  if (requiredStoryCount === 0) return research.candidates;
+  const selectedCandidates = research.selectedCandidates;
   if (
-    !Array.isArray(research.selectedCandidates) ||
-    research.selectedCandidates.length !== FREE_DESKS.length ||
-    research.diagnostics?.selectedCount !== FREE_DESKS.length
+    !Array.isArray(selectedCandidates) ||
+    selectedCandidates.length < requiredStoryCount ||
+    selectedCandidates.length > FREE_DESKS.length ||
+    research.diagnostics?.selectedCount !== selectedCandidates.length
   ) {
     throw new Error(
-      "Complete free generation requires exactly four selected feed candidates before inference.",
+      `Free generation requires at least ${requiredStoryCount} selected feed candidates before inference.`,
     );
   }
   const researchedEventKeys = new Set(research.candidates.map((candidate) => candidate?.canonicalEventKey));
   const selectedEventKeys = new Set();
   for (const desk of FREE_DESKS) {
     const selected = research.desks?.[desk]?.selectedCandidate;
+    if (selected === null) continue;
     if (
       !isObject(selected) ||
       selected.suggestedDesk !== desk ||
@@ -1125,19 +1224,21 @@ function candidatesForDraft(research, requireComplete) {
       selectedEventKeys.has(selected.canonicalEventKey)
     ) {
       throw new Error(
-        `Complete free generation requires one unique selected feed candidate for desk ${desk}.`,
+        `Free generation requires at most one unique selected feed candidate for desk ${desk}.`,
       );
     }
     selectedEventKeys.add(selected.canonicalEventKey);
   }
-  const listedEventKeys = new Set(research.selectedCandidates.map((candidate) => candidate?.canonicalEventKey));
+  const listedEventKeys = new Set(selectedCandidates.map((candidate) => candidate?.canonicalEventKey));
   if (
-    listedEventKeys.size !== FREE_DESKS.length ||
-    [...selectedEventKeys].some((eventKey) => !listedEventKeys.has(eventKey))
+    selectedEventKeys.size !== selectedCandidates.length ||
+    listedEventKeys.size !== selectedCandidates.length ||
+    [...selectedEventKeys].some((eventKey) => !listedEventKeys.has(eventKey)) ||
+    [...listedEventKeys].some((eventKey) => !selectedEventKeys.has(eventKey))
   ) {
-    throw new Error("Complete free generation returned inconsistent selected feed candidates.");
+    throw new Error("Free generation returned inconsistent selected feed candidates.");
   }
-  return research.selectedCandidates;
+  return selectedCandidates;
 }
 
 function assertCheckedAt({
@@ -1201,7 +1302,8 @@ export function validateFreePilotProvenance(
     freePilot.candidateCount < 0 ||
     !FREE_EVIDENCE_POLICIES.includes(freePilot.evidencePolicy) ||
     !Number.isInteger(freePilot.requiredStoryCount) ||
-    ![0, FREE_DESKS.length].includes(freePilot.requiredStoryCount) ||
+    freePilot.requiredStoryCount < 0 ||
+    freePilot.requiredStoryCount > FREE_DESKS.length ||
     !Number.isInteger(freePilot.selectedStoryCount) ||
     freePilot.selectedStoryCount < 0 ||
     freePilot.selectedStoryCount > FREE_DESKS.length ||
@@ -1280,7 +1382,7 @@ export function validateFreePilotProvenance(
     freePilot.selectedStoryCount !== actualSelectedStoryCount ||
     (
       freePilot.requiredStoryCount > 0 &&
-      freePilot.selectedStoryCount !== freePilot.requiredStoryCount
+      freePilot.selectedStoryCount < freePilot.requiredStoryCount
     )
   ) {
     throw new Error("Free candidate story-count provenance conflicts with its desks.");
@@ -1317,9 +1419,11 @@ export async function draftFreeEdition({
   runMode = "on_time",
   evidencePolicy = "corroborated",
   requireComplete = false,
+  minimumStoryCount = 0,
   lookbackHours = DEFAULT_FREE_LOOKBACK_HOURS,
   minimumScore = DEFAULT_MINIMUM_SCORE,
   minimumAuthoritativeScore = minimumScore,
+  recentRepeatHistory = [],
   feedSources = FREE_FEED_SOURCES,
   researchImpl = researchFreeEdition,
   feedRequestImpl,
@@ -1347,6 +1451,15 @@ export async function draftFreeEdition({
   if (typeof requireComplete !== "boolean") {
     throw new Error("Free requireComplete must be a boolean.");
   }
+  if (
+    !Number.isInteger(minimumStoryCount) ||
+    minimumStoryCount < 0 ||
+    minimumStoryCount > FREE_DESKS.length ||
+    (requireComplete && ![0, FREE_DESKS.length].includes(minimumStoryCount))
+  ) {
+    throw new Error("Free minimumStoryCount must be an integer from 0 through 4.");
+  }
+  const requiredStoryCount = requireComplete ? FREE_DESKS.length : minimumStoryCount;
   requireNonBlank(policyText, "Editorial policy text");
   requireNonBlank(promptText, "Daily prompt text");
   const editions = validatePriorEditions(priorEditions);
@@ -1370,6 +1483,7 @@ export async function draftFreeEdition({
     reportingWindow: scaffold.reportingWindow,
     retrievedAt: generatedAt,
     recentArchive: buildRecentArchive(archiveEditions),
+    recentRepeatHistory,
     requestImpl: feedRequestImpl,
     lookupImpl: feedLookupImpl,
     evidencePolicy: normalizedEvidencePolicy,
@@ -1381,7 +1495,7 @@ export async function draftFreeEdition({
     reportingWindow: scaffold.reportingWindow,
     retrievedAt: generatedAt,
   });
-  const candidates = compactResearchCandidates(candidatesForDraft(research, requireComplete));
+  const candidates = compactResearchCandidates(candidatesForDraft(research, requiredStoryCount));
   const modelId = resolveCloudflareAiModel(model);
   const feedSnapshot = {
     registry: feedSources,
@@ -1420,6 +1534,7 @@ export async function draftFreeEdition({
       candidates,
       evidencePolicy: normalizedEvidencePolicy,
       requireComplete,
+      minimumStoryCount: requiredStoryCount,
     });
     const requestInference = async (requestMessages) => {
       const result = await aiRequestImpl({
@@ -1484,11 +1599,12 @@ export async function draftFreeEdition({
     inference = accepted.inference;
   }
 
+  editorial = applyTrustedQuietReasons(editorial, research);
   const selectedStoryCount = FREE_DESKS.filter((desk) =>
     isObject(editorial.desks?.[desk]?.story)).length;
-  if (requireComplete && selectedStoryCount !== FREE_DESKS.length) {
+  if (selectedStoryCount < requiredStoryCount) {
     throw new Error(
-      "Complete free generation requires one model-authored story in every desk before delivery.",
+      `Free generation requires at least ${requiredStoryCount} model-authored stories before delivery.`,
     );
   }
 
@@ -1531,7 +1647,7 @@ export async function draftFreeEdition({
         successfulFeedSourceCount: coverage.successfulSourceCount,
         candidateCount: candidates.length,
         evidencePolicy: normalizedEvidencePolicy,
-        requiredStoryCount: requireComplete ? FREE_DESKS.length : 0,
+        requiredStoryCount,
         selectedStoryCount,
         lookbackHours: normalizedLookbackHours,
         minimumScore: normalizedMinimumScore,
@@ -1572,7 +1688,7 @@ export async function draftFreeEdition({
   validateFreePilotProvenance(candidate, githubRun, {
     expectedFeedSourceCount: feedSources.length,
     expectedEvidencePolicy: normalizedEvidencePolicy,
-    expectedRequiredStoryCount: requireComplete ? FREE_DESKS.length : 0,
+    expectedRequiredStoryCount: requiredStoryCount,
     expectedLookbackHours: normalizedLookbackHours,
     expectedMinimumScore: normalizedMinimumScore,
     expectedMinimumAuthoritativeScore: normalizedMinimumAuthoritativeScore,

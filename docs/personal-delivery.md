@@ -25,14 +25,14 @@ succeeded end to end.
 | Reporting window | The 72 elapsed hours ending at 5:00 AM New York time on the edition date; start inclusive and end exclusive |
 | Discovery | Live entries from the repository's curated, allowlisted feeds; no general web search |
 | Drafting | Fixed Cloudflare Workers AI model `@cf/openai/gpt-oss-120b` |
-| Completion rule | Exactly one validated story for each of the four desks; any quiet or missing desk means no email |
+| Completion rule | Three or four validated stories, no more than one per desk; at most one honest quiet desk; fewer than three stories means no email |
 | Recipient | Exactly the one address stored in `PERSONAL_PAPER_EMAIL` |
 | Sender | `First Fold <onboarding@resend.dev>`, Resend's self-only testing sender |
 | Message | Static, escaped HTML plus an equivalent plain-text part; no client-side JavaScript |
-| Repository permissions | Read-only contents and Actions metadata; no pull-request, branch, commit, Pages, or artifact write permission |
-| Persistence | The candidate exists only in `content/personal-candidates/` on the ephemeral runner and is never committed, uploaded, or published |
-| Failure | Feed, quota, model, four-desk, source, schema, rendering, configuration, or send-precondition failure sends no email |
-| Duplicate control | Suppress an earlier successful same-day workflow, then make at most one Resend request with `Idempotency-Key: first-fold-personal-YYYY-MM-DD`; no application-level send retry |
+| Repository permissions | Read-only contents and Actions metadata; no pull-request, branch, commit, Pages, or public-content write permission; the workflow may download and upload only its bounded private-state ledger artifact |
+| Persistence | The candidate remains on the ephemeral runner; a hash-only ledger artifact retains at most the previous 30 dates plus first-five-pilot progress, never paper copy, headlines, source URLs, publisher names, recipient data, or provider IDs |
+| Failure | Feed, quota, model, scoring, repeat-ledger, three-story, source, schema, rendering, configuration, or send-precondition failure sends no email |
+| Duplicate control | Suppress an earlier successful same-day workflow, veto matching story fingerprints from the previous 30 calendar dates, then make at most one Resend request with `Idempotency-Key: first-fold-personal-YYYY-MM-DD`; no application-level send retry |
 | Paid fallback | None |
 
 The workflow is `.github/workflows/personal-morning-paper.yml`, displayed in
@@ -65,28 +65,46 @@ At the matching 5:05 AM event on every day:
    date-scoped dispatch identity. When personal delivery is intentionally
    disabled, it exits before checkout or provider use. A partial configuration
    is a failure.
-3. The job fetches and parses the allowlisted live feeds. Every desk must have
+3. Before any model call, the job restores and validates the latest trusted
+   `personal-repeat-ledger-v1` artifact. The first post-rollout run may create an
+   empty ledger only when no earlier successful personal send or ledger artifact
+   exists. A corrupt, ambiguous, expired-after-use, or missing post-rollout
+   ledger fails closed.
+4. The job fetches and parses the allowlisted live feeds. Every desk must have
    healthy coverage from the configured publisher set. It considers only items
    first published inside the bounded 72-hour lookback ending at the edition's
    5:00 AM New York cutoff. Feed text is treated as untrusted data, not
    instructions.
-4. The deterministic selector accepts either independently corroborated events
-   or an originating report from an authoritative publisher. A single-source
-   originating story must stay explicitly attributed and cannot be presented as
-   independently confirmed or critical. Independent allegations and critical
-   claims still require independent evidence. Corroborated candidates must
-   score at least 70; authoritative originating candidates must score at least
-   58.
-5. The fixed Workers AI model receives only the bounded feed dossier. It must
-   return one story for AI & Models, Work & Tools, Security & Privacy, and
-   Platforms & Power. Local validation binds the draft to the selected feed
-   URLs, enforces dates and story length, checks source reachability and evidence
-   mappings, and rejects duplicate events and incomplete desks.
-6. Only a four-story candidate that passes every deterministic check is rendered
-   as static HTML and plain text. All model-controlled values are escaped.
-7. The job sends one Resend request to the fixed recipient, then ends without a
-   commit, branch, pull request, artifact upload, Pages dispatch, or public
-   archive change.
+5. The deterministic selector first applies hard vetoes for promotional or deal
+   content, reviews and lifestyle copy, rumors or speculation, routine or minor
+   announcements, insufficient topicality, weak evidence, and recent repeats.
+   Every surviving event receives a 100-point score: importance/materiality 30,
+   desk relevance 20, source quality 20, reader usefulness/actionability 15, and
+   freshness 15. Both
+   independently corroborated events and explicitly attributed authoritative
+   originating reports must score at least 70. A single-source originating story
+   must stay explicitly attributed and cannot be presented as independently
+   confirmed or critical. Independent allegations and critical claims still
+   require independent evidence.
+6. The fixed Workers AI model receives only the bounded, selected feed dossiers.
+   It must return three or four stories with no more than one story per desk and
+   no more than one honest quiet desk. It may not lower the quality threshold to
+   fill a page. Local validation binds every draft to its selected feed URLs,
+   enforces dates and story length, checks source reachability and evidence
+   mappings, and rejects duplicate events or two quiet desks.
+7. Each story receives a trusted validation receipt containing its total score,
+   five component scores, required threshold, evidence tier, and factual source
+   and publisher counts. The email renderer recomputes and validates that receipt
+   rather than trusting model-controlled display text.
+8. After all deterministic checks pass, the workflow records only domain-separated
+   SHA-256 story fingerprints and stages that immutable ledger as an artifact
+   before delivery. It then sends one escaped HTML and plain-text message through
+   Resend. A later run trusts the staged artifact only when GitHub records that
+   run's exact send step as successful; artifacts from unsent runs are ignored.
+   This ordering prevents an artifact-service failure after delivery from losing
+   the repeat state. The workflow makes no commit, branch, pull request, Pages
+   dispatch, or public archive change, and never uploads the candidate or email
+   body.
 
 The 6:00 AM companion is the separate weekday public Pages delivery gate. It
 contains no model call or research step and publishes only a valid edition
@@ -102,27 +120,54 @@ manual free-comparison provenance, and ordinary canonical-edition provenance.
 
 The private provenance records the fixed provider and model, reporting run,
 generation time and mode, bounded feed/inference hashes, coverage counts,
-evidence policy, and four selected stories. It contains no recipient or API
-credential. The distinction is intentional: a file prepared for a private email
-must never become a public publication candidate merely because its shape is
-similar.
+evidence policy, validation receipts, repeat-ledger digest and counts, and three
+or four selected stories. It contains no recipient or API credential. The
+distinction is intentional: a file prepared for a private email must never
+become a public publication candidate merely because its shape is similar.
 
-The privacy boundary has one editorial tradeoff: the 72-hour windows overlap,
-and private candidates are not retained as a cross-day sent-story ledger. The
-selector can compare against canonical public history, but it cannot guarantee
-that a story emailed yesterday will not be selected again today. Same-day
-workflow and Resend idempotency prevent a duplicate send for one edition date;
-they do not deduplicate across dates.
+The private candidate and email body are still ephemeral, but duplicate control
+now persists a bounded hash-only ledger named `personal-repeat-ledger-v1`. The
+ledger covers exactly the previous 30 calendar dates and stores only
+domain-separated SHA-256 fingerprints derived from event identity, factual
+source URLs, strong vulnerability identifiers, canonical entities, and title
+tokens, plus bounded counts and score metadata. It does not retain cleartext
+headlines, copy, URLs, publishers, CVE or GHSA identifiers, recipients, or Resend
+IDs. Because this repository is public, treat workflow artifacts as potentially
+readable by repository visitors even though their contents are pseudonymous.
+Same-day workflow and Resend idempotency remain a separate defense against a
+second delivery for one edition date.
+
+Ledger artifacts are retained for 35 days. If the paper has not sent for longer
+than the 30-day repeat window and every old artifact has expired, the next run
+may bootstrap without stale fingerprints while reconstructing enough trusted
+workflow history to preserve whether the first-five pilot is complete. A
+missing or expired artifact for a delivery still inside the 30-day window
+remains a hard failure.
 
 GitHub-hosted runners are ephemeral, but the complete transaction is not
 retention-free. GitHub retains workflow metadata and logs; Cloudflare processes
 the bounded research request and response; Resend processes the recipient and
 message; and the mailbox provider stores the delivered email. The workflow must
 not print the recipient, API tokens, candidate, or email body to logs and must
-not upload them as artifacts. See GitHub's
+not upload them as artifacts. Only the bounded hash ledger may be uploaded. See
+GitHub's
 [hosted-runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners),
 Cloudflare's [privacy policy](https://www.cloudflare.com/privacypolicy/), and
 Resend's [privacy policy](https://resend.com/legal/privacy-policy).
+
+## First-five quality pilot
+
+The first five successfully sent editions are labeled privately as **Quality
+pilot · Edition N of 5**. Review each received paper for importance, relevance,
+source quality, reader usefulness, freshness, desk assignment, and repeat
+accuracy. Record false positives, missed stories, and any claim that needed
+correction. The software tracks only the ordinal in its hash ledger; it does not
+store your editorial feedback in the repository.
+
+After five reviewed deliveries, summarize the evidence and propose any weight,
+threshold, or veto changes for explicit owner approval. Do not tune the policy
+automatically from five observations and do not weaken a threshold merely to
+fill a desk.
 
 ## One-time owner setup
 
@@ -235,7 +280,11 @@ causes include:
 - a missing or malformed Cloudflare account ID, Workers AI token, Resend key, or
   recipient after delivery has been enabled;
 - a feed outage or inadequate publisher coverage for any desk;
-- fewer than four eligible selected events, including any quiet desk;
+- fewer than three eligible selected events or more than one quiet desk;
+- a hard editorial veto, score below 70, recent-repeat match, missing validation
+  receipt, or receipt mismatch;
+- a missing, malformed, ambiguous, or untrusted repeat-ledger artifact after the
+  guarded bootstrap run;
 - the Workers AI free allocation being unavailable or exhausted;
 - a malformed, incomplete, repetitive, or unsupported model response;
 - an unsafe, stale, unreachable, unbound, or insufficient source;

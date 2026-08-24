@@ -373,6 +373,243 @@ jobs:
           fi
           echo "delivery_enabled=true" >> "${GITHUB_OUTPUT}"
 
+      - name: Locate the latest trusted repeat ledger
+        id: ledger
+        if: >-
+          steps.dedupe.outputs.should_send == 'true' &&
+          steps.preflight.outputs.delivery_enabled == 'true'
+        env:
+          EDITION_DATE: ${{ steps.gate.outputs.edition_date }}
+          GH_TOKEN: ${{ github.token }}
+          LEDGER_ARTIFACT_NAME: personal-repeat-ledger-v1
+          LEDGER_ROLLOUT_DATE: '2026-08-24'
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFile } from "node:fs/promises";
+
+          const headers = {
+            accept: "application/vnd.github+json",
+            authorization: `Bearer ${process.env.GH_TOKEN}`,
+            "x-github-api-version": "2022-11-28",
+          };
+          async function api(apiPath) {
+            const response = await fetch(`${process.env.GITHUB_API_URL}${apiPath}`, { headers });
+            if (!response.ok) {
+              throw new Error(`GitHub API request failed with HTTP ${response.status}.`);
+            }
+            return response.json();
+          }
+          function newYorkDate(value) {
+            const parts = Object.fromEntries(
+              new Intl.DateTimeFormat("en-US", {
+                timeZone: "America/New_York",
+                calendar: "gregory",
+                numberingSystem: "latn",
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit",
+              })
+                .formatToParts(new Date(value))
+                .filter(({ type }) => type !== "literal")
+                .map(({ type, value: partValue }) => [type, partValue]),
+            );
+            return `${parts.year}-${parts.month}-${parts.day}`;
+          }
+
+          const editionEpoch = Date.parse(`${process.env.EDITION_DATE}T00:00:00.000Z`);
+          if (
+            !/^\d{4}-\d{2}-\d{2}$/.test(process.env.EDITION_DATE ?? "") ||
+            !Number.isFinite(editionEpoch) ||
+            new Date(editionEpoch).toISOString().slice(0, 10) !== process.env.EDITION_DATE
+          ) {
+            throw new Error("The repeat-ledger lookup received an invalid edition date.");
+          }
+          const repeatCutoffDate = new Date(editionEpoch - 30 * 86_400_000)
+            .toISOString()
+            .slice(0, 10);
+
+          const currentRunId = BigInt(process.env.GITHUB_RUN_ID);
+          const workflowPath = ".github/workflows/personal-morning-paper.yml";
+          const workflowPaths = new Set([workflowPath, `${workflowPath}@main`]);
+          const current = await api(
+            `/repos/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`,
+          );
+          if (
+            String(current.id) !== process.env.GITHUB_RUN_ID ||
+            current.event !== "workflow_dispatch" ||
+            current.head_branch !== "main" ||
+            current.head_sha !== process.env.GITHUB_SHA ||
+            current.repository?.full_name !== process.env.GITHUB_REPOSITORY ||
+            current.actor?.login !== process.env.GITHUB_REPOSITORY_OWNER ||
+            current.triggering_actor?.login !== process.env.GITHUB_REPOSITORY_OWNER ||
+            !workflowPaths.has(current.path)
+          ) {
+            throw new Error("The current run failed repeat-ledger provenance validation.");
+          }
+
+          const trustedRuns = [];
+          let exhausted = false;
+          for (let page = 1; page <= 10; page += 1) {
+            const result = await api(
+              `/repos/${process.env.GITHUB_REPOSITORY}/actions/workflows/personal-morning-paper.yml/runs` +
+                `?branch=main&event=workflow_dispatch&status=completed&per_page=100&page=${page}`,
+            );
+            if (!Array.isArray(result.workflow_runs)) {
+              throw new Error("GitHub returned an invalid workflow-run listing for the repeat ledger.");
+            }
+            for (const run of result.workflow_runs) {
+              let runId;
+              try {
+                runId = BigInt(run.id);
+              } catch {
+                continue;
+              }
+              if (
+                runId < currentRunId &&
+                run.status === "completed" &&
+                run.event === "workflow_dispatch" &&
+                run.head_branch === "main" &&
+                run.repository?.full_name === process.env.GITHUB_REPOSITORY &&
+                run.actor?.login === process.env.GITHUB_REPOSITORY_OWNER &&
+                run.triggering_actor?.login === process.env.GITHUB_REPOSITORY_OWNER &&
+                workflowPaths.has(run.path) &&
+                newYorkDate(run.created_at) >= process.env.LEDGER_ROLLOUT_DATE
+              ) {
+                trustedRuns.push(run);
+              }
+            }
+            const reachedPreRollout = result.workflow_runs.some(
+              (run) => newYorkDate(run.created_at) < process.env.LEDGER_ROLLOUT_DATE,
+            );
+            if (reachedPreRollout || result.workflow_runs.length < 100) {
+              exhausted = true;
+              break;
+            }
+          }
+          if (!exhausted) {
+            throw new Error("The repeat-ledger lookup exceeded its 1,000-run pagination bound.");
+          }
+
+          trustedRuns.sort((left, right) => {
+            const leftId = BigInt(left.id);
+            const rightId = BigInt(right.id);
+            return leftId === rightId ? 0 : leftId > rightId ? -1 : 1;
+          });
+
+          async function hasSuccessfulPrivateSend(run) {
+            const result = await api(
+              `/repos/${process.env.GITHUB_REPOSITORY}/actions/runs/${run.id}/jobs` +
+                "?filter=latest&per_page=100",
+            );
+            if (!Array.isArray(result.jobs) || result.total_count > 100) {
+              throw new Error("A prior run returned an ambiguous job listing during ledger recovery.");
+            }
+            const deliveryJobs = result.jobs.filter(
+              (job) => job.name === "Generate and privately email the personal paper",
+            );
+            if (deliveryJobs.length > 1) {
+              throw new Error("A prior run has ambiguous delivery-job provenance during ledger recovery.");
+            }
+            if (deliveryJobs.length === 0) return false;
+            const sendSteps = (deliveryJobs[0].steps ?? []).filter(
+              (step) => step.name === "Send only the validated paper to its private recipient",
+            );
+            if (sendSteps.length > 1) {
+              throw new Error("A prior run has ambiguous private-send provenance during ledger recovery.");
+            }
+            return sendSteps.length === 1 && sendSteps[0].conclusion === "success";
+          }
+
+          let previous = null;
+          let artifact = null;
+          let staleSuccessfulSendCount = 0;
+          for (const run of trustedRuns) {
+            const result = await api(
+              `/repos/${process.env.GITHUB_REPOSITORY}/actions/runs/${run.id}/artifacts?per_page=100&page=1`,
+            );
+            if (!Array.isArray(result.artifacts) || result.total_count > 100) {
+              throw new Error("A prior run returned an ambiguous repeat-ledger artifact listing.");
+            }
+            const exact = result.artifacts.filter(
+              (candidate) => candidate.name === process.env.LEDGER_ARTIFACT_NAME,
+            );
+            if (exact.length > 1) {
+              throw new Error("A trusted successful run contains ambiguous repeat-ledger artifacts.");
+            }
+            const successfulPrivateSend = await hasSuccessfulPrivateSend(run);
+            const runEditionDate = newYorkDate(run.created_at);
+            if (exact.length === 1 && successfulPrivateSend && exact[0].expired === false) {
+              previous = run;
+              artifact = exact[0];
+              break;
+            }
+            if (successfulPrivateSend) {
+              if (runEditionDate >= repeatCutoffDate) {
+                throw new Error(
+                  "A successful private send inside the 30-day repeat window has no usable ledger.",
+                );
+              }
+              staleSuccessfulSendCount = Math.min(5, staleSuccessfulSendCount + 1);
+              if (staleSuccessfulSendCount === 5) break;
+            }
+          }
+
+          if (!previous || !artifact) {
+            await appendFile(process.env.GITHUB_OUTPUT, "found=false\n");
+            await appendFile(process.env.GITHUB_OUTPUT, "allow_bootstrap=true\n");
+            await appendFile(
+              process.env.GITHUB_OUTPUT,
+              `bootstrap_count=${staleSuccessfulSendCount}\n`,
+            );
+            await appendFile(
+              process.env.GITHUB_STEP_SUMMARY,
+              staleSuccessfulSendCount === 0
+                ? "No trusted post-rollout ledger or successful private send exists; the ledger will bootstrap empty.\n"
+                : "All prior successful sends are outside the 30-day repeat window; the ledger will bootstrap without stale fingerprints while preserving the delivery count.\n",
+            );
+            process.exit(0);
+          }
+          if (
+            !Number.isSafeInteger(previous.id) ||
+            previous.id < 1 ||
+            !Number.isSafeInteger(artifact.id) ||
+            artifact.id < 1 ||
+            artifact.workflow_run?.id !== previous.id ||
+            artifact.workflow_run?.head_branch !== "main" ||
+            artifact.workflow_run?.head_sha !== previous.head_sha ||
+            artifact.workflow_run?.head_repository_id !== current.repository?.id ||
+            !Number.isSafeInteger(artifact.size_in_bytes) ||
+            artifact.size_in_bytes < 1 ||
+            artifact.size_in_bytes > 1_000_000
+          ) {
+            throw new Error("The repeat-ledger artifact failed provenance, expiry, or size validation.");
+          }
+
+          await appendFile(process.env.GITHUB_OUTPUT, "found=true\n");
+          await appendFile(process.env.GITHUB_OUTPUT, "allow_bootstrap=false\n");
+          await appendFile(process.env.GITHUB_OUTPUT, "bootstrap_count=0\n");
+          await appendFile(process.env.GITHUB_OUTPUT, `run_id=${previous.id}\n`);
+          await appendFile(process.env.GITHUB_OUTPUT, `artifact_id=${artifact.id}\n`);
+          await appendFile(
+            process.env.GITHUB_STEP_SUMMARY,
+            "Restoring the hash-only repeat ledger from the latest trusted successful run.\n",
+          );
+          NODE
+
+      - name: Restore only the trusted hash-only repeat ledger
+        if: >-
+          steps.dedupe.outputs.should_send == 'true' &&
+          steps.preflight.outputs.delivery_enabled == 'true' &&
+          steps.ledger.outputs.found == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.ledger.outputs.artifact_id }}
+          path: ${{ runner.temp }}/first-fold-ledger
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.ledger.outputs.run_id }}
+
       - name: Check out trusted main without write credentials
         if: >-
           steps.dedupe.outputs.should_send == 'true' &&
@@ -397,6 +634,43 @@ jobs:
           steps.preflight.outputs.delivery_enabled == 'true'
         run: npm ci
 
+      - name: Prepare the private 30-day repeat ledger
+        if: >-
+          steps.dedupe.outputs.should_send == 'true' &&
+          steps.preflight.outputs.delivery_enabled == 'true'
+        env:
+          EDITION_DATE: ${{ steps.gate.outputs.edition_date }}
+          LEDGER_BOOTSTRAP_COUNT: ${{ steps.ledger.outputs.bootstrap_count }}
+          LEDGER_BOOTSTRAP_ALLOWED: ${{ steps.ledger.outputs.allow_bootstrap }}
+          LEDGER_WAS_RESTORED: ${{ steps.ledger.outputs.found }}
+          PERSONAL_STORY_LEDGER_PATH: ${{ runner.temp }}/first-fold-ledger/repeat-ledger.json
+        shell: bash
+        run: |
+          if [[ "${LEDGER_WAS_RESTORED}" == "true" && ! -f "${PERSONAL_STORY_LEDGER_PATH}" ]]; then
+            echo "The trusted repeat-ledger artifact did not contain the required file."
+            exit 1
+          fi
+          if [[ "${LEDGER_WAS_RESTORED}" != "true" && -e "${PERSONAL_STORY_LEDGER_PATH}" ]]; then
+            echo "An untrusted repeat-ledger file appeared during bootstrap."
+            exit 1
+          fi
+          if [[ "${LEDGER_WAS_RESTORED}" == "true" ]]; then
+            if [[ "${LEDGER_BOOTSTRAP_ALLOWED}" != "false" ]]; then
+              echo "The trusted repeat-ledger lookup returned inconsistent outputs."
+              exit 1
+            fi
+            node scripts/automation/personal-story-ledger.mjs prepare "${PERSONAL_STORY_LEDGER_PATH}" \
+              --edition-date "${EDITION_DATE}" --rollout-date 2026-08-24
+          else
+            if [[ "${LEDGER_BOOTSTRAP_ALLOWED}" != "true" ]]; then
+              echo "The trusted repeat-ledger lookup did not authorize bootstrap."
+              exit 1
+            fi
+            node scripts/automation/personal-story-ledger.mjs prepare "${PERSONAL_STORY_LEDGER_PATH}" \
+              --edition-date "${EDITION_DATE}" --rollout-date 2026-08-24 --allow-bootstrap \
+              --recorded-edition-count "${LEDGER_BOOTSTRAP_COUNT}"
+          fi
+
       - name: Generate the private source-checked candidate
         if: >-
           steps.dedupe.outputs.should_send == 'true' &&
@@ -406,6 +680,7 @@ jobs:
           CLOUDFLARE_AI_API_TOKEN: ${{ secrets.CLOUDFLARE_AI_API_TOKEN }}
           CLOUDFLARE_AI_MODEL: '@cf/openai/gpt-oss-120b'
           EDITION_DATE: ${{ steps.gate.outputs.edition_date }}
+          PERSONAL_STORY_LEDGER_PATH: ${{ runner.temp }}/first-fold-ledger/repeat-ledger.json
           RUN_MODE: ${{ steps.gate.outputs.run_mode }}
         shell: bash
         run: |
@@ -423,6 +698,33 @@ jobs:
           steps.dedupe.outputs.should_send == 'true' &&
           steps.preflight.outputs.delivery_enabled == 'true'
         run: npm test
+
+      - name: Record only validated story fingerprints in the repeat ledger
+        if: >-
+          steps.dedupe.outputs.should_send == 'true' &&
+          steps.preflight.outputs.delivery_enabled == 'true'
+        env:
+          CANDIDATE_PATH: ${{ steps.gate.outputs.candidate_path }}
+          EDITION_DATE: ${{ steps.gate.outputs.edition_date }}
+          PERSONAL_STORY_LEDGER_PATH: ${{ runner.temp }}/first-fold-ledger/repeat-ledger.json
+        run: >-
+          node scripts/automation/personal-story-ledger.mjs record
+          "${PERSONAL_STORY_LEDGER_PATH}" "${CANDIDATE_PATH}"
+          --edition-date "${EDITION_DATE}"
+
+      - name: Stage the immutable hash-only repeat ledger before delivery
+        if: >-
+          steps.dedupe.outputs.should_send == 'true' &&
+          steps.preflight.outputs.delivery_enabled == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: personal-repeat-ledger-v1
+          path: ${{ runner.temp }}/first-fold-ledger/repeat-ledger.json
+          if-no-files-found: error
+          retention-days: 35
+          compression-level: 9
+          overwrite: false
+          include-hidden-files: false
 
       - name: Send only the validated paper to its private recipient
         if: >-

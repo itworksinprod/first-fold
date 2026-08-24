@@ -6,6 +6,7 @@ import test from "node:test";
 import { validateCanonicalEdition } from "../scripts/edition-content.mjs";
 import { buildEditionDraft } from "../scripts/new-edition.mjs";
 import { assertPersonalEmailCandidate } from "../scripts/automation/personal-email.mjs";
+import { createEmptyPersonalStoryLedger } from "../scripts/automation/personal-story-ledger.mjs";
 import { buildFreeReportingWindow } from "../scripts/automation/draft-free-edition.mjs";
 import {
   PERSONAL_FREE_EVIDENCE_POLICY,
@@ -13,6 +14,7 @@ import {
   PERSONAL_FREE_MAX_MODEL_REQUESTS,
   PERSONAL_FREE_MAX_REQUEST_BYTES,
   PERSONAL_FREE_MAX_TOKENS,
+  PERSONAL_FREE_MINIMUM_STORY_COUNT,
   PERSONAL_FREE_MINIMUM_AUTHORITATIVE_SCORE,
   PERSONAL_FREE_MINIMUM_SCORE,
   PERSONAL_FREE_MODEL,
@@ -97,6 +99,28 @@ function storyForDesk(desk, index) {
   story.selection.selectedBecause =
     "It is current, useful, and grounded in the originating live feed evidence.";
   story.selection.materialDelta = null;
+  story.selection.validationReceipt = {
+    version: "editorial-v1",
+    score: story.selection.score,
+    requiredScore: 70,
+    components: {
+      materialityNewsworthiness: 24,
+      deskRelevance: 18,
+      sourceStrength: 16,
+      readerUsefulnessActionability: 12,
+      freshness: story.selection.score - 70,
+    },
+    componentMaximums: {
+      materialityNewsworthiness: 30,
+      deskRelevance: 20,
+      sourceStrength: 20,
+      readerUsefulnessActionability: 15,
+      freshness: 15,
+    },
+    evidenceTier: "authoritative-single",
+    factualSourceCount: 1,
+    publisherCount: 1,
+  };
   story.confidence = {
     level: "medium",
     rationale: "The originating item and its publisher feed were checked before delivery.",
@@ -125,13 +149,13 @@ function storyForDesk(desk, index) {
     id: `${slug}-verified-claim`,
     statement: `The selected ${desk} development appeared in the publisher's live feed.`,
     sourceIds: [`${slug}-originating`],
-    verification: "confirmed",
+    verification: "company-claimed",
   }];
   if (desk !== "security-and-privacy") delete story.securityAction;
   return story;
 }
 
-function freeCandidate({ quietDesk = null, inference = "workers-ai" } = {}) {
+function freeCandidate({ quietDesks = [], inference = "workers-ai" } = {}) {
   const candidate = buildEditionDraft({
     latestEdition: structuredClone(priorEdition),
     editionDate: "2026-08-20",
@@ -149,7 +173,7 @@ function freeCandidate({ quietDesk = null, inference = "workers-ai" } = {}) {
     "security-and-privacy",
     "platforms-and-power",
   ].map((desk, index) => [desk, storyForDesk(desk, index)]));
-  if (quietDesk) stories[quietDesk] = null;
+  for (const quietDesk of quietDesks) stories[quietDesk] = null;
   candidate.desks = Object.fromEntries(Object.entries(stories).map(([desk, story]) => [
     desk,
     {
@@ -186,7 +210,7 @@ function freeCandidate({ quietDesk = null, inference = "workers-ai" } = {}) {
     successfulFeedSourceCount: feedSources.length,
     candidateCount: selected.length,
     evidencePolicy: PERSONAL_FREE_EVIDENCE_POLICY,
-    requiredStoryCount: 4,
+    requiredStoryCount: PERSONAL_FREE_MINIMUM_STORY_COUNT,
     selectedStoryCount: selected.length,
     lookbackHours: PERSONAL_FREE_LOOKBACK_HOURS,
     minimumScore: PERSONAL_FREE_MINIMUM_SCORE,
@@ -211,6 +235,7 @@ test("private free generation fixes the model, evidence lane, lookback, and requ
     env: automationEnv,
     now: GENERATED_AT,
     feedSources,
+    personalStoryLedger: createEmptyPersonalStoryLedger(),
     draftFreeEditionImpl: async (options) => {
       draftOptions = options;
       return freeCandidate();
@@ -229,13 +254,24 @@ test("private free generation fixes the model, evidence lane, lookback, and requ
   assert.equal(candidate.provenance.personalFreeResearch.researchMethod, "curated-live-feeds");
   assert.equal(candidate.provenance.personalFreeResearch.inference, "workers-ai");
   assert.equal(candidate.provenance.personalFreeResearch.selectedStoryCount, 4);
+  assert.equal(
+    candidate.provenance.personalFreeResearch.requiredStoryCount,
+    PERSONAL_FREE_MINIMUM_STORY_COUNT,
+  );
   assert.equal(candidate.provenance.personalFreeResearch.maxModelRequests, 2);
   assert.equal(candidate.provenance.personalFreeResearch.ephemeral, true);
+  assert.equal(candidate.provenance.personalFreeResearch.repeatLedgerSchemaVersion, 1);
+  assert.equal(candidate.provenance.personalFreeResearch.repeatLookbackDays, 30);
+  assert.equal(candidate.provenance.personalFreeResearch.priorLedgerEditionCount, 0);
+  assert.equal(candidate.provenance.personalFreeResearch.priorLedgerStoryCount, 0);
+  assert.equal(candidate.provenance.personalFreeResearch.qualityPilotOrdinal, 1);
+  assert.match(candidate.provenance.personalFreeResearch.repeatStateSha256, /^[a-f0-9]{64}$/);
   assert.equal(draftOptions.accountId, ACCOUNT_ID);
   assert.equal(draftOptions.apiToken, automationEnv.CLOUDFLARE_AI_API_TOKEN);
   assert.equal(draftOptions.model, PERSONAL_FREE_MODEL);
   assert.equal(draftOptions.evidencePolicy, PERSONAL_FREE_EVIDENCE_POLICY);
-  assert.equal(draftOptions.requireComplete, true);
+  assert.equal(draftOptions.requireComplete, false);
+  assert.equal(draftOptions.minimumStoryCount, PERSONAL_FREE_MINIMUM_STORY_COUNT);
   assert.equal(draftOptions.lookbackHours, PERSONAL_FREE_LOOKBACK_HOURS);
   assert.equal(draftOptions.minimumScore, PERSONAL_FREE_MINIMUM_SCORE);
   assert.equal(
@@ -244,12 +280,27 @@ test("private free generation fixes the model, evidence lane, lookback, and requ
   );
   assert.equal(draftOptions.maxTokens, PERSONAL_FREE_MAX_TOKENS);
   assert.equal(draftOptions.maxRequestBytes, PERSONAL_FREE_MAX_REQUEST_BYTES);
+  assert.deepEqual(draftOptions.recentRepeatHistory, []);
 });
 
-test("quiet or skipped free research cannot become an email candidate", async (t) => {
+test("one explained quiet desk is deliverable but fewer than three stories or skipped inference fail", async (t) => {
   const projectRoot = await createProject(t);
+  const threeStoryCandidate = await generatePersonalFreeEdition({
+    editionDate: "2026-08-20",
+    projectRoot,
+    env: automationEnv,
+    now: GENERATED_AT,
+    feedSources,
+    personalStoryLedger: createEmptyPersonalStoryLedger(),
+    draftFreeEditionImpl: async () => freeCandidate({ quietDesks: ["ai"] }),
+  });
+  assert.equal(threeStoryCandidate.provenance.personalFreeResearch.selectedStoryCount, 3);
+  assert.equal(threeStoryCandidate.desks.ai.story, null);
+  assert.match(threeStoryCandidate.desks.ai.emptyReason, /No ai story was selected/);
+  assert.equal(assertPersonalEmailCandidate(threeStoryCandidate).valid, true);
+
   for (const draft of [
-    freeCandidate({ quietDesk: "ai" }),
+    freeCandidate({ quietDesks: ["ai", "work-and-tools"] }),
     freeCandidate({ inference: "skipped-no-eligible-candidates" }),
   ]) {
     await assert.rejects(
@@ -259,9 +310,10 @@ test("quiet or skipped free research cannot become an email candidate", async (t
         env: automationEnv,
         now: GENERATED_AT,
         feedSources,
+        personalStoryLedger: createEmptyPersonalStoryLedger(),
         draftFreeEditionImpl: async () => draft,
       }),
-      /candidate|four|provenance|Workers AI/i,
+      /candidate|three|provenance|Workers AI/i,
     );
   }
   await assert.rejects(
@@ -278,6 +330,7 @@ test("the private writer is exclusive and never writes a public or comparison ar
     env: automationEnv,
     now: GENERATED_AT,
     feedSources,
+    personalStoryLedger: createEmptyPersonalStoryLedger(),
     draftFreeEditionImpl: async () => freeCandidate(),
   };
   const result = await generatePersonalFreeEditionFile(options);

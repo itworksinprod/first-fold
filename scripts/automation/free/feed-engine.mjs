@@ -3,6 +3,7 @@ import { lookup as dnsLookup } from "node:dns/promises";
 import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
 import { isPublicNetworkAddress } from "../newsroom-qa.mjs";
+import { fingerprintFeedCandidate } from "../personal-story-ledger.mjs";
 import { FREE_FEED_SOURCES } from "./feed-sources.mjs";
 
 export const FREE_DESKS = Object.freeze([
@@ -120,16 +121,45 @@ const DESK_TERMS = {
 // one strong signal in its title/categories or two strong signals in its
 // summary before a prior is allowed to influence classification.
 const MINIMUM_STRONG_DESK_TERM_WEIGHT = 5;
-const OFF_TOPIC_TITLE_PATTERNS = [
+const PROMOTIONAL_TITLE_PATTERNS = [
   /\b(?:buying|shopping|gift) guide\b/i,
-  /\b(?:deal|deals|discount|discounts|coupon|coupons|promo|sale)\b/i,
-  /\b(?:price drop|shop now|save \$|black friday|cyber monday)\b/i,
+  /\b(?:coupon|coupons|promo code|promotional offer|limited[- ]time offer|affiliate links?)\b/i,
+  /\b(?:price drop|shop now|buy now|save \$|black friday|cyber monday)\b/i,
+  /\b(?:best|top|today'?s|limited[- ]time)\b[^.!?]{0,60}\b(?:deal|deals|discount|discounts|sale)\b/i,
+  /\b(?:deal|deals|discount|discounts|sale)\b[^.!?]{0,60}\b(?:off|coupon|save|shop|buy)\b/i,
+  /\b(?:sponsored|advertorial|paid content|partner content)\b/i,
+];
+const REVIEW_OR_LIFESTYLE_TITLE_PATTERNS = [
   /\b(?:mattress|bedding|recipe|restaurant|wildlife|birdwatch|gardening|horoscope)\b/i,
   /\b(?:beauty|fashion|fitness|wellness|vacation|travel destination)\b/i,
   /\b(?:movie|television|tv show|streaming picks) review\b/i,
   /\b(?:phone|laptop|tablet|headphone|television|tv|camera|appliance|car) review\b/i,
-  /\breview:\s/i,
+  /\b(?:hands[- ]on|we tested|review:)\s/i,
 ];
+const SPECULATIVE_TITLE_PATTERNS = [
+  /\b(?:rumou?r|rumou?red|rumou?rs|unconfirmed|purported)\b/i,
+  /\b(?:leaked|leak)\b[^.!?]{0,45}\b(?:photo|image|roadmap|spec|specification|render|prototype)\b/i,
+  /\b(?:might|could|may)\b[^.!?]{0,80}\b(?:launch|release|announce|acquire|buy|replace|cancel|shut down)\b/i,
+];
+const SOFT_SPECULATIVE_TITLE_PATTERNS = [
+  /\b(?:reportedly|is said to|sources say|people familiar|expected to|set to)\b/i,
+];
+const ROUTINE_OR_MINOR_TITLE_PATTERNS = [
+  /\b(?:daily|weekly|monthly)\b[^.!?]{0,40}\b(?:digest|roundup|recap)\b/i,
+  /\b(?:newsletter|podcast|webinar|office hours|community spotlight|event recap)\b/i,
+  /\b(?:tips|how to|getting started|beginner'?s guide|meet the team)\b/i,
+  /\b(?:minor|routine|maintenance)\b[^.!?]{0,35}\b(?:update|release|change|fix)\b/i,
+  /\b(?:release notes|changelog|bug[- ]fix release)\b/i,
+  /\b(?:adds?|introduces?|ships?)\b[^.!?]{0,45}\b(?:emoji|icon|wallpaper|theme|sticker|reaction)\b/i,
+];
+
+export const EDITORIAL_SCORECARD_MAXIMUMS = Object.freeze({
+  materialityNewsworthiness: 30,
+  deskRelevance: 20,
+  sourceStrength: 20,
+  readerUsefulnessActionability: 15,
+  freshness: 15,
+});
 
 const IMPACT_TERMS = [
   "actively exploited", "zero-day", "breach", "ransomware", "critical",
@@ -942,14 +972,74 @@ function matchedStrongDeskTerms(text, terms) {
     .map(([term]) => term);
 }
 
-function isObviousOffTopic(titleCategoryText) {
+function rejectionReason(code, message) {
+  return { code, message };
+}
+
+function sourceEvidenceForItems(items) {
+  const factualItems = items.filter((item) => item.relationship !== "context");
+  const itemSourceCount = new Set(factualItems.map((item) => item.url)).size;
+  const publisherKeys = [...new Set(factualItems.map((item) => item.publisherKey))].sort();
+  const corroborated = itemSourceCount >= 2 && publisherKeys.length >= 2;
+  const authoritativeSingle = itemSourceCount === 1 && publisherKeys.length === 1 &&
+    factualItems[0]?.relationship === "originating";
+  return {
+    itemSourceCount,
+    publisherKeys,
+    corroborated,
+    authoritativeSingle,
+    evidenceTier: corroborated
+      ? "corroborated"
+      : authoritativeSingle
+        ? "authoritative-single"
+        : "insufficient",
+  };
+}
+
+function contentVetoReasons(items) {
+  const titleCategoryText = items
+    .map((item) => `${item.title} ${item.categories.join(" ")}`)
+    .join(" ");
   // Do not turn legitimate editorial processes such as code/security review
   // into consumer-product-review false positives.
-  const normalized = titleCategoryText.replace(
+  const reviewSafeText = titleCategoryText.replace(
     /\b(?:code|security|privacy|antitrust|regulatory) review\b/gi,
     "",
   );
-  return OFF_TOPIC_TITLE_PATTERNS.some((pattern) => pattern.test(normalized));
+  const reasons = [];
+  if (PROMOTIONAL_TITLE_PATTERNS.some((pattern) => pattern.test(titleCategoryText))) {
+    reasons.push(rejectionReason(
+      "PROMOTIONAL_OR_DEAL_CONTENT",
+      "Advertising, affiliate promotions, shopping deals, and sales content are not editorial candidates.",
+    ));
+  }
+  if (REVIEW_OR_LIFESTYLE_TITLE_PATTERNS.some((pattern) => pattern.test(reviewSafeText))) {
+    reasons.push(rejectionReason(
+      "REVIEW_OR_LIFESTYLE_CONTENT",
+      "Consumer reviews and lifestyle coverage are outside the paper's editorial remit.",
+    ));
+  }
+  if (SPECULATIVE_TITLE_PATTERNS.some((pattern) => pattern.test(titleCategoryText))) {
+    reasons.push(rejectionReason(
+      "SPECULATIVE_OR_RUMOR",
+      "Rumors, leaks, and hypothetical future announcements are not verified developments.",
+    ));
+  } else if (SOFT_SPECULATIVE_TITLE_PATTERNS.some((pattern) => pattern.test(titleCategoryText))) {
+    const evidence = sourceEvidenceForItems(items);
+    if (!evidence.corroborated && !evidence.authoritativeSingle) {
+      reasons.push(rejectionReason(
+        "SPECULATIVE_OR_RUMOR",
+        "A tentative or attributed report requires corroboration or an originating source.",
+      ));
+    }
+  }
+  if (ROUTINE_OR_MINOR_TITLE_PATTERNS.some((pattern) => pattern.test(titleCategoryText))) {
+    reasons.push(rejectionReason(
+      "ROUTINE_OR_MINOR_ANNOUNCEMENT",
+      "Routine recaps, how-to content, maintenance notes, and cosmetic updates are not material news.",
+    ));
+  }
+  return reasons;
 }
 
 function deskClassification(items) {
@@ -957,7 +1047,6 @@ function deskClassification(items) {
     .map((item) => `${item.title} ${item.categories.join(" ")}`.toLowerCase())
     .join(" ");
   const summaryText = items.map((item) => item.summary.toLowerCase()).join(" ");
-  if (isObviousOffTopic(titleCategoryText)) return null;
   const signals = Object.fromEntries(FREE_DESKS.map((desk) => {
     const titleCategoryTerms = matchedStrongDeskTerms(titleCategoryText, DESK_TERMS[desk]);
     const summaryTerms = matchedStrongDeskTerms(summaryText, DESK_TERMS[desk]);
@@ -984,23 +1073,62 @@ function countTerms(text, terms) {
   return terms.filter((term) => containsTerm(text, term)).length;
 }
 
-function scoreGroup(group, classification) {
+function freshnessScore(group, reportingWindow) {
+  const firstPublishedAt = group.items.map((item) => item.publishedAt).sort()[0];
+  const ageHours = Math.max(
+    0,
+    (Date.parse(reportingWindow.endExclusive) - Date.parse(firstPublishedAt)) / 3_600_000,
+  );
+  if (ageHours <= 6) return 15;
+  if (ageHours <= 24) return 13;
+  if (ageHours <= 48) return 10;
+  if (ageHours <= 72) return 8;
+  if (ageHours <= 168) return 5;
+  return 2;
+}
+
+function scoreGroup(group, classification, evidence, reportingWindow) {
   const text = group.items.map((item) => `${item.title} ${item.summary}`.toLowerCase()).join(" ");
-  const distinctUrls = new Set(group.items.map((item) => item.url)).size;
-  const relationships = new Set(group.items.map((item) => item.relationship));
-  const impact = Math.min(25, 11 + countTerms(text, IMPACT_TERMS) * 3);
-  const novelty = Math.min(20, 14 + Math.min(3, countTerms(text, NOVELTY_TERMS)));
-  const evidenceQuality = Math.min(20,
-    (relationships.has("originating") || relationships.has("independent") ? 15 : 8) +
-    (distinctUrls >= 2 ? 3 : 0) + (relationships.has("independent") ? 2 : 0));
-  const actionability = Math.min(15, 4 + countTerms(text, ACTION_TERMS) * 2);
-  const readerRelevance = Math.min(10, 6 + Math.floor(classification.scores[classification.desk] / 14));
+  const deskSignals = classification.signals[classification.desk];
   const hasSpecificNumber = /\b\d+(?:\.\d+)?(?:m|bn|b|million|billion|%)?\b/i.test(text);
-  const distinctiveness = Math.min(10,
-    5 + (strongIdentifier(group.items[0]) ? 2 : 0) + (distinctUrls >= 2 ? 2 : 0) +
-    (hasSpecificNumber ? 2 : 0));
-  const components = { impact, novelty, evidenceQuality, actionability, readerRelevance, distinctiveness };
-  return { score: Object.values(components).reduce((sum, value) => sum + value, 0), components };
+  const hasStrongIdentifier = Boolean(strongIdentifier(group.items[0]));
+  const materialityNewsworthiness = Math.min(
+    EDITORIAL_SCORECARD_MAXIMUMS.materialityNewsworthiness,
+    8 + Math.min(16, countTerms(text, IMPACT_TERMS) * 4) +
+      Math.min(4, countTerms(text, NOVELTY_TERMS) * 2) +
+      (hasStrongIdentifier ? 3 : 0) + (hasSpecificNumber ? 2 : 0),
+  );
+  const deskRelevance = Math.min(
+    EDITORIAL_SCORECARD_MAXIMUMS.deskRelevance,
+    10 + Math.min(6, deskSignals.titleCategoryTerms.length * 3) +
+      Math.min(4, deskSignals.summaryTerms.length * 2) +
+      (classification.scores[classification.desk] >= 35 ? 2 : 0),
+  );
+  const sourceStrength = evidence.corroborated
+    ? 20
+    : evidence.authoritativeSingle
+      ? 16
+      : 6;
+  const readerUsefulnessActionability = Math.min(
+    EDITORIAL_SCORECARD_MAXIMUMS.readerUsefulnessActionability,
+    4 + Math.min(7, countTerms(text, ACTION_TERMS) * 2) +
+      (hasStrongIdentifier ? 2 : 0) + (hasSpecificNumber ? 2 : 0),
+  );
+  const freshness = freshnessScore(group, reportingWindow);
+  const components = {
+    materialityNewsworthiness,
+    deskRelevance,
+    sourceStrength,
+    readerUsefulnessActionability,
+    freshness,
+  };
+  const score = Math.min(100, Object.values(components).reduce((sum, value) => sum + value, 0));
+  return {
+    score,
+    components,
+    componentMaximums: EDITORIAL_SCORECARD_MAXIMUMS,
+    version: "editorial-v1",
+  };
 }
 
 function inferEntity(items) {
@@ -1046,10 +1174,9 @@ function feedEndpointSource(item, index) {
   };
 }
 
-function groupToCandidate(group) {
+function groupToCandidate(group, reportingWindow) {
   const classification = deskClassification(group.items);
   if (!classification) return null;
-  const ranking = scoreGroup(group, classification);
   const sources = [];
   const seenUrls = new Set();
   for (const item of group.items) {
@@ -1065,16 +1192,10 @@ function groupToCandidate(group) {
   const firstPublishedAt = group.items.map((item) => item.publishedAt).sort()[0];
   const primary = group.items[0];
   const emittedFactualSources = sources.filter((source) => source.relationship !== "context");
+  const evidence = sourceEvidenceForItems(emittedFactualSources);
+  const ranking = scoreGroup(group, classification, evidence, reportingWindow);
   const itemSourceCount = new Set(emittedFactualSources.map((source) => source.url)).size;
   const publisherKeys = [...new Set(emittedFactualSources.map((source) => source.publisherKey))].sort();
-  const corroborated = itemSourceCount >= 2 && publisherKeys.length >= 2;
-  const authoritativeSingle = itemSourceCount === 1 && publisherKeys.length === 1 &&
-    emittedFactualSources[0]?.relationship === "originating";
-  const evidenceTier = corroborated
-    ? "corroborated"
-    : authoritativeSingle
-      ? "authoritative-single"
-      : "insufficient";
   const facts = group.items.slice(0, 4).map((item) => {
     const detail = item.summary ? ` ${item.summary}` : "";
     return `${item.publisher}'s feed reports: ${item.title}.${detail}`.slice(0, 900);
@@ -1100,8 +1221,8 @@ function groupToCandidate(group) {
       deskSignals: classification.signals,
       sourceIds: group.items.map((item) => item.itemId),
       eligibility: "new-development",
-      corroborated,
-      evidenceTier,
+      corroborated: evidence.corroborated,
+      evidenceTier: evidence.evidenceTier,
       itemSourceCount,
       publisherCount: publisherKeys.length,
       publisherKeys,
@@ -1109,10 +1230,11 @@ function groupToCandidate(group) {
   };
 }
 
-export function rankFeedCandidates({
+export function assessFeedCandidates({
   items,
   reportingWindow,
   recentArchive = [],
+  recentRepeatHistory = [],
   minimumScore = DEFAULT_MINIMUM_SCORE,
   minimumAuthoritativeScore = minimumScore,
   evidencePolicy = DEFAULT_FREE_EVIDENCE_POLICY,
@@ -1131,20 +1253,121 @@ export function rankFeedCandidates({
       ? edition.stories.filter(isObject)
       : FREE_DESKS.map((desk) => edition?.desks?.[desk]?.story).filter(isObject));
   const recentKeys = new Set(recentStories.map((story) => story.canonicalEventKey).filter(Boolean));
-  return deduplicateFeedItems(eligibleItems)
-    .map(groupToCandidate)
-    .filter(Boolean)
-    .filter((candidate) => candidate.ranking.evidenceTier === "corroborated" ||
-      (normalizedEvidencePolicy === AUTHORITATIVE_FREE_EVIDENCE_POLICY &&
-        candidate.ranking.evidenceTier === "authoritative-single"))
-    .filter((candidate) => candidate.ranking.score >= (
-      candidate.ranking.evidenceTier === "authoritative-single"
+  if (!Array.isArray(recentRepeatHistory) || recentRepeatHistory.length > 124) {
+    throw new Error("recentRepeatHistory must be a bounded array.");
+  }
+  return deduplicateFeedItems(eligibleItems).map((group) => {
+    const reasons = contentVetoReasons(group.items);
+    const candidate = groupToCandidate(group, assertReportingWindow(reportingWindow));
+    if (!candidate) {
+      reasons.push(rejectionReason(
+        "INSUFFICIENT_TOPICALITY",
+        "The title, categories, and feed summary do not contain enough desk-specific evidence.",
+      ));
+    } else {
+      const evidenceAccepted = candidate.ranking.evidenceTier === "corroborated" ||
+        (normalizedEvidencePolicy === AUTHORITATIVE_FREE_EVIDENCE_POLICY &&
+          candidate.ranking.evidenceTier === "authoritative-single");
+      if (!evidenceAccepted) {
+        reasons.push(rejectionReason(
+          "INSUFFICIENT_SOURCE_EVIDENCE",
+          normalizedEvidencePolicy === DEFAULT_FREE_EVIDENCE_POLICY
+            ? "The comparison edition requires distinct factual URLs from at least two reviewed publishers."
+            : "The personal edition requires either an originating source or distinct reports from two reviewed publishers.",
+        ));
+      }
+      const threshold = candidate.ranking.evidenceTier === "authoritative-single"
         ? minimumAuthoritativeScore
-        : minimumScore
-    ))
-    .filter((candidate) => !recentKeys.has(candidate.canonicalEventKey))
-    .filter((candidate) => !recentStories.some((story) => candidateMatchesRecentStory(candidate, story)))
-    .sort((left, right) =>
+        : minimumScore;
+      if (candidate.ranking.score < threshold) {
+        reasons.push(rejectionReason(
+          "BELOW_EDITORIAL_THRESHOLD",
+          `The editorial score ${candidate.ranking.score} is below the required ${threshold}.`,
+        ));
+      }
+      if (recentKeys.has(candidate.canonicalEventKey) ||
+          recentStories.some((story) => candidateMatchesRecentStory(candidate, story)) ||
+          candidateMatchesRepeatHistory(candidate, recentRepeatHistory)) {
+        reasons.push(rejectionReason(
+          "RECENT_DUPLICATE",
+          "The same development already appeared in the supplied recent-edition archive.",
+        ));
+      }
+      candidate.ranking.editorialValidation = {
+        decision: reasons.length === 0 ? "accepted" : "rejected",
+        requiredScore: threshold,
+        rejectionReasons: reasons,
+      };
+    }
+    return {
+      decision: reasons.length === 0 ? "accepted" : "rejected",
+      canonicalEventKey: group.canonicalEventKey,
+      title: group.items[0]?.title ?? "Untitled feed item",
+      candidate,
+      rejectionReasons: reasons,
+    };
+  });
+}
+
+function requireRepeatDigest(value) {
+  return typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+}
+
+function validatedRepeatEntry(value) {
+  if (!isObject(value)) throw new Error("recentRepeatHistory contains an invalid entry.");
+  const sourceDigests = value.sourceUrlSha256;
+  const titleDigests = value.titleTokenSha256;
+  if (
+    !requireRepeatDigest(value.eventKeySha256) ||
+    !requireRepeatDigest(value.entitySha256) ||
+    (value.strongIdentifierSha256 !== null && !requireRepeatDigest(value.strongIdentifierSha256)) ||
+    !Array.isArray(sourceDigests) ||
+    sourceDigests.length < 1 ||
+    sourceDigests.length > 8 ||
+    sourceDigests.some((digest) => !requireRepeatDigest(digest)) ||
+    new Set(sourceDigests).size !== sourceDigests.length ||
+    !Array.isArray(titleDigests) ||
+    titleDigests.length < 1 ||
+    titleDigests.length > 12 ||
+    titleDigests.some((digest) => !requireRepeatDigest(digest)) ||
+    new Set(titleDigests).size !== titleDigests.length
+  ) {
+    throw new Error("recentRepeatHistory contains an invalid entry.");
+  }
+  return value;
+}
+
+export function candidateMatchesRepeatHistory(candidate, recentRepeatHistory = []) {
+  if (!Array.isArray(recentRepeatHistory) || recentRepeatHistory.length > 124) {
+    throw new Error("recentRepeatHistory must be a bounded array.");
+  }
+  if (recentRepeatHistory.length === 0) return false;
+  const identity = fingerprintFeedCandidate(candidate);
+  return recentRepeatHistory.some((rawEntry) => {
+    const entry = validatedRepeatEntry(rawEntry);
+    if (identity.eventKeySha256 === entry.eventKeySha256) return true;
+    if (
+      identity.strongIdentifierSha256 !== null &&
+      identity.strongIdentifierSha256 === entry.strongIdentifierSha256
+    ) return true;
+    const priorSources = new Set(entry.sourceUrlSha256);
+    if (identity.sourceUrlSha256.some((digest) => priorSources.has(digest))) return true;
+    if (identity.entitySha256 !== entry.entitySha256) return false;
+    return jaccard(
+      new Set(identity.titleTokenSha256),
+      new Set(entry.titleTokenSha256),
+    ) >= 0.7;
+  });
+}
+
+export function rankFeedCandidates(options = {}) {
+  return sortRankedCandidates(assessFeedCandidates(options)
+    .filter((assessment) => assessment.decision === "accepted")
+    .map((assessment) => assessment.candidate));
+}
+
+function sortRankedCandidates(candidates) {
+  return candidates.sort((left, right) =>
       right.ranking.score - left.ranking.score ||
       Date.parse(right.materiallyUpdatedAt ?? right.firstPublishedAt) - Date.parse(left.materiallyUpdatedAt ?? left.firstPublishedAt) ||
       left.canonicalEventKey.localeCompare(right.canonicalEventKey));
@@ -1428,14 +1651,24 @@ export async function researchFreeEdition(options = {}) {
   // Tests can exercise custom fixtures through ingestCuratedFeeds directly.
   const ingestion = await ingestCuratedFeeds({ ...runtimeOptions, sources: FREE_FEED_SOURCES });
   assertSufficientFeedCoverage(ingestion.coverageByDesk);
-  const rankedCandidates = rankFeedCandidates({
+  const assessments = assessFeedCandidates({
     items: ingestion.items,
     reportingWindow: ingestion.reportingWindow,
     recentArchive: options.recentArchive,
+    recentRepeatHistory: options.recentRepeatHistory,
     minimumScore: options.minimumScore,
     minimumAuthoritativeScore: options.minimumAuthoritativeScore,
     evidencePolicy: normalizedEvidencePolicy,
   });
+  const rankedCandidates = sortRankedCandidates(assessments
+    .filter((assessment) => assessment.decision === "accepted")
+    .map((assessment) => assessment.candidate));
+  const rejectionCounts = {};
+  for (const assessment of assessments) {
+    for (const reason of assessment.rejectionReasons) {
+      rejectionCounts[reason.code] = (rejectionCounts[reason.code] ?? 0) + 1;
+    }
+  }
   const selection = selectFreeDeskCandidates(rankedCandidates, {
     maxCandidatesPerDesk: options.maxCandidatesPerDesk,
     evidencePolicy: normalizedEvidencePolicy,
@@ -1457,7 +1690,14 @@ export async function researchFreeEdition(options = {}) {
       eligibleItemCount: ingestion.items.length,
       candidateCount: candidates.length,
       rankedCandidateCount: rankedCandidates.length,
+      rejectedCandidateCount: assessments.filter((assessment) =>
+        assessment.decision === "rejected").length,
+      rejectionCounts: Object.fromEntries(Object.entries(rejectionCounts).sort(([left], [right]) =>
+        left.localeCompare(right))),
       selectedCount: selection.selectedCandidates.length,
+      repeatHistoryCount: Array.isArray(options.recentRepeatHistory)
+        ? options.recentRepeatHistory.length
+        : 0,
       evidencePolicy: normalizedEvidencePolicy,
       coverageByDesk: ingestion.coverageByDesk,
       consumedBytes: ingestion.consumedBytes,

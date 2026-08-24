@@ -9,9 +9,17 @@ const workflow = await readFile(
 
 const triggerBlock = workflow.slice(workflow.indexOf("on:"), workflow.indexOf("permissions:"));
 const job = workflow.slice(workflow.indexOf("  send:"));
+const dedupe = job.slice(
+  job.indexOf("Suppress an already successful delivery"),
+  job.indexOf("Require all private-delivery configuration"),
+);
 const preflight = job.slice(
   job.indexOf("Require all private-delivery configuration"),
-  job.indexOf("Check out trusted main without write credentials"),
+  job.indexOf("Locate the latest trusted repeat ledger"),
+);
+const ledgerLookup = job.slice(
+  job.indexOf("Locate the latest trusted repeat ledger"),
+  job.indexOf("Restore only the trusted hash-only repeat ledger"),
 );
 const generation = job.slice(
   job.indexOf("Generate the private source-checked candidate"),
@@ -19,6 +27,8 @@ const generation = job.slice(
 );
 const emailStepName = "Send only the validated paper to its private recipient";
 const emailStepIndex = job.lastIndexOf(emailStepName);
+const ledgerUploadIndex = job.indexOf("Stage the immutable hash-only repeat ledger before delivery");
+const ledgerUpload = job.slice(ledgerUploadIndex, emailStepIndex);
 const email = job.slice(emailStepIndex);
 
 test("the personal paper is dispatch-only, trusted-main-only, and private", () => {
@@ -48,10 +58,9 @@ test("the personal paper is dispatch-only, trusted-main-only, and private", () =
   assert.match(permissions, /^      actions: read$/m);
   assert.match(permissions, /^      contents: read$/m);
   assert.doesNotMatch(permissions, /write|pages:|id-token:|issues:|pull-requests:|statuses:/);
-  assert.doesNotMatch(
-    workflow,
-    /upload-artifact|download-artifact|deploy-pages|configure-pages|gh pr|git push|git commit|pulls\/|\/statuses\//,
-  );
+  assert.doesNotMatch(workflow, /deploy-pages|configure-pages|gh pr|git push|git commit|pulls\/|\/statuses\//);
+  assert.equal(workflow.match(/actions\/download-artifact@/g)?.length, 1);
+  assert.equal(workflow.match(/actions\/upload-artifact@/g)?.length, 1);
 });
 
 test("scheduled delivery accepts exactly the daily 5:05 New York provenance", () => {
@@ -84,31 +93,31 @@ test("successful same-key runs are deduplicated before any credential or AI use"
   assert.match(workflow, /^  group: personal-morning-paper$/m);
   assert.match(workflow, /cancel-in-progress: false/);
   assert.match(job, /actions: read/);
-  assert.match(job, /\/actions\/runs\/\$\{process\.env\.GITHUB_RUN_ID\}/);
-  assert.match(job, /actions\/workflows\/personal-morning-paper\.yml\/runs/);
-  assert.match(job, /current\.display_title !== process\.env\.EXPECTED_RUN_TITLE/);
+  assert.match(dedupe, /\/actions\/runs\/\$\{process\.env\.GITHUB_RUN_ID\}/);
+  assert.match(dedupe, /actions\/workflows\/personal-morning-paper\.yml\/runs/);
+  assert.match(dedupe, /current\.display_title !== process\.env\.EXPECTED_RUN_TITLE/);
   assert.match(
-    job,
+    dedupe,
     /const workflowPath = "\.github\/workflows\/personal-morning-paper\.yml";/,
   );
-  assert.match(job, /new Set\(\[workflowPath, `\$\{workflowPath\}@main`\]\)/);
-  assert.equal(job.match(/workflowPaths\.has\((?:current|run)\.path\)/g)?.length, 2);
-  assert.match(job, /current\.head_sha !== process\.env\.GITHUB_SHA/);
-  assert.match(job, /current\.repository\?\.full_name !== process\.env\.GITHUB_REPOSITORY/);
-  assert.match(job, /runId < currentRunId/);
-  assert.doesNotMatch(job, /run\.conclusion === "success"/);
-  assert.doesNotMatch(job, /deliveryJobs\[0\]\.conclusion === "success"/);
-  assert.match(job, /const sameDispatchTitles = new Set/);
-  assert.match(job, /`Personal Morning Paper · \$\{process\.env\.DISPATCH_KEY\}`/);
-  assert.match(job, /sameDispatchTitles\.has\(run\.display_title\)/);
-  assert.match(job, /newYorkDate\(run\.created_at\) === process\.env\.EDITION_DATE/);
-  assert.match(job, /newYorkDate\(run\.created_at\) < process\.env\.EDITION_DATE/);
-  assert.match(job, /actions\/runs\/\$\{run\.id\}\/jobs/);
-  assert.match(job, /step\.name === "Send only the validated paper to its private recipient"/);
-  assert.match(job, /sendSteps\[0\]\.conclusion === "success"/);
-  assert.match(job, /const shouldSend = !priorSuccess/);
-  assert.match(job, /should_send=\$\{String\(shouldSend\)\}/);
-  assert.doesNotMatch(job, /run\.conclusion === "failure"/);
+  assert.match(dedupe, /new Set\(\[workflowPath, `\$\{workflowPath\}@main`\]\)/);
+  assert.equal(dedupe.match(/workflowPaths\.has\((?:current|run)\.path\)/g)?.length, 2);
+  assert.match(dedupe, /current\.head_sha !== process\.env\.GITHUB_SHA/);
+  assert.match(dedupe, /current\.repository\?\.full_name !== process\.env\.GITHUB_REPOSITORY/);
+  assert.match(dedupe, /runId < currentRunId/);
+  assert.doesNotMatch(dedupe, /run\.conclusion === "success"/);
+  assert.doesNotMatch(dedupe, /deliveryJobs\[0\]\.conclusion === "success"/);
+  assert.match(dedupe, /const sameDispatchTitles = new Set/);
+  assert.match(dedupe, /`Personal Morning Paper · \$\{process\.env\.DISPATCH_KEY\}`/);
+  assert.match(dedupe, /sameDispatchTitles\.has\(run\.display_title\)/);
+  assert.match(dedupe, /newYorkDate\(run\.created_at\) === process\.env\.EDITION_DATE/);
+  assert.match(dedupe, /newYorkDate\(run\.created_at\) < process\.env\.EDITION_DATE/);
+  assert.match(dedupe, /actions\/runs\/\$\{run\.id\}\/jobs/);
+  assert.match(dedupe, /step\.name === "Send only the validated paper to its private recipient"/);
+  assert.match(dedupe, /sendSteps\[0\]\.conclusion === "success"/);
+  assert.match(dedupe, /const shouldSend = !priorSuccess/);
+  assert.match(dedupe, /should_send=\$\{String\(shouldSend\)\}/);
+  assert.doesNotMatch(dedupe, /run\.conclusion === "failure"/);
   assert.ok(
     job.indexOf("Suppress an already successful delivery") <
       job.indexOf("Require all private-delivery configuration"),
@@ -119,11 +128,11 @@ test("successful same-key runs are deduplicated before any credential or AI use"
   );
   assert.equal(
     job.match(/steps\.dedupe\.outputs\.should_send == 'true'/g)?.length,
-    7,
+    12,
   );
   assert.equal(
     job.match(/steps\.preflight\.outputs\.delivery_enabled == 'true'/g)?.length,
-    6,
+    11,
   );
 });
 
@@ -170,22 +179,28 @@ test("email setup no-ops only when wholly absent and secrets stay step-scoped", 
   assert.equal(workflow.match(/vars\.CLOUDFLARE_ACCOUNT_ID/g)?.length, 2);
   assert.equal(workflow.match(/secrets\.RESEND_API_KEY/g)?.length, 2);
   assert.equal(workflow.match(/secrets\.PERSONAL_PAPER_EMAIL/g)?.length, 2);
-  assert.equal(workflow.match(/\$\{\{ github\.token \}\}/g)?.length, 1);
+  assert.equal(workflow.match(/\$\{\{ github\.token \}\}/g)?.length, 3);
   assert.doesNotMatch(workflow, /OPENAI_API_KEY|OPENAI_MODEL|personal-paid-edition|personalResearch|freePilot/);
 });
 
-test("trusted pinned code generates, tests, and emails without persisting content", () => {
+test("trusted pinned code generates, tests, and emails while persisting only repeat fingerprints", () => {
   const usesLines = workflow
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line.startsWith("uses:"));
   assert.deepEqual(usesLines, [
+    "uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1",
     "uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0",
     "uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0",
+    "uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1",
   ]);
   assert.match(workflow, /ref: \$\{\{ github\.sha \}\}/);
   assert.match(workflow, /persist-credentials: false/);
   assert.match(workflow, /PERSONAL_OUTPUT_ROOT: content\/personal-candidates/);
+  assert.match(
+    generation,
+    /PERSONAL_STORY_LEDGER_PATH: \$\{\{ runner\.temp \}\}\/first-fold-ledger\/repeat-ledger\.json/,
+  );
   assert.match(
     workflow,
     /node scripts\/automation\/personal-free-edition\.mjs "\$\{EDITION_DATE\}"/,
@@ -200,7 +215,64 @@ test("trusted pinned code generates, tests, and emails without persisting conten
   );
   assert.ok(
     job.indexOf("Test the exact private candidate") <
-      emailStepIndex,
+      job.indexOf("Record only validated story fingerprints in the repeat ledger"),
+  );
+  assert.ok(
+    job.indexOf("Record only validated story fingerprints in the repeat ledger") <
+      ledgerUploadIndex,
+  );
+  assert.ok(
+    ledgerUploadIndex < emailStepIndex,
   );
   assert.doesNotMatch(workflow, /content\/editions\/|console\.log\(|cat\s+.*candidate|tee\s+/);
+});
+
+test("the 30-day ledger restores and uploads one bounded hash-only artifact", () => {
+  assert.match(ledgerLookup, /LEDGER_ARTIFACT_NAME: personal-repeat-ledger-v1/);
+  assert.match(ledgerLookup, /LEDGER_ROLLOUT_DATE: '2026-08-24'/);
+  assert.match(ledgerLookup, /const repeatCutoffDate =/);
+  assert.match(ledgerLookup, /page <= 10/);
+  assert.match(ledgerLookup, /runId < currentRunId/);
+  assert.doesNotMatch(ledgerLookup, /run\.conclusion !== "success"/);
+  assert.match(ledgerLookup, /run\.event === "workflow_dispatch"/);
+  assert.match(ledgerLookup, /run\.head_branch === "main"/);
+  assert.match(ledgerLookup, /run\.actor\?\.login === process\.env\.GITHUB_REPOSITORY_OWNER/);
+  assert.match(ledgerLookup, /run\.triggering_actor\?\.login === process\.env\.GITHUB_REPOSITORY_OWNER/);
+  assert.match(ledgerLookup, /workflowPaths\.has\(run\.path\)/);
+  assert.match(ledgerLookup, /newYorkDate\(run\.created_at\) >= process\.env\.LEDGER_ROLLOUT_DATE/);
+  assert.match(ledgerLookup, /exact\.length > 1/);
+  assert.match(ledgerLookup, /hasSuccessfulPrivateSend\(run\)/);
+  assert.match(ledgerLookup, /successful private send inside the 30-day repeat window has no usable ledger/i);
+  assert.match(ledgerLookup, /Math\.min\(5, staleSuccessfulSendCount \+ 1\)/);
+  assert.match(ledgerLookup, /staleSuccessfulSendCount === 5/);
+  assert.match(ledgerLookup, /bootstrap_count=\$\{staleSuccessfulSendCount\}/);
+  assert.match(ledgerLookup, /allow_bootstrap=true/);
+  assert.match(ledgerLookup, /allow_bootstrap=false/);
+  assert.match(ledgerLookup, /exact\[0\]\.expired === false/);
+  assert.match(ledgerLookup, /!Number\.isSafeInteger\(artifact\.id\)/);
+  assert.match(ledgerLookup, /artifact\.workflow_run\?\.id !== previous\.id/);
+  assert.match(ledgerLookup, /artifact\.workflow_run\?\.head_sha !== previous\.head_sha/);
+  assert.match(ledgerLookup, /artifact\.size_in_bytes > 1_000_000/);
+  assert.match(ledgerLookup, /found=false/);
+  assert.match(ledgerLookup, /found=true/);
+
+  assert.match(workflow, /artifact-ids: \$\{\{ steps\.ledger\.outputs\.artifact_id \}\}/);
+  assert.match(workflow, /run-id: \$\{\{ steps\.ledger\.outputs\.run_id \}\}/);
+  assert.match(workflow, /node scripts\/automation\/personal-story-ledger\.mjs prepare/);
+  assert.match(workflow, /--rollout-date 2026-08-24/);
+  assert.equal(workflow.match(/--allow-bootstrap/g)?.length, 1);
+  assert.match(workflow, /--recorded-edition-count "\$\{LEDGER_BOOTSTRAP_COUNT\}"/);
+  assert.match(workflow, /node scripts\/automation\/personal-story-ledger\.mjs record/);
+  assert.match(ledgerUpload, /name: personal-repeat-ledger-v1/);
+  assert.match(ledgerUpload, /path: \$\{\{ runner\.temp \}\}\/first-fold-ledger\/repeat-ledger\.json/);
+  assert.match(ledgerUpload, /if-no-files-found: error/);
+  assert.match(ledgerUpload, /retention-days: 35/);
+  assert.match(ledgerUpload, /compression-level: 9/);
+  assert.match(ledgerUpload, /overwrite: false/);
+  assert.match(ledgerUpload, /include-hidden-files: false/);
+  assert.ok(ledgerUploadIndex < emailStepIndex);
+  assert.doesNotMatch(
+    ledgerUpload,
+    /candidate_path|PERSONAL_OUTPUT_ROOT|content\/personal-candidates|PERSONAL_PAPER_EMAIL|RESEND_API_KEY/,
+  );
 });

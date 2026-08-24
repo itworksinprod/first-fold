@@ -47,6 +47,48 @@ const feedSources = [
   { id: "platform-feed-two", publisherKey: "platform-publisher-two", coverageDesks: ["platforms-and-power"], deskPriors: { "platforms-and-power": 9 } },
 ];
 
+const scorecardMaximums = {
+  materialityNewsworthiness: 30,
+  deskRelevance: 20,
+  sourceStrength: 20,
+  readerUsefulnessActionability: 15,
+  freshness: 15,
+};
+
+function acceptedRanking(score, {
+  evidenceTier = "corroborated",
+  itemSourceCount = 2,
+  publisherCount = 2,
+  publisherKeys = ["independent-tech-review", "microsoft"],
+  corroborated = evidenceTier === "corroborated",
+} = {}) {
+  const sourceStrength = evidenceTier === "authoritative-single" ? 16 : 20;
+  const components = {
+    materialityNewsworthiness: 24,
+    deskRelevance: 18,
+    sourceStrength,
+    readerUsefulnessActionability: 12,
+    freshness: score - 54 - sourceStrength,
+  };
+  return {
+    score,
+    version: "editorial-v1",
+    components,
+    componentMaximums: scorecardMaximums,
+    editorialValidation: {
+      decision: "accepted",
+      requiredScore: 70,
+      rejectionReasons: [],
+    },
+    eligibility: "new-development",
+    corroborated,
+    evidenceTier,
+    itemSourceCount,
+    publisherCount,
+    publisherKeys,
+  };
+}
+
 function buildEditorialPayload() {
   const story = structuredClone(priorEdition.desks["work-and-tools"].story);
   story.id = "2026-08-20-free-work-development";
@@ -118,14 +160,7 @@ function dossierForPayload(payload = buildEditorialPayload()) {
       ...source,
       publisherKey: index === 0 ? "microsoft" : "independent-tech-review",
     })),
-    ranking: {
-      score: 82,
-      eligibility: "new-development",
-      corroborated: true,
-      itemSourceCount: 2,
-      publisherCount: 2,
-      publisherKeys: ["independent-tech-review", "microsoft"],
-    },
+    ranking: acceptedRanking(82),
   };
 }
 
@@ -257,15 +292,13 @@ function completeAuthoritativeScenario() {
       verifiedFacts: [`${labels[desk]} Publisher reports a new reader-facing development.`],
       unresolvedQuestions: [],
       sources: story.sources.map((source) => ({ ...source, publisherKey })),
-      ranking: {
-        score: 80 - index,
-        eligibility: "new-development",
-        corroborated: false,
+      ranking: acceptedRanking(80 - index, {
         evidenceTier: "authoritative-single",
         itemSourceCount: 1,
         publisherCount: 1,
         publisherKeys: [publisherKey],
-      },
+        corroborated: false,
+      }),
     });
   }
   const payload = {
@@ -477,6 +510,40 @@ test("complete authoritative mode creates four desks with bounded model and rese
   assert.equal(validateCanonicalEdition(candidate).valid, true);
 });
 
+test("minimum-three mode permits one trusted quiet desk and records the delivery floor", async () => {
+  const { payload, research } = completeAuthoritativeScenario();
+  const quietPayload = structuredClone(payload);
+  quietPayload.desks.ai = {
+    desk: "ai",
+    story: null,
+    emptyReason: "Model-authored text must not become the trusted quiet explanation.",
+  };
+  const selectedStories = Object.values(quietPayload.desks)
+    .map((page) => page.story)
+    .filter(Boolean);
+  quietPayload.frontPage.leadStoryId = selectedStories[0].id;
+  quietPayload.frontPage.storyOrder = selectedStories.map((story) => story.id);
+  if (!quietPayload.frontPage.storyOrder.includes(quietPayload.frontPage.stopThePressesStoryId)) {
+    quietPayload.frontPage.stopThePressesStoryId = null;
+  }
+
+  const candidate = await draftFreeEdition(draftOptions({
+    evidencePolicy: "authoritative-or-corroborated",
+    minimumStoryCount: 3,
+    researchImpl: async () => research,
+    aiRequestImpl: async () => aiResult(quietPayload),
+  }));
+
+  assert.equal(candidate.provenance.freePilot.requiredStoryCount, 3);
+  assert.equal(candidate.provenance.freePilot.selectedStoryCount, 3);
+  assert.equal(candidate.frontPage.storyOrder.length, 3);
+  assert.equal(candidate.desks.ai.story, null);
+  assert.match(candidate.desks.ai.emptyReason, /No qualifying AI & Models development/);
+  assert.doesNotMatch(candidate.desks.ai.emptyReason, /Model-authored/);
+  assert.equal(candidate.provenance.sourceCheck.checkedSourceCount, 6);
+  assert.equal(validateCanonicalEdition(candidate).valid, true);
+});
+
 test("complete mode fails before inference unless research selected one candidate per desk", async () => {
   let aiCalls = 0;
   let receivedResearchOptions;
@@ -498,7 +565,7 @@ test("complete mode fails before inference unless research selected one candidat
         return aiResult();
       },
     })),
-    /requires exactly four selected feed candidates before inference/,
+    /requires at least 4 selected feed candidates before inference/,
   );
   assert.equal(receivedResearchOptions.evidencePolicy, "authoritative-or-corroborated");
   assert.equal(receivedResearchOptions.minimumScore, 70);
@@ -531,7 +598,7 @@ test("complete mode rejects a quiet model payload before source checks", async (
         return { status: 200, headers: {} };
       },
     })),
-    /requires one model-authored story in every desk before delivery/,
+    /requires at least 4 model-authored stories before delivery/,
   );
   assert.equal(sourceChecks, 0);
 });
@@ -827,6 +894,44 @@ test("publisher aliases cannot masquerade as two independent corroborating organ
   assert.throws(
     () => normalizeFreeEditorialAgainstCandidates(payload, [candidate], generatedAt),
     /lacks two-publisher article corroboration/,
+  );
+});
+
+test("validation receipts count the factual sources actually cited from a larger dossier", () => {
+  const payload = buildEditorialPayload();
+  const story = payload.desks["work-and-tools"].story;
+  const thirdSource = {
+    ...story.sources[1],
+    id: "third-independent-item",
+    title: "A third independent report",
+    publisher: "Third Independent Publisher",
+    url: "https://third.example/report",
+  };
+  const candidate = dossierForPayload(payload);
+  candidate.sources.push({ ...thirdSource, publisherKey: "third-independent" });
+  candidate.ranking = acceptedRanking(82, {
+    itemSourceCount: 3,
+    publisherCount: 3,
+    publisherKeys: ["independent-tech-review", "microsoft", "third-independent"],
+  });
+
+  const normalized = normalizeFreeEditorialAgainstCandidates(
+    payload,
+    [candidate],
+    generatedAt,
+  );
+  assert.deepEqual(
+    normalized.desks["work-and-tools"].story.selection.validationReceipt,
+    {
+      version: "editorial-v1",
+      score: 82,
+      requiredScore: 70,
+      components: acceptedRanking(82).components,
+      componentMaximums: scorecardMaximums,
+      evidenceTier: "corroborated",
+      factualSourceCount: 2,
+      publisherCount: 2,
+    },
   );
 });
 
@@ -1264,6 +1369,20 @@ test("message construction forwards only bounded dossiers and trusted local inst
   assert.match(completeMessages[0].content, /return no usable\s+editorial payload/);
   assert.doesNotMatch(completeMessages[0].content, /leave (?:a|the) desk quiet/i);
   assert.match(completeMessages[1].content, /Select exactly one story in each of the four desks/);
+
+  const minimumMessages = buildFreeWorkersAiMessages({
+    policyText: "POLICY_MARKER",
+    promptText: "PROMPT_MARKER",
+    scaffold,
+    priorEditions: [priorEdition],
+    candidates: [dossierForPayload()],
+    evidencePolicy: "authoritative-or-corroborated",
+    minimumStoryCount: 3,
+  });
+  assert.match(minimumMessages[0].content, /requires at least 3 selected stories/);
+  assert.match(minimumMessages[0].content, /exactly one quiet desk/);
+  assert.match(minimumMessages[1].content, /Select at least 3 stories/);
+  assert.match(minimumMessages[1].content, /leave at most one desk quiet with an explanation/);
 });
 
 test("free prompt precedence and binder agree that deterministic suggestedDesk is fixed", () => {

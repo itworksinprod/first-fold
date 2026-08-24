@@ -17,6 +17,56 @@ const baseEdition = JSON.parse(
 );
 const API_KEY = "re_personal_email_test_key_123456789";
 const RECIPIENT = "owner@example.com";
+const receiptMaximums = {
+  materialityNewsworthiness: 30,
+  deskRelevance: 20,
+  sourceStrength: 20,
+  readerUsefulnessActionability: 15,
+  freshness: 15,
+};
+
+function addTrustedReceipt(story) {
+  const sourceById = new Map(story.sources.map((source) => [source.id, source]));
+  const factualSources = [...new Set(story.evidence.flatMap((claim) => claim.sourceIds))]
+    .map((sourceId) => sourceById.get(sourceId))
+    .filter((source) => source && source.relationship !== "context");
+  const evidenceTier = factualSources.length === 1 && factualSources[0].relationship === "originating"
+    ? "authoritative-single"
+    : "corroborated";
+  if (evidenceTier === "authoritative-single") {
+    story.priority = "notable";
+    story.confidence.level = "medium";
+    story.evidence = story.evidence.map((claim) => ({ ...claim, verification: "company-claimed" }));
+  }
+  const components = {
+    materialityNewsworthiness: 0,
+    deskRelevance: 0,
+    sourceStrength: evidenceTier === "authoritative-single" ? 16 : 20,
+    readerUsefulnessActionability: 0,
+    freshness: 0,
+  };
+  let remaining = story.selection.score - components.sourceStrength;
+  for (const component of [
+    "materialityNewsworthiness",
+    "deskRelevance",
+    "readerUsefulnessActionability",
+    "freshness",
+  ]) {
+    components[component] = Math.min(receiptMaximums[component], remaining);
+    remaining -= components[component];
+  }
+  assert.equal(remaining, 0);
+  story.selection.validationReceipt = {
+    version: "editorial-v1",
+    score: story.selection.score,
+    requiredScore: 70,
+    components,
+    componentMaximums: receiptMaximums,
+    evidenceTier,
+    factualSourceCount: factualSources.length,
+    publisherCount: evidenceTier === "corroborated" ? factualSources.length : 1,
+  };
+}
 
 function personalCandidate() {
   const candidate = structuredClone(baseEdition);
@@ -40,6 +90,14 @@ function personalCandidate() {
   candidate.frontPage.note =
     "Four source-verified developments cleared the private research contract.";
   candidate.frontPage.estimatedMinutes = 8;
+  for (const page of Object.values(candidate.desks)) addTrustedReceipt(page.story);
+  if (
+    Object.values(candidate.desks).some((page) =>
+      page.story.selection.validationReceipt.evidenceTier === "authoritative-single" &&
+      page.story.id === candidate.frontPage.stopThePressesStoryId)
+  ) {
+    candidate.frontPage.stopThePressesStoryId = null;
+  }
   candidate.provenance.personalFreeResearch = {
     workflow: "personal-morning-paper",
     provider: "cloudflare-workers-ai",
@@ -61,9 +119,16 @@ function personalCandidate() {
     evidencePolicy: "authoritative-or-corroborated",
     lookbackHours: 72,
     minimumScore: 70,
-    minimumAuthoritativeScore: 58,
+    minimumAuthoritativeScore: 70,
     ephemeral: true,
+    requiredStoryCount: 3,
     selectedStoryCount: 4,
+    repeatLedgerSchemaVersion: 1,
+    repeatLookbackDays: 30,
+    repeatStateSha256: "d".repeat(64),
+    priorLedgerEditionCount: 0,
+    priorLedgerStoryCount: 0,
+    qualityPilotOrdinal: 1,
     maxModelRequests: 2,
   };
   candidate.provenance.sourceCheck = {
@@ -72,6 +137,29 @@ function personalCandidate() {
     checkedSourceCount: 8,
     issues: [],
   };
+  assert.equal(validateCanonicalEdition(candidate).valid, true);
+  return candidate;
+}
+
+function leaveDeskQuiet(candidate, desk) {
+  const removedStory = candidate.desks[desk].story;
+  candidate.desks[desk] = {
+    desk,
+    story: null,
+    emptyReason: `No qualifying ${desk} development cleared the editorial threshold.`,
+  };
+  candidate.frontPage.storyOrder = candidate.frontPage.storyOrder
+    .filter((storyId) => storyId !== removedStory.id);
+  candidate.frontPage.leadStoryId = candidate.frontPage.storyOrder[0] ?? null;
+  if (candidate.frontPage.stopThePressesStoryId === removedStory.id) {
+    candidate.frontPage.stopThePressesStoryId = null;
+  }
+  const selectedStoryCount = Object.values(candidate.desks)
+    .filter((page) => page.story !== null).length;
+  candidate.frontPage.note =
+    `${selectedStoryCount} source-verified developments cleared the private research contract.`;
+  candidate.provenance.personalFreeResearch.selectedStoryCount = selectedStoryCount;
+  candidate.provenance.sourceCheck.checkedSourceCount = selectedStoryCount * 2;
   assert.equal(validateCanonicalEdition(candidate).valid, true);
   return candidate;
 }
@@ -121,6 +209,21 @@ test("the renderer produces a complete static newspaper with sources and text fa
   assert.match(rendered.text, /WHY IT MATTERS/);
   assert.match(rendered.text, /WHAT TO DO OR WATCH/);
   assert.match(rendered.text, /SOURCES/);
+  assert.equal(rendered.text.match(/VALIDATION RECEIPT/g)?.length, 4);
+  assert.equal(rendered.html.match(/Validation receipt/g)?.length, 4);
+  assert.match(rendered.text, /Evidence: Independently corroborated/);
+  assert.match(rendered.text, /Evidence: Reviewed originating source/);
+  assert.match(rendered.text, /Factual sources: [12]/);
+  assert.match(rendered.text, /Importance: \d+\/30/);
+  assert.match(rendered.text, /QUALITY PILOT · EDITION 1 OF 5/);
+  assert.match(rendered.html, /Quality pilot · Edition 1 of 5/);
+});
+
+test("evidence labels come from the trusted receipt rather than display publisher aliases", () => {
+  const candidate = personalCandidate();
+  for (const source of candidate.desks.ai.story.sources) source.publisher = "Same display label";
+  const rendered = renderPersonalEditionEmail(candidate);
+  assert.match(rendered.text, /Evidence: Independently corroborated/);
 });
 
 test("every rendered editorial and source field is HTML escaped", () => {
@@ -150,7 +253,7 @@ test("every rendered editorial and source field is HTML escaped", () => {
 test("rendering fails closed for malformed, public, free, incomplete, or unverified candidates", () => {
   assert.throws(
     () => renderPersonalEditionEmail(null),
-    /complete, source-checked free-research candidate/,
+    /at least three source-checked stories in a free-research candidate/,
   );
 
   const mutations = [
@@ -172,6 +275,20 @@ test("rendering fails closed for malformed, public, free, incomplete, or unverif
     (candidate) => { candidate.provenance.personalFreeResearch.responseId = ""; },
     (candidate) => { candidate.provenance.personalFreeResearch.lookbackHours = 24; },
     (candidate) => { candidate.provenance.personalFreeResearch.minimumAuthoritativeScore = 10; },
+    (candidate) => { candidate.provenance.personalFreeResearch.repeatStateSha256 = "bad"; },
+    (candidate) => { candidate.provenance.personalFreeResearch.qualityPilotOrdinal = 2; },
+    (candidate) => { candidate.desks.ai.story.selection.validationReceipt.score = 70; },
+    (candidate) => { candidate.desks.ai.story.selection.validationReceipt.requiredScore = 69; },
+    (candidate) => { candidate.desks.ai.story.selection.validationReceipt.evidenceTier = "authoritative-single"; },
+    (candidate) => { candidate.desks.ai.story.selection.validationReceipt.factualSourceCount = 1; },
+    (candidate) => { candidate.desks.ai.story.selection.validationReceipt.publisherCount = 1; },
+    (candidate) => {
+      candidate.desks.ai.story.selection.validationReceipt.components.freshness += 1;
+    },
+    (candidate) => {
+      const story = candidate.desks["work-and-tools"].story;
+      story.evidence[0].verification = "confirmed";
+    },
     (candidate) => {
       candidate.desks.ai.story.sources[1].url = candidate.desks.ai.story.sources[0].url;
     },
@@ -186,31 +303,35 @@ test("rendering fails closed for malformed, public, free, incomplete, or unverif
     mutate(candidate);
     assert.throws(
       () => renderPersonalEditionEmail(candidate),
-      /complete, source-checked free-research candidate/,
+      /at least three source-checked stories in a free-research candidate/,
     );
   }
 });
 
-test("every missing desk blocks delivery before Resend is called", async (t) => {
+test("exactly one explained quiet desk is deliverable but two quiet desks block Resend", async (t) => {
   for (const desk of ["ai", "work-and-tools", "security-and-privacy", "platforms-and-power"]) {
-    await t.test(desk, async () => {
-      const candidate = personalCandidate();
-      candidate.desks[desk] = { desk, story: null, emptyReason: "No story was selected." };
-      let fetchCalls = 0;
-      await assert.rejects(
-        sendPersonalEditionEmail(candidate, {
-          apiKey: API_KEY,
-          recipient: RECIPIENT,
-          fetchImpl: async () => {
-            fetchCalls += 1;
-            return successResponse();
-          },
-        }),
-        /complete, source-checked free-research candidate/,
-      );
-      assert.equal(fetchCalls, 0);
+    await t.test(`${desk} may be quiet`, () => {
+      const rendered = renderPersonalEditionEmail(leaveDeskQuiet(personalCandidate(), desk));
+      assert.match(rendered.text, /QUIET DESK/);
+      assert.equal(rendered.text.match(/VALIDATION RECEIPT/g)?.length, 3);
     });
   }
+
+  const candidate = leaveDeskQuiet(personalCandidate(), "ai");
+  leaveDeskQuiet(candidate, "work-and-tools");
+  let fetchCalls = 0;
+  await assert.rejects(
+    sendPersonalEditionEmail(candidate, {
+      apiKey: API_KEY,
+      recipient: RECIPIENT,
+      fetchImpl: async () => {
+        fetchCalls += 1;
+        return successResponse();
+      },
+    }),
+    /at least three source-checked stories in a free-research candidate/,
+  );
+  assert.equal(fetchCalls, 0);
 });
 
 test("the sender posts one bounded Resend request with fixed identity and date idempotency", async () => {
@@ -346,9 +467,15 @@ test("oversized request bodies are rejected before fetch", async () => {
       id: `large-evidence-${page.desk}`,
       statement: "Large rendering fixture.",
       sourceIds: [page.story.sources[0].id],
-      verification: "confirmed",
+      verification: "company-claimed",
     }];
+    page.story.selection.validationReceipt.evidenceTier = "authoritative-single";
+    page.story.selection.validationReceipt.factualSourceCount = 1;
+    page.story.selection.validationReceipt.publisherCount = 1;
+    page.story.priority = "notable";
+    page.story.confidence.level = "medium";
   }
+  candidate.frontPage.stopThePressesStoryId = null;
   // Long unbroken strings remain one reader-facing word, so the canonical
   // word-count gate still passes while the mail request crosses its byte cap.
   assert.equal(validateCanonicalEdition(candidate).valid, true);

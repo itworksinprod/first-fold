@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash } from "node:crypto";
-import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 import { validateCanonicalEdition } from "../edition-content.mjs";
@@ -15,6 +15,13 @@ import {
   DEFAULT_CLOUDFLARE_AI_MODEL,
   WORKERS_AI_PROVIDER,
 } from "./free/workers-ai.mjs";
+import {
+  PERSONAL_STORY_LEDGER_MAX_BYTES,
+  PERSONAL_STORY_LEDGER_RETENTION_DAYS,
+  PERSONAL_STORY_LEDGER_SCHEMA_VERSION,
+  buildPersonalRepeatHistory,
+  parsePersonalStoryLedger,
+} from "./personal-story-ledger.mjs";
 
 const scriptPath = fileURLToPath(import.meta.url);
 const defaultProjectRoot = path.resolve(path.dirname(scriptPath), "..", "..");
@@ -34,7 +41,8 @@ export const PERSONAL_FREE_MAX_TOKENS = 6_000;
 export const PERSONAL_FREE_MAX_REQUEST_BYTES = 100_000;
 export const PERSONAL_FREE_LOOKBACK_HOURS = 72;
 export const PERSONAL_FREE_MINIMUM_SCORE = 70;
-export const PERSONAL_FREE_MINIMUM_AUTHORITATIVE_SCORE = 58;
+export const PERSONAL_FREE_MINIMUM_AUTHORITATIVE_SCORE = 70;
+export const PERSONAL_FREE_MINIMUM_STORY_COUNT = 3;
 export const PERSONAL_FREE_RUN_MODES = Object.freeze(["on_time", "same_day_backfill"]);
 export const PERSONAL_FREE_DESKS = Object.freeze([
   "ai",
@@ -74,6 +82,28 @@ async function pathExists(filename) {
     if (error?.code === "ENOENT") return false;
     throw error;
   }
+}
+
+async function loadPersonalStoryLedger(env, editionDate) {
+  const ledgerPath = requireNonBlank(
+    env.PERSONAL_STORY_LEDGER_PATH,
+    "PERSONAL_STORY_LEDGER_PATH",
+    4_096,
+  );
+  let metadata;
+  try {
+    metadata = await lstat(ledgerPath);
+  } catch {
+    throw new Error("PERSONAL_STORY_LEDGER_PATH must identify the prepared repeat ledger.");
+  }
+  if (
+    !metadata.isFile() ||
+    metadata.isSymbolicLink() ||
+    metadata.size > PERSONAL_STORY_LEDGER_MAX_BYTES
+  ) {
+    throw new Error("PERSONAL_STORY_LEDGER_PATH must identify the prepared repeat ledger.");
+  }
+  return parsePersonalStoryLedger(await readFile(ledgerPath, "utf8"), { asOfDate: editionDate });
 }
 
 async function loadCanonicalHistory(projectRoot) {
@@ -155,12 +185,15 @@ function hasCompleteSourceSet(story) {
   return urls.size >= 2 && hasDirectSource;
 }
 
-function buildPersonalCandidate(freeCandidate, { automation, runMode, expectedFeedSourceCount }) {
+function buildPersonalCandidate(
+  freeCandidate,
+  { automation, runMode, expectedFeedSourceCount, repeatHistory },
+) {
   validateFreePilotProvenance(freeCandidate, automation, {
     expectedFeedSourceCount,
     expectedRunMode: runMode,
     expectedEvidencePolicy: PERSONAL_FREE_EVIDENCE_POLICY,
-    expectedRequiredStoryCount: PERSONAL_FREE_DESKS.length,
+    expectedRequiredStoryCount: PERSONAL_FREE_MINIMUM_STORY_COUNT,
     expectedLookbackHours: PERSONAL_FREE_LOOKBACK_HOURS,
     expectedMinimumScore: PERSONAL_FREE_MINIMUM_SCORE,
     expectedMinimumAuthoritativeScore: PERSONAL_FREE_MINIMUM_AUTHORITATIVE_SCORE,
@@ -176,11 +209,12 @@ function buildPersonalCandidate(freeCandidate, { automation, runMode, expectedFe
     freePilot?.lookbackHours !== PERSONAL_FREE_LOOKBACK_HOURS ||
     freePilot?.minimumScore !== PERSONAL_FREE_MINIMUM_SCORE ||
     freePilot?.minimumAuthoritativeScore !== PERSONAL_FREE_MINIMUM_AUTHORITATIVE_SCORE ||
-    stories.length !== PERSONAL_FREE_DESKS.length ||
+    stories.length < PERSONAL_FREE_MINIMUM_STORY_COUNT ||
+    stories.length > PERSONAL_FREE_DESKS.length ||
     stories.some((story) => !hasCompleteSourceSet(story))
   ) {
     throw new Error(
-      "Personal free research did not produce four populated, source-checked Workers AI stories. No email candidate was returned.",
+      "Personal free research did not produce at least three populated, source-checked Workers AI stories. No email candidate was returned.",
     );
   }
 
@@ -208,7 +242,14 @@ function buildPersonalCandidate(freeCandidate, { automation, runMode, expectedFe
     lookbackHours: freePilot.lookbackHours,
     minimumScore: freePilot.minimumScore,
     minimumAuthoritativeScore: freePilot.minimumAuthoritativeScore,
-    selectedStoryCount: PERSONAL_FREE_DESKS.length,
+    requiredStoryCount: PERSONAL_FREE_MINIMUM_STORY_COUNT,
+    selectedStoryCount: stories.length,
+    repeatLedgerSchemaVersion: PERSONAL_STORY_LEDGER_SCHEMA_VERSION,
+    repeatLookbackDays: PERSONAL_STORY_LEDGER_RETENTION_DAYS,
+    repeatStateSha256: repeatHistory.stateSha256,
+    priorLedgerEditionCount: repeatHistory.priorEditionCount,
+    priorLedgerStoryCount: repeatHistory.priorStoryCount,
+    qualityPilotOrdinal: repeatHistory.nextPilotOrdinal,
     maxModelRequests: PERSONAL_FREE_MAX_MODEL_REQUESTS,
     ephemeral: true,
   };
@@ -236,7 +277,8 @@ export function validatePersonalFreeCandidate(
     research.successfulFeedSourceCount > 0 &&
     research.successfulFeedSourceCount <= research.feedSourceCount &&
     Number.isInteger(research?.candidateCount) &&
-    research.candidateCount >= PERSONAL_FREE_DESKS.length;
+    research.candidateCount >= PERSONAL_FREE_MINIMUM_STORY_COUNT &&
+    research.candidateCount >= stories.length;
 
   if (
     !validation.valid ||
@@ -272,16 +314,36 @@ export function validatePersonalFreeCandidate(
     research?.lookbackHours !== PERSONAL_FREE_LOOKBACK_HOURS ||
     research?.minimumScore !== PERSONAL_FREE_MINIMUM_SCORE ||
     research?.minimumAuthoritativeScore !== PERSONAL_FREE_MINIMUM_AUTHORITATIVE_SCORE ||
-    research?.selectedStoryCount !== PERSONAL_FREE_DESKS.length ||
+    research?.requiredStoryCount !== PERSONAL_FREE_MINIMUM_STORY_COUNT ||
+    research?.selectedStoryCount !== stories.length ||
+    research?.repeatLedgerSchemaVersion !== PERSONAL_STORY_LEDGER_SCHEMA_VERSION ||
+    research?.repeatLookbackDays !== PERSONAL_STORY_LEDGER_RETENTION_DAYS ||
+    !SHA256_PATTERN.test(research?.repeatStateSha256 ?? "") ||
+    !Number.isInteger(research?.priorLedgerEditionCount) ||
+    research.priorLedgerEditionCount < 0 ||
+    !Number.isInteger(research?.priorLedgerStoryCount) ||
+    research.priorLedgerStoryCount < 0 ||
+    !(
+      research?.qualityPilotOrdinal === null ||
+      (Number.isInteger(research?.qualityPilotOrdinal) &&
+        research.qualityPilotOrdinal >= 1 &&
+        research.qualityPilotOrdinal <= 5)
+    ) ||
+    research.qualityPilotOrdinal !== (
+      research.priorLedgerEditionCount < 5
+        ? research.priorLedgerEditionCount + 1
+        : null
+    ) ||
     research?.maxModelRequests !== PERSONAL_FREE_MAX_MODEL_REQUESTS ||
     research?.ephemeral !== true ||
-    stories.length !== PERSONAL_FREE_DESKS.length ||
+    stories.length < PERSONAL_FREE_MINIMUM_STORY_COUNT ||
+    stories.length > PERSONAL_FREE_DESKS.length ||
     stories.some((story) => !hasCompleteSourceSet(story)) ||
     !Array.isArray(candidate.frontPage?.storyOrder) ||
-    candidate.frontPage.storyOrder.length !== PERSONAL_FREE_DESKS.length ||
+    candidate.frontPage.storyOrder.length !== stories.length ||
     sourceCheck?.status !== "passed" ||
     !Number.isInteger(sourceCheck?.checkedSourceCount) ||
-    sourceCheck.checkedSourceCount < PERSONAL_FREE_DESKS.length * 2 ||
+    sourceCheck.checkedSourceCount < stories.length * 2 ||
     !Array.isArray(sourceCheck?.issues) ||
     sourceCheck.issues.length !== 0
   ) {
@@ -310,6 +372,7 @@ export async function generatePersonalFreeEdition({
   sourceLookupImpl,
   sleepImpl,
   draftFreeEditionImpl = draftFreeEdition,
+  personalStoryLedger,
 } = {}) {
   requireEditionDate(editionDate);
   if (!PERSONAL_FREE_RUN_MODES.includes(runMode)) {
@@ -318,6 +381,8 @@ export async function generatePersonalFreeEdition({
   const automation = personalFreeAutomationFromEnvironment(env);
   const { accountId, apiToken } = requireCloudflareConfiguration(env);
   const priorEditions = await loadCanonicalHistory(projectRoot);
+  const repeatLedger = personalStoryLedger ?? await loadPersonalStoryLedger(env, editionDate);
+  const repeatHistory = buildPersonalRepeatHistory(repeatLedger, { asOfDate: editionDate });
   const effectiveFeedSources = feedSources ?? FREE_FEED_SOURCES;
   const [policyText, promptText] = await Promise.all([
     readFile(path.join(projectRoot, "lib", "editorial", "prompts", "policy.ts"), "utf8"),
@@ -335,10 +400,12 @@ export async function generatePersonalFreeEdition({
     now,
     runMode,
     evidencePolicy: PERSONAL_FREE_EVIDENCE_POLICY,
-    requireComplete: true,
+    requireComplete: false,
+    minimumStoryCount: PERSONAL_FREE_MINIMUM_STORY_COUNT,
     lookbackHours: PERSONAL_FREE_LOOKBACK_HOURS,
     minimumScore: PERSONAL_FREE_MINIMUM_SCORE,
     minimumAuthoritativeScore: PERSONAL_FREE_MINIMUM_AUTHORITATIVE_SCORE,
+    recentRepeatHistory: repeatHistory.entries,
     maxTokens: PERSONAL_FREE_MAX_TOKENS,
     maxRequestBytes: PERSONAL_FREE_MAX_REQUEST_BYTES,
     researchImpl,
@@ -355,6 +422,7 @@ export async function generatePersonalFreeEdition({
     automation,
     runMode,
     expectedFeedSourceCount: effectiveFeedSources.length,
+    repeatHistory,
   });
 }
 

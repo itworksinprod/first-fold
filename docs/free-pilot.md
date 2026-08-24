@@ -11,8 +11,8 @@ paid provider.
 | Model | Fixed Workers AI `@cf/openai/gpt-oss-120b` | Fixed Workers AI `@cf/openai/gpt-oss-120b` | OpenAI Responses model configured by the paid workflow |
 | Discovery | Curated RSS, Atom, and JSON feeds | Same bounded feed catalog | Model-assisted open-web research |
 | Start | Cloudflare at 5:05 AM New York every day | Manual GitHub Actions run only | Manual GitHub Actions run only |
-| Evidence policy | Corroborated events or explicitly attributed authoritative originating reports; four desks required | Strict two-publisher corroboration for every non-quiet story | Paid workflow's direct-source policy |
-| Output | Ephemeral `content/personal-candidates/` file and one private email | Comparison PR containing `content/free-candidates/YYYY-MM-DD.json` | Public, publication-shaped candidate PR |
+| Evidence policy | Score of at least 70 plus hard vetoes; corroborated events or explicitly attributed authoritative originating reports; three of four desks required | Strict two-publisher corroboration for every non-quiet story | Paid workflow's direct-source policy |
+| Output | Ephemeral `content/personal-candidates/` file, one private email, and a bounded hash-only repeat-ledger artifact; candidate and email are never uploaded | Comparison PR containing `content/free-candidates/YYYY-MM-DD.json` | Public, publication-shaped candidate PR |
 | Publication | Never | Never | Exact-SHA human review and merge required |
 | Paid fallback | None | None | This path is itself explicitly billable |
 
@@ -136,13 +136,14 @@ Do not judge the free pilot only by how polished its prose sounds. The more impo
 - **Late feed arrival.** Eligibility uses the item's first-published time and the exact daily 5:00 AM–5:00 AM New York window. If a publisher adds an older eligible item to its feed only after that window closes, the pilot can miss it because there is no overlap or persistent free history yet.
 - **Narrower corroboration.** The source pool is intentionally bounded and remains first-party-heavy despite its five reviewed independent outlets, which represent four controlling publisher identities. A feed URL is context only, and two brands controlled by one organization still count as one publisher. If two distinct reviewed publishers do not supply factual article pages for an event, that desk stays quiet.
 - **No article-body research.** The model drafts from normalized feed titles and summaries. Link QA checks reachability and exact dossier binding, not the semantic contents of the article page. A human must open and read both cited pages before trusting, judging, or reusing any claim.
-- **No persistent free-selection history yet.** Comparison pull requests are closed without merging, so yesterday's free selections are not available as canonical deduplication history. Nonoverlapping daily first-published windows reduce repeats, but a different publisher can reintroduce the same event on a later day. Reviewers must flag and score cross-day duplicates manually. Persistent free history is a later milestone, not a hidden capability of this pilot.
+- **No persistent comparison-selection history yet.** Manual comparison pull requests are closed without merging, so yesterday's comparison selections are not available as canonical deduplication history. Nonoverlapping daily first-published windows reduce repeats, but a different publisher can reintroduce the same event on a later day. Reviewers must flag and score cross-day duplicates manually. The automatic Personal Morning Paper has its own separate hash-only 30-day ledger; that state is not shared with this comparison lane.
 - **Model variability.** Workers AI can still return malformed, incomplete, repetitive, or poorly reasoned copy. Deterministic validation catches structural failures, not every editorial or factual error.
 - **Shared daily quota.** Other Workers AI activity in the same Cloudflare account consumes the same daily free allocation. Capacity and rate-limit failures are also possible before the quota is exhausted.
 - **Quiet editions are expected.** When the source pool contains too little eligible evidence, the correct result is a quiet desk or a failed experiment—not filler.
 - **No automatic publication.** Even a strong free result remains outside the production approval and delivery chain during this pilot.
 
 The strict free comparison remains a manual evaluation tool. The automatic
-Personal Morning Paper is separately fail-closed: it sends only after all four
-desks validate, keeps `personalFreeResearch` provenance private, and never turns
-a comparison artifact into an email or public edition.
+Personal Morning Paper is separately fail-closed: it sends only after at least
+three desks validate, permits at most one honest quiet desk, keeps
+`personalFreeResearch` provenance and full candidate copy private, and never
+turns a comparison artifact into an email or public edition.

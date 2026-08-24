@@ -3,9 +3,11 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   AUTHORITATIVE_FREE_EVIDENCE_POLICY,
+  assessFeedCandidates,
   assertSufficientFeedCoverage,
   DEFAULT_MAX_TOTAL_FEED_BYTES,
   deduplicateFeedItems,
+  EDITORIAL_SCORECARD_MAXIMUMS,
   FREE_FEED_USER_AGENT,
   fetchFeedSource,
   filterItemsToReportingWindow,
@@ -15,6 +17,7 @@ import {
   selectFreeDeskCandidates,
 } from "../scripts/automation/free/feed-engine.mjs";
 import { FREE_FEED_SOURCES } from "../scripts/automation/free/feed-sources.mjs";
+import { fingerprintFeedCandidate } from "../scripts/automation/personal-story-ledger.mjs";
 
 const rssFixture = await readFile(
   new URL("../scripts/automation/free/fixtures/sample-rss.xml", import.meta.url),
@@ -53,6 +56,40 @@ function source(overrides = {}) {
 }
 
 const publicLookup = async () => [{ address: "8.8.8.8", family: 4 }];
+
+function editorialItem({
+  suffix,
+  title,
+  summary = "",
+  categories = [],
+  publisherKey = `publisher-${suffix}`,
+  relationship = "originating",
+  primaryEntity = "Example Technology Vendor",
+  deskPriors = {},
+  publishedAt = "2026-08-21T12:00:00.000Z",
+}) {
+  return {
+    itemId: `editorial-${suffix}`,
+    sourceId: `editorial-source-${suffix}`,
+    publisher: `Publisher ${suffix}`,
+    publisherKey,
+    relationship,
+    primaryEntity,
+    title,
+    summary,
+    url: `https://news.example/editorial-${suffix}`,
+    feedUrl: `https://feeds.example/editorial-${suffix}.xml`,
+    publishedAt,
+    updatedAt: null,
+    retrievedAt,
+    categories,
+    deskPriors: Object.fromEntries(
+      ["ai", "work-and-tools", "security-and-privacy", "platforms-and-power"]
+        .map((desk) => [desk, deskPriors[desk] ?? 0]),
+    ),
+    feedPosition: 0,
+  };
+}
 
 test("the reviewed manifest includes a bounded independent corroboration pool", () => {
   assert.equal(FREE_FEED_SOURCES.length, 24);
@@ -292,6 +329,230 @@ test("ranking is deterministic, source-grounded, and keeps quiet desks honest", 
   assert.equal(selection.desks["security-and-privacy"].emptyReason, null);
   assert.match(selection.desks.ai.emptyReason, /No independently corroborated AI & Models/);
   assert.match(selection.desks["work-and-tools"].emptyReason, /No independently corroborated Work & Tools/);
+});
+
+test("accepted candidates expose a five-part 70–100 editorial scorecard", () => {
+  const sharedTitle = "CISA orders agencies to patch actively exploited CVE-2026-4242";
+  const assessments = assessFeedCandidates({
+    items: [
+      editorialItem({
+        suffix: "cisa-originating",
+        title: sharedTitle,
+        summary: "The required mitigation has a deadline for federal administrators and customers.",
+        publisherKey: "cisa",
+        primaryEntity: "CISA",
+        categories: ["Security", "Vulnerability"],
+        deskPriors: { "security-and-privacy": 30 },
+      }),
+      editorialItem({
+        suffix: "cisa-independent",
+        title: sharedTitle,
+        summary: "Administrators should update affected systems before the federal deadline.",
+        publisherKey: "independent-security-desk",
+        relationship: "independent",
+        primaryEntity: null,
+        categories: ["Security", "CVE"],
+        deskPriors: { "security-and-privacy": 24 },
+      }),
+    ],
+    reportingWindow,
+  });
+
+  assert.equal(assessments.length, 1);
+  assert.equal(assessments[0].decision, "accepted");
+  assert.deepEqual(assessments[0].rejectionReasons, []);
+  const { ranking } = assessments[0].candidate;
+  assert.ok(ranking.score >= 70 && ranking.score <= 100);
+  assert.deepEqual(Object.keys(ranking.components), Object.keys(EDITORIAL_SCORECARD_MAXIMUMS));
+  assert.deepEqual(ranking.componentMaximums, EDITORIAL_SCORECARD_MAXIMUMS);
+  assert.equal(
+    ranking.score,
+    Object.values(ranking.components).reduce((sum, value) => sum + value, 0),
+  );
+  for (const [component, maximum] of Object.entries(EDITORIAL_SCORECARD_MAXIMUMS)) {
+    assert.ok(Number.isInteger(ranking.components[component]));
+    assert.ok(ranking.components[component] >= 0 && ranking.components[component] <= maximum);
+  }
+  assert.deepEqual(ranking.editorialValidation, {
+    decision: "accepted",
+    requiredScore: 70,
+    rejectionReasons: [],
+  });
+});
+
+test("the private 30-day ledger vetoes event, source, identifier, and fuzzy-title repeats", () => {
+  const item = editorialItem({
+    suffix: "repeat-ledger",
+    title: "AWS patches critical CVE-2026-4242 in cloud infrastructure",
+    summary: "Administrators should update affected compute services before the deadline.",
+    publisherKey: "amazon",
+    primaryEntity: "AWS",
+    categories: ["Security", "Cloud infrastructure", "CVE"],
+    deskPriors: { "security-and-privacy": 30 },
+  });
+  const options = {
+    items: [item],
+    reportingWindow,
+    minimumScore: 0,
+    minimumAuthoritativeScore: 0,
+    evidencePolicy: AUTHORITATIVE_FREE_EVIDENCE_POLICY,
+  };
+  const candidate = rankFeedCandidates(options)[0];
+  assert.ok(candidate);
+  const identity = fingerprintFeedCandidate(candidate);
+  const digest = (character) => character.repeat(64);
+  const unrelated = {
+    eventKeySha256: digest("1"),
+    sourceUrlSha256: [digest("2")],
+    strongIdentifierSha256: null,
+    entitySha256: digest("3"),
+    titleTokenSha256: [digest("4")],
+  };
+  const histories = [
+    identity,
+    { ...unrelated, sourceUrlSha256: [identity.sourceUrlSha256[0]] },
+    { ...unrelated, strongIdentifierSha256: identity.strongIdentifierSha256 },
+    {
+      ...unrelated,
+      entitySha256: identity.entitySha256,
+      titleTokenSha256: identity.titleTokenSha256,
+    },
+  ];
+  for (const history of histories) {
+    const assessment = assessFeedCandidates({ ...options, recentRepeatHistory: [history] })[0];
+    assert.equal(assessment.decision, "rejected");
+    assert.ok(assessment.rejectionReasons.some(({ code }) => code === "RECENT_DUPLICATE"));
+  }
+
+  assert.equal(
+    rankFeedCandidates({
+      ...options,
+      recentRepeatHistory: [{
+        ...unrelated,
+        entitySha256: identity.entitySha256,
+        titleTokenSha256: [digest("5"), digest("6")],
+      }],
+    }).length,
+    1,
+    "a different event about the same canonical entity remains eligible",
+  );
+  assert.throws(
+    () => rankFeedCandidates({ ...options, recentRepeatHistory: [{ ...unrelated, eventKeySha256: "bad" }] }),
+    /invalid entry/,
+  );
+});
+
+test("editorial hard vetoes return stable, reader-clear rejection reasons", () => {
+  const assessOne = (item) => assessFeedCandidates({
+    items: [item],
+    reportingWindow,
+    minimumScore: 0,
+    minimumAuthoritativeScore: 0,
+    evidencePolicy: AUTHORITATIVE_FREE_EVIDENCE_POLICY,
+  })[0];
+  const cases = [
+    [
+      "PROMOTIONAL_OR_DEAL_CONTENT",
+      editorialItem({
+        suffix: "deal",
+        title: "Best AI laptop deals: save $500 with this coupon",
+        summary: "Shop now for a limited-time promotional offer.",
+        categories: ["AI"],
+        deskPriors: { ai: 30 },
+      }),
+    ],
+    [
+      "REVIEW_OR_LIFESTYLE_CONTENT",
+      editorialItem({
+        suffix: "review",
+        title: "AI-powered mattress review: we tested the model for better sleep",
+        categories: ["AI"],
+        deskPriors: { ai: 30 },
+      }),
+    ],
+    [
+      "SPECULATIVE_OR_RUMOR",
+      editorialItem({
+        suffix: "rumor",
+        title: "Rumor: OpenAI could launch a new language model next week",
+        categories: ["AI"],
+        deskPriors: { ai: 30 },
+      }),
+    ],
+    [
+      "ROUTINE_OR_MINOR_ANNOUNCEMENT",
+      editorialItem({
+        suffix: "roundup",
+        title: "GitHub weekly developer tools roundup and podcast",
+        categories: ["Developer tools"],
+        deskPriors: { "work-and-tools": 30 },
+      }),
+    ],
+    [
+      "INSUFFICIENT_TOPICALITY",
+      editorialItem({
+        suffix: "garden",
+        title: "City opens a new public garden",
+        summary: "Residents attended the opening ceremony.",
+        deskPriors: { ai: 30 },
+      }),
+    ],
+  ];
+
+  for (const [expectedCode, item] of cases) {
+    const assessment = assessOne(item);
+    assert.equal(assessment.decision, "rejected");
+    const reason = assessment.rejectionReasons.find(({ code }) => code === expectedCode);
+    assert.ok(reason, `${expectedCode} is reported`);
+    assert.ok(reason.message.length >= 20, `${expectedCode} includes a clear explanation`);
+  }
+
+  const independentOnly = assessOne(editorialItem({
+    suffix: "independent-only-veto",
+    title: "Independent desk reports a critical security vulnerability requiring a patch",
+    summary: "Administrators should update affected systems.",
+    relationship: "independent",
+    primaryEntity: null,
+    categories: ["Security", "Vulnerability"],
+    deskPriors: { "security-and-privacy": 30 },
+  }));
+  assert.equal(independentOnly.decision, "rejected");
+  assert.match(
+    independentOnly.rejectionReasons.find(({ code }) => code === "INSUFFICIENT_SOURCE_EVIDENCE")?.message ?? "",
+    /originating source|two reviewed publishers/,
+  );
+});
+
+test("a configurable score gate records the exact score and threshold", () => {
+  const item = editorialItem({
+    suffix: "threshold",
+    title: "Example project updates its browser engine",
+    summary: "The developer workflow changes code review automation.",
+    categories: ["Developer tools"],
+    deskPriors: { "work-and-tools": 20 },
+  });
+  const baseline = assessFeedCandidates({
+    items: [item],
+    reportingWindow,
+    minimumScore: 0,
+    minimumAuthoritativeScore: 0,
+    evidencePolicy: AUTHORITATIVE_FREE_EVIDENCE_POLICY,
+  })[0];
+  assert.equal(baseline.decision, "accepted");
+  const requiredScore = baseline.candidate.ranking.score + 1;
+  const rejected = assessFeedCandidates({
+    items: [item],
+    reportingWindow,
+    minimumScore: requiredScore,
+    minimumAuthoritativeScore: requiredScore,
+    evidencePolicy: AUTHORITATIVE_FREE_EVIDENCE_POLICY,
+  })[0];
+  assert.equal(rejected.decision, "rejected");
+  assert.equal(rejected.candidate.ranking.editorialValidation.requiredScore, requiredScore);
+  assert.equal(
+    rejected.rejectionReasons.find(({ code }) => code === "BELOW_EDITORIAL_THRESHOLD")?.message,
+    `The editorial score ${baseline.candidate.ranking.score} is below the required ${requiredScore}.`,
+  );
 });
 
 test("feed context never substitutes for a second item from a distinct publisher", () => {
