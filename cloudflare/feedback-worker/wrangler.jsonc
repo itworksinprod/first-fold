@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "first-fold-personal-feedback",
+  "main": "src/worker.mjs",
+  "compatibility_date": "2026-08-25",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 0.1
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "first-fold-personal-feedback",
+      "database_id": "e809431e-8844-4d5d-b3d1-5cbfdb691575",
+      "migrations_dir": "migrations"
+    }
+  ]
+  // Runtime secret (never put it in vars): PERSONAL_FEEDBACK_SIGNING_KEY
+}

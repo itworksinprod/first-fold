@@ -3,6 +3,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { validateCanonicalEdition } from "../edition-content.mjs";
+import { buildPersonalFeedbackLinkMap } from "./personal-feedback.mjs";
 import { PERSONAL_STORY_LEDGER_SCHEMA_VERSION } from "./personal-story-ledger.mjs";
 
 export const RESEND_EMAIL_ENDPOINT = "https://api.resend.com/emails";
@@ -45,6 +46,17 @@ const RESEND_KEY_PATTERN = /^re_[A-Za-z0-9_-]{8,508}$/;
 const EMAIL_PATTERN = /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
 const RESPONSE_ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/g;
+const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/;
+const FEEDBACK_TOKEN_FRAGMENT_PATTERN = /^#token=[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
+const MAX_FEEDBACK_URL_LENGTH = 4_096;
+const FEEDBACK_CATEGORIES = Object.freeze([
+  "Useful",
+  "Not relevant",
+  "Repeated",
+  "Wrong desk",
+  "Missed story",
+  "Correction",
+]);
 const DESKS = Object.freeze([
   ["ai", "AI & Models"],
   ["work-and-tools", "Work & Tools"],
@@ -89,6 +101,114 @@ function requireSourceUrl(value) {
     throw new Error("Personal email candidate contains an invalid source URL.");
   }
   return parsed.href;
+}
+
+function requireFeedbackUrl(value) {
+  if (
+    typeof value !== "string" ||
+    value.length < 1 ||
+    value.length > MAX_FEEDBACK_URL_LENGTH ||
+    value !== value.trim() ||
+    CONTROL_CHARACTER.test(value)
+  ) {
+    throw new Error("Personal email feedback links are invalid.");
+  }
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error("Personal email feedback links are invalid.");
+  }
+  if (
+    parsed.protocol !== "https:" ||
+    parsed.username ||
+    parsed.password ||
+    parsed.search ||
+    !FEEDBACK_TOKEN_FRAGMENT_PATTERN.test(parsed.hash) ||
+    parsed.href.length > MAX_FEEDBACK_URL_LENGTH
+  ) {
+    throw new Error("Personal email feedback links are invalid.");
+  }
+  return parsed;
+}
+
+function selectedFeedbackStories(candidate) {
+  return DESKS.flatMap(([desk]) => {
+    const story = candidate.desks[desk].story;
+    return story === null ? [] : [{ id: story.id, desk }];
+  });
+}
+
+function normalizeFeedbackLinks(candidate, feedbackLinks) {
+  if (feedbackLinks === undefined || feedbackLinks === null) return null;
+  if (
+    typeof feedbackLinks !== "object" ||
+    Array.isArray(feedbackLinks) ||
+    Object.keys(feedbackLinks).length !== 2 ||
+    !Object.hasOwn(feedbackLinks, "edition") ||
+    !Object.hasOwn(feedbackLinks, "stories") ||
+    typeof feedbackLinks.stories !== "object" ||
+    feedbackLinks.stories === null ||
+    Array.isArray(feedbackLinks.stories)
+  ) {
+    throw new Error("Personal email feedback links are invalid.");
+  }
+
+  const expectedStories = selectedFeedbackStories(candidate);
+  const expectedStoryIds = new Set(expectedStories.map(({ id }) => id));
+  const suppliedStoryIds = Object.keys(feedbackLinks.stories);
+  if (
+    suppliedStoryIds.length !== expectedStoryIds.size ||
+    suppliedStoryIds.some((storyId) => !expectedStoryIds.has(storyId))
+  ) {
+    throw new Error("Personal email feedback links are invalid.");
+  }
+
+  const editionUrl = requireFeedbackUrl(feedbackLinks.edition);
+  const feedbackTarget = `${editionUrl.origin}${editionUrl.pathname}`;
+  const seenLinks = new Set([editionUrl.href]);
+  const stories = Object.fromEntries(expectedStories.map(({ id }) => {
+    const storyUrl = requireFeedbackUrl(feedbackLinks.stories[id]);
+    if (
+      `${storyUrl.origin}${storyUrl.pathname}` !== feedbackTarget ||
+      seenLinks.has(storyUrl.href)
+    ) {
+      throw new Error("Personal email feedback links are invalid.");
+    }
+    seenLinks.add(storyUrl.href);
+    return [id, storyUrl.href];
+  }));
+
+  return { edition: editionUrl.href, stories };
+}
+
+function optionalFeedbackLinks(candidate, {
+  feedbackLinks,
+  feedbackBaseUrl,
+  feedbackSigningKey,
+  feedbackNow,
+}) {
+  if (feedbackLinks !== undefined && feedbackLinks !== null) {
+    return normalizeFeedbackLinks(candidate, feedbackLinks);
+  }
+  const hasBaseUrl = typeof feedbackBaseUrl === "string" && feedbackBaseUrl.trim().length > 0;
+  const hasSigningKey =
+    typeof feedbackSigningKey === "string" && feedbackSigningKey.trim().length > 0;
+  if (!hasBaseUrl || !hasSigningKey) return null;
+
+  try {
+    return normalizeFeedbackLinks(candidate, buildPersonalFeedbackLinkMap({
+      editionDate: candidate.editionDate,
+      issueNumber: candidate.issueNumber,
+      stories: selectedFeedbackStories(candidate),
+    }, {
+      baseUrl: feedbackBaseUrl,
+      signingKey: feedbackSigningKey,
+      ...(feedbackNow === undefined ? {} : { now: feedbackNow }),
+    }));
+  } catch {
+    return null;
+  }
 }
 
 function formatEditionDate(editionDate) {
@@ -413,7 +533,7 @@ export function assertPersonalEmailCandidate(candidate) {
   return validation;
 }
 
-function renderStoryHtml(story) {
+function renderStoryHtml(story, feedbackUrl) {
   const receipt = buildStoryValidationReceipt(story);
   const sources = story.sources.map((source) => {
     const href = escapeHtml(requireSourceUrl(source.url));
@@ -440,10 +560,11 @@ function renderStoryHtml(story) {
     </div>
     <p style="margin:0 0 8px;color:#171512;font:700 12px/1.2 Arial,Helvetica,sans-serif;letter-spacing:1.1px;text-transform:uppercase;">Sources</p>
     <ul style="margin:0;padding:0;">${sources}
-    </ul>`;
+    </ul>${feedbackUrl === undefined ? "" : `
+    <p style="margin:22px 0 0;"><a href="${escapeHtml(feedbackUrl)}" style="display:inline-block;padding:9px 13px;border:1px solid #712b27;color:#712b27;font:700 12px/1.2 Arial,Helvetica,sans-serif;text-decoration:none;">Review this story</a></p>`}`;
 }
 
-function renderStoryText(story) {
+function renderStoryText(story, feedbackUrl) {
   const receipt = buildStoryValidationReceipt(story);
   const sources = story.sources.map((source) => {
     const url = requireSourceUrl(source.url);
@@ -468,16 +589,17 @@ function renderStoryText(story) {
     "",
     "SOURCES",
     sources,
+    ...(feedbackUrl === undefined ? [] : ["", "REVIEW THIS STORY", feedbackUrl]),
   ].join("\n");
 }
 
-function renderDeskHtml(candidate, deskKey, deskLabel) {
+function renderDeskHtml(candidate, deskKey, deskLabel, feedbackLinks) {
   const page = candidate.desks[deskKey];
   const content = page.story === null
     ? `
       <p style="margin:10px 0 7px;color:#171512;font:700 24px/1.1 Georgia,Times New Roman,serif;">Nothing cleared the bar today.</p>
       <p style="margin:0;color:#5b554c;font:15px/1.55 Georgia,Times New Roman,serif;">${escapeHtml(page.emptyReason)}</p>`
-    : renderStoryHtml(page.story);
+    : renderStoryHtml(page.story, feedbackLinks?.stories[page.story.id]);
   return `
   <tr>
     <td style="padding:30px 34px;border-top:2px solid #24211d;">
@@ -486,19 +608,20 @@ function renderDeskHtml(candidate, deskKey, deskLabel) {
   </tr>`;
 }
 
-function renderDeskText(candidate, deskKey, deskLabel) {
+function renderDeskText(candidate, deskKey, deskLabel, feedbackLinks) {
   const page = candidate.desks[deskKey];
   return page.story === null
     ? `${deskLabel.toUpperCase()} — QUIET DESK\nNothing cleared the bar today.\n${compactText(page.emptyReason)}`
-    : `${deskLabel.toUpperCase()}\n${renderStoryText(page.story)}`;
+    : `${deskLabel.toUpperCase()}\n${renderStoryText(page.story, feedbackLinks?.stories[page.story.id])}`;
 }
 
 /**
  * Convert one validated free candidate into a static, email-client-safe paper.
  * Dynamic editorial and source strings are escaped before entering the HTML.
  */
-export function renderPersonalEditionEmail(candidate) {
+export function renderPersonalEditionEmail(candidate, { feedbackLinks } = {}) {
   assertPersonalEmailCandidate(candidate);
+  const normalizedFeedbackLinks = normalizeFeedbackLinks(candidate, feedbackLinks);
   const displayDate = formatEditionDate(candidate.editionDate);
   const subject = `First Fold — ${displayDate}`;
   const research = candidate.provenance.personalFreeResearch;
@@ -531,8 +654,32 @@ export function renderPersonalEditionEmail(candidate) {
       research.runUrl,
       "",
     ];
-  const deskHtml = DESKS.map(([key, label]) => renderDeskHtml(candidate, key, label)).join("");
-  const deskText = DESKS.map(([key, label]) => renderDeskText(candidate, key, label)).join("\n\n----------------------------------------\n\n");
+  const deskHtml = DESKS.map(([key, label]) =>
+    renderDeskHtml(candidate, key, label, normalizedFeedbackLinks)).join("");
+  const deskText = DESKS.map(([key, label]) =>
+    renderDeskText(candidate, key, label, normalizedFeedbackLinks))
+    .join("\n\n----------------------------------------\n\n");
+  const feedbackCategories = FEEDBACK_CATEGORIES.join(" · ");
+  const feedbackHtml = normalizedFeedbackLinks === null
+    ? ""
+    : `
+        <tr>
+          <td style="padding:24px 34px;border-top:2px solid #24211d;background:#e9e2d5;">
+            <p style="margin:0;color:#712b27;font:700 12px/1.2 Arial,Helvetica,sans-serif;letter-spacing:1.4px;text-transform:uppercase;">Help shape tomorrow’s paper</p>
+            <p style="margin:8px 0 15px;color:#4f493f;font:13px/1.5 Arial,Helvetica,sans-serif;">${escapeHtml(feedbackCategories)}. Feedback is reviewed by a person and never changes editorial policy automatically.</p>
+            <p style="margin:0;"><a href="${escapeHtml(normalizedFeedbackLinks.edition)}" style="display:inline-block;margin:0 8px 8px 0;padding:9px 13px;background:#712b27;color:#ffffff;font:700 12px/1.2 Arial,Helvetica,sans-serif;text-decoration:none;">Review this edition</a><a href="${escapeHtml(normalizedFeedbackLinks.edition)}" style="display:inline-block;margin:0 0 8px;padding:9px 13px;border:1px solid #712b27;color:#712b27;font:700 12px/1.2 Arial,Helvetica,sans-serif;text-decoration:none;">Report a missed story</a></p>
+          </td>
+        </tr>`;
+  const feedbackText = normalizedFeedbackLinks === null
+    ? []
+    : [
+      "HELP SHAPE TOMORROW’S PAPER",
+      feedbackCategories,
+      "Feedback is reviewed by a person and never changes editorial policy automatically.",
+      `Review this edition: ${normalizedFeedbackLinks.edition}`,
+      `Report a missed story: ${normalizedFeedbackLinks.edition}`,
+      "",
+    ];
 
   const html = `<!doctype html>
 <html lang="en">
@@ -556,7 +703,7 @@ export function renderPersonalEditionEmail(candidate) {
             <p style="margin:14px 0 0;color:#6d665c;font:13px/1.4 Arial,Helvetica,sans-serif;">${escapeHtml(String(candidate.frontPage.estimatedMinutes))} minute read · ${escapeHtml(storyCountLabel)} · ${escapeHtml(deliveryCheckLabel)}</p>
             <p style="margin:8px 0 0;color:#6d665c;font:12px/1.4 Arial,Helvetica,sans-serif;">Research receipt: ${escapeHtml(String(research.successfulFeedSourceCount))} of ${escapeHtml(String(research.feedSourceCount))} reviewed feeds completed · ${escapeHtml(researchPassLabel)} · Story threshold ${PERSONAL_RESEARCH_MINIMUM_SCORE}/100</p>
           </td>
-        </tr>${pilotHtml}${deskHtml}
+        </tr>${pilotHtml}${deskHtml}${feedbackHtml}
         <tr>
           <td style="padding:24px 34px;border-top:3px double #24211d;text-align:center;">
             <p style="margin:0;color:#171512;font:700 18px/1.2 Georgia,Times New Roman,serif;">You’re caught up.</p>
@@ -586,6 +733,7 @@ export function renderPersonalEditionEmail(candidate) {
     "",
     "========================================",
     "",
+    ...feedbackText,
     "YOU’RE CAUGHT UP.",
     "Your private, quality-gated First Fold. No public edition was created.",
   ].join("\n");
@@ -712,10 +860,23 @@ async function performResendRequest({ fetchImpl, apiKey, requestBody, idempotenc
 export async function sendPersonalEditionEmail(candidate, {
   apiKey = process.env.RESEND_API_KEY,
   recipient = process.env.PERSONAL_PAPER_EMAIL,
+  feedbackLinks,
+  feedbackBaseUrl = process.env.PERSONAL_FEEDBACK_BASE_URL,
+  feedbackSigningKey = process.env.PERSONAL_FEEDBACK_SIGNING_KEY,
+  feedbackNow,
   fetchImpl = globalThis.fetch,
   timeoutMs = DEFAULT_RESEND_TIMEOUT_MS,
 } = {}) {
-  const rendered = renderPersonalEditionEmail(candidate);
+  assertPersonalEmailCandidate(candidate);
+  const resolvedFeedbackLinks = optionalFeedbackLinks(candidate, {
+    feedbackLinks,
+    feedbackBaseUrl,
+    feedbackSigningKey,
+    feedbackNow,
+  });
+  const rendered = renderPersonalEditionEmail(candidate, {
+    feedbackLinks: resolvedFeedbackLinks,
+  });
   const normalizedKey = requireApiKey(apiKey);
   const normalizedRecipient = requireRecipient(recipient);
   const normalizedTimeout = requireTimeout(timeoutMs);
@@ -755,7 +916,12 @@ export async function sendPersonalEditionEmail(candidate, {
       }),
       timeout,
     ]);
-    return { id, editionDate: candidate.editionDate, idempotencyKey };
+    return {
+      id,
+      editionDate: candidate.editionDate,
+      idempotencyKey,
+      feedbackEnabled: resolvedFeedbackLinks !== null,
+    };
   } catch (error) {
     if (error instanceof SafeDeliveryError) throw error;
     throw new Error("Personal email delivery failed safely.");
@@ -787,7 +953,9 @@ async function main() {
   }
 
   const result = await sendPersonalEditionEmail(candidate);
-  console.log(`Sent private First Fold edition ${result.editionDate}.`);
+  console.log(
+    `Sent private First Fold edition ${result.editionDate}; feedback links ${result.feedbackEnabled ? "enabled" : "disabled"}.`,
+  );
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { validateCanonicalEdition } from "../scripts/edition-content.mjs";
+import { buildPersonalFeedbackLinkMap } from "../scripts/automation/personal-feedback.mjs";
 import {
   MAX_RESEND_REQUEST_BYTES,
   MAX_RESEND_RESPONSE_BYTES,
@@ -199,6 +200,20 @@ function candidateWithStoryCount(storyCount) {
   return candidate;
 }
 
+function feedbackLinksFor(candidate) {
+  return buildPersonalFeedbackLinkMap({
+    editionDate: candidate.editionDate,
+    issueNumber: candidate.issueNumber,
+    stories: Object.values(candidate.desks)
+      .filter((page) => page.story !== null)
+      .map((page) => ({ id: page.story.id, desk: page.desk })),
+  }, {
+    baseUrl: "https://feedback.example.test/respond",
+    signingKey: "f".repeat(32),
+    now: new Date("2026-08-19T10:00:00.000Z"),
+  });
+}
+
 function successResponse(id = "email_test_123") {
   return new Response(JSON.stringify({ id }), {
     status: 200,
@@ -255,6 +270,62 @@ test("the renderer produces a complete static newspaper with sources and text fa
   assert.match(rendered.text, /THE MORNING BRIEF · REGULAR EDITION/);
   assert.match(rendered.text, /4 stories · Source checked before delivery/);
   assert.match(rendered.text, /Research receipt: 17 of 17 reviewed feeds completed · 1 research pass · Story threshold 70\/100/);
+});
+
+test("optional private feedback links cover each story and the whole edition", () => {
+  const candidate = personalCandidate();
+  const rendered = renderPersonalEditionEmail(candidate, {
+    feedbackLinks: feedbackLinksFor(candidate),
+  });
+
+  assert.equal(rendered.html.match(/>Review this story</g)?.length, 4);
+  assert.equal(rendered.text.match(/REVIEW THIS STORY/g)?.length, 4);
+  assert.equal(rendered.html.match(/>Review this edition</g)?.length, 1);
+  assert.equal(rendered.html.match(/>Report a missed story</g)?.length, 1);
+  assert.match(rendered.text, /Review this edition: https:\/\/feedback\.example\.test\//);
+  assert.match(rendered.text, /Report a missed story: https:\/\/feedback\.example\.test\//);
+  for (const category of [
+    "Useful",
+    "Not relevant",
+    "Repeated",
+    "Wrong desk",
+    "Missed story",
+    "Correction",
+  ]) {
+    assert.match(rendered.html, new RegExp(category));
+    assert.match(rendered.text, new RegExp(category));
+  }
+  assert.doesNotMatch(rendered.html, /<form|<script|javascript:/i);
+});
+
+test("quiet editions retain edition feedback without story-specific links", () => {
+  const candidate = candidateWithStoryCount(0);
+  const rendered = renderPersonalEditionEmail(candidate, {
+    feedbackLinks: feedbackLinksFor(candidate),
+  });
+
+  assert.doesNotMatch(rendered.html, />Review this story</);
+  assert.doesNotMatch(rendered.text, /REVIEW THIS STORY/);
+  assert.match(rendered.html, />Review this edition</);
+  assert.match(rendered.html, />Report a missed story</);
+});
+
+test("feedback link maps fail closed when their shape or URLs do not match the edition", () => {
+  const candidate = personalCandidate();
+  const valid = feedbackLinksFor(candidate);
+  const missingStory = structuredClone(valid);
+  delete missingStory.stories[candidate.desks.ai.story.id];
+  const extraStory = structuredClone(valid);
+  extraStory.stories["not-an-edition-story"] = "https://feedback.example.test/respond#extra";
+  const unsafe = structuredClone(valid);
+  unsafe.edition = "javascript:alert(1)";
+
+  for (const feedbackLinks of [missingStory, extraStory, unsafe, { edition: valid.edition }]) {
+    assert.throws(
+      () => renderPersonalEditionEmail(candidate, { feedbackLinks }),
+      /feedback links are invalid/,
+    );
+  }
 });
 
 test("evidence labels come from the trusted receipt rather than display publisher aliases", () => {
@@ -432,6 +503,7 @@ test("the sender posts one bounded Resend request with fixed identity and date i
     id: "email_test_123",
     editionDate: "2026-08-19",
     idempotencyKey: "first-fold-personal-2026-08-19",
+    feedbackEnabled: false,
   });
   assert.equal(personalEditionIdempotencyKey(candidate.editionDate), result.idempotencyKey);
   assert.equal(calls.length, 1);
@@ -468,6 +540,67 @@ test("the sender posts one bounded Resend request with fixed identity and date i
     });
   }
   assert.deepEqual(observedKeys, [result.idempotencyKey, result.idempotencyKey]);
+});
+
+test("the sender enables signed feedback only for complete valid configuration", async () => {
+  const candidate = personalCandidate();
+  let configuredRequest;
+  const configured = await sendPersonalEditionEmail(candidate, {
+    apiKey: API_KEY,
+    recipient: RECIPIENT,
+    feedbackBaseUrl: "https://feedback.example.test/respond",
+    feedbackSigningKey: "f".repeat(32),
+    feedbackNow: new Date("2026-08-19T10:00:00.000Z"),
+    fetchImpl: async (_url, request) => {
+      configuredRequest = request;
+      return successResponse("email_feedback_enabled");
+    },
+  });
+  const configuredBody = JSON.parse(configuredRequest.body);
+  assert.equal(configured.feedbackEnabled, true);
+  assert.equal(configuredBody.html.includes("Review this edition"), true);
+  assert.equal(configuredBody.html.match(/>Review this story</g)?.length, 4);
+  assert.equal(configuredBody.text.includes("Report a missed story:"), true);
+
+  for (const configuration of [
+    { feedbackBaseUrl: "https://feedback.example.test/respond", feedbackSigningKey: "" },
+    { feedbackBaseUrl: "", feedbackSigningKey: "f".repeat(32) },
+    { feedbackBaseUrl: "javascript:alert(1)", feedbackSigningKey: "f".repeat(32) },
+  ]) {
+    let requestBody;
+    const result = await sendPersonalEditionEmail(candidate, {
+      apiKey: API_KEY,
+      recipient: RECIPIENT,
+      ...configuration,
+      fetchImpl: async (_url, request) => {
+        requestBody = JSON.parse(request.body);
+        return successResponse("email_feedback_disabled");
+      },
+    });
+    assert.equal(result.feedbackEnabled, false);
+    assert.equal(requestBody.html.includes("Review this edition"), false);
+    assert.equal(requestBody.text.includes("Report a missed story:"), false);
+  }
+});
+
+test("an explicit validated link map can be used without signing configuration", async () => {
+  const candidate = personalCandidate();
+  let body;
+  const result = await sendPersonalEditionEmail(candidate, {
+    apiKey: API_KEY,
+    recipient: RECIPIENT,
+    feedbackLinks: feedbackLinksFor(candidate),
+    feedbackBaseUrl: "",
+    feedbackSigningKey: "",
+    fetchImpl: async (_url, request) => {
+      body = JSON.parse(request.body);
+      return successResponse("email_feedback_link_map");
+    },
+  });
+
+  assert.equal(result.feedbackEnabled, true);
+  assert.equal(body.html.includes("Review this edition"), true);
+  assert.equal(body.text.includes("REVIEW THIS STORY"), true);
 });
 
 test("invalid secrets and recipients fail before fetch without exposing their values", async () => {

@@ -10,7 +10,7 @@
     "edition:new": "node scripts/new-edition.mjs",
     "edition:free": "node scripts/automation/generate-free-edition.mjs",
     "pretest": "npm run build",
-    "test": "node --test tests/*.test.mjs"
+    "test": "node --test tests/*.test.mjs cloudflare/feedback-worker/test/*.test.mjs"
   },
   "engines": {
     "node": ">=20"

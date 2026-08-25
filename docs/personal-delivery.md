@@ -32,10 +32,11 @@ succeeded end to end.
 | Recipient | Exactly the one address stored in `PERSONAL_PAPER_EMAIL` |
 | Sender | `First Fold <onboarding@resend.dev>`, Resend's self-only testing sender |
 | Message | Static, escaped HTML plus an equivalent plain-text part; no client-side JavaScript |
-| Repository permissions | Read-only contents and Actions metadata; no pull-request, branch, commit, Pages, or public-content write permission; the workflow may download and upload only its bounded private-state ledger artifact |
-| Persistence | The candidate remains on the ephemeral runner; a keyed-HMAC-only ledger artifact retains at most the previous 30 dates plus first-five-pilot progress, never reusable unkeyed story hashes, paper copy, headlines, source URLs, publisher names, recipient data, or provider IDs |
+| Repository permissions | Read-only contents and Actions metadata; no pull-request, branch, commit, Pages, or public-content write permission; the workflow may download its bounded private-state ledger and upload only that ledger plus a separately validated public-safe diagnostic report |
+| Persistence | The candidate remains on the ephemeral runner; a keyed-HMAC-only ledger artifact retains bounded repeat state for 35 days, while an optional source-health artifact retains only public-safe operational counts for 14 days. Optional feedback stores one minimal response in D1, never the recipient, raw token, headline, story copy, or source URL |
 | Quiet edition | Healthy, internally consistent research with zero qualifying stories produces a deterministic all-quiet paper and research receipt without a model call; it is delivered and recorded in the ledger |
-| Failure | Feed coverage, quota, model, repeat-ledger, source, schema, rendering, configuration, or send-precondition errors remain failed runs and send no email |
+| Failure | Feed coverage, quota, model, repeat-ledger, source, schema, rendering, required configuration, or send-precondition errors remain failed runs and send no email. Missing or broken advisory feedback and source-health reporting do not block an otherwise valid delivery |
+| Feedback | Optional signed story and edition links accept one private, human-reviewed response for 14 days. Feedback never changes scores, thresholds, vetoes, desk assignment, sources, or automation by itself |
 | Duplicate control | Suppress an earlier successful same-day workflow, veto matching story fingerprints from the previous 30 calendar dates, then make at most one Resend request with `Idempotency-Key: first-fold-personal-YYYY-MM-DD`; no application-level send retry |
 | Paid fallback | None |
 
@@ -122,7 +123,13 @@ At the matching 5:05 AM event on every day:
    This ordering prevents an artifact-service failure after delivery from losing
    the repeat state. The workflow makes no commit, branch, pull request, Pages
    dispatch, or public archive change, and never uploads the candidate or email
-   body.
+   body. Separately, the generator renders a public-safe source-health snapshot
+   outside the checkout. The workflow revalidates its exact JSON and HTML before
+   offering only those two files as a uniquely named 14-day diagnostic artifact.
+   A missing, malformed, or failed diagnostic upload is reported but cannot
+   suppress the email. When the optional feedback Worker is configured, the
+   final send step also adds signed review links; those credentials exist only
+   in that final step.
 
 The 6:00 AM companion is the separate weekday public Pages delivery gate. It
 contains no model call or research step and publishes only a valid edition
@@ -181,32 +188,82 @@ remains a hard failure.
 GitHub-hosted runners are ephemeral, but the complete transaction is not
 retention-free. GitHub retains workflow metadata and logs; Cloudflare processes
 the bounded research request and response; Resend processes the recipient and
-message; and the mailbox provider stores the delivered email. The workflow must
+message; and the mailbox provider stores the delivered email. If feedback is
+enabled, Cloudflare also processes the form request and D1 stores its minimized
+review record. The workflow must
 not print the recipient, API tokens, candidate, or email body to logs and must
-not upload them as artifacts. Only the bounded keyed-HMAC ledger may be uploaded. See
+not upload them as artifacts. Only the bounded keyed-HMAC ledger and the
+separately validated public-safe source-health JSON and HTML may be uploaded. See
 GitHub's
 [hosted-runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners),
 Cloudflare's [privacy policy](https://www.cloudflare.com/privacypolicy/), and
 Resend's [privacy policy](https://resend.com/legal/privacy-policy).
 
-## First-five quality pilot
+## First-five quality pilot and advisory feedback
 
 The first five successfully sent editions are labeled privately as **Quality
 pilot · Edition N of 5**. Review each received paper for importance, relevance,
 source quality, reader usefulness, freshness, desk assignment, and repeat
 accuracy. Record false positives, missed stories, and any claim that needed
-correction. The software tracks only the ordinal in its keyed ledger; it does not
-store your editorial feedback in the repository. A successfully delivered
+correction. A successfully delivered
 regular, slim, or quiet edition each advances this count once.
+
+When private feedback is enabled, every populated story has **Review this
+story**, and every edition has **Review this edition** and **Report a missed
+story**. The categories are Useful, Not relevant, Repeated, Wrong desk, Missed
+story, and Correction. Opening a link does not submit anything: the signed
+token stays in the URL fragment, the form removes it from the visible address,
+and a deliberate submit click is required. The token is scoped to one edition
+or story, expires exactly 14 days after generation, and is stored only as a
+SHA-256 digest after a successful response.
+
+The D1 row contains only the token digest, edition date and issue number, scope,
+bounded story ID and desk when applicable, category, a bounded note, and a
+creation timestamp. It contains no recipient, raw token, headline, story copy,
+source URL, user agent, or application-recorded IP address. The Worker exposes
+no read or export route; the owner reviews rows deliberately in Cloudflare D1.
+Because notes persist until the owner deletes them, do not enter email
+addresses, links, confidential information, or other sensitive data.
+
+This is an evidence-gathering loop, not an automatic optimizer. No feedback row
+can trigger research, edit policy, lower a threshold, publish content, or send
+email. After enough observations, a human may propose a reviewed code or policy
+change.
 
 After five reviewed deliveries, summarize the evidence and propose any weight,
 threshold, or veto changes for explicit owner approval. Do not tune the policy
 automatically from five observations and do not weaken a threshold merely to
 fill a desk.
 
+## Source-health diagnostics
+
+Generation receives `PERSONAL_SOURCE_HEALTH_ROOT` only for its own step and
+writes under the GitHub runner's temporary directory, never the repository.
+Each attempt reports checked-in source IDs and publisher labels, safe status and
+failure codes, parsed and eligible item counts, rejection counts, desk coverage,
+retry outcome, and selected counts. It excludes feed and article URLs, raw feed
+or article text, story identifiers, recipient data, model responses, provider
+IDs, hashes, and secrets.
+
+The generator adds a compact Markdown view to the GitHub run summary. The
+workflow then independently validates `source-health.json` and confirms that
+`source-health.html` is byte-for-byte the trusted renderer's output. Only those
+two files are uploaded as
+`personal-source-health-<run-id>-<edition-date>` for 14 days. The Markdown file,
+candidate, email, ledger, and credentials are not included in that artifact.
+Because this is a public repository, the report is deliberately public-safe and
+must be treated as readable by visitors.
+
+Open the artifact's HTML file for the per-attempt source and desk dashboard.
+This report is diagnostic only: it cannot participate in story selection or
+change delivery. If capture, validation, or upload fails, the summary says it
+is unavailable and the valid paper continues.
+
 ## One-time owner setup
 
-The automatic lane uses one repository variable and three repository secrets:
+The automatic lane uses one required repository variable and three required
+repository secrets. Private feedback adds one optional secret; its reviewed
+Worker URL is fixed in the final email step:
 
 | Name | GitHub type | Purpose |
 | --- | --- | --- |
@@ -214,6 +271,7 @@ The automatic lane uses one repository variable and three repository secrets:
 | `CLOUDFLARE_AI_API_TOKEN` | Actions secret | Narrow token allowed to call Workers AI and the HMAC key for repeat identities |
 | `RESEND_API_KEY` | Actions secret | Sending-only Resend credential |
 | `PERSONAL_PAPER_EMAIL` | Actions secret | One self-only recipient address |
+| `PERSONAL_FEEDBACK_SIGNING_KEY` | Actions secret, optional | Dedicated 32-byte-or-longer key shared only with the feedback Worker |
 
 `OPENAI_API_KEY` is not required and is never read by this automatic workflow.
 
@@ -250,7 +308,43 @@ Do not use a display-name form, recipient list, `CC`, `BCC`, variable, or
 workflow input for the recipient. Resend shows an API key only once; replace the
 secret if its value is uncertain.
 
-### 3. Deploy and verify the dispatcher
+### 3. Optionally enable private feedback
+
+The feedback service is isolated in `cloudflare/feedback-worker`. It has one D1
+binding, `DB`, and one runtime secret, `PERSONAL_FEEDBACK_SIGNING_KEY`. It has no
+Workers AI, GitHub, Resend, recipient, or publishing credential.
+
+The reviewed service is deployed at
+`https://first-fold-personal-feedback.h-josue122.workers.dev/`, and that exact
+HTTPS root is fixed in the workflow's final send step. It is not a repository
+variable or workflow input, so an untrusted dispatch cannot redirect signed
+links to another host.
+
+Create a dedicated high-entropy signing key of at least 32 bytes and retain it
+in a password manager. Use the same value for the Worker's interactive secret
+and the GitHub Actions secret; never place it in `wrangler.jsonc`, a shell
+command argument, a committed file, a screenshot, or a log.
+
+The database ID is already bound in the reviewed `wrangler.jsonc`. To apply the
+checked-in migration and redeploy that same service from
+`cloudflare/feedback-worker`, run:
+
+```bash
+NODE_USE_SYSTEM_CA=1 npx wrangler@latest d1 migrations apply first-fold-personal-feedback --remote
+NODE_USE_SYSTEM_CA=1 npx wrangler@latest secret put PERSONAL_FEEDBACK_SIGNING_KEY
+NODE_USE_SYSTEM_CA=1 npx wrangler@latest deploy
+```
+
+The secret command prompts for the value without putting it in command history.
+In GitHub Actions, create the secret `PERSONAL_FEEDBACK_SIGNING_KEY` with that
+same value. There is no feedback URL variable to create.
+
+The GitHub secret is optional. If it is absent or invalid, the email still sends
+without feedback links and the GitHub summary says feedback is disabled. The
+secret and signed tokens are never printed. Rotating the key immediately
+invalidates every outstanding link.
+
+### 4. Deploy and verify the dispatcher
 
 The dispatcher uses its existing encrypted Cloudflare `GITHUB_TOKEN` binding to
 invoke GitHub. Keep that fine-grained GitHub token scoped to
@@ -328,6 +422,11 @@ causes include:
 - a candidate or message that cannot be rendered safely; or
 - Resend rejecting the single bounded request.
 
+An absent or invalid optional feedback configuration, an unavailable
+source-health snapshot, or a diagnostic artifact upload failure is not a paper
+failure. Those facilities are strictly downstream and advisory; they never
+relax a research or editorial check.
+
 A healthy zero-story result is not an error: it sends a clearly labeled quiet
 edition only after complete feed coverage and deterministic validation. An
 actual error never disguises itself as that quiet result and never sends
@@ -370,6 +469,15 @@ review [Resend pricing](https://resend.com/pricing) and GitHub's
 before changing either account. A provider limit remains a failed run with no
 email; it never authorizes spending.
 
+The optional feedback Worker and D1 database are designed for one person's tiny
+daily volume and can fit within Cloudflare's free allocations, but the repository
+cannot enforce an account plan or guarantee a zero-dollar bill. Keep the Worker
+on Workers Free, do not attach paid resources, and check the current
+[Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/)
+and [D1 pricing](https://developers.cloudflare.com/d1/platform/pricing/). If a
+free limit is unavailable or exhausted, feedback may fail; paper research and
+email delivery remain independent.
+
 ## Emergency disable and rollback
 
 For the fastest personal-only stop:
@@ -380,6 +488,12 @@ For the fastest personal-only stop:
 3. Revoke `First Fold Personal Delivery` in Resend and the Workers AI token in
    Cloudflare if either may be exposed, then delete or replace the matching
    GitHub secrets.
+
+To disable feedback without stopping the paper, delete the
+`PERSONAL_FEEDBACK_SIGNING_KEY` GitHub secret. To invalidate outstanding
+links, rotate the signing key in both Cloudflare and GitHub before reenabling
+it. Disabling or deleting the feedback Worker does not affect paper generation
+or delivery; existing D1 rows remain until deliberately removed.
 
 This does not affect an already delivered email or the public Pages site. The
 dispatcher may log a failed personal dispatch while the workflow is disabled,

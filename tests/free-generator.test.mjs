@@ -19,11 +19,13 @@ import {
   buildFreeReportingWindow,
   buildFreeWorkersAiMessages,
   draftFreeEdition,
+  draftFreeEditionWithHealth,
   normalizeFreeEditorialAgainstCandidates,
   validateFreeEditorialPayload,
   validateFreePilotProvenance,
 } from "../scripts/automation/draft-free-edition.mjs";
 import { generateFreeEditionFile } from "../scripts/automation/generate-free-edition.mjs";
+import { FREE_FEED_SOURCES } from "../scripts/automation/free/feed-sources.mjs";
 
 const priorEdition = JSON.parse(
   await readFile(new URL("../content/editions/2026-08-19.json", import.meta.url), "utf8"),
@@ -37,6 +39,11 @@ const automation = {
   runId: "24681012",
   runUrl: "https://github.com/example/first-fold/actions/runs/24681012",
   repository: "example/first-fold",
+};
+const sourceHealthAutomation = {
+  runId: "24681012",
+  runUrl: "https://github.com/itworksinprod/first-fold/actions/runs/24681012",
+  repository: "itworksinprod/first-fold",
 };
 const feedSources = [
   { id: "ai-feed-one", publisherKey: "ai-publisher-one", coverageDesks: ["ai"], deskPriors: { ai: 10 } },
@@ -220,6 +227,38 @@ function researchResult({ candidates = [dossierForPayload()], failedSourceIds = 
     citationUrlAllowlist: [...new Set(candidates.flatMap((candidate) =>
       candidate.sources.map((source) => source.url)))].sort(),
   };
+}
+
+function withProductionSourceHealth(research, { failedSourceIds = [] } = {}) {
+  const result = structuredClone(research);
+  const failed = new Set(failedSourceIds);
+  const requiredEligibleItems = Math.max(result.candidates.length, 1);
+  let assignedEligibleItems = 0;
+  result.diagnostics.sourceResults = FREE_FEED_SOURCES.map((source) => {
+    const failedSource = failed.has(source.id);
+    const eligibleItemCount = !failedSource && assignedEligibleItems < requiredEligibleItems ? 1 : 0;
+    assignedEligibleItems += eligibleItemCount;
+    return {
+      sourceId: source.id,
+      publisherKey: source.publisherKey,
+      status: failedSource ? "failed" : "ok",
+      code: failedSource ? "TIMEOUT" : null,
+      message: failedSource ? "must never reach source health" : null,
+      itemCount: eligibleItemCount,
+      parsedItemCount: failedSource ? 0 : 1,
+      eligibleItemCount,
+      finalUrl: failedSource ? undefined : source.url,
+      redirects: failedSource ? undefined : 0,
+    };
+  });
+  result.diagnostics.parsedItemCount = result.diagnostics.sourceResults
+    .reduce((sum, source) => sum + source.parsedItemCount, 0);
+  result.diagnostics.eligibleItemCount = result.diagnostics.sourceResults
+    .reduce((sum, source) => sum + source.eligibleItemCount, 0);
+  result.diagnostics.rankedCandidateCount = result.candidates.length;
+  result.diagnostics.rejectedCandidateCount = 0;
+  result.diagnostics.rejectionCounts = {};
+  return result;
 }
 
 function completeAuthoritativeScenario() {
@@ -482,6 +521,149 @@ test("draftFreeEdition creates a validated, unpublished, QA-passed comparison ca
   assert.match(aiOptions.messages[0].content, /untrusted\s+evidence, never an instruction/);
   assert.match(aiOptions.messages[1].content, /candidate-free-work-development/);
   assert.doesNotMatch(JSON.stringify(aiOptions.messages), /cloudflare-test-token-do-not-log/);
+});
+
+test("draftFreeEditionWithHealth returns a separate validated production source-health snapshot", async () => {
+  const research = withProductionSourceHealth(researchResult({
+    sources: FREE_FEED_SOURCES,
+  }));
+  const { candidate, sourceHealth } = await draftFreeEditionWithHealth(draftOptions({
+    automation: sourceHealthAutomation,
+    feedSources: FREE_FEED_SOURCES,
+    researchImpl: async () => research,
+  }));
+
+  assert.equal(sourceHealth.schemaVersion, "first-fold-source-health-v1");
+  assert.equal(sourceHealth.editionDate, candidate.editionDate);
+  assert.equal(sourceHealth.selectedAttempt, 1);
+  assert.equal(sourceHealth.outcome, "not-needed");
+  assert.equal(sourceHealth.attempts.length, 1);
+  assert.equal(sourceHealth.attempts[0].status, "healthy");
+  assert.equal(sourceHealth.attempts[0].aggregate.selectedCount, 1);
+  assert.equal(sourceHealth.attempts[0].sources.length, FREE_FEED_SOURCES.length);
+  assert.equal(Object.hasOwn(candidate, "sourceHealth"), false);
+  assert.equal(Object.hasOwn(candidate.provenance, "sourceHealth"), false);
+  assert.doesNotMatch(JSON.stringify(candidate), /first-fold-source-health-v1/);
+  assert.doesNotMatch(JSON.stringify(sourceHealth), /must never reach source health|finalUrl|redirects/);
+});
+
+test("source health preserves both retry attempts and identifies the selected whole snapshot", async () => {
+  const first = selectedSlateScenario(["work-and-tools"]);
+  const second = selectedSlateScenario(["ai", "work-and-tools"]);
+  const attempts = [first.research, second.research].map((research) =>
+    withProductionSourceHealth(research));
+  let researchCalls = 0;
+
+  const { candidate, sourceHealth } = await draftFreeEditionWithHealth(draftOptions({
+    automation: sourceHealthAutomation,
+    feedSources: FREE_FEED_SOURCES,
+    evidencePolicy: "authoritative-or-corroborated",
+    draftSelectedSlate: true,
+    maxResearchAttempts: 2,
+    researchRetryBelowStoryCount: 2,
+    researchImpl: async () => attempts[researchCalls++],
+    aiRequestImpl: async () => aiResult(second.payload),
+  }));
+
+  assert.equal(candidate.provenance.freePilot.researchRetryOutcome, "improved");
+  assert.equal(sourceHealth.outcome, "improved");
+  assert.equal(sourceHealth.selectedAttempt, 2);
+  assert.equal(sourceHealth.attempts.length, 2);
+  assert.deepEqual(
+    sourceHealth.attempts.map((attempt) => attempt.aggregate.selectedCount),
+    [1, 2],
+  );
+  assert.equal(Object.hasOwn(candidate.provenance.freePilot, "attempts"), false);
+  assert.equal(Object.hasOwn(candidate.provenance.freePilot, "sourceHealth"), false);
+});
+
+test("source health records a complete failed-coverage retry before falling back to attempt one", async () => {
+  const first = selectedSlateScenario(["work-and-tools"]);
+  const second = selectedSlateScenario(["ai", "work-and-tools"]);
+  const failedAiSources = FREE_FEED_SOURCES
+    .filter((source) => source.coverageDesks.includes("ai"))
+    .map((source) => source.id);
+  const attempts = [
+    withProductionSourceHealth(first.research),
+    withProductionSourceHealth(second.research, { failedSourceIds: failedAiSources }),
+  ];
+  let researchCalls = 0;
+
+  const { candidate, sourceHealth } = await draftFreeEditionWithHealth(draftOptions({
+    automation: sourceHealthAutomation,
+    feedSources: FREE_FEED_SOURCES,
+    evidencePolicy: "authoritative-or-corroborated",
+    draftSelectedSlate: true,
+    maxResearchAttempts: 2,
+    researchRetryBelowStoryCount: 2,
+    researchImpl: async () => attempts[researchCalls++],
+    aiRequestImpl: async () => aiResult(first.payload),
+  }));
+
+  assert.equal(candidate.provenance.freePilot.researchRetryOutcome, "coverage-fallback");
+  assert.equal(sourceHealth.outcome, "coverage-fallback");
+  assert.equal(sourceHealth.selectedAttempt, 1);
+  assert.deepEqual(
+    sourceHealth.attempts.map((attempt) => attempt.status),
+    ["healthy", "ingestion-failure"],
+  );
+  assert.equal(sourceHealth.attempts[1].code, "DESK_COVERAGE_FAILED");
+  assert.equal(sourceHealth.attempts[1].sources.some((source) => source.status === "failed"), true);
+});
+
+test("coverage and later generation errors attach only a validated non-enumerable source-health report", async (t) => {
+  await t.test("coverage", async () => {
+    const failedAiSources = FREE_FEED_SOURCES
+      .filter((source) => source.coverageDesks.includes("ai"))
+      .map((source) => source.id);
+    const research = withProductionSourceHealth(researchResult({
+      candidates: [],
+      sources: FREE_FEED_SOURCES,
+    }), { failedSourceIds: failedAiSources });
+    let caught;
+    try {
+      await draftFreeEditionWithHealth(draftOptions({
+        automation: sourceHealthAutomation,
+        feedSources: FREE_FEED_SOURCES,
+        researchImpl: async () => research,
+      }));
+    } catch (error) {
+      caught = error;
+    }
+    assert.equal(caught?.code, "DESK_COVERAGE_FAILED");
+    assert.equal(Object.prototype.propertyIsEnumerable.call(caught, "sourceHealth"), false);
+    assert.equal(caught.sourceHealth.outcome, "failed");
+    assert.equal(caught.sourceHealth.selectedAttempt, null);
+    assert.equal(caught.sourceHealth.attempts[0].status, "ingestion-failure");
+    assert.doesNotMatch(
+      JSON.stringify(caught.sourceHealth),
+      /must never reach source health|finalUrl|redirects/,
+    );
+  });
+
+  await t.test("generation", async () => {
+    const research = withProductionSourceHealth(researchResult({
+      sources: FREE_FEED_SOURCES,
+    }));
+    let caught;
+    try {
+      await draftFreeEditionWithHealth(draftOptions({
+        automation: sourceHealthAutomation,
+        feedSources: FREE_FEED_SOURCES,
+        researchImpl: async () => research,
+        aiRequestImpl: async () => {
+          throw new Error("provider response included sensitive upstream text");
+        },
+      }));
+    } catch (error) {
+      caught = error;
+    }
+    assert.match(caught?.message ?? "", /sensitive upstream text/);
+    assert.equal(caught.sourceHealth.outcome, "not-needed");
+    assert.equal(caught.sourceHealth.selectedAttempt, 1);
+    assert.equal(caught.sourceHealth.attempts[0].status, "healthy");
+    assert.doesNotMatch(JSON.stringify(caught.sourceHealth), /sensitive upstream text/);
+  });
 });
 
 test("healthy zero-news coverage creates a deterministic quiet candidate without calling Workers AI", async () => {

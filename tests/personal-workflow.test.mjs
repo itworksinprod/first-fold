@@ -23,6 +23,14 @@ const ledgerLookup = job.slice(
 );
 const generation = job.slice(
   job.indexOf("Generate the private source-checked candidate"),
+  job.indexOf("Probe the advisory source-health report"),
+);
+const sourceHealthProbe = job.slice(
+  job.indexOf("Probe the advisory source-health report"),
+  job.indexOf("Upload only the public-safe source-health report"),
+);
+const sourceHealthUpload = job.slice(
+  job.indexOf("Upload only the public-safe source-health report"),
   job.indexOf("Test the exact private candidate"),
 );
 const candidateTest = job.slice(
@@ -72,7 +80,7 @@ test("the personal paper is dispatch-only, trusted-main-only, and private", () =
   assert.doesNotMatch(permissions, /write|pages:|id-token:|issues:|pull-requests:|statuses:/);
   assert.doesNotMatch(workflow, /deploy-pages|configure-pages|gh pr|git push|git commit|pulls\/|\/statuses\//);
   assert.equal(workflow.match(/actions\/download-artifact@/g)?.length, 1);
-  assert.equal(workflow.match(/actions\/upload-artifact@/g)?.length, 1);
+  assert.equal(workflow.match(/actions\/upload-artifact@/g)?.length, 2);
 });
 
 test("scheduled delivery accepts exactly the daily 5:05 New York provenance", () => {
@@ -140,11 +148,11 @@ test("successful same-key runs are deduplicated before any credential or AI use"
   );
   assert.equal(
     job.match(/steps\.dedupe\.outputs\.should_send == 'true'/g)?.length,
-    12,
+    14,
   );
   assert.equal(
     job.match(/steps\.preflight\.outputs\.delivery_enabled == 'true'/g)?.length,
-    11,
+    13,
   );
 });
 
@@ -189,6 +197,14 @@ test("email setup no-ops only when wholly absent and secrets stay step-scoped", 
   assert.doesNotMatch(generation, /RESEND_API_KEY|PERSONAL_PAPER_EMAIL|github\.token|GH_TOKEN/);
   assert.match(email, /RESEND_API_KEY: \$\{\{ secrets\.RESEND_API_KEY \}\}/);
   assert.match(email, /PERSONAL_PAPER_EMAIL: \$\{\{ secrets\.PERSONAL_PAPER_EMAIL \}\}/);
+  assert.match(
+    email,
+    /PERSONAL_FEEDBACK_SIGNING_KEY: \$\{\{ secrets\.PERSONAL_FEEDBACK_SIGNING_KEY \}\}/,
+  );
+  assert.match(
+    email,
+    /PERSONAL_FEEDBACK_BASE_URL: https:\/\/first-fold-personal-feedback\.h-josue122\.workers\.dev\//,
+  );
   assert.doesNotMatch(email, /CLOUDFLARE_AI_API_TOKEN|github\.token|GH_TOKEN/);
   assert.match(ledgerPrepare, /CLOUDFLARE_AI_API_TOKEN: \$\{\{ secrets\.CLOUDFLARE_AI_API_TOKEN \}\}/);
   assert.match(ledgerRecord, /CLOUDFLARE_AI_API_TOKEN: \$\{\{ secrets\.CLOUDFLARE_AI_API_TOKEN \}\}/);
@@ -197,6 +213,8 @@ test("email setup no-ops only when wholly absent and secrets stay step-scoped", 
   assert.equal(workflow.match(/vars\.CLOUDFLARE_ACCOUNT_ID/g)?.length, 2);
   assert.equal(workflow.match(/secrets\.RESEND_API_KEY/g)?.length, 2);
   assert.equal(workflow.match(/secrets\.PERSONAL_PAPER_EMAIL/g)?.length, 2);
+  assert.equal(workflow.match(/secrets\.PERSONAL_FEEDBACK_SIGNING_KEY/g)?.length, 1);
+  assert.doesNotMatch(workflow, /vars\.PERSONAL_FEEDBACK_BASE_URL/);
   assert.equal(workflow.match(/\$\{\{ github\.token \}\}/g)?.length, 3);
   assert.doesNotMatch(workflow, /OPENAI_API_KEY|OPENAI_MODEL|personal-paid-edition|personalResearch|freePilot/);
 });
@@ -211,6 +229,7 @@ test("trusted pinned code tests, records, and emails every adaptive daily candid
     "uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0",
     "uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0",
     "uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1",
+    "uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1",
   ]);
   assert.match(workflow, /ref: \$\{\{ github\.sha \}\}/);
   assert.match(workflow, /persist-credentials: false/);
@@ -219,6 +238,11 @@ test("trusted pinned code tests, records, and emails every adaptive daily candid
     generation,
     /PERSONAL_STORY_LEDGER_PATH: \$\{\{ runner\.temp \}\}\/first-fold-ledger\/repeat-ledger\.json/,
   );
+  assert.match(
+    generation,
+    /PERSONAL_SOURCE_HEALTH_ROOT: \$\{\{ runner\.temp \}\}\/first-fold-source-health/,
+  );
+  assert.equal(workflow.match(/PERSONAL_SOURCE_HEALTH_ROOT:/g)?.length, 1);
   assert.match(
     workflow,
     /node scripts\/automation\/personal-free-edition\.mjs "\$\{EDITION_DATE\}"/,
@@ -262,6 +286,87 @@ test("trusted pinned code tests, records, and emails every adaptive daily candid
     /candidate_created == 'false'|qualified_story_count|required_story_count|no[- ]edition|at least three|three stor(?:y|ies)/i,
   );
   assert.doesNotMatch(workflow, /content\/editions\/|console\.log\(|cat\s+.*candidate|tee\s+/);
+});
+
+test("source health is exact, public-safe, short-lived, and never an email gate", () => {
+  assert.ok(
+    job.indexOf("Generate the private source-checked candidate") <
+      job.indexOf("Probe the advisory source-health report"),
+  );
+  assert.ok(
+    job.indexOf("Probe the advisory source-health report") <
+      job.indexOf("Upload only the public-safe source-health report"),
+  );
+  assert.match(sourceHealthProbe, /always\(\)/);
+  assert.match(sourceHealthProbe, /steps\.candidate\.outcome != 'skipped'/);
+  assert.match(sourceHealthProbe, /continue-on-error: true/);
+  assert.match(
+    sourceHealthProbe,
+    /SOURCE_HEALTH_DIRECTORY: \$\{\{ runner\.temp \}\}\/first-fold-source-health\/\$\{\{ steps\.gate\.outputs\.edition_date \}\}/,
+  );
+  assert.match(sourceHealthProbe, /path\.join\(directory, "source-health\.json"\)/);
+  assert.match(sourceHealthProbe, /path\.join\(directory, "source-health\.html"\)/);
+  assert.doesNotMatch(sourceHealthProbe, /source-health\.md/);
+  assert.match(sourceHealthProbe, /lstat\(jsonPath\)/);
+  assert.match(sourceHealthProbe, /jsonMetadata\.isSymbolicLink\(\)/);
+  assert.match(sourceHealthProbe, /SOURCE_HEALTH_MAX_JSON_BYTES/);
+  assert.match(sourceHealthProbe, /SOURCE_HEALTH_MAX_HTML_BYTES/);
+  assert.match(sourceHealthProbe, /validateSourceHealthSnapshot\(snapshot\)/);
+  assert.match(sourceHealthProbe, /snapshot\.editionDate !== process\.env\.EDITION_DATE/);
+  assert.match(sourceHealthProbe, /htmlText !== renderSourceHealthHtml\(snapshot\)/);
+  assert.match(sourceHealthProbe, /available = false/);
+  assert.match(sourceHealthProbe, /available = true/);
+  assert.match(sourceHealthProbe, /delivery is unaffected/);
+  assert.doesNotMatch(
+    sourceHealthProbe,
+    /candidate_path|PERSONAL_OUTPUT_ROOT|PERSONAL_PAPER_EMAIL|RESEND_API_KEY|PERSONAL_FEEDBACK_SIGNING_KEY/,
+  );
+
+  assert.match(sourceHealthUpload, /always\(\)/);
+  assert.match(sourceHealthUpload, /steps\.source_health\.outputs\.available == 'true'/);
+  assert.match(sourceHealthUpload, /continue-on-error: true/);
+  assert.match(
+    sourceHealthUpload,
+    /actions\/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7\.0\.1/,
+  );
+  assert.match(
+    sourceHealthUpload,
+    /name: personal-source-health-\$\{\{ github\.run_id \}\}-\$\{\{ steps\.gate\.outputs\.edition_date \}\}/,
+  );
+  assert.equal(sourceHealthUpload.match(/source-health\.json/g)?.length, 1);
+  assert.equal(sourceHealthUpload.match(/source-health\.html/g)?.length, 1);
+  assert.doesNotMatch(sourceHealthUpload, /source-health\.md/);
+  assert.match(sourceHealthUpload, /if-no-files-found: error/);
+  assert.match(sourceHealthUpload, /retention-days: 14/);
+  assert.match(sourceHealthUpload, /compression-level: 9/);
+  assert.match(sourceHealthUpload, /overwrite: false/);
+  assert.match(sourceHealthUpload, /include-hidden-files: false/);
+  assert.doesNotMatch(
+    sourceHealthUpload,
+    /candidate_path|PERSONAL_OUTPUT_ROOT|personal-candidates|PERSONAL_PAPER_EMAIL|RESEND_API_KEY|PERSONAL_FEEDBACK_SIGNING_KEY|repeat-ledger/,
+  );
+  assert.doesNotMatch(email, /source_health|SOURCE_HEALTH/);
+});
+
+test("private feedback is optional, step-scoped, advisory, and accurately summarized", () => {
+  assert.doesNotMatch(preflight, /PERSONAL_FEEDBACK/);
+  assert.doesNotMatch(generation, /PERSONAL_FEEDBACK/);
+  assert.doesNotMatch(sourceHealthProbe, /PERSONAL_FEEDBACK/);
+  assert.doesNotMatch(sourceHealthUpload, /PERSONAL_FEEDBACK/);
+  assert.match(
+    email,
+    /PERSONAL_FEEDBACK_BASE_URL: https:\/\/first-fold-personal-feedback\.h-josue122\.workers\.dev\//,
+  );
+  assert.match(
+    email,
+    /PERSONAL_FEEDBACK_SIGNING_KEY: \$\{\{ secrets\.PERSONAL_FEEDBACK_SIGNING_KEY \}\}/,
+  );
+  assert.match(email, /delivery_result="\$\(node scripts\/automation\/personal-email\.mjs/);
+  assert.match(email, /feedback links enabled\./);
+  assert.match(email, /feedback_status="enabled"/);
+  assert.match(email, /feedback_status="disabled"/);
+  assert.match(email, /Feedback is advisory and cannot tune the paper automatically/);
+  assert.doesNotMatch(email, /echo.*PERSONAL_FEEDBACK_SIGNING_KEY|echo.*PERSONAL_FEEDBACK_BASE_URL/);
 });
 
 test("the 30-day ledger restores and uploads one bounded hash-only artifact", () => {

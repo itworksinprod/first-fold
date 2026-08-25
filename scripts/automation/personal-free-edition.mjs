@@ -7,7 +7,7 @@ import path from "node:path";
 import { validateCanonicalEdition } from "../edition-content.mjs";
 import {
   FREE_AUTOMATION_WORKFLOW,
-  draftFreeEdition,
+  draftFreeEditionWithHealth,
   validateFreePilotProvenance,
 } from "./draft-free-edition.mjs";
 import { FREE_FEED_SOURCES } from "./free/feed-sources.mjs";
@@ -22,6 +22,10 @@ import {
   buildPersonalRepeatHistory,
   parsePersonalStoryLedger,
 } from "./personal-story-ledger.mjs";
+import {
+  validateSourceHealthSnapshot,
+  writeSourceHealthBundle,
+} from "./source-health.mjs";
 
 const scriptPath = fileURLToPath(import.meta.url);
 const defaultProjectRoot = path.resolve(path.dirname(scriptPath), "..", "..");
@@ -30,6 +34,7 @@ const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const ACCOUNT_ID_PATTERN = /^[a-f0-9]{32}$/i;
 const RUN_ID_PATTERN = /^[1-9]\d*$/;
 const RESPONSE_ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
+const SOURCE_HEALTH_DIRECTORY_PATTERN = /^[^\0]{1,4096}$/;
 
 export const PERSONAL_FREE_WORKFLOW = "personal-morning-paper";
 export const PERSONAL_FREE_PROVIDER = WORKERS_AI_PROVIDER;
@@ -85,6 +90,128 @@ async function pathExists(filename) {
     if (error?.code === "ENOENT") return false;
     throw error;
   }
+}
+
+function isPathInside(parentDirectory, candidatePath) {
+  const relativePath = path.relative(parentDirectory, candidatePath);
+  return (
+    relativePath === "" ||
+    (!relativePath.startsWith(`..${path.sep}`) && relativePath !== ".." && !path.isAbsolute(relativePath))
+  );
+}
+
+function containsSourceHealthKey(value, visited = new Set()) {
+  if (!value || typeof value !== "object" || visited.has(value)) return false;
+  visited.add(value);
+  if (Object.hasOwn(value, "sourceHealth")) return true;
+  return Object.values(value).some((entry) => containsSourceHealthKey(entry, visited));
+}
+
+function resolvePersonalSourceHealthDirectory(env, projectRoot, editionDate) {
+  const configuredRoot = env.PERSONAL_SOURCE_HEALTH_ROOT;
+  if (
+    typeof configuredRoot !== "string" ||
+    configuredRoot !== configuredRoot.trim() ||
+    !SOURCE_HEALTH_DIRECTORY_PATTERN.test(configuredRoot) ||
+    !path.isAbsolute(configuredRoot)
+  ) {
+    throw new Error("PERSONAL_SOURCE_HEALTH_ROOT must be an absolute runner-temporary directory.");
+  }
+  const resolvedRoot = path.resolve(configuredRoot);
+  if (isPathInside(path.resolve(projectRoot), resolvedRoot)) {
+    throw new Error("PERSONAL_SOURCE_HEALTH_ROOT must remain outside the repository checkout.");
+  }
+  return path.join(resolvedRoot, editionDate);
+}
+
+async function appendSourceHealthSummary(markdown, env) {
+  if (typeof env.GITHUB_STEP_SUMMARY !== "string" || !env.GITHUB_STEP_SUMMARY.trim()) {
+    return false;
+  }
+  await appendFile(env.GITHUB_STEP_SUMMARY, `\n${markdown.trim()}\n`, "utf8");
+  return true;
+}
+
+async function writePersonalSourceHealthObservationally({
+  sourceHealth,
+  editionDate,
+  projectRoot,
+  env,
+  writeSourceHealthBundleImpl = writeSourceHealthBundle,
+}) {
+  if (!sourceHealth) {
+    return { status: "unavailable", reason: "not-captured", summaryAppended: false };
+  }
+
+  let outputDirectory;
+  try {
+    validateSourceHealthSnapshot(sourceHealth);
+    outputDirectory = resolvePersonalSourceHealthDirectory(env, projectRoot, editionDate);
+    const written = await writeSourceHealthBundleImpl(sourceHealth, outputDirectory);
+    const requiredPaths = [written?.jsonPath, written?.markdownPath, written?.htmlPath];
+    if (
+      requiredPaths.some((filename) => typeof filename !== "string" || !path.isAbsolute(filename)) ||
+      requiredPaths.some((filename) => !isPathInside(outputDirectory, path.resolve(filename))) ||
+      typeof written?.markdown !== "string" ||
+      !written.markdown.trim()
+    ) {
+      throw new Error("Source-health writer returned an invalid bundle.");
+    }
+    let summaryAppended = false;
+    try {
+      summaryAppended = await appendSourceHealthSummary(written.markdown, env);
+    } catch {
+      // A GitHub summary is useful observability, but never a delivery gate.
+    }
+    return {
+      status: "written",
+      jsonPath: written.jsonPath,
+      markdownPath: written.markdownPath,
+      htmlPath: written.htmlPath,
+      summaryAppended,
+    };
+  } catch {
+    return {
+      status: "unavailable",
+      reason: outputDirectory ? "write-failed" : "output-not-configured",
+      summaryAppended: false,
+    };
+  }
+}
+
+function attachSourceHealth(error, sourceHealth) {
+  if (
+    error &&
+    typeof error === "object" &&
+    sourceHealth &&
+    !Object.hasOwn(error, "sourceHealth")
+  ) {
+    try {
+      Object.defineProperty(error, "sourceHealth", {
+        value: sourceHealth,
+        configurable: true,
+        enumerable: false,
+      });
+    } catch {
+      // Observability must never replace the original generation failure.
+    }
+  }
+  return error;
+}
+
+function attachSourceHealthBundle(error, sourceHealthBundle) {
+  if (error && typeof error === "object" && sourceHealthBundle) {
+    try {
+      Object.defineProperty(error, "sourceHealthBundle", {
+        value: sourceHealthBundle,
+        configurable: true,
+        enumerable: false,
+      });
+    } catch {
+      // Observability must never replace the original generation failure.
+    }
+  }
+  return error;
 }
 
 async function loadPersonalStoryLedger(env, editionDate, fingerprintKey) {
@@ -370,6 +497,7 @@ export function validatePersonalFreeCandidate(
     ) ||
     research?.maxModelRequests !== PERSONAL_FREE_MAX_MODEL_REQUESTS ||
     research?.ephemeral !== true ||
+    containsSourceHealthKey(candidate) ||
     stories.length > PERSONAL_FREE_DESKS.length ||
     stories.some((story) => !hasCompleteSourceSet(story)) ||
     !Array.isArray(candidate.frontPage?.storyOrder) ||
@@ -389,7 +517,7 @@ export function validatePersonalFreeCandidate(
  * Generate a complete private candidate from live curated feeds and the fixed
  * Workers AI model. This function does not write, publish, email, or deploy.
  */
-export async function generatePersonalFreeEdition({
+async function generatePersonalFreeEditionWithHealth({
   editionDate,
   projectRoot = defaultProjectRoot,
   env = process.env,
@@ -404,7 +532,8 @@ export async function generatePersonalFreeEdition({
   sourceRequestImpl,
   sourceLookupImpl,
   sleepImpl,
-  draftFreeEditionImpl = draftFreeEdition,
+  draftFreeEditionWithHealthImpl = draftFreeEditionWithHealth,
+  draftFreeEditionImpl,
   personalStoryLedger,
 } = {}) {
   requireEditionDate(editionDate);
@@ -428,7 +557,7 @@ export async function generatePersonalFreeEdition({
     readFile(path.join(projectRoot, "lib", "editorial", "prompts", "policy.ts"), "utf8"),
     readFile(path.join(projectRoot, "lib", "editorial", "prompts", "daily-run.ts"), "utf8"),
   ]);
-  const freeCandidate = await draftFreeEditionImpl({
+  const draftingOptions = {
     editionDate,
     priorEditions,
     policyText,
@@ -461,13 +590,42 @@ export async function generatePersonalFreeEdition({
     sourceRequestImpl,
     sourceLookupImpl,
     sleepImpl,
-  });
-  return buildPersonalCandidate(freeCandidate, {
-    automation,
-    runMode,
-    expectedFeedSourceCount: effectiveFeedSources.length,
-    repeatHistory,
-  });
+  };
+
+  let sourceHealth;
+  try {
+    const detailedDraft = typeof draftFreeEditionImpl === "function"
+      ? {
+          candidate: await draftFreeEditionImpl(draftingOptions),
+          sourceHealth: null,
+        }
+      : await draftFreeEditionWithHealthImpl(draftingOptions);
+    if (
+      !detailedDraft ||
+      typeof detailedDraft !== "object" ||
+      !detailedDraft.candidate ||
+      typeof detailedDraft.candidate !== "object"
+    ) {
+      throw new Error("Personal free detailed drafting returned an invalid result.");
+    }
+    sourceHealth = detailedDraft.sourceHealth ?? null;
+    const candidate = buildPersonalCandidate(detailedDraft.candidate, {
+      automation,
+      runMode,
+      expectedFeedSourceCount: effectiveFeedSources.length,
+      repeatHistory,
+    });
+    if (containsSourceHealthKey(candidate)) {
+      throw new Error("Personal free candidate must not contain source-health diagnostics.");
+    }
+    return { candidate, sourceHealth };
+  } catch (error) {
+    throw attachSourceHealth(error, sourceHealth);
+  }
+}
+
+export async function generatePersonalFreeEdition(options = {}) {
+  return (await generatePersonalFreeEditionWithHealth(options)).candidate;
 }
 
 /** Write a private candidate exactly once. Nothing is published or committed. */
@@ -480,7 +638,24 @@ export async function generatePersonalFreeEditionFile(options = {}) {
     throw new Error(`Personal candidate ${editionDate} already exists; nothing was overwritten.`);
   }
 
-  const candidate = await generatePersonalFreeEdition({ ...options, editionDate, projectRoot });
+  let generated;
+  try {
+    generated = await generatePersonalFreeEditionWithHealth({
+      ...options,
+      editionDate,
+      projectRoot,
+    });
+  } catch (error) {
+    const sourceHealthBundle = await writePersonalSourceHealthObservationally({
+      sourceHealth: error?.sourceHealth,
+      editionDate,
+      projectRoot,
+      env: options.env ?? process.env,
+      writeSourceHealthBundleImpl: options.writeSourceHealthBundleImpl,
+    });
+    throw attachSourceHealthBundle(error, sourceHealthBundle);
+  }
+  const { candidate, sourceHealth } = generated;
   const fileContents = `${JSON.stringify(candidate, null, 2)}\n`;
   await mkdir(destinationRoot, { recursive: true });
   try {
@@ -492,12 +667,21 @@ export async function generatePersonalFreeEditionFile(options = {}) {
     throw error;
   }
 
+  const sourceHealthBundle = await writePersonalSourceHealthObservationally({
+    sourceHealth,
+    editionDate,
+    projectRoot,
+    env: options.env ?? process.env,
+    writeSourceHealthBundleImpl: options.writeSourceHealthBundleImpl,
+  });
+
   return {
     destination,
     relativePath: path.relative(projectRoot, destination),
     sha256: createHash("sha256").update(fileContents).digest("hex"),
     selectedStoryCount: selectedStories(candidate).length,
     candidate,
+    sourceHealthBundle,
   };
 }
 

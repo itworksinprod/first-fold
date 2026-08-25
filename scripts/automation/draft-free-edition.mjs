@@ -17,7 +17,7 @@ import {
   DEFAULT_MINIMUM_SCORE,
   EDITORIAL_SCORECARD_MAXIMUMS,
   FREE_DESKS,
-  researchFreeEdition,
+  collectFreeResearchSnapshot,
 } from "./free/feed-engine.mjs";
 import { FREE_FEED_SOURCES } from "./free/feed-sources.mjs";
 import {
@@ -25,6 +25,10 @@ import {
   requestWorkersAiEditorial,
   resolveCloudflareAiModel,
 } from "./free/workers-ai.mjs";
+import {
+  buildSourceHealthSnapshot,
+  validateSourceHealthSnapshot,
+} from "./source-health.mjs";
 
 export const FREE_AUTOMATION_WORKFLOW = "free-morning-press";
 export const MAX_FREE_MODEL_CANDIDATES = 24;
@@ -554,7 +558,13 @@ function sameWindow(left, right) {
     Date.parse(left.endExclusive) === Date.parse(right.endExclusive);
 }
 
-export function assertFreeResearchCoverage(research, { feedSources, reportingWindow, retrievedAt }) {
+export function assertFreeResearchCoverage(
+  research,
+  { feedSources, reportingWindow, retrievedAt, requireSufficientCoverage = true },
+) {
+  if (typeof requireSufficientCoverage !== "boolean") {
+    throw new Error("Free research coverage strictness must be a boolean.");
+  }
   if (!isObject(research) || !sameWindow(research.reportingWindow, reportingWindow)) {
     throw new Error("Free feed research returned a mismatched reporting window.");
   }
@@ -605,6 +615,7 @@ export function assertFreeResearchCoverage(research, { feedSources, reportingWin
   if ([...sourceById.keys()].some((sourceId) => !resultById.has(sourceId))) {
     throw new Error("Free feed research omitted a configured source diagnostic.");
   }
+  const coverageByDesk = {};
   for (const desk of FREE_DESKS) {
     const deskSources = feedSources.filter((source) =>
       Array.isArray(source?.coverageDesks) && source.coverageDesks.includes(desk));
@@ -614,11 +625,17 @@ export function assertFreeResearchCoverage(research, { feedSources, reportingWin
     const successfulPublisherKeys = new Set(deskSources
       .filter((source) => resultById.get(source.id)?.status === "ok")
       .map((source) => source.publisherKey));
-    if (successfulPublisherKeys.size < 2) {
-      throw new Error(
+    coverageByDesk[desk] = {
+      status: successfulPublisherKeys.size >= 2 ? "covered" : "insufficient-corroboration",
+    };
+    if (requireSufficientCoverage && successfulPublisherKeys.size < 2) {
+      const error = new Error(
         `Free feed coverage had fewer than two distinct successful publishers for desk ${desk}; ` +
         "no candidate was created.",
       );
+      error.code = "DESK_COVERAGE_FAILED";
+      error.desks = [desk];
+      throw error;
     }
   }
   if (!isObject(research.desks) || FREE_DESKS.some((desk) => !isObject(research.desks[desk]))) {
@@ -644,6 +661,7 @@ export function assertFreeResearchCoverage(research, { feedSources, reportingWin
   return {
     sourceCount: feedSources.length,
     successfulSourceCount: results.filter((result) => result.status === "ok").length,
+    coverageByDesk,
   };
 }
 
@@ -1473,7 +1491,7 @@ export function validateFreePilotProvenance(
  * Build one unpublished comparison candidate. Feed ingestion and Workers AI
  * are separately injectable so tests never make live requests.
  */
-export async function draftFreeEdition({
+async function draftFreeEditionCore({
   editionDate,
   priorEditions,
   policyText,
@@ -1496,7 +1514,7 @@ export async function draftFreeEdition({
   recentRepeatHistory = [],
   repeatFingerprintKey,
   feedSources = FREE_FEED_SOURCES,
-  researchImpl = researchFreeEdition,
+  researchImpl = collectFreeResearchSnapshot,
   feedRequestImpl,
   feedLookupImpl,
   aiRequestImpl = requestWorkersAiEditorial,
@@ -1509,7 +1527,7 @@ export async function draftFreeEdition({
   maxRequestBytes,
   maxResponseBytes,
   sleepImpl,
-} = {}) {
+} = {}, healthState = { attempts: [] }) {
   if (typeof researchImpl !== "function") throw new Error("researchImpl must be a function.");
   if (typeof aiRequestImpl !== "function") throw new Error("aiRequestImpl must be a function.");
   const normalizedEvidencePolicy = requireEvidencePolicy(evidencePolicy);
@@ -1573,6 +1591,20 @@ export async function draftFreeEdition({
   });
   const githubRun = requireGitHubRun(automation ?? {});
   scaffold.publication.generatedAt = generatedAt;
+  healthState.context = {
+    editionDate,
+    automation: githubRun,
+    runMode,
+    settings: {
+      evidencePolicy: normalizedEvidencePolicy,
+      lookbackHours: normalizedLookbackHours,
+      minimumScore: normalizedMinimumScore,
+      minimumAuthoritativeScore: normalizedMinimumAuthoritativeScore,
+      draftSelectedSlate,
+      maxResearchAttempts,
+      researchRetryBelowStoryCount,
+    },
+  };
 
   const researchOptions = {
     sources: feedSources,
@@ -1588,13 +1620,35 @@ export async function draftFreeEdition({
     minimumAuthoritativeScore: normalizedMinimumAuthoritativeScore,
   };
   const runResearchAttempt = async () => {
-    const attemptedResearch = await researchImpl({
-      ...researchOptions,
-      reportingWindow: structuredClone(researchOptions.reportingWindow),
-      recentArchive: structuredClone(researchOptions.recentArchive),
-      recentRepeatHistory: structuredClone(researchOptions.recentRepeatHistory),
-    });
-    const attemptedCoverage = assertFreeResearchCoverage(attemptedResearch, {
+    let attemptedResearch;
+    try {
+      attemptedResearch = await researchImpl({
+        ...researchOptions,
+        reportingWindow: structuredClone(researchOptions.reportingWindow),
+        recentArchive: structuredClone(researchOptions.recentArchive),
+        recentRepeatHistory: structuredClone(researchOptions.recentRepeatHistory),
+      });
+    } catch (error) {
+      healthState.attempts.push({ error });
+      throw error;
+    }
+    let attemptedCoverage;
+    try {
+      attemptedCoverage = assertFreeResearchCoverage(attemptedResearch, {
+        feedSources,
+        reportingWindow: scaffold.reportingWindow,
+        retrievedAt: generatedAt,
+        requireSufficientCoverage: false,
+      });
+    } catch (error) {
+      healthState.attempts.push({ error });
+      throw error;
+    }
+    // Retain the complete attempt only inside the trusted in-memory health
+    // builder. The builder projects a strict allowlisted report; raw feed
+    // diagnostics never enter the candidate or an attached error.
+    healthState.attempts.push({ research: attemptedResearch });
+    assertFreeResearchCoverage(attemptedResearch, {
       feedSources,
       reportingWindow: scaffold.reportingWindow,
       retrievedAt: generatedAt,
@@ -1617,6 +1671,8 @@ export async function draftFreeEdition({
   let selectedResearchAttempt = firstResearchAttempt;
   let researchAttemptCount = 1;
   let researchRetryOutcome = "not-needed";
+  healthState.selectedAttempt = 1;
+  healthState.outcome = researchRetryOutcome;
   if (
     maxResearchAttempts === 2 &&
     researchRetryBelowStoryCount > 0 &&
@@ -1628,13 +1684,19 @@ export async function draftFreeEdition({
       if (secondResearchAttempt.selectedCount > firstResearchAttempt.selectedCount) {
         selectedResearchAttempt = secondResearchAttempt;
         researchRetryOutcome = "improved";
+        healthState.selectedAttempt = 2;
       } else {
         researchRetryOutcome = "no-improvement";
       }
     } catch (error) {
-      if (error?.code !== "DESK_COVERAGE_FAILED") throw error;
+      if (error?.code !== "DESK_COVERAGE_FAILED") {
+        healthState.selectedAttempt = null;
+        healthState.outcome = "failed";
+        throw error;
+      }
       researchRetryOutcome = "coverage-fallback";
     }
+    healthState.outcome = researchRetryOutcome;
   }
 
   const { research, coverage } = selectedResearchAttempt;
@@ -1860,5 +1922,77 @@ export async function draftFreeEdition({
     expectedMinimumScore: normalizedMinimumScore,
     expectedMinimumAuthoritativeScore: normalizedMinimumAuthoritativeScore,
   });
+  return candidate;
+}
+
+function sourceHealthFromState(healthState) {
+  if (
+    !isObject(healthState?.context) ||
+    !Array.isArray(healthState.attempts) ||
+    healthState.attempts.length === 0
+  ) {
+    return null;
+  }
+  try {
+    const sourceHealth = buildSourceHealthSnapshot({
+      ...healthState.context,
+      attempts: healthState.attempts,
+      selectedAttempt: healthState.selectedAttempt,
+      outcome: healthState.outcome,
+    });
+    return validateSourceHealthSnapshot(sourceHealth);
+  } catch {
+    // Source health is observational. A report-builder defect or a test-only
+    // source registry must never suppress an otherwise valid private paper.
+    return null;
+  }
+}
+
+function attachSourceHealth(error, sourceHealth) {
+  if (
+    sourceHealth === null ||
+    (typeof error !== "object" && typeof error !== "function") ||
+    error === null ||
+    Object.hasOwn(error, "sourceHealth")
+  ) {
+    return;
+  }
+  try {
+    Object.defineProperty(error, "sourceHealth", {
+      value: sourceHealth,
+      enumerable: false,
+      configurable: false,
+      writable: false,
+    });
+  } catch {
+    // Frozen third-party errors retain their original failure semantics.
+  }
+}
+
+/**
+ * Draft an edition and return its separate, observational source-health
+ * report. The report never enters the canonical candidate or provenance.
+ */
+export async function draftFreeEditionWithHealth(options = {}) {
+  const healthState = {
+    attempts: [],
+    selectedAttempt: null,
+    outcome: "failed",
+  };
+  try {
+    const candidate = await draftFreeEditionCore(options, healthState);
+    return {
+      candidate,
+      sourceHealth: sourceHealthFromState(healthState),
+    };
+  } catch (error) {
+    attachSourceHealth(error, sourceHealthFromState(healthState));
+    throw error;
+  }
+}
+
+/** Compatibility entry point retained for existing callers. */
+export async function draftFreeEdition(options = {}) {
+  const { candidate } = await draftFreeEditionWithHealth(options);
   return candidate;
 }

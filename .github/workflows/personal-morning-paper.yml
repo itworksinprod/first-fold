@@ -682,6 +682,7 @@ jobs:
           CLOUDFLARE_AI_API_TOKEN: ${{ secrets.CLOUDFLARE_AI_API_TOKEN }}
           CLOUDFLARE_AI_MODEL: '@cf/openai/gpt-oss-120b'
           EDITION_DATE: ${{ steps.gate.outputs.edition_date }}
+          PERSONAL_SOURCE_HEALTH_ROOT: ${{ runner.temp }}/first-fold-source-health
           PERSONAL_STORY_LEDGER_PATH: ${{ runner.temp }}/first-fold-ledger/repeat-ledger.json
           RUN_MODE: ${{ steps.gate.outputs.run_mode }}
         shell: bash
@@ -696,6 +697,92 @@ jobs:
             echo "The personal-paper run mode is invalid."
             exit 1
           fi
+
+      - name: Probe the advisory source-health report
+        id: source_health
+        if: >-
+          always() &&
+          steps.dedupe.outputs.should_send == 'true' &&
+          steps.preflight.outputs.delivery_enabled == 'true' &&
+          steps.candidate.outcome != 'skipped'
+        continue-on-error: true
+        env:
+          EDITION_DATE: ${{ steps.gate.outputs.edition_date }}
+          SOURCE_HEALTH_DIRECTORY: ${{ runner.temp }}/first-fold-source-health/${{ steps.gate.outputs.edition_date }}
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFile, lstat, readFile } from "node:fs/promises";
+          import path from "node:path";
+
+          let available = false;
+          let summary = "The advisory source-health report was unavailable; paper delivery is unaffected.";
+          try {
+            const {
+              SOURCE_HEALTH_MAX_HTML_BYTES,
+              SOURCE_HEALTH_MAX_JSON_BYTES,
+              renderSourceHealthHtml,
+              validateSourceHealthSnapshot,
+            } = await import("./scripts/automation/source-health.mjs");
+            const directory = path.resolve(process.env.SOURCE_HEALTH_DIRECTORY);
+            const jsonPath = path.join(directory, "source-health.json");
+            const htmlPath = path.join(directory, "source-health.html");
+            const [jsonMetadata, htmlMetadata] = await Promise.all([
+              lstat(jsonPath),
+              lstat(htmlPath),
+            ]);
+            if (
+              !jsonMetadata.isFile() ||
+              jsonMetadata.isSymbolicLink() ||
+              jsonMetadata.size < 1 ||
+              jsonMetadata.size > SOURCE_HEALTH_MAX_JSON_BYTES ||
+              !htmlMetadata.isFile() ||
+              htmlMetadata.isSymbolicLink() ||
+              htmlMetadata.size < 1 ||
+              htmlMetadata.size > SOURCE_HEALTH_MAX_HTML_BYTES
+            ) {
+              throw new Error("invalid source-health file metadata");
+            }
+            const [jsonText, htmlText] = await Promise.all([
+              readFile(jsonPath, "utf8"),
+              readFile(htmlPath, "utf8"),
+            ]);
+            const snapshot = JSON.parse(jsonText);
+            validateSourceHealthSnapshot(snapshot);
+            if (
+              snapshot.editionDate !== process.env.EDITION_DATE ||
+              htmlText !== renderSourceHealthHtml(snapshot)
+            ) {
+              throw new Error("source-health report does not match the trusted renderer");
+            }
+            available = true;
+            summary = "A validated public-safe source-health report is eligible for the 14-day diagnostic artifact.";
+          } catch {
+            // Source health is diagnostic only. Its absence or corruption must
+            // never become an email-delivery gate.
+          }
+          await appendFile(process.env.GITHUB_OUTPUT, `available=${String(available)}\n`);
+          await appendFile(process.env.GITHUB_STEP_SUMMARY, `\n${summary}\n`);
+          NODE
+
+      - name: Upload only the public-safe source-health report
+        if: >-
+          always() &&
+          steps.dedupe.outputs.should_send == 'true' &&
+          steps.preflight.outputs.delivery_enabled == 'true' &&
+          steps.source_health.outputs.available == 'true'
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: personal-source-health-${{ github.run_id }}-${{ steps.gate.outputs.edition_date }}
+          path: |
+            ${{ runner.temp }}/first-fold-source-health/${{ steps.gate.outputs.edition_date }}/source-health.json
+            ${{ runner.temp }}/first-fold-source-health/${{ steps.gate.outputs.edition_date }}/source-health.html
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 9
+          overwrite: false
+          include-hidden-files: false
 
       - name: Test the exact private candidate
         if: >-
@@ -740,6 +827,20 @@ jobs:
           steps.preflight.outputs.delivery_enabled == 'true' &&
           steps.candidate.outputs.candidate_created == 'true'
         env:
+          PERSONAL_FEEDBACK_BASE_URL: https://first-fold-personal-feedback.h-josue122.workers.dev/
+          PERSONAL_FEEDBACK_SIGNING_KEY: ${{ secrets.PERSONAL_FEEDBACK_SIGNING_KEY }}
           PERSONAL_PAPER_EMAIL: ${{ secrets.PERSONAL_PAPER_EMAIL }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-        run: node scripts/automation/personal-email.mjs "${{ steps.gate.outputs.candidate_path }}"
+        shell: bash
+        run: |
+          delivery_result="$(node scripts/automation/personal-email.mjs "${{ steps.gate.outputs.candidate_path }}")"
+          printf '%s\n' "${delivery_result}"
+          if [[ "${delivery_result}" == *"feedback links enabled."* ]]; then
+            feedback_status="enabled"
+          else
+            feedback_status="disabled"
+          fi
+          {
+            echo ""
+            echo "Private feedback links: ${feedback_status}. Feedback is advisory and cannot tune the paper automatically."
+          } >> "${GITHUB_STEP_SUMMARY}" || true

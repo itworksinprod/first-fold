@@ -11,8 +11,14 @@ import {
   InsufficientFreeCandidatesError,
   buildFreeReportingWindow,
 } from "../scripts/automation/draft-free-edition.mjs";
+import { FREE_FEED_SOURCES } from "../scripts/automation/free/feed-sources.mjs";
+import {
+  buildSourceHealthSnapshot,
+  validateSourceHealthSnapshot,
+} from "../scripts/automation/source-health.mjs";
 import {
   PERSONAL_FREE_EVIDENCE_POLICY,
+  PERSONAL_FREE_DESKS,
   PERSONAL_FREE_LOOKBACK_HOURS,
   PERSONAL_FREE_MAX_MODEL_REQUESTS,
   PERSONAL_FREE_MAX_RESEARCH_ATTEMPTS,
@@ -251,6 +257,53 @@ function freeCandidate({
   };
   assert.equal(validateCanonicalEdition(candidate).valid, true);
   return candidate;
+}
+
+function healthySourceHealth({ selectedDesks = PERSONAL_FREE_DESKS } = {}) {
+  const selected = new Set(selectedDesks);
+  const sourceResults = FREE_FEED_SOURCES.map((source) => ({
+    sourceId: source.id,
+    publisherKey: source.publisherKey,
+    status: "ok",
+    code: null,
+    parsedItemCount: 1,
+    eligibleItemCount: 1,
+  }));
+  const selectedCount = selected.size;
+  const research = {
+    candidates: Array.from({ length: selectedCount }, (_, index) => ({ id: `opaque-${index}` })),
+    desks: Object.fromEntries(PERSONAL_FREE_DESKS.map((desk) => [desk, {
+      candidates: selected.has(desk) ? [{ id: `opaque-${desk}` }] : [],
+      selectedCandidate: selected.has(desk) ? { id: `opaque-${desk}` } : null,
+    }])),
+    diagnostics: {
+      sourceResults,
+      parsedItemCount: sourceResults.length,
+      eligibleItemCount: sourceResults.length,
+      candidateCount: selectedCount,
+      rankedCandidateCount: selectedCount,
+      rejectedCandidateCount: 0,
+      rejectionCounts: {},
+      selectedCount,
+    },
+  };
+  return buildSourceHealthSnapshot({
+    editionDate: "2026-08-20",
+    automation,
+    runMode: "on_time",
+    settings: {
+      evidencePolicy: PERSONAL_FREE_EVIDENCE_POLICY,
+      lookbackHours: PERSONAL_FREE_LOOKBACK_HOURS,
+      minimumScore: PERSONAL_FREE_MINIMUM_SCORE,
+      minimumAuthoritativeScore: PERSONAL_FREE_MINIMUM_AUTHORITATIVE_SCORE,
+      draftSelectedSlate: true,
+      maxResearchAttempts: PERSONAL_FREE_MAX_RESEARCH_ATTEMPTS,
+      researchRetryBelowStoryCount: PERSONAL_FREE_RETRY_BELOW_STORY_COUNT,
+    },
+    attempts: [{ research }],
+    selectedAttempt: 1,
+    outcome: "not-needed",
+  });
 }
 
 test("private free generation fixes the model, evidence lane, lookback, and request budget", async (t) => {
@@ -529,6 +582,184 @@ test("the private writer is exclusive and never writes a public or comparison ar
       (error) => error?.code === "ENOENT",
     );
   }
+});
+
+test("source health is written as a safe exclusive bundle outside the private candidate", async (t) => {
+  const projectRoot = await createProject(t);
+  const sourceHealthRoot = await mkdtemp(path.join(tmpdir(), "first-fold-source-health-"));
+  t.after(async () => rm(sourceHealthRoot, { recursive: true, force: true }));
+  const summaryPath = path.join(sourceHealthRoot, "github-summary.md");
+  await writeFile(summaryPath, "");
+  const sourceHealth = healthySourceHealth();
+  const options = {
+    editionDate: "2026-08-20",
+    projectRoot,
+    env: {
+      ...automationEnv,
+      PERSONAL_SOURCE_HEALTH_ROOT: sourceHealthRoot,
+      GITHUB_STEP_SUMMARY: summaryPath,
+    },
+    now: GENERATED_AT,
+    feedSources,
+    personalStoryLedger: createEmptyPersonalStoryLedger({
+      fingerprintKey: automationEnv.CLOUDFLARE_AI_API_TOKEN,
+    }),
+    draftFreeEditionWithHealthImpl: async () => ({
+      candidate: freeCandidate(),
+      sourceHealth,
+    }),
+  };
+
+  const result = await generatePersonalFreeEditionFile(options);
+  assert.equal(result.sourceHealthBundle.status, "written");
+  assert.equal(result.sourceHealthBundle.summaryAppended, true);
+  const expectedBundleRoot = path.join(sourceHealthRoot, "2026-08-20");
+  assert.equal(result.sourceHealthBundle.jsonPath, path.join(expectedBundleRoot, "source-health.json"));
+  assert.equal(result.sourceHealthBundle.htmlPath, path.join(expectedBundleRoot, "source-health.html"));
+  assert.equal(
+    result.sourceHealthBundle.markdownPath,
+    path.join(expectedBundleRoot, "source-health.md"),
+  );
+
+  const [candidateText, jsonText, markdownText, htmlText, summaryText] = await Promise.all([
+    readFile(result.destination, "utf8"),
+    readFile(result.sourceHealthBundle.jsonPath, "utf8"),
+    readFile(result.sourceHealthBundle.markdownPath, "utf8"),
+    readFile(result.sourceHealthBundle.htmlPath, "utf8"),
+    readFile(summaryPath, "utf8"),
+  ]);
+  assert.equal(Object.hasOwn(JSON.parse(candidateText), "sourceHealth"), false);
+  assert.equal(candidateText.includes('"sourceHealth"'), false);
+  const contaminatedCandidate = JSON.parse(candidateText);
+  contaminatedCandidate.provenance.sourceHealth = sourceHealth;
+  assert.throws(
+    () => validatePersonalFreeCandidate(contaminatedCandidate),
+    /private source-checked provenance contract/,
+  );
+  const healthSnapshot = JSON.parse(jsonText);
+  assert.equal(validateSourceHealthSnapshot(healthSnapshot), healthSnapshot);
+  assert.match(markdownText, /First Fold source health/);
+  assert.match(htmlText, /Operations view/);
+  assert.match(summaryText, /First Fold source health/);
+
+  for (const forbidden of [
+    "Verified private free ai development",
+    "2026-08-20-ai-personal-free",
+    "https://example.com/ai/originating",
+    "opaque-ai",
+    "cloudflare-workers-ai-test-token",
+    "private-recipient@example.invalid",
+  ]) {
+    assert.equal(jsonText.includes(forbidden), false);
+    assert.equal(markdownText.includes(forbidden), false);
+    assert.equal(htmlText.includes(forbidden), false);
+  }
+
+  const originalBundle = { jsonText, markdownText, htmlText };
+  const secondProjectRoot = await createProject(t);
+  const secondResult = await generatePersonalFreeEditionFile({
+    ...options,
+    projectRoot: secondProjectRoot,
+  });
+  assert.equal(secondResult.sourceHealthBundle.status, "unavailable");
+  assert.equal(secondResult.sourceHealthBundle.reason, "write-failed");
+  assert.equal(
+    await readFile(result.sourceHealthBundle.jsonPath, "utf8"),
+    originalBundle.jsonText,
+  );
+  assert.equal(
+    await readFile(result.sourceHealthBundle.markdownPath, "utf8"),
+    originalBundle.markdownText,
+  );
+  assert.equal(
+    await readFile(result.sourceHealthBundle.htmlPath, "utf8"),
+    originalBundle.htmlText,
+  );
+  assert.equal(validatePersonalFreeCandidate(secondResult.candidate), true);
+});
+
+test("a healthy zero-story run is visible as healthy quiet source health", async (t) => {
+  const projectRoot = await createProject(t);
+  const sourceHealthRoot = await mkdtemp(path.join(tmpdir(), "first-fold-quiet-health-"));
+  t.after(async () => rm(sourceHealthRoot, { recursive: true, force: true }));
+  const quietDesks = [...PERSONAL_FREE_DESKS];
+  const result = await generatePersonalFreeEditionFile({
+    editionDate: "2026-08-20",
+    projectRoot,
+    env: {
+      ...automationEnv,
+      PERSONAL_SOURCE_HEALTH_ROOT: sourceHealthRoot,
+    },
+    now: GENERATED_AT,
+    feedSources,
+    personalStoryLedger: createEmptyPersonalStoryLedger({
+      fingerprintKey: automationEnv.CLOUDFLARE_AI_API_TOKEN,
+    }),
+    draftFreeEditionWithHealthImpl: async () => ({
+      candidate: freeCandidate({ quietDesks }),
+      sourceHealth: healthySourceHealth({ selectedDesks: [] }),
+    }),
+  });
+
+  assert.equal(result.selectedStoryCount, 0);
+  assert.equal(result.sourceHealthBundle.status, "written");
+  const health = JSON.parse(await readFile(result.sourceHealthBundle.jsonPath, "utf8"));
+  assert.equal(health.attempts[0].status, "healthy-quiet");
+  assert.equal(health.attempts[0].aggregate.selectedCount, 0);
+  assert.equal(health.attempts[0].aggregate.failedSourceCount, 0);
+  assert.equal(health.attempts[0].desks.every((desk) => desk.coverageStatus === "covered"), true);
+  assert.match(await readFile(result.sourceHealthBundle.htmlPath, "utf8"), /Healthy Quiet/);
+});
+
+test("validated source health survives a generation failure without replacing that failure", async (t) => {
+  const projectRoot = await createProject(t);
+  const sourceHealthRoot = await mkdtemp(path.join(tmpdir(), "first-fold-failed-health-"));
+  t.after(async () => rm(sourceHealthRoot, { recursive: true, force: true }));
+  const summaryPath = path.join(sourceHealthRoot, "github-summary.md");
+  await writeFile(summaryPath, "");
+  const generationError = new Error("Workers AI request failed safely.");
+  Object.defineProperty(generationError, "sourceHealth", {
+    value: healthySourceHealth({ selectedDesks: [] }),
+    enumerable: false,
+  });
+
+  await assert.rejects(
+    generatePersonalFreeEditionFile({
+      editionDate: "2026-08-20",
+      projectRoot,
+      env: {
+        ...automationEnv,
+        PERSONAL_SOURCE_HEALTH_ROOT: sourceHealthRoot,
+        GITHUB_STEP_SUMMARY: summaryPath,
+      },
+      now: GENERATED_AT,
+      feedSources,
+      personalStoryLedger: createEmptyPersonalStoryLedger({
+        fingerprintKey: automationEnv.CLOUDFLARE_AI_API_TOKEN,
+      }),
+      draftFreeEditionWithHealthImpl: async () => {
+        throw generationError;
+      },
+    }),
+    (error) => {
+      assert.equal(error, generationError);
+      assert.equal(error.sourceHealthBundle.status, "written");
+      assert.equal(error.sourceHealthBundle.summaryAppended, true);
+      return true;
+    },
+  );
+  await assert.rejects(
+    access(path.join(projectRoot, "content", "personal-candidates", "2026-08-20.json")),
+    (error) => error?.code === "ENOENT",
+  );
+  assert.equal(
+    validateSourceHealthSnapshot(JSON.parse(await readFile(
+      path.join(sourceHealthRoot, "2026-08-20", "source-health.json"),
+      "utf8",
+    ))).attempts[0].status,
+    "healthy-quiet",
+  );
+  assert.match(await readFile(summaryPath, "utf8"), /Healthy Quiet/);
 });
 
 test("credentials and trusted GitHub identity are required before research", async (t) => {

@@ -5,6 +5,7 @@ import {
   AUTHORITATIVE_FREE_EVIDENCE_POLICY,
   assessFeedCandidates,
   assertSufficientFeedCoverage,
+  collectFreeResearchSnapshot,
   DEFAULT_MAX_FEED_BYTES,
   DEFAULT_MAX_TOTAL_FEED_BYTES,
   deduplicateFeedItems,
@@ -15,6 +16,7 @@ import {
   ingestCuratedFeeds,
   parseFeedPayload,
   rankFeedCandidates,
+  researchFreeEdition,
   selectFreeDeskCandidates,
 } from "../scripts/automation/free/feed-engine.mjs";
 import { FREE_FEED_SOURCES } from "../scripts/automation/free/feed-sources.mjs";
@@ -2967,6 +2969,34 @@ test("coverage distinguishes an honest quiet desk from total feed failure", asyn
     () => assertSufficientFeedCoverage(oneOwner.coverageByDesk),
     (error) => error.code === "DESK_COVERAGE_FAILED" &&
       error.desks.includes("security-and-privacy"),
+  );
+});
+
+test("research snapshot collection preserves failed coverage diagnostics without weakening the strict entry point", async () => {
+  const options = {
+    reportingWindow,
+    retrievedAt,
+    lookupImpl: publicLookup,
+    requestImpl: async () => {
+      throw Object.assign(new Error("simulated timeout with sensitive upstream detail"), {
+        code: "ETIMEDOUT",
+      });
+    },
+  };
+
+  const snapshot = await collectFreeResearchSnapshot(options);
+  assert.equal(snapshot.candidates.length, 0);
+  assert.equal(snapshot.selectedCandidates.length, 0);
+  assert.equal(snapshot.diagnostics.sourceResults.length, FREE_FEED_SOURCES.length);
+  assert.equal(snapshot.diagnostics.sourceResults.every((result) =>
+    result.status === "failed" && ["REQUEST_FAILED", "TOTAL_BODY_LIMIT"].includes(result.code)), true);
+  assert.equal(snapshot.diagnostics.coverageByDesk.ai.status, "insufficient-corroboration");
+  assert.doesNotMatch(JSON.stringify(snapshot.diagnostics), /sensitive upstream detail/);
+
+  await assert.rejects(
+    () => researchFreeEdition(options),
+    (error) => error.code === "DESK_COVERAGE_FAILED" &&
+      error.desks.length === 4,
   );
 });
 

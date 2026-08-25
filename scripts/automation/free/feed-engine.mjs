@@ -3169,7 +3169,13 @@ export async function ingestCuratedFeeds({
   };
 }
 
-export async function researchFreeEdition(options = {}) {
+/**
+ * Collect one bounded feed-research snapshot without deciding whether the
+ * edition-wide coverage gate passed. This lets trusted orchestration retain
+ * diagnostics from a failed attempt for observability while keeping the
+ * production research entry point fail-closed.
+ */
+export async function collectFreeResearchSnapshot(options = {}) {
   const {
     sources: _ignoredSources,
     evidencePolicy = DEFAULT_FREE_EVIDENCE_POLICY,
@@ -3179,7 +3185,6 @@ export async function researchFreeEdition(options = {}) {
   // The production entry point always uses the reviewed, checked-in manifest.
   // Tests can exercise custom fixtures through ingestCuratedFeeds directly.
   const ingestion = await ingestCuratedFeeds({ ...runtimeOptions, sources: FREE_FEED_SOURCES });
-  assertSufficientFeedCoverage(ingestion.coverageByDesk);
   const assessments = assessFeedCandidates({
     items: ingestion.items,
     reportingWindow: ingestion.reportingWindow,
@@ -3236,6 +3241,17 @@ export async function researchFreeEdition(options = {}) {
     citationUrlAllowlist: [...new Set(candidates.flatMap((candidate) =>
       candidate.sources.map((source) => source.url)))].sort(),
   };
+}
+
+/**
+ * Production research remains strict: a snapshot with insufficient desk
+ * coverage is observable to callers that explicitly request collection, but
+ * it can never proceed to edition drafting through this entry point.
+ */
+export async function researchFreeEdition(options = {}) {
+  const research = await collectFreeResearchSnapshot(options);
+  assertSufficientFeedCoverage(research.diagnostics.coverageByDesk);
+  return research;
 }
 
 export function assertSufficientFeedCoverage(coverageByDesk) {
