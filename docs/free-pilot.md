@@ -11,7 +11,8 @@ paid provider.
 | Model | Fixed Workers AI `@cf/openai/gpt-oss-120b` | Fixed Workers AI `@cf/openai/gpt-oss-120b` | OpenAI Responses model configured by the paid workflow |
 | Discovery | Curated RSS, Atom, and JSON feeds | Same bounded feed catalog | Model-assisted open-web research |
 | Start | Cloudflare at 5:05 AM New York every day | Manual GitHub Actions run only | Manual GitHub Actions run only |
-| Evidence policy | Score of at least 70 plus hard vetoes; corroborated events or explicitly attributed authoritative originating reports; three of four desks required | Strict two-publisher corroboration for every non-quiet story | Paid workflow's direct-source policy |
+| Evidence policy | Score of at least 70 plus hard vetoes; corroborated events or explicitly attributed authoritative originating reports; unchanged evidence, freshness, repeat, source, and QA gates across regular (2–4 stories), slim (1), and quiet (0) editions | Strict two-publisher corroboration for every non-quiet story | Paid workflow's direct-source policy |
+| Research retry | One bounded feed-only retry before AI when the first healthy pass selects fewer than two stories; choose one intact snapshot and never merge attempts | None; one bounded feed snapshot | Governed by the separate paid workflow |
 | Output | Ephemeral `content/personal-candidates/` file, one private email, and a bounded keyed-HMAC-only repeat-ledger artifact; candidate and email are never uploaded | Comparison PR containing `content/free-candidates/YYYY-MM-DD.json` | Public, publication-shaped candidate PR |
 | Publication | Never | Never | Exact-SHA human review and merge required |
 | Paid fallback | None | None | This path is itself explicitly billable |
@@ -144,7 +145,13 @@ Do not judge the free pilot only by how polished its prose sounds. The more impo
 - **No automatic publication.** Even a strong free result remains outside the production approval and delivery chain during this pilot.
 
 The strict free comparison remains a manual evaluation tool. The automatic
-Personal Morning Paper is separately fail-closed: it sends only after at least
-three desks validate, permits at most one honest quiet desk, keeps
-`personalFreeResearch` provenance and full candidate copy private, and never
-turns a comparison artifact into an email or public edition.
+Personal Morning Paper is separately fail-closed. When its first healthy feed
+pass selects fewer than two stories, it performs one bounded feed-only retry
+before AI, selects one intact snapshot without merging attempts, and then sends
+a regular two-to-four-story edition, a slim one-story edition, or a healthy
+all-quiet edition. All delivered formats, including quiet editions, advance its
+private keyed ledger. Score, evidence, freshness, repeat, source, and QA gates
+remain unchanged; infrastructure, required-coverage, provider, and validation
+failures still send nothing. It keeps `personalFreeResearch` provenance and full
+candidate copy private and never turns a comparison artifact into an email or
+public edition.

@@ -253,6 +253,39 @@ test("repeat history exposes bounded fingerprints, counts, pilot ordinal, and st
   ]);
 });
 
+test("a delivered zero-story quiet edition advances ledger state and is idempotent", () => {
+  const editionDate = "2026-08-24";
+  const quietEdition = editionFor(editionDate, { storyCount: 0 });
+  const empty = createEmptyPersonalStoryLedger();
+  const before = buildPersonalRepeatHistory(empty, { asOfDate: editionDate });
+  assert.equal(before.priorEditionCount, 0);
+  assert.equal(before.priorStoryCount, 0);
+  assert.equal(before.nextPilotOrdinal, 1);
+
+  const recorded = updatePersonalStoryLedger(empty, quietEdition);
+  assert.equal(recorded.recordedEditionCount, 1);
+  assert.equal(recorded.updatedThrough, editionDate);
+  assert.deepEqual(recorded.editions, [{ editionDate, stories: [] }]);
+
+  const serialized = serializePersonalStoryLedger(recorded, { asOfDate: editionDate });
+  const parsed = parsePersonalStoryLedger(serialized, { asOfDate: editionDate });
+  assert.deepEqual(parsed, recorded);
+  assert.equal(serializePersonalStoryLedger(parsed, { asOfDate: editionDate }), serialized);
+
+  const after = buildPersonalRepeatHistory(parsed, { asOfDate: editionDate });
+  assert.equal(after.priorEditionCount, 1);
+  assert.equal(after.priorStoryCount, 0);
+  assert.equal(after.nextPilotOrdinal, 2);
+  assert.deepEqual(after.entries, []);
+
+  const retried = updatePersonalStoryLedger(parsed, quietEdition);
+  assert.deepEqual(retried, recorded);
+  assert.equal(
+    serializePersonalStoryLedger(retried, { asOfDate: editionDate }),
+    serialized,
+  );
+});
+
 test("pruning keeps the current date plus exactly 30 prior calendar dates", () => {
   let ledger = createEmptyPersonalStoryLedger();
   for (let offset = 0; offset <= 30; offset += 1) {

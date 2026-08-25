@@ -23,7 +23,8 @@ const PERSONAL_RESEARCH_MAX_MODEL_REQUESTS = 2;
 const PERSONAL_RESEARCH_LOOKBACK_HOURS = 72;
 const PERSONAL_RESEARCH_MINIMUM_SCORE = 70;
 const PERSONAL_RESEARCH_MINIMUM_AUTHORITATIVE_SCORE = 70;
-const PERSONAL_RESEARCH_MINIMUM_STORY_COUNT = 3;
+const PERSONAL_RESEARCH_MAX_RESEARCH_ATTEMPTS = 2;
+const PERSONAL_RESEARCH_RETRY_BELOW_STORY_COUNT = 2;
 const PERSONAL_REPEAT_LOOKBACK_DAYS = 30;
 const RECEIPT_COMPONENT_MAXIMUMS = Object.freeze({
   materialityNewsworthiness: 30,
@@ -110,7 +111,7 @@ function sourceRelationshipLabel(relationship) {
 }
 
 function validationFailure() {
-  return new Error("Personal email requires at least three source-checked stories in a free-research candidate.");
+  return new Error("Personal email requires a validated adaptive source-checked candidate.");
 }
 
 function isDisplayString(value, maximumLength) {
@@ -322,6 +323,10 @@ export function assertPersonalEmailCandidate(candidate) {
   const sourceCheck = candidate.provenance?.sourceCheck;
   const selectedStoryCount = DESKS.filter(([desk]) =>
     candidate.desks?.[desk]?.story !== null).length;
+  const inferenceIsValid = selectedStoryCount === 0
+    ? research?.inference === "skipped-no-eligible-candidates" &&
+      research?.responseId === "not-invoked"
+    : research?.inference === "workers-ai" && research?.responseId !== "not-invoked";
   const runId = typeof research?.runId === "string" ? research.runId : "";
   const expectedRunUrl =
     `https://github.com/${EXPECTED_PERSONAL_REPOSITORY}/actions/runs/${runId}`;
@@ -337,10 +342,9 @@ export function assertPersonalEmailCandidate(candidate) {
     !/^[1-9]\d*$/.test(runId) ||
     !["on_time", "same_day_backfill"].includes(research.runMode) ||
     research.generatedAt !== candidate.publication.generatedAt ||
-    research.inference !== "workers-ai" ||
+    !inferenceIsValid ||
     typeof research.responseId !== "string" ||
     !RESPONSE_ID_PATTERN.test(research.responseId) ||
-    research.responseId === "not-invoked" ||
     !/^[a-f0-9]{64}$/.test(research.feedSnapshotSha256 ?? "") ||
     !/^[a-f0-9]{64}$/.test(research.requestSha256 ?? "") ||
     !/^[a-f0-9]{64}$/.test(research.responseSha256 ?? "") ||
@@ -349,16 +353,25 @@ export function assertPersonalEmailCandidate(candidate) {
     !Number.isInteger(research.successfulFeedSourceCount) ||
     research.successfulFeedSourceCount < 1 ||
     research.successfulFeedSourceCount > research.feedSourceCount ||
+    research.coveredDeskCount !== DESKS.length ||
     !Number.isInteger(research.candidateCount) ||
-    research.candidateCount < PERSONAL_RESEARCH_MINIMUM_STORY_COUNT ||
-    research.candidateCount < selectedStoryCount ||
+    research.candidateCount !== selectedStoryCount ||
+    research.candidateSelection !== "deterministic-selected-slate" ||
     research.evidencePolicy !== PERSONAL_RESEARCH_EVIDENCE_POLICY ||
     research.lookbackHours !== PERSONAL_RESEARCH_LOOKBACK_HOURS ||
     research.minimumScore !== PERSONAL_RESEARCH_MINIMUM_SCORE ||
     research.minimumAuthoritativeScore !== PERSONAL_RESEARCH_MINIMUM_AUTHORITATIVE_SCORE ||
     research.ephemeral !== true ||
-    research.requiredStoryCount !== PERSONAL_RESEARCH_MINIMUM_STORY_COUNT ||
+    research.requiredStoryCount !== selectedStoryCount ||
     research.selectedStoryCount !== selectedStoryCount ||
+    research.maxResearchAttempts !== PERSONAL_RESEARCH_MAX_RESEARCH_ATTEMPTS ||
+    research.researchRetryBelowStoryCount !== PERSONAL_RESEARCH_RETRY_BELOW_STORY_COUNT ||
+    ![1, 2].includes(research.researchAttemptCount) ||
+    !["not-needed", "improved", "no-improvement", "coverage-fallback"].includes(
+      research.researchRetryOutcome,
+    ) ||
+    (research.researchAttemptCount === 1 && research.researchRetryOutcome !== "not-needed") ||
+    (research.researchAttemptCount === 2 && research.researchRetryOutcome === "not-needed") ||
     research.repeatLedgerSchemaVersion !== PERSONAL_STORY_LEDGER_SCHEMA_VERSION ||
     research.repeatLookbackDays !== PERSONAL_REPEAT_LOOKBACK_DAYS ||
     !/^[a-f0-9]{64}$/.test(research.repeatStateSha256 ?? "") ||
@@ -377,7 +390,6 @@ export function assertPersonalEmailCandidate(candidate) {
         ? research.priorLedgerEditionCount + 1
         : null
     ) ||
-    selectedStoryCount < PERSONAL_RESEARCH_MINIMUM_STORY_COUNT ||
     selectedStoryCount > DESKS.length ||
     research.maxModelRequests !== PERSONAL_RESEARCH_MAX_MODEL_REQUESTS ||
     !sourceCheck ||
@@ -385,6 +397,7 @@ export function assertPersonalEmailCandidate(candidate) {
     sourceCheck.status !== "passed" ||
     !Number.isInteger(sourceCheck.checkedSourceCount) ||
     sourceCheck.checkedSourceCount < selectedStoryCount * 2 ||
+    (selectedStoryCount === 0 && sourceCheck.checkedSourceCount !== 0) ||
     !Array.isArray(sourceCheck.issues) ||
     sourceCheck.issues.length !== 0 ||
     DESKS.some(([desk]) => {
@@ -489,6 +502,17 @@ export function renderPersonalEditionEmail(candidate) {
   const displayDate = formatEditionDate(candidate.editionDate);
   const subject = `First Fold — ${displayDate}`;
   const research = candidate.provenance.personalFreeResearch;
+  const selectedStoryCount = research.selectedStoryCount;
+  const editionLabel = selectedStoryCount >= 2
+    ? "Regular edition"
+    : selectedStoryCount === 1
+      ? "Slim edition"
+      : "Quiet edition";
+  const storyCountLabel = `${selectedStoryCount} ${selectedStoryCount === 1 ? "story" : "stories"}`;
+  const researchPassLabel = `${research.researchAttemptCount} research ${research.researchAttemptCount === 1 ? "pass" : "passes"}`;
+  const deliveryCheckLabel = selectedStoryCount === 0
+    ? "Curated-feed research completed · Quality threshold unchanged"
+    : "Source checked before delivery";
   const pilotOrdinal = research.qualityPilotOrdinal;
   const pilotHtml = pilotOrdinal === null
     ? ""
@@ -527,15 +551,16 @@ export function renderPersonalEditionEmail(candidate) {
         </tr>
         <tr>
           <td style="padding:24px 34px 28px;border-top:1px solid #8f8779;">
-            <p style="margin:0 0 8px;color:#712b27;font:700 12px/1.2 Arial,Helvetica,sans-serif;letter-spacing:1.5px;text-transform:uppercase;">The morning brief</p>
+            <p style="margin:0 0 8px;color:#712b27;font:700 12px/1.2 Arial,Helvetica,sans-serif;letter-spacing:1.5px;text-transform:uppercase;">The morning brief · ${escapeHtml(editionLabel)}</p>
             <p style="margin:0;color:#24211d;font:22px/1.35 Georgia,Times New Roman,serif;">${escapeHtml(candidate.frontPage.note)}</p>
-            <p style="margin:14px 0 0;color:#6d665c;font:13px/1.4 Arial,Helvetica,sans-serif;">${escapeHtml(String(candidate.frontPage.estimatedMinutes))} minute read · Source checked before delivery</p>
+            <p style="margin:14px 0 0;color:#6d665c;font:13px/1.4 Arial,Helvetica,sans-serif;">${escapeHtml(String(candidate.frontPage.estimatedMinutes))} minute read · ${escapeHtml(storyCountLabel)} · ${escapeHtml(deliveryCheckLabel)}</p>
+            <p style="margin:8px 0 0;color:#6d665c;font:12px/1.4 Arial,Helvetica,sans-serif;">Research receipt: ${escapeHtml(String(research.successfulFeedSourceCount))} of ${escapeHtml(String(research.feedSourceCount))} reviewed feeds completed · ${escapeHtml(researchPassLabel)} · Story threshold ${PERSONAL_RESEARCH_MINIMUM_SCORE}/100</p>
           </td>
         </tr>${pilotHtml}${deskHtml}
         <tr>
           <td style="padding:24px 34px;border-top:3px double #24211d;text-align:center;">
             <p style="margin:0;color:#171512;font:700 18px/1.2 Georgia,Times New Roman,serif;">You’re caught up.</p>
-            <p style="margin:8px 0 0;color:#6d665c;font:12px/1.5 Arial,Helvetica,sans-serif;">Your private, source-checked First Fold. No public edition was created.</p>
+            <p style="margin:8px 0 0;color:#6d665c;font:12px/1.5 Arial,Helvetica,sans-serif;">Your private, quality-gated First Fold. No public edition was created.</p>
           </td>
         </tr>
       </table>
@@ -549,9 +574,10 @@ export function renderPersonalEditionEmail(candidate) {
     compactText(candidate.masthead?.tagline),
     `WASHINGTON, D.C. · ${displayDate.toUpperCase()} · ISSUE NO. ${candidate.issueNumber}`,
     "",
-    "THE MORNING BRIEF",
+    `THE MORNING BRIEF · ${editionLabel.toUpperCase()}`,
     compactText(candidate.frontPage.note),
-    `${candidate.frontPage.estimatedMinutes} minute read · Source checked before delivery`,
+    `${candidate.frontPage.estimatedMinutes} minute read · ${storyCountLabel} · ${deliveryCheckLabel}`,
+    `Research receipt: ${research.successfulFeedSourceCount} of ${research.feedSourceCount} reviewed feeds completed · ${researchPassLabel} · Story threshold ${PERSONAL_RESEARCH_MINIMUM_SCORE}/100`,
     "",
     ...pilotText,
     "========================================",
@@ -561,7 +587,7 @@ export function renderPersonalEditionEmail(candidate) {
     "========================================",
     "",
     "YOU’RE CAUGHT UP.",
-    "Your private, source-checked First Fold. No public edition was created.",
+    "Your private, quality-gated First Fold. No public edition was created.",
   ].join("\n");
 
   return { subject, html, text };

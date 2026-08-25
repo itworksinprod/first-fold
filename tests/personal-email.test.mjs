@@ -7,6 +7,7 @@ import {
   MAX_RESEND_RESPONSE_BYTES,
   PERSONAL_EMAIL_FROM,
   RESEND_EMAIL_ENDPOINT,
+  assertPersonalEmailCandidate,
   personalEditionIdempotencyKey,
   renderPersonalEditionEmail,
   sendPersonalEditionEmail,
@@ -115,14 +116,20 @@ function personalCandidate() {
     responseId: "workers_ai_personal_test",
     feedSourceCount: 17,
     successfulFeedSourceCount: 17,
-    candidateCount: 8,
+    coveredDeskCount: 4,
+    candidateCount: 4,
+    candidateSelection: "deterministic-selected-slate",
     evidencePolicy: "authoritative-or-corroborated",
     lookbackHours: 72,
     minimumScore: 70,
     minimumAuthoritativeScore: 70,
     ephemeral: true,
-    requiredStoryCount: 3,
+    requiredStoryCount: 4,
     selectedStoryCount: 4,
+    maxResearchAttempts: 2,
+    researchRetryBelowStoryCount: 2,
+    researchAttemptCount: 1,
+    researchRetryOutcome: "not-needed",
     repeatLedgerSchemaVersion: 2,
     repeatLookbackDays: 30,
     repeatStateSha256: "d".repeat(64),
@@ -156,11 +163,39 @@ function leaveDeskQuiet(candidate, desk) {
   }
   const selectedStoryCount = Object.values(candidate.desks)
     .filter((page) => page.story !== null).length;
-  candidate.frontPage.note =
-    `${selectedStoryCount} source-verified developments cleared the private research contract.`;
-  candidate.provenance.personalFreeResearch.selectedStoryCount = selectedStoryCount;
+  candidate.frontPage.note = selectedStoryCount === 0
+    ? "Research completed across 17 of 17 reviewed feeds. No source-checked development cleared the unchanged editorial threshold today."
+    : `${selectedStoryCount} source-verified ${selectedStoryCount === 1 ? "development" : "developments"} cleared the private research contract.`;
+  candidate.frontPage.estimatedMinutes = Math.max(1, selectedStoryCount * 2);
+  const research = candidate.provenance.personalFreeResearch;
+  research.candidateCount = selectedStoryCount;
+  research.requiredStoryCount = selectedStoryCount;
+  research.selectedStoryCount = selectedStoryCount;
+  research.researchAttemptCount = selectedStoryCount < 2 ? 2 : 1;
+  research.researchRetryOutcome = selectedStoryCount < 2 ? "no-improvement" : "not-needed";
+  research.inference = selectedStoryCount === 0
+    ? "skipped-no-eligible-candidates"
+    : "workers-ai";
+  research.responseId = selectedStoryCount === 0
+    ? "not-invoked"
+    : "workers_ai_personal_test";
   candidate.provenance.sourceCheck.checkedSourceCount = selectedStoryCount * 2;
   assert.equal(validateCanonicalEdition(candidate).valid, true);
+  return candidate;
+}
+
+function candidateWithStoryCount(storyCount) {
+  assert.ok(Number.isInteger(storyCount) && storyCount >= 0 && storyCount <= 4);
+  const candidate = personalCandidate();
+  const removalOrder = [
+    "platforms-and-power",
+    "security-and-privacy",
+    "work-and-tools",
+    "ai",
+  ];
+  for (const desk of removalOrder.slice(0, 4 - storyCount)) {
+    leaveDeskQuiet(candidate, desk);
+  }
   return candidate;
 }
 
@@ -217,6 +252,9 @@ test("the renderer produces a complete static newspaper with sources and text fa
   assert.match(rendered.text, /Importance: \d+\/30/);
   assert.match(rendered.text, /QUALITY PILOT · EDITION 1 OF 5/);
   assert.match(rendered.html, /Quality pilot · Edition 1 of 5/);
+  assert.match(rendered.text, /THE MORNING BRIEF · REGULAR EDITION/);
+  assert.match(rendered.text, /4 stories · Source checked before delivery/);
+  assert.match(rendered.text, /Research receipt: 17 of 17 reviewed feeds completed · 1 research pass · Story threshold 70\/100/);
 });
 
 test("evidence labels come from the trusted receipt rather than display publisher aliases", () => {
@@ -253,7 +291,7 @@ test("every rendered editorial and source field is HTML escaped", () => {
 test("rendering fails closed for malformed, public, free, incomplete, or unverified candidates", () => {
   assert.throws(
     () => renderPersonalEditionEmail(null),
-    /at least three source-checked stories in a free-research candidate/,
+    /validated adaptive source-checked candidate/,
   );
 
   const mutations = [
@@ -303,35 +341,78 @@ test("rendering fails closed for malformed, public, free, incomplete, or unverif
     mutate(candidate);
     assert.throws(
       () => renderPersonalEditionEmail(candidate),
-      /at least three source-checked stories in a free-research candidate/,
+      /validated adaptive source-checked candidate/,
     );
   }
 });
 
-test("exactly one explained quiet desk is deliverable but two quiet desks block Resend", async (t) => {
-  for (const desk of ["ai", "work-and-tools", "security-and-privacy", "platforms-and-power"]) {
-    await t.test(`${desk} may be quiet`, () => {
-      const rendered = renderPersonalEditionEmail(leaveDeskQuiet(personalCandidate(), desk));
-      assert.match(rendered.text, /QUIET DESK/);
-      assert.equal(rendered.text.match(/VALIDATION RECEIPT/g)?.length, 3);
+test("adaptive editions accept zero through four stories with regular, slim, and quiet labels", async (t) => {
+  const expectedLabel = new Map([
+    [0, "QUIET EDITION"],
+    [1, "SLIM EDITION"],
+    [2, "REGULAR EDITION"],
+    [3, "REGULAR EDITION"],
+    [4, "REGULAR EDITION"],
+  ]);
+
+  for (let storyCount = 0; storyCount <= 4; storyCount += 1) {
+    await t.test(`${storyCount}-story edition`, async () => {
+      const candidate = candidateWithStoryCount(storyCount);
+      assert.equal(assertPersonalEmailCandidate(candidate).valid, true);
+
+      const rendered = renderPersonalEditionEmail(candidate);
+      assert.match(rendered.text, new RegExp(`THE MORNING BRIEF · ${expectedLabel.get(storyCount)}`));
+      assert.match(
+        rendered.text,
+        new RegExp(`${storyCount} ${storyCount === 1 ? "story" : "stories"}`),
+      );
+      assert.equal(rendered.text.match(/VALIDATION RECEIPT/g)?.length ?? 0, storyCount);
+      assert.equal(rendered.text.match(/QUIET DESK/g)?.length ?? 0, 4 - storyCount);
+
+      let fetchCalls = 0;
+      const result = await sendPersonalEditionEmail(candidate, {
+        apiKey: API_KEY,
+        recipient: RECIPIENT,
+        fetchImpl: async () => {
+          fetchCalls += 1;
+          return successResponse(`email_story_count_${storyCount}`);
+        },
+      });
+      assert.equal(result.id, `email_story_count_${storyCount}`);
+      assert.equal(fetchCalls, 1);
     });
   }
+});
 
-  const candidate = leaveDeskQuiet(personalCandidate(), "ai");
-  leaveDeskQuiet(candidate, "work-and-tools");
-  let fetchCalls = 0;
-  await assert.rejects(
-    sendPersonalEditionEmail(candidate, {
-      apiKey: API_KEY,
-      recipient: RECIPIENT,
-      fetchImpl: async () => {
-        fetchCalls += 1;
-        return successResponse();
-      },
-    }),
-    /at least three source-checked stories in a free-research candidate/,
+test("a quiet edition shows its research receipt without story source receipts", () => {
+  const candidate = candidateWithStoryCount(0);
+  const rendered = renderPersonalEditionEmail(candidate);
+
+  assert.match(rendered.text, /THE MORNING BRIEF · QUIET EDITION/);
+  assert.match(rendered.text, /0 stories · Curated-feed research completed · Quality threshold unchanged/);
+  assert.match(rendered.text, /Research receipt: 17 of 17 reviewed feeds completed · 2 research passes · Story threshold 70\/100/);
+  assert.doesNotMatch(rendered.text, /VALIDATION RECEIPT/);
+  assert.doesNotMatch(rendered.text, /(?:^|\n)SOURCES(?:\n|$)/);
+  assert.doesNotMatch(rendered.html, /Validation receipt/);
+  assert.doesNotMatch(rendered.html, />Sources</);
+});
+
+test("inference provenance is conditional on whether the adaptive edition has stories", () => {
+  const populated = personalCandidate();
+  populated.provenance.personalFreeResearch.inference = "skipped-no-eligible-candidates";
+  populated.provenance.personalFreeResearch.responseId = "not-invoked";
+  assert.throws(
+    () => assertPersonalEmailCandidate(populated),
+    /validated adaptive source-checked candidate/,
   );
-  assert.equal(fetchCalls, 0);
+
+  const quiet = candidateWithStoryCount(0);
+  quiet.provenance.personalFreeResearch.inference = "workers-ai";
+  quiet.provenance.personalFreeResearch.responseId = "workers_ai_personal_test";
+  assert.throws(
+    () => assertPersonalEmailCandidate(quiet),
+    /validated adaptive source-checked candidate/,
+  );
 });
 
 test("the sender posts one bounded Resend request with fixed identity and date idempotency", async () => {

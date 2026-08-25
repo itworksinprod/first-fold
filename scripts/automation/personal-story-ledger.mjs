@@ -461,7 +461,7 @@ function canonicalizeLedgerContents(value, { asOfDate, prune = true } = {}) {
       throw new Error("Personal story ledger editions must be unique and canonically sorted.");
     }
     priorDate = editionDate;
-    if (!Array.isArray(edition.stories) || edition.stories.length < 1 || edition.stories.length > MAX_STORIES_PER_EDITION) {
+    if (!Array.isArray(edition.stories) || edition.stories.length > MAX_STORIES_PER_EDITION) {
       throw new Error(`${label} has an invalid story count.`);
     }
     const stories = edition.stories.map((story, storyIndex) =>
@@ -614,8 +614,8 @@ export function updatePersonalStoryLedger(
     .filter((story) => story !== null && story !== undefined)
     .map((story) => fingerprintPersonalStory(story, { fingerprintKey }))
     .sort((left, right) => DESK_ORDER.get(left.desk) - DESK_ORDER.get(right.desk));
-  if (stories.length < 1 || stories.length > MAX_STORIES_PER_EDITION) {
-    throw new Error("Candidate edition must contain between one and four selected stories.");
+  if (stories.length > MAX_STORIES_PER_EDITION) {
+    throw new Error("Candidate edition must contain between zero and four selected stories.");
   }
   if (new Set(stories.map((story) => story.desk)).size !== stories.length) {
     throw new Error("Candidate edition repeats a desk.");

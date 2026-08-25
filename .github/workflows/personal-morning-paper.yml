@@ -704,7 +704,7 @@ jobs:
           steps.candidate.outputs.candidate_created == 'true'
         run: npm test
 
-      - name: Record only validated story fingerprints in the repeat ledger
+      - name: Record the delivered edition and validated story fingerprints
         if: >-
           steps.dedupe.outputs.should_send == 'true' &&
           steps.preflight.outputs.delivery_enabled == 'true' &&

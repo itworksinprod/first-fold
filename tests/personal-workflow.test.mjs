@@ -27,14 +27,14 @@ const generation = job.slice(
 );
 const candidateTest = job.slice(
   job.indexOf("Test the exact private candidate"),
-  job.indexOf("Record only validated story fingerprints in the repeat ledger"),
+  job.indexOf("Record the delivered edition and validated story fingerprints"),
 );
 const ledgerPrepare = job.slice(
   job.indexOf("Prepare the private 30-day repeat ledger"),
   job.indexOf("Generate the private source-checked candidate"),
 );
 const ledgerRecord = job.slice(
-  job.indexOf("Record only validated story fingerprints in the repeat ledger"),
+  job.indexOf("Record the delivered edition and validated story fingerprints"),
   job.indexOf("Stage the immutable hash-only repeat ledger before delivery"),
 );
 const emailStepName = "Send only the validated paper to its private recipient";
@@ -201,7 +201,7 @@ test("email setup no-ops only when wholly absent and secrets stay step-scoped", 
   assert.doesNotMatch(workflow, /OPENAI_API_KEY|OPENAI_MODEL|personal-paid-edition|personalResearch|freePilot/);
 });
 
-test("trusted pinned code generates, tests, and emails while persisting only repeat fingerprints", () => {
+test("trusted pinned code tests, records, and emails every adaptive daily candidate", () => {
   const usesLines = workflow
     .split("\n")
     .map((line) => line.trim())
@@ -233,10 +233,10 @@ test("trusted pinned code generates, tests, and emails while persisting only rep
   );
   assert.ok(
     job.indexOf("Test the exact private candidate") <
-      job.indexOf("Record only validated story fingerprints in the repeat ledger"),
+      job.indexOf("Record the delivered edition and validated story fingerprints"),
   );
   assert.ok(
-    job.indexOf("Record only validated story fingerprints in the repeat ledger") <
+    job.indexOf("Record the delivered edition and validated story fingerprints") <
       ledgerUploadIndex,
   );
   assert.ok(
@@ -247,12 +247,20 @@ test("trusted pinned code generates, tests, and emails while persisting only rep
       candidateDependentStep,
       /steps\.candidate\.outputs\.candidate_created == 'true'/,
     );
+    assert.doesNotMatch(
+      candidateDependentStep,
+      /selected_story_count|edition_format|qualified_story_count|required_story_count/,
+    );
   }
   assert.equal(
     job.match(/steps\.candidate\.outputs\.candidate_created == 'true'/g)?.length,
     4,
   );
   assert.doesNotMatch(ledgerPrepare, /steps\.candidate\.outputs\.candidate_created/);
+  assert.doesNotMatch(
+    generation,
+    /candidate_created == 'false'|qualified_story_count|required_story_count|no[- ]edition|at least three|three stor(?:y|ies)/i,
+  );
   assert.doesNotMatch(workflow, /content\/editions\/|console\.log\(|cat\s+.*candidate|tee\s+/);
 });
 

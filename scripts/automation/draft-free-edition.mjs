@@ -37,6 +37,14 @@ export const FREE_EVIDENCE_POLICIES = Object.freeze([
   "authoritative-or-corroborated",
 ]);
 
+const MAX_FREE_RESEARCH_ATTEMPTS = 2;
+const FREE_RESEARCH_RETRY_OUTCOMES = Object.freeze([
+  "not-needed",
+  "improved",
+  "no-improvement",
+  "coverage-fallback",
+]);
+
 export class InsufficientFreeCandidatesError extends Error {
   constructor({ availableCount, requiredCount }) {
     if (
@@ -669,10 +677,10 @@ complete story under these rules, the run must fail rather than imply that
 independent confirmation exists.`
     : requiredStoryCount > 0
       ? `This private run requires at least ${requiredStoryCount} selected stories and
-no more than one story per desk. You may return exactly one quiet desk only
-when no safe dossier clears the bar for that desk, and its emptyReason must
-briefly explain that no qualifying development cleared the editorial threshold.
-Never lower the evidence or quality bar merely to fill the fourth desk.`
+no more than one story per desk. You may return up to ${FREE_DESKS.length - requiredStoryCount}
+quiet ${FREE_DESKS.length - requiredStoryCount === 1 ? "desk" : "desks"}, and each emptyReason must briefly explain that no
+qualifying development cleared the editorial threshold for that desk. Never
+lower the evidence or quality bar merely to fill a desk.`
       : "Leave a desk quiet when its bounded dossier cannot support a safe story.";
   const boundedFactInstructions = requiredStoryCount > 0
     ? `If the bounded facts cannot support at least ${requiredStoryCount} required stories,
@@ -811,7 +819,7 @@ export function buildFreeWorkersAiMessages({
         `${requiredStoryCount === FREE_DESKS.length
           ? "Select exactly one story in each of the four desks."
           : requiredStoryCount > 0
-            ? `Select at least ${requiredStoryCount} stories, no more than one per desk, and leave at most one desk quiet with an explanation.`
+            ? `Select at least ${requiredStoryCount} stories, no more than one per desk, and leave at most ${FREE_DESKS.length - requiredStoryCount} ${FREE_DESKS.length - requiredStoryCount === 1 ? "desk" : "desks"} quiet with explanations.`
             : "Select no more than one story per desk."} ` +
         `Use 150-225 reader-facing words per selected story, preserve the half-open reporting window, ` +
         `and return JSON only.\n\nRUN_CONTEXT:\n${JSON.stringify(runContext)}`,
@@ -1188,10 +1196,11 @@ export function normalizeFreeEditorialAgainstCandidates(
   };
 }
 
-function buildQuietEditorial(research) {
+function buildQuietEditorial(research, coverage) {
   return {
     frontPage: {
-      note: "No independently corroborated development in the free feed edition cleared the editorial threshold today.",
+      note: `Research completed across ${coverage.successfulSourceCount} of ${coverage.sourceCount} reviewed feeds. ` +
+        "No development in those feeds cleared the unchanged evidence and editorial thresholds today.",
       estimatedMinutes: 1,
       leadStoryId: null,
       storyOrder: [],
@@ -1202,7 +1211,7 @@ function buildQuietEditorial(research) {
       desk,
       story: null,
       emptyReason: research.desks[desk].emptyReason ||
-        `No independently corroborated ${DESK_LABELS[desk]} feed development cleared the editorial threshold.`,
+        `No qualifying ${DESK_LABELS[desk]} feed development cleared the evidence and editorial thresholds.`,
     }])),
     backPage: { tryThisTomorrow: null, watchNext: [] },
   };
@@ -1223,8 +1232,7 @@ function sourceUrlsFromCandidates(candidates) {
     Array.isArray(candidate.sources) ? candidate.sources.map((source) => source.url) : []);
 }
 
-function candidatesForDraft(research, requiredStoryCount) {
-  if (requiredStoryCount === 0) return research.candidates;
+function selectedCandidatesForDraft(research) {
   const selectedCandidates = research.selectedCandidates;
   if (
     !Array.isArray(selectedCandidates) ||
@@ -1259,13 +1267,19 @@ function candidatesForDraft(research, requiredStoryCount) {
   ) {
     throw new Error("Free generation returned inconsistent selected feed candidates.");
   }
+  return selectedCandidates;
+}
+
+function candidatesForDraft(research, requiredStoryCount, { selectedSlate = false } = {}) {
+  if (!selectedSlate && requiredStoryCount === 0) return research.candidates;
+  const selectedCandidates = selectedCandidatesForDraft(research);
   if (selectedCandidates.length < requiredStoryCount) {
     throw new InsufficientFreeCandidatesError({
       availableCount: selectedCandidates.length,
       requiredCount: requiredStoryCount,
     });
   }
-  return selectedCandidates;
+  return selectedSlate || requiredStoryCount > 0 ? selectedCandidates : research.candidates;
 }
 
 function assertCheckedAt({
@@ -1325,8 +1339,20 @@ export function validateFreePilotProvenance(
     !Number.isInteger(freePilot.successfulFeedSourceCount) ||
     freePilot.successfulFeedSourceCount < 1 ||
     freePilot.successfulFeedSourceCount > freePilot.feedSourceCount ||
+    freePilot.coveredDeskCount !== FREE_DESKS.length ||
     !Number.isInteger(freePilot.candidateCount) ||
     freePilot.candidateCount < 0 ||
+    typeof freePilot.draftSelectedSlate !== "boolean" ||
+    !Number.isInteger(freePilot.maxResearchAttempts) ||
+    freePilot.maxResearchAttempts < 1 ||
+    freePilot.maxResearchAttempts > MAX_FREE_RESEARCH_ATTEMPTS ||
+    !Number.isInteger(freePilot.researchRetryBelowStoryCount) ||
+    freePilot.researchRetryBelowStoryCount < 0 ||
+    freePilot.researchRetryBelowStoryCount > FREE_DESKS.length ||
+    !Number.isInteger(freePilot.researchAttemptCount) ||
+    freePilot.researchAttemptCount < 1 ||
+    freePilot.researchAttemptCount > freePilot.maxResearchAttempts ||
+    !FREE_RESEARCH_RETRY_OUTCOMES.includes(freePilot.researchRetryOutcome) ||
     !FREE_EVIDENCE_POLICIES.includes(freePilot.evidencePolicy) ||
     !Number.isInteger(freePilot.requiredStoryCount) ||
     freePilot.requiredStoryCount < 0 ||
@@ -1364,6 +1390,20 @@ export function validateFreePilotProvenance(
     ))
   ) {
     throw new Error("Free candidate inference provenance conflicts with its candidate count.");
+  }
+  if (
+    (freePilot.researchAttemptCount === 1 && freePilot.researchRetryOutcome !== "not-needed") ||
+    (freePilot.researchAttemptCount === 2 && freePilot.researchRetryOutcome === "not-needed") ||
+    (freePilot.maxResearchAttempts === 1 && (
+      freePilot.researchRetryBelowStoryCount !== 0 ||
+      freePilot.researchAttemptCount !== 1
+    )) ||
+    (freePilot.draftSelectedSlate && (
+      freePilot.candidateCount !== freePilot.requiredStoryCount ||
+      freePilot.selectedStoryCount !== freePilot.requiredStoryCount
+    ))
+  ) {
+    throw new Error("Free candidate research-attempt provenance is inconsistent.");
   }
   if (
     expectedFeedSourceCount !== undefined &&
@@ -1447,6 +1487,9 @@ export async function draftFreeEdition({
   evidencePolicy = "corroborated",
   requireComplete = false,
   minimumStoryCount = 0,
+  draftSelectedSlate = false,
+  maxResearchAttempts = 1,
+  researchRetryBelowStoryCount = 0,
   lookbackHours = DEFAULT_FREE_LOOKBACK_HOURS,
   minimumScore = DEFAULT_MINIMUM_SCORE,
   minimumAuthoritativeScore = minimumScore,
@@ -1479,6 +1522,9 @@ export async function draftFreeEdition({
   if (typeof requireComplete !== "boolean") {
     throw new Error("Free requireComplete must be a boolean.");
   }
+  if (typeof draftSelectedSlate !== "boolean") {
+    throw new Error("Free draftSelectedSlate must be a boolean.");
+  }
   if (
     !Number.isInteger(minimumStoryCount) ||
     minimumStoryCount < 0 ||
@@ -1487,7 +1533,29 @@ export async function draftFreeEdition({
   ) {
     throw new Error("Free minimumStoryCount must be an integer from 0 through 4.");
   }
-  const requiredStoryCount = requireComplete ? FREE_DESKS.length : minimumStoryCount;
+  if (
+    !Number.isInteger(maxResearchAttempts) ||
+    maxResearchAttempts < 1 ||
+    maxResearchAttempts > MAX_FREE_RESEARCH_ATTEMPTS
+  ) {
+    throw new Error("Free maxResearchAttempts must be 1 or 2.");
+  }
+  if (
+    !Number.isInteger(researchRetryBelowStoryCount) ||
+    researchRetryBelowStoryCount < 0 ||
+    researchRetryBelowStoryCount > FREE_DESKS.length ||
+    (maxResearchAttempts === 1 && researchRetryBelowStoryCount !== 0)
+  ) {
+    throw new Error(
+      "Free researchRetryBelowStoryCount must be 0 through 4 and requires two research attempts when enabled.",
+    );
+  }
+  if (draftSelectedSlate && (requireComplete || minimumStoryCount !== 0)) {
+    throw new Error("Free selected-slate drafting requires an adaptive zero minimumStoryCount.");
+  }
+  const configuredRequiredStoryCount = requireComplete
+    ? FREE_DESKS.length
+    : minimumStoryCount;
   requireNonBlank(policyText, "Editorial policy text");
   requireNonBlank(promptText, "Daily prompt text");
   const editions = validatePriorEditions(priorEditions);
@@ -1506,7 +1574,7 @@ export async function draftFreeEdition({
   const githubRun = requireGitHubRun(automation ?? {});
   scaffold.publication.generatedAt = generatedAt;
 
-  const research = await researchImpl({
+  const researchOptions = {
     sources: feedSources,
     reportingWindow: scaffold.reportingWindow,
     retrievedAt: generatedAt,
@@ -1518,18 +1586,77 @@ export async function draftFreeEdition({
     evidencePolicy: normalizedEvidencePolicy,
     minimumScore: normalizedMinimumScore,
     minimumAuthoritativeScore: normalizedMinimumAuthoritativeScore,
-  });
-  const coverage = assertFreeResearchCoverage(research, {
-    feedSources,
-    reportingWindow: scaffold.reportingWindow,
-    retrievedAt: generatedAt,
-  });
-  const candidates = compactResearchCandidates(candidatesForDraft(research, requiredStoryCount));
+  };
+  const runResearchAttempt = async () => {
+    const attemptedResearch = await researchImpl({
+      ...researchOptions,
+      reportingWindow: structuredClone(researchOptions.reportingWindow),
+      recentArchive: structuredClone(researchOptions.recentArchive),
+      recentRepeatHistory: structuredClone(researchOptions.recentRepeatHistory),
+    });
+    const attemptedCoverage = assertFreeResearchCoverage(attemptedResearch, {
+      feedSources,
+      reportingWindow: scaffold.reportingWindow,
+      retrievedAt: generatedAt,
+    });
+    const selectedCandidates = (
+      draftSelectedSlate ||
+      configuredRequiredStoryCount > 0 ||
+      researchRetryBelowStoryCount > 0
+    )
+      ? selectedCandidatesForDraft(attemptedResearch)
+      : [];
+    return {
+      research: attemptedResearch,
+      coverage: attemptedCoverage,
+      selectedCount: selectedCandidates.length,
+    };
+  };
+
+  const firstResearchAttempt = await runResearchAttempt();
+  let selectedResearchAttempt = firstResearchAttempt;
+  let researchAttemptCount = 1;
+  let researchRetryOutcome = "not-needed";
+  if (
+    maxResearchAttempts === 2 &&
+    researchRetryBelowStoryCount > 0 &&
+    firstResearchAttempt.selectedCount < researchRetryBelowStoryCount
+  ) {
+    researchAttemptCount = 2;
+    try {
+      const secondResearchAttempt = await runResearchAttempt();
+      if (secondResearchAttempt.selectedCount > firstResearchAttempt.selectedCount) {
+        selectedResearchAttempt = secondResearchAttempt;
+        researchRetryOutcome = "improved";
+      } else {
+        researchRetryOutcome = "no-improvement";
+      }
+    } catch (error) {
+      if (error?.code !== "DESK_COVERAGE_FAILED") throw error;
+      researchRetryOutcome = "coverage-fallback";
+    }
+  }
+
+  const { research, coverage } = selectedResearchAttempt;
+  const requiredStoryCount = draftSelectedSlate
+    ? selectedResearchAttempt.selectedCount
+    : configuredRequiredStoryCount;
+  const candidates = compactResearchCandidates(candidatesForDraft(
+    research,
+    requiredStoryCount,
+    { selectedSlate: draftSelectedSlate },
+  ));
   const modelId = resolveCloudflareAiModel(model);
   const feedSnapshot = {
     registry: feedSources,
     reportingWindow: research.reportingWindow,
     retrievedAt: research.retrievedAt,
+    researchAttempts: {
+      maximum: maxResearchAttempts,
+      completed: researchAttemptCount,
+      retryBelowStoryCount: researchRetryBelowStoryCount,
+      outcome: researchRetryOutcome,
+    },
     candidates,
     diagnostics: research.diagnostics,
   };
@@ -1538,7 +1665,7 @@ export async function draftFreeEdition({
   let editorial;
   let inference;
   if (candidates.length === 0) {
-    editorial = buildQuietEditorial(research);
+    editorial = buildQuietEditorial(research, coverage);
     const skippedRequest = {
       provider: WORKERS_AI_PROVIDER,
       model: modelId,
@@ -1636,6 +1763,11 @@ export async function draftFreeEdition({
       `Free generation requires at least ${requiredStoryCount} model-authored stories before delivery.`,
     );
   }
+  if (draftSelectedSlate && selectedStoryCount !== requiredStoryCount) {
+    throw new Error(
+      "Free selected-slate generation must draft every deterministic selected candidate.",
+    );
+  }
 
   const checkedAt = resolveNow(now);
   assertCheckedAt({
@@ -1674,7 +1806,13 @@ export async function draftFreeEdition({
         inference: inference.kind,
         feedSourceCount: coverage.sourceCount,
         successfulFeedSourceCount: coverage.successfulSourceCount,
+        coveredDeskCount: FREE_DESKS.length,
         candidateCount: candidates.length,
+        draftSelectedSlate,
+        maxResearchAttempts,
+        researchRetryBelowStoryCount,
+        researchAttemptCount,
+        researchRetryOutcome,
         evidencePolicy: normalizedEvidencePolicy,
         requiredStoryCount,
         selectedStoryCount,

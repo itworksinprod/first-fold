@@ -327,6 +327,46 @@ function completeAuthoritativeScenario() {
   return { candidates, payload, research };
 }
 
+function selectedSlateScenario(selectedDesks) {
+  const selectedDeskSet = new Set(selectedDesks);
+  const { candidates, payload, research } = completeAuthoritativeScenario();
+  const selectedCandidates = candidates.filter((candidate) =>
+    selectedDeskSet.has(candidate.suggestedDesk));
+  const selectedStories = [];
+
+  research.selectedCandidates = selectedCandidates;
+  for (const desk of Object.keys(research.desks)) {
+    const selectedCandidate = selectedCandidates.find((candidate) =>
+      candidate.suggestedDesk === desk) ?? null;
+    research.desks[desk] = {
+      desk,
+      candidates: selectedCandidate ? [selectedCandidate] : [],
+      selectedCandidate,
+      emptyReason: selectedCandidate
+        ? null
+        : `No independently corroborated ${desk} feed development cleared the editorial threshold.`,
+    };
+    if (selectedCandidate) {
+      selectedStories.push(payload.desks[desk].story);
+    } else {
+      payload.desks[desk] = {
+        desk,
+        story: null,
+        emptyReason: `Model-authored ${desk} quiet reason must be replaced.`,
+      };
+    }
+  }
+  research.diagnostics.selectedCount = selectedCandidates.length;
+  payload.frontPage = {
+    ...payload.frontPage,
+    note: `${selectedStories.length} deterministic selected-slate developments were drafted.`,
+    leadStoryId: selectedStories[0]?.id ?? null,
+    storyOrder: selectedStories.map((story) => story.id),
+    stopThePressesStoryId: null,
+  };
+  return { candidates, payload, research, selectedCandidates };
+}
+
 function aiResult(editorialPayload = buildEditorialPayload()) {
   return {
     editorialPayload,
@@ -461,6 +501,217 @@ test("healthy zero-news coverage creates a deterministic quiet candidate without
   assert.deepEqual(candidate.frontPage.storyOrder, []);
   assert.equal(candidate.frontPage.leadStoryId, null);
   assert.equal(Object.values(candidate.desks).every((page) => page.story === null), true);
+  assert.equal(validateCanonicalEdition(candidate).valid, true);
+});
+
+test("selected-slate drafting skips the research retry once two stories qualify", async () => {
+  const { payload, research, selectedCandidates } = selectedSlateScenario([
+    "ai",
+    "work-and-tools",
+  ]);
+  let researchCalls = 0;
+  let aiCalls = 0;
+  let modelMessages;
+
+  const candidate = await draftFreeEdition(draftOptions({
+    evidencePolicy: "authoritative-or-corroborated",
+    draftSelectedSlate: true,
+    maxResearchAttempts: 2,
+    researchRetryBelowStoryCount: 2,
+    researchImpl: async () => {
+      researchCalls += 1;
+      return research;
+    },
+    aiRequestImpl: async (options) => {
+      aiCalls += 1;
+      modelMessages = options.messages;
+      return aiResult(payload);
+    },
+  }));
+
+  assert.equal(researchCalls, 1);
+  assert.equal(aiCalls, 1);
+  assert.equal(candidate.provenance.freePilot.draftSelectedSlate, true);
+  assert.equal(candidate.provenance.freePilot.requiredStoryCount, 2);
+  assert.equal(candidate.provenance.freePilot.candidateCount, 2);
+  assert.equal(candidate.provenance.freePilot.selectedStoryCount, 2);
+  assert.equal(candidate.provenance.freePilot.researchAttemptCount, 1);
+  assert.equal(candidate.provenance.freePilot.researchRetryOutcome, "not-needed");
+  for (const selected of selectedCandidates) {
+    assert.match(modelMessages[1].content, new RegExp(selected.candidateId));
+  }
+  assert.doesNotMatch(modelMessages[1].content, /candidate-securityandprivacy/);
+  assert.doesNotMatch(modelMessages[1].content, /candidate-platformsandpower/);
+  assert.equal(candidate.provenance.sourceCheck.checkedSourceCount, 4);
+  assert.equal(validateCanonicalEdition(candidate).valid, true);
+});
+
+test("one bounded pre-AI retry adopts a strictly improved selected slate", async () => {
+  const first = selectedSlateScenario(["work-and-tools"]);
+  const second = selectedSlateScenario(["ai", "work-and-tools"]);
+  const researchOptions = [];
+  let aiCalls = 0;
+
+  const candidate = await draftFreeEdition(draftOptions({
+    evidencePolicy: "authoritative-or-corroborated",
+    draftSelectedSlate: true,
+    maxResearchAttempts: 2,
+    researchRetryBelowStoryCount: 2,
+    researchImpl: async (options) => {
+      researchOptions.push(options);
+      return researchOptions.length === 1 ? first.research : second.research;
+    },
+    aiRequestImpl: async () => {
+      aiCalls += 1;
+      return aiResult(second.payload);
+    },
+  }));
+
+  assert.equal(researchOptions.length, 2);
+  assert.equal(aiCalls, 1);
+  assert.deepEqual(researchOptions[1].reportingWindow, researchOptions[0].reportingWindow);
+  assert.equal(researchOptions[1].retrievedAt, researchOptions[0].retrievedAt);
+  assert.equal(researchOptions[1].sources, researchOptions[0].sources);
+  assert.equal(researchOptions[1].evidencePolicy, researchOptions[0].evidencePolicy);
+  assert.equal(researchOptions[1].minimumScore, researchOptions[0].minimumScore);
+  assert.equal(
+    researchOptions[1].minimumAuthoritativeScore,
+    researchOptions[0].minimumAuthoritativeScore,
+  );
+  assert.deepEqual(researchOptions[1].recentRepeatHistory, researchOptions[0].recentRepeatHistory);
+  assert.equal(candidate.provenance.freePilot.requiredStoryCount, 2);
+  assert.equal(candidate.provenance.freePilot.selectedStoryCount, 2);
+  assert.equal(candidate.provenance.freePilot.researchAttemptCount, 2);
+  assert.equal(candidate.provenance.freePilot.researchRetryOutcome, "improved");
+  assert.equal(candidate.provenance.sourceCheck.checkedSourceCount, 4);
+  assert.equal(validateCanonicalEdition(candidate).valid, true);
+});
+
+test("a non-improving research retry deterministically retains the first slate", async () => {
+  const first = selectedSlateScenario(["work-and-tools"]);
+  const second = selectedSlateScenario(["ai"]);
+  let researchCalls = 0;
+  let aiCalls = 0;
+  let modelMessages;
+
+  const candidate = await draftFreeEdition(draftOptions({
+    evidencePolicy: "authoritative-or-corroborated",
+    draftSelectedSlate: true,
+    maxResearchAttempts: 2,
+    researchRetryBelowStoryCount: 2,
+    researchImpl: async () => {
+      researchCalls += 1;
+      return researchCalls === 1 ? first.research : second.research;
+    },
+    aiRequestImpl: async (options) => {
+      aiCalls += 1;
+      modelMessages = options.messages;
+      return aiResult(first.payload);
+    },
+  }));
+
+  assert.equal(researchCalls, 2);
+  assert.equal(aiCalls, 1);
+  assert.equal(candidate.provenance.freePilot.requiredStoryCount, 1);
+  assert.equal(candidate.provenance.freePilot.researchAttemptCount, 2);
+  assert.equal(candidate.provenance.freePilot.researchRetryOutcome, "no-improvement");
+  assert.notEqual(candidate.desks["work-and-tools"].story, null);
+  assert.equal(candidate.desks.ai.story, null);
+  assert.match(modelMessages[1].content, /candidate-workandtools/);
+  assert.doesNotMatch(modelMessages[1].content, /candidate-ai/);
+  assert.equal(candidate.provenance.sourceCheck.checkedSourceCount, 2);
+  assert.equal(validateCanonicalEdition(candidate).valid, true);
+});
+
+test("two empty selected-slate research attempts create a quiet edition without AI", async () => {
+  let researchCalls = 0;
+  let aiCalls = 0;
+  const candidate = await draftFreeEdition(draftOptions({
+    evidencePolicy: "authoritative-or-corroborated",
+    draftSelectedSlate: true,
+    maxResearchAttempts: 2,
+    researchRetryBelowStoryCount: 2,
+    researchImpl: async () => {
+      researchCalls += 1;
+      return researchResult({ candidates: [] });
+    },
+    aiRequestImpl: async () => {
+      aiCalls += 1;
+      throw new Error("must not be called");
+    },
+  }));
+
+  assert.equal(researchCalls, 2);
+  assert.equal(aiCalls, 0);
+  assert.equal(candidate.provenance.freePilot.requiredStoryCount, 0);
+  assert.equal(candidate.provenance.freePilot.selectedStoryCount, 0);
+  assert.equal(candidate.provenance.freePilot.researchAttemptCount, 2);
+  assert.equal(candidate.provenance.freePilot.researchRetryOutcome, "no-improvement");
+  assert.equal(candidate.provenance.freePilot.inference, "skipped-no-eligible-candidates");
+  assert.match(candidate.frontPage.note, /Research completed across 8 of 8 reviewed feeds/);
+  assert.deepEqual(candidate.frontPage.storyOrder, []);
+  assert.equal(validateCanonicalEdition(candidate).valid, true);
+});
+
+test("a malformed second research result fails closed before AI", async () => {
+  const first = selectedSlateScenario(["work-and-tools"]);
+  const malformed = selectedSlateScenario(["ai", "work-and-tools"]);
+  malformed.research.reportingWindow.startInclusive = "2026-08-19T10:00:00.000Z";
+  let researchCalls = 0;
+  let aiCalls = 0;
+
+  await assert.rejects(
+    () => draftFreeEdition(draftOptions({
+      evidencePolicy: "authoritative-or-corroborated",
+      draftSelectedSlate: true,
+      maxResearchAttempts: 2,
+      researchRetryBelowStoryCount: 2,
+      researchImpl: async () => {
+        researchCalls += 1;
+        return researchCalls === 1 ? first.research : malformed.research;
+      },
+      aiRequestImpl: async () => {
+        aiCalls += 1;
+        return aiResult(malformed.payload);
+      },
+    })),
+    /mismatched reporting window/,
+  );
+
+  assert.equal(researchCalls, 2);
+  assert.equal(aiCalls, 0);
+});
+
+test("retry coverage loss falls back to the already validated first slate", async () => {
+  const first = selectedSlateScenario(["work-and-tools"]);
+  let researchCalls = 0;
+  let aiCalls = 0;
+
+  const candidate = await draftFreeEdition(draftOptions({
+    evidencePolicy: "authoritative-or-corroborated",
+    draftSelectedSlate: true,
+    maxResearchAttempts: 2,
+    researchRetryBelowStoryCount: 2,
+    researchImpl: async () => {
+      researchCalls += 1;
+      if (researchCalls === 1) return first.research;
+      throw Object.assign(new Error("retry lost feed coverage"), {
+        code: "DESK_COVERAGE_FAILED",
+      });
+    },
+    aiRequestImpl: async () => {
+      aiCalls += 1;
+      return aiResult(first.payload);
+    },
+  }));
+
+  assert.equal(researchCalls, 2);
+  assert.equal(aiCalls, 1);
+  assert.equal(candidate.provenance.freePilot.requiredStoryCount, 1);
+  assert.equal(candidate.provenance.freePilot.researchAttemptCount, 2);
+  assert.equal(candidate.provenance.freePilot.researchRetryOutcome, "coverage-fallback");
+  assert.notEqual(candidate.desks["work-and-tools"].story, null);
+  assert.equal(candidate.provenance.sourceCheck.checkedSourceCount, 2);
   assert.equal(validateCanonicalEdition(candidate).valid, true);
 });
 
@@ -1410,9 +1661,9 @@ test("message construction forwards only bounded dossiers and trusted local inst
     minimumStoryCount: 3,
   });
   assert.match(minimumMessages[0].content, /requires at least 3 selected stories/);
-  assert.match(minimumMessages[0].content, /exactly one quiet desk/);
+  assert.match(minimumMessages[0].content, /up to 1\s+quiet desk/);
   assert.match(minimumMessages[1].content, /Select at least 3 stories/);
-  assert.match(minimumMessages[1].content, /leave at most one desk quiet with an explanation/);
+  assert.match(minimumMessages[1].content, /leave at most 1 desk quiet with explanations/);
 });
 
 test("free prompt precedence and binder agree that deterministic suggestedDesk is fixed", () => {

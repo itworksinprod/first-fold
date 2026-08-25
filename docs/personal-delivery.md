@@ -3,9 +3,12 @@
 The Personal Morning Paper is the repository's only automatically researched
 edition. At **5:05 AM `America/New_York` every calendar day, including
 weekends**, Cloudflare dispatches one owner-only GitHub Actions job. That job
-reads current items from the curated feed catalog, asks the fixed Cloudflare
-Workers AI model `@cf/openai/gpt-oss-120b` to select and draft a complete paper,
-validates it, and sends it to one email address through Resend.
+reads current items from the curated feed catalog, deterministically selects the
+qualifying slate, asks the fixed Cloudflare Workers AI model
+`@cf/openai/gpt-oss-120b` to draft any selected stories, validates the result,
+and sends it to one email address through Resend. The delivered paper adapts to
+the number of stories that clear the unchanged editorial gates: regular with
+two to four stories, slim with one, or quiet with zero.
 
 This automatic path does not call OpenAI, does not use general open-web search,
 and has no paid fallback. The separate OpenAI Morning Press generator remains
@@ -25,13 +28,13 @@ succeeded end to end.
 | Reporting window | The 72 elapsed hours ending at 5:00 AM New York time on the edition date; start inclusive and end exclusive |
 | Discovery | Live entries from the repository's curated, allowlisted feeds; no general web search |
 | Drafting | Fixed Cloudflare Workers AI model `@cf/openai/gpt-oss-120b` |
-| Completion rule | Three or four validated stories, no more than one per desk; at most one honest quiet desk; fewer than three stories means no email |
+| Completion rule | Deliver a regular edition with two to four validated stories, a slim edition with one, or a healthy quiet edition with zero; every edition keeps all four desks and no desk receives more than one story |
 | Recipient | Exactly the one address stored in `PERSONAL_PAPER_EMAIL` |
 | Sender | `First Fold <onboarding@resend.dev>`, Resend's self-only testing sender |
 | Message | Static, escaped HTML plus an equivalent plain-text part; no client-side JavaScript |
 | Repository permissions | Read-only contents and Actions metadata; no pull-request, branch, commit, Pages, or public-content write permission; the workflow may download and upload only its bounded private-state ledger artifact |
 | Persistence | The candidate remains on the ephemeral runner; a keyed-HMAC-only ledger artifact retains at most the previous 30 dates plus first-five-pilot progress, never reusable unkeyed story hashes, paper copy, headlines, source URLs, publisher names, recipient data, or provider IDs |
-| No edition | Healthy, internally consistent research with fewer than three qualifying desks ends successfully with a trusted-count-only job summary; it does not call the model, advance or upload the ledger, or send email |
+| Quiet edition | Healthy, internally consistent research with zero qualifying stories produces a deterministic all-quiet paper and research receipt without a model call; it is delivered and recorded in the ledger |
 | Failure | Feed coverage, quota, model, repeat-ledger, source, schema, rendering, configuration, or send-precondition errors remain failed runs and send no email |
 | Duplicate control | Suppress an earlier successful same-day workflow, veto matching story fingerprints from the previous 30 calendar dates, then make at most one Resend request with `Idempotency-Key: first-fold-personal-YYYY-MM-DD`; no application-level send retry |
 | Paid fallback | None |
@@ -87,26 +90,32 @@ At the matching 5:05 AM event on every day:
    must stay explicitly attributed and cannot be presented as independently
    confirmed or critical. Independent allegations and critical claims still
    require independent evidence.
-6. If healthy, internally consistent research selects fewer than three desks,
-   the job records a trusted-count-only **No personal paper sent** summary and
-   finishes successfully. It does not call Workers AI, write a candidate,
-   advance or upload the repeat ledger, or call Resend. Malformed research,
-   missing feed coverage, and provider errors remain hard failures. A later
-   same-day recovery is still eligible because deduplication recognizes only an
-   actually successful send step.
-7. The fixed Workers AI model receives only the bounded, selected feed dossiers.
-   It must return three or four stories with no more than one story per desk and
-   no more than one honest quiet desk. It may not lower the quality threshold to
-   fill a page. Local validation binds every draft to its selected feed URLs,
-   enforces dates and story length, checks source reachability and evidence
-   mappings, and rejects duplicate events or two quiet desks.
-8. Each story receives a trusted validation receipt containing its total score,
+6. When the first healthy research pass selects fewer than two stories, the job
+   makes exactly one bounded, feed-only research retry before any Workers AI
+   request. Both attempts use the same reporting window, cutoff, source
+   allowlist, and editorial rules. The retry replaces the first snapshot only
+   when its deterministic selected slate contains more qualifying stories; the
+   job never merges candidates or feed state across attempts. A failed initial
+   coverage check is still a hard failure. If the optional retry loses coverage,
+   the already validated first snapshot remains the complete research record.
+7. The chosen intact snapshot produces one of three formats: a regular edition
+   with two to four stories, a slim edition with one story, or a deterministic
+   all-quiet edition with zero. A zero-story edition skips Workers AI and states
+   how many reviewed feeds completed plus why nothing cleared the unchanged
+   threshold. For one or more stories, the fixed Workers AI model receives only
+   the bounded, deterministically selected feed dossiers. It must draft every
+   selected dossier, no more than one per desk, and may not lower the quality
+   threshold to fill a page. Local validation binds every draft to its selected
+   feed URLs, enforces dates and story length, checks source reachability and
+   evidence mappings, and rejects duplicate events or unexplained quiet desks.
+8. Each selected story receives a trusted validation receipt containing its total score,
    five component scores, required threshold, evidence tier, and factual source
    and publisher counts. The email renderer recomputes and validates that receipt
    rather than trusting model-controlled display text.
-9. After all deterministic checks pass, the workflow records only domain-separated
-   HMAC-SHA-256 story fingerprints keyed by the existing Workers AI token and
-   stages that immutable ledger as an artifact
+9. After all deterministic checks pass, the workflow records the delivered
+   edition and only the domain-separated HMAC-SHA-256 fingerprints of any
+   selected stories, keyed by the existing Workers AI token, then stages that
+   immutable ledger as an artifact
    before delivery. It then sends one escaped HTML and plain-text message through
    Resend. A later run trusts the staged artifact only when GitHub records that
    run's exact send step as successful; artifacts from unsent runs are ignored.
@@ -129,8 +138,9 @@ manual free-comparison provenance, and ordinary canonical-edition provenance.
 
 The private provenance records the fixed provider and model, reporting run,
 generation time and mode, bounded feed/inference hashes, coverage counts,
-evidence policy, validation receipts, repeat-ledger digest and counts, and three
-or four selected stories. It contains no recipient or API credential. The
+research-attempt count and outcome, evidence policy, validation receipts,
+repeat-ledger digest and counts, and zero through four selected stories. It
+contains no recipient or API credential. The
 distinction is intentional: a file prepared for a private email must never
 become a public publication candidate merely because its shape is similar.
 
@@ -147,6 +157,9 @@ silently disable repeat matching. The token itself and reusable unkeyed identity
 hashes are never stored. Because this repository is public, treat workflow
 artifacts as potentially readable by repository visitors even though their
 contents are pseudonymous.
+An all-quiet delivery still adds its edition date and advances the lifetime and
+first-five-pilot counts, but its `stories` list is empty because there are no
+story identities to retain.
 Same-day workflow and Resend idempotency remain a separate defense against a
 second delivery for one edition date.
 
@@ -183,7 +196,8 @@ pilot · Edition N of 5**. Review each received paper for importance, relevance,
 source quality, reader usefulness, freshness, desk assignment, and repeat
 accuracy. Record false positives, missed stories, and any claim that needed
 correction. The software tracks only the ordinal in its keyed ledger; it does not
-store your editorial feedback in the repository.
+store your editorial feedback in the repository. A successfully delivered
+regular, slim, or quiet edition each advances this count once.
 
 After five reviewed deliveries, summarize the evidence and propose any weight,
 threshold, or veto changes for explicit owner approval. Do not tune the policy
@@ -301,7 +315,6 @@ causes include:
 - a missing or malformed Cloudflare account ID, Workers AI token, Resend key, or
   recipient after delivery has been enabled;
 - a feed outage or inadequate publisher coverage for any desk;
-- fewer than three eligible selected events or more than one quiet desk;
 - a hard editorial veto, score below 70, recent-repeat match, missing validation
   receipt, or receipt mismatch;
 - a missing, malformed, key-mismatched, ambiguous, or untrusted repeat-ledger artifact after the
@@ -315,10 +328,13 @@ causes include:
 - a candidate or message that cannot be rendered safely; or
 - Resend rejecting the single bounded request.
 
-No error sends an empty paper, yesterday's paper, a partial edition, an
-unverified feed summary, or a paid-model fallback. There is no failure-notice
-email because email is the operation being protected; inspect GitHub Actions or
-use a separate non-email monitor.
+A healthy zero-story result is not an error: it sends a clearly labeled quiet
+edition only after complete feed coverage and deterministic validation. An
+actual error never disguises itself as that quiet result and never sends
+yesterday's paper, an unvalidated partial edition, an unverified feed summary,
+or a paid-model fallback. There is no failure-notice email because email is the
+operation being protected; inspect GitHub Actions or use a separate non-email
+monitor.
 
 “Sent only to me” describes the recipient boundary, not exclusive data
 possession. Send only public source material. Never add confidential business
@@ -342,7 +358,9 @@ model override. The model name includes `openai`, but it runs inside Cloudflare
 Workers AI and does not use an OpenAI API key or OpenAI API billing account.
 One edition permits at most two semantic model requests, caps each model output
 at 6,000 tokens, and caps the serialized request at 100 KB. These are capacity
-guards, not permission to spend beyond the free allocation.
+guards, not permission to spend beyond the free allocation. The optional second
+research pass is feed-only, occurs before inference, and does not add a Workers
+AI request.
 
 Keep Resend on a free plan appropriate for one daily self-only message and keep
 the repository public if relying on public-repository GitHub Actions usage.

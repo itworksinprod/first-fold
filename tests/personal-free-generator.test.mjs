@@ -15,12 +15,14 @@ import {
   PERSONAL_FREE_EVIDENCE_POLICY,
   PERSONAL_FREE_LOOKBACK_HOURS,
   PERSONAL_FREE_MAX_MODEL_REQUESTS,
+  PERSONAL_FREE_MAX_RESEARCH_ATTEMPTS,
   PERSONAL_FREE_MAX_REQUEST_BYTES,
   PERSONAL_FREE_MAX_TOKENS,
   PERSONAL_FREE_MINIMUM_STORY_COUNT,
   PERSONAL_FREE_MINIMUM_AUTHORITATIVE_SCORE,
   PERSONAL_FREE_MINIMUM_SCORE,
   PERSONAL_FREE_MODEL,
+  PERSONAL_FREE_RETRY_BELOW_STORY_COUNT,
   generatePersonalFreeEdition,
   generatePersonalFreeEditionFile,
   generatePersonalFreeEditionOutcome,
@@ -160,7 +162,12 @@ function storyForDesk(desk, index) {
   return story;
 }
 
-function freeCandidate({ quietDesks = [], inference = "workers-ai" } = {}) {
+function freeCandidate({
+  quietDesks = [],
+  inference,
+  researchAttemptCount,
+  researchRetryOutcome,
+} = {}) {
   const candidate = buildEditionDraft({
     latestEdition: structuredClone(priorEdition),
     editionDate: "2026-08-20",
@@ -188,6 +195,15 @@ function freeCandidate({ quietDesks = [], inference = "workers-ai" } = {}) {
     },
   ]));
   const selected = Object.values(stories).filter(Boolean);
+  const effectiveInference = inference ?? (
+    selected.length === 0 ? "skipped-no-eligible-candidates" : "workers-ai"
+  );
+  const effectiveAttemptCount = researchAttemptCount ?? (
+    selected.length < PERSONAL_FREE_RETRY_BELOW_STORY_COUNT ? 2 : 1
+  );
+  const effectiveRetryOutcome = researchRetryOutcome ?? (
+    effectiveAttemptCount === 1 ? "not-needed" : "no-improvement"
+  );
   candidate.frontPage = {
     note: `${selected.length} source-checked developments cleared the private free research contract.`,
     estimatedMinutes: 8,
@@ -209,13 +225,19 @@ function freeCandidate({ quietDesks = [], inference = "workers-ai" } = {}) {
     feedSnapshotSha256: "a".repeat(64),
     requestSha256: "b".repeat(64),
     responseSha256: "c".repeat(64),
-    responseId: inference === "workers-ai" ? "workers_ai_private_test" : "not-invoked",
-    inference,
+    responseId: effectiveInference === "workers-ai" ? "workers_ai_private_test" : "not-invoked",
+    inference: effectiveInference,
     feedSourceCount: feedSources.length,
     successfulFeedSourceCount: feedSources.length,
+    coveredDeskCount: 4,
     candidateCount: selected.length,
+    draftSelectedSlate: true,
+    maxResearchAttempts: PERSONAL_FREE_MAX_RESEARCH_ATTEMPTS,
+    researchRetryBelowStoryCount: PERSONAL_FREE_RETRY_BELOW_STORY_COUNT,
+    researchAttemptCount: effectiveAttemptCount,
+    researchRetryOutcome: effectiveRetryOutcome,
     evidencePolicy: PERSONAL_FREE_EVIDENCE_POLICY,
-    requiredStoryCount: PERSONAL_FREE_MINIMUM_STORY_COUNT,
+    requiredStoryCount: selected.length,
     selectedStoryCount: selected.length,
     lookbackHours: PERSONAL_FREE_LOOKBACK_HOURS,
     minimumScore: PERSONAL_FREE_MINIMUM_SCORE,
@@ -261,10 +283,22 @@ test("private free generation fixes the model, evidence lane, lookback, and requ
   assert.equal(candidate.provenance.personalFreeResearch.researchMethod, "curated-live-feeds");
   assert.equal(candidate.provenance.personalFreeResearch.inference, "workers-ai");
   assert.equal(candidate.provenance.personalFreeResearch.selectedStoryCount, 4);
+  assert.equal(candidate.provenance.personalFreeResearch.requiredStoryCount, 4);
+  assert.equal(candidate.provenance.personalFreeResearch.candidateCount, 4);
   assert.equal(
-    candidate.provenance.personalFreeResearch.requiredStoryCount,
-    PERSONAL_FREE_MINIMUM_STORY_COUNT,
+    candidate.provenance.personalFreeResearch.candidateSelection,
+    "deterministic-selected-slate",
   );
+  assert.equal(
+    candidate.provenance.personalFreeResearch.maxResearchAttempts,
+    PERSONAL_FREE_MAX_RESEARCH_ATTEMPTS,
+  );
+  assert.equal(
+    candidate.provenance.personalFreeResearch.researchRetryBelowStoryCount,
+    PERSONAL_FREE_RETRY_BELOW_STORY_COUNT,
+  );
+  assert.equal(candidate.provenance.personalFreeResearch.researchAttemptCount, 1);
+  assert.equal(candidate.provenance.personalFreeResearch.researchRetryOutcome, "not-needed");
   assert.equal(candidate.provenance.personalFreeResearch.maxModelRequests, 2);
   assert.equal(candidate.provenance.personalFreeResearch.ephemeral, true);
   assert.equal(candidate.provenance.personalFreeResearch.repeatLedgerSchemaVersion, 2);
@@ -279,6 +313,12 @@ test("private free generation fixes the model, evidence lane, lookback, and requ
   assert.equal(draftOptions.evidencePolicy, PERSONAL_FREE_EVIDENCE_POLICY);
   assert.equal(draftOptions.requireComplete, false);
   assert.equal(draftOptions.minimumStoryCount, PERSONAL_FREE_MINIMUM_STORY_COUNT);
+  assert.equal(draftOptions.draftSelectedSlate, true);
+  assert.equal(draftOptions.maxResearchAttempts, PERSONAL_FREE_MAX_RESEARCH_ATTEMPTS);
+  assert.equal(
+    draftOptions.researchRetryBelowStoryCount,
+    PERSONAL_FREE_RETRY_BELOW_STORY_COUNT,
+  );
   assert.equal(draftOptions.lookbackHours, PERSONAL_FREE_LOOKBACK_HOURS);
   assert.equal(draftOptions.minimumScore, PERSONAL_FREE_MINIMUM_SCORE);
   assert.equal(
@@ -294,28 +334,57 @@ test("private free generation fixes the model, evidence lane, lookback, and requ
   );
 });
 
-test("one explained quiet desk is deliverable but fewer than three stories or skipped inference fail", async (t) => {
-  const projectRoot = await createProject(t);
-  const threeStoryCandidate = await generatePersonalFreeEdition({
-    editionDate: "2026-08-20",
-    projectRoot,
-    env: automationEnv,
-    now: GENERATED_AT,
-    feedSources,
-    personalStoryLedger: createEmptyPersonalStoryLedger({
-      fingerprintKey: automationEnv.CLOUDFLARE_AI_API_TOKEN,
-    }),
-    draftFreeEditionImpl: async () => freeCandidate({ quietDesks: ["ai"] }),
-  });
-  assert.equal(threeStoryCandidate.provenance.personalFreeResearch.selectedStoryCount, 3);
-  assert.equal(threeStoryCandidate.desks.ai.story, null);
-  assert.match(threeStoryCandidate.desks.ai.emptyReason, /No ai story was selected/);
-  assert.equal(assertPersonalEmailCandidate(threeStoryCandidate).valid, true);
+test("adaptive personal generation creates validated 4, 3, 2, 1, and 0 story editions", async (t) => {
+  const desks = ["ai", "work-and-tools", "security-and-privacy", "platforms-and-power"];
+  for (const storyCount of [4, 3, 2, 1, 0]) {
+    await t.test(`${storyCount} selected stories`, async (t) => {
+      const projectRoot = await createProject(t);
+      const quietDesks = desks.slice(storyCount);
+      const outcome = await generatePersonalFreeEditionOutcome({
+        editionDate: "2026-08-20",
+        projectRoot,
+        env: automationEnv,
+        now: GENERATED_AT,
+        feedSources,
+        personalStoryLedger: createEmptyPersonalStoryLedger({
+          fingerprintKey: automationEnv.CLOUDFLARE_AI_API_TOKEN,
+        }),
+        draftFreeEditionImpl: async () => freeCandidate({ quietDesks }),
+      });
 
-  for (const draft of [
-    freeCandidate({ quietDesks: ["ai", "work-and-tools"] }),
+      assert.equal(outcome.status, "created");
+      assert.equal(outcome.result.selectedStoryCount, storyCount);
+      assert.equal(outcome.result.candidate.provenance.personalFreeResearch.candidateCount, storyCount);
+      assert.equal(outcome.result.candidate.provenance.personalFreeResearch.requiredStoryCount, storyCount);
+      assert.equal(outcome.result.candidate.provenance.personalFreeResearch.selectedStoryCount, storyCount);
+      assert.equal(
+        outcome.result.candidate.provenance.personalFreeResearch.inference,
+        storyCount === 0 ? "skipped-no-eligible-candidates" : "workers-ai",
+      );
+      assert.equal(
+        outcome.result.candidate.provenance.personalFreeResearch.researchAttemptCount,
+        storyCount < PERSONAL_FREE_RETRY_BELOW_STORY_COUNT ? 2 : 1,
+      );
+      assert.equal(validatePersonalFreeCandidate(outcome.result.candidate), true);
+      assert.equal(assertPersonalEmailCandidate(outcome.result.candidate).valid, true);
+      for (const desk of quietDesks) {
+        assert.equal(outcome.result.candidate.desks[desk].story, null);
+        assert.match(outcome.result.candidate.desks[desk].emptyReason, /No .* story was selected/);
+      }
+    });
+  }
+});
+
+test("adaptive generation still fails closed for inconsistent inference or research failures", async (t) => {
+  const projectRoot = await createProject(t);
+  const invalidDrafts = [
     freeCandidate({ inference: "skipped-no-eligible-candidates" }),
-  ]) {
+    freeCandidate({
+      quietDesks: ["ai", "work-and-tools", "security-and-privacy", "platforms-and-power"],
+      inference: "workers-ai",
+    }),
+  ];
+  for (const draft of invalidDrafts) {
     await assert.rejects(
       generatePersonalFreeEdition({
         editionDate: "2026-08-20",
@@ -328,7 +397,27 @@ test("one explained quiet desk is deliverable but fewer than three stories or sk
         }),
         draftFreeEditionImpl: async () => draft,
       }),
-      /candidate|three|provenance|Workers AI/i,
+      /adaptive|candidate|provenance/i,
+    );
+  }
+
+  for (const error of [
+    new InsufficientFreeCandidatesError({ availableCount: 1, requiredCount: 3 }),
+    new Error("Workers AI request failed safely."),
+  ]) {
+    await assert.rejects(
+      generatePersonalFreeEditionOutcome({
+        editionDate: "2026-08-20",
+        projectRoot,
+        env: automationEnv,
+        now: GENERATED_AT,
+        feedSources,
+        personalStoryLedger: createEmptyPersonalStoryLedger({
+          fingerprintKey: automationEnv.CLOUDFLARE_AI_API_TOKEN,
+        }),
+        draftFreeEditionImpl: async () => { throw error; },
+      }),
+      (received) => received === error,
     );
   }
   await assert.rejects(
@@ -337,73 +426,12 @@ test("one explained quiet desk is deliverable but fewer than three stories or sk
   );
 });
 
-test("a healthy sub-three selection becomes an explicit no-edition outcome without writing", async (t) => {
-  const projectRoot = await createProject(t);
-  const candidatePath = path.join(
-    projectRoot,
-    "content",
-    "personal-candidates",
-    "2026-08-20.json",
-  );
-  for (const availableCount of [0, 1, 2]) {
-    const outcome = await generatePersonalFreeEditionOutcome({
-      editionDate: "2026-08-20",
-      projectRoot,
-      env: automationEnv,
-      now: GENERATED_AT,
-      feedSources,
-      personalStoryLedger: createEmptyPersonalStoryLedger({
-        fingerprintKey: automationEnv.CLOUDFLARE_AI_API_TOKEN,
-      }),
-      draftFreeEditionImpl: async () => {
-        throw new InsufficientFreeCandidatesError({ availableCount, requiredCount: 3 });
-      },
-    });
-    assert.deepEqual(outcome, {
-      status: "no-edition",
-      availableCount,
-      requiredCount: 3,
-    });
-  }
-  await assert.rejects(
-    access(candidatePath),
-    (error) => error?.code === "ENOENT",
-  );
-});
-
-test("the GitHub CLI outcome reports a no-edition day without hiding real failures", async (t) => {
+test("the GitHub CLI preserves hard failures", async (t) => {
   const projectRoot = await createProject(t);
   const outputPath = path.join(projectRoot, "github-output.txt");
   const summaryPath = path.join(projectRoot, "github-summary.md");
   await writeFile(outputPath, "");
   await writeFile(summaryPath, "");
-  const logs = [];
-  const outcome = await runPersonalFreeEditionCli({
-    argv: ["2026-08-20", "--github-actions-outcome"],
-    env: {
-      ...automationEnv,
-      GITHUB_OUTPUT: outputPath,
-      GITHUB_STEP_SUMMARY: summaryPath,
-    },
-    generateOutcomeImpl: async () => ({
-      status: "no-edition",
-      availableCount: 1,
-      requiredCount: 3,
-    }),
-    logImpl: (message) => logs.push(message),
-  });
-  assert.equal(outcome.status, "no-edition");
-  assert.equal(
-    await readFile(outputPath, "utf8"),
-    "candidate_created=false\nqualified_story_count=1\nrequired_story_count=3\n",
-  );
-  const summary = await readFile(summaryPath, "utf8");
-  assert.match(summary, /^### No personal paper sent/m);
-  assert.match(summary, /1 of 3 required source-checked stories/);
-  assert.match(summary, /repeat ledger was not advanced/);
-  assert.equal(logs.length, 1);
-  assert.doesNotMatch(`${summary}\n${logs.join("\n")}`, /headline|publisher|https?:\/\//i);
-
   await assert.rejects(
     runPersonalFreeEditionCli({
       argv: ["2026-08-20", "--github-actions-outcome"],
@@ -421,31 +449,51 @@ test("the GitHub CLI outcome reports a no-edition day without hiding real failur
   );
 });
 
-test("the GitHub CLI outcome marks a real candidate as ready", async (t) => {
+test("the GitHub CLI reports selected story count and adaptive edition format", async (t) => {
   const projectRoot = await createProject(t);
   const outputPath = path.join(projectRoot, "github-output.txt");
   const summaryPath = path.join(projectRoot, "github-summary.md");
   await writeFile(outputPath, "");
   await writeFile(summaryPath, "");
-  const outcome = await runPersonalFreeEditionCli({
-    argv: ["2026-08-20", "--github-actions-outcome"],
-    env: {
-      ...automationEnv,
-      GITHUB_OUTPUT: outputPath,
-      GITHUB_STEP_SUMMARY: summaryPath,
-    },
-    generateOutcomeImpl: async () => ({
-      status: "created",
-      result: {
-        relativePath: "content/personal-candidates/2026-08-20.json",
-        sha256: "a".repeat(64),
+  for (const [selectedStoryCount, editionFormat] of [
+    [4, "regular"],
+    [3, "regular"],
+    [2, "regular"],
+    [1, "slim"],
+    [0, "quiet"],
+  ]) {
+    await writeFile(outputPath, "");
+    await writeFile(summaryPath, "");
+    const outcome = await runPersonalFreeEditionCli({
+      argv: ["2026-08-20", "--github-actions-outcome"],
+      env: {
+        ...automationEnv,
+        GITHUB_OUTPUT: outputPath,
+        GITHUB_STEP_SUMMARY: summaryPath,
       },
-    }),
-    logImpl: () => {},
-  });
-  assert.equal(outcome.status, "created");
-  assert.equal(await readFile(outputPath, "utf8"), "candidate_created=true\n");
-  assert.equal(await readFile(summaryPath, "utf8"), "");
+      generateOutcomeImpl: async () => ({
+        status: "created",
+        result: {
+          relativePath: "content/personal-candidates/2026-08-20.json",
+          sha256: "a".repeat(64),
+          selectedStoryCount,
+        },
+      }),
+      logImpl: () => {},
+    });
+    assert.equal(outcome.status, "created");
+    assert.equal(
+      await readFile(outputPath, "utf8"),
+      `candidate_created=true\nselected_story_count=${selectedStoryCount}\n` +
+        `edition_format=${editionFormat}\n`,
+    );
+    assert.equal(
+      await readFile(summaryPath, "utf8"),
+      `### Personal paper ready\n\nPrepared a ${editionFormat} edition with ` +
+        `${selectedStoryCount} source-checked ${selectedStoryCount === 1 ? "story" : "stories"}. ` +
+        "The editorial thresholds were unchanged.\n",
+    );
+  }
 });
 
 test("the private writer is exclusive and never writes a public or comparison artifact", async (t) => {

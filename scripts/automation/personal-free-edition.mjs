@@ -7,7 +7,6 @@ import path from "node:path";
 import { validateCanonicalEdition } from "../edition-content.mjs";
 import {
   FREE_AUTOMATION_WORKFLOW,
-  InsufficientFreeCandidatesError,
   draftFreeEdition,
   validateFreePilotProvenance,
 } from "./draft-free-edition.mjs";
@@ -43,7 +42,9 @@ export const PERSONAL_FREE_MAX_REQUEST_BYTES = 100_000;
 export const PERSONAL_FREE_LOOKBACK_HOURS = 72;
 export const PERSONAL_FREE_MINIMUM_SCORE = 70;
 export const PERSONAL_FREE_MINIMUM_AUTHORITATIVE_SCORE = 70;
-export const PERSONAL_FREE_MINIMUM_STORY_COUNT = 3;
+export const PERSONAL_FREE_MINIMUM_STORY_COUNT = 0;
+export const PERSONAL_FREE_MAX_RESEARCH_ATTEMPTS = 2;
+export const PERSONAL_FREE_RETRY_BELOW_STORY_COUNT = 2;
 export const PERSONAL_FREE_GITHUB_OUTCOME_FLAG = "--github-actions-outcome";
 export const PERSONAL_FREE_RUN_MODES = Object.freeze(["on_time", "same_day_backfill"]);
 export const PERSONAL_FREE_DESKS = Object.freeze([
@@ -198,28 +199,38 @@ function buildPersonalCandidate(
     expectedFeedSourceCount,
     expectedRunMode: runMode,
     expectedEvidencePolicy: PERSONAL_FREE_EVIDENCE_POLICY,
-    expectedRequiredStoryCount: PERSONAL_FREE_MINIMUM_STORY_COUNT,
     expectedLookbackHours: PERSONAL_FREE_LOOKBACK_HOURS,
     expectedMinimumScore: PERSONAL_FREE_MINIMUM_SCORE,
     expectedMinimumAuthoritativeScore: PERSONAL_FREE_MINIMUM_AUTHORITATIVE_SCORE,
   });
   const freePilot = freeCandidate?.provenance?.freePilot;
   const stories = selectedStories(freeCandidate);
+  const quietEdition = stories.length === 0;
+  const inferenceIsValid = quietEdition
+    ? freePilot?.inference === "skipped-no-eligible-candidates" &&
+      freePilot?.responseId === "not-invoked"
+    : freePilot?.inference === "workers-ai" && freePilot?.responseId !== "not-invoked";
   if (
     freePilot?.workflow !== FREE_AUTOMATION_WORKFLOW ||
     freePilot?.provider !== PERSONAL_FREE_PROVIDER ||
     freePilot?.model !== PERSONAL_FREE_MODEL ||
-    freePilot?.inference !== "workers-ai" ||
-    freePilot?.responseId === "not-invoked" ||
+    !inferenceIsValid ||
+    freePilot?.coveredDeskCount !== PERSONAL_FREE_DESKS.length ||
+    freePilot?.draftSelectedSlate !== true ||
+    freePilot?.candidateCount !== stories.length ||
+    freePilot?.requiredStoryCount !== stories.length ||
+    freePilot?.selectedStoryCount !== stories.length ||
+    freePilot?.maxResearchAttempts !== PERSONAL_FREE_MAX_RESEARCH_ATTEMPTS ||
+    freePilot?.researchRetryBelowStoryCount !== PERSONAL_FREE_RETRY_BELOW_STORY_COUNT ||
+    ![1, 2].includes(freePilot?.researchAttemptCount) ||
     freePilot?.lookbackHours !== PERSONAL_FREE_LOOKBACK_HOURS ||
     freePilot?.minimumScore !== PERSONAL_FREE_MINIMUM_SCORE ||
     freePilot?.minimumAuthoritativeScore !== PERSONAL_FREE_MINIMUM_AUTHORITATIVE_SCORE ||
-    stories.length < PERSONAL_FREE_MINIMUM_STORY_COUNT ||
     stories.length > PERSONAL_FREE_DESKS.length ||
     stories.some((story) => !hasCompleteSourceSet(story))
   ) {
     throw new Error(
-      "Personal free research did not produce at least three populated, source-checked Workers AI stories. No email candidate was returned.",
+      "Personal free research did not produce a valid adaptive source-checked edition.",
     );
   }
 
@@ -235,20 +246,26 @@ function buildPersonalCandidate(
     repository: automation.repository,
     runMode,
     generatedAt: candidate.publication.generatedAt,
-    inference: "workers-ai",
+    inference: freePilot.inference,
     feedSnapshotSha256: freePilot.feedSnapshotSha256,
     requestSha256: freePilot.requestSha256,
     responseSha256: freePilot.responseSha256,
     responseId: freePilot.responseId,
     feedSourceCount: freePilot.feedSourceCount,
     successfulFeedSourceCount: freePilot.successfulFeedSourceCount,
+    coveredDeskCount: freePilot.coveredDeskCount,
     candidateCount: freePilot.candidateCount,
+    candidateSelection: "deterministic-selected-slate",
     evidencePolicy: PERSONAL_FREE_EVIDENCE_POLICY,
     lookbackHours: freePilot.lookbackHours,
     minimumScore: freePilot.minimumScore,
     minimumAuthoritativeScore: freePilot.minimumAuthoritativeScore,
-    requiredStoryCount: PERSONAL_FREE_MINIMUM_STORY_COUNT,
+    requiredStoryCount: freePilot.requiredStoryCount,
     selectedStoryCount: stories.length,
+    maxResearchAttempts: freePilot.maxResearchAttempts,
+    researchRetryBelowStoryCount: freePilot.researchRetryBelowStoryCount,
+    researchAttemptCount: freePilot.researchAttemptCount,
+    researchRetryOutcome: freePilot.researchRetryOutcome,
     repeatLedgerSchemaVersion: PERSONAL_STORY_LEDGER_SCHEMA_VERSION,
     repeatLookbackDays: PERSONAL_STORY_LEDGER_RETENTION_DAYS,
     repeatStateSha256: repeatHistory.stateSha256,
@@ -281,9 +298,13 @@ export function validatePersonalFreeCandidate(
     Number.isInteger(research?.successfulFeedSourceCount) &&
     research.successfulFeedSourceCount > 0 &&
     research.successfulFeedSourceCount <= research.feedSourceCount &&
+    research.coveredDeskCount === PERSONAL_FREE_DESKS.length &&
     Number.isInteger(research?.candidateCount) &&
-    research.candidateCount >= PERSONAL_FREE_MINIMUM_STORY_COUNT &&
-    research.candidateCount >= stories.length;
+    research.candidateCount === stories.length;
+  const inferenceIsValid = stories.length === 0
+    ? research?.inference === "skipped-no-eligible-candidates" &&
+      research?.responseId === "not-invoked"
+    : research?.inference === "workers-ai" && research?.responseId !== "not-invoked";
 
   if (
     !validation.valid ||
@@ -306,9 +327,8 @@ export function validatePersonalFreeCandidate(
     !PERSONAL_FREE_RUN_MODES.includes(research?.runMode) ||
     (runMode !== undefined && research.runMode !== runMode) ||
     research?.generatedAt !== candidate.publication?.generatedAt ||
-    research?.inference !== "workers-ai" ||
+    !inferenceIsValid ||
     !RESPONSE_ID_PATTERN.test(research?.responseId ?? "") ||
-    research?.responseId === "not-invoked" ||
     !SHA256_PATTERN.test(research?.feedSnapshotSha256 ?? "") ||
     !SHA256_PATTERN.test(research?.requestSha256 ?? "") ||
     !SHA256_PATTERN.test(research?.responseSha256 ?? "") ||
@@ -319,8 +339,17 @@ export function validatePersonalFreeCandidate(
     research?.lookbackHours !== PERSONAL_FREE_LOOKBACK_HOURS ||
     research?.minimumScore !== PERSONAL_FREE_MINIMUM_SCORE ||
     research?.minimumAuthoritativeScore !== PERSONAL_FREE_MINIMUM_AUTHORITATIVE_SCORE ||
-    research?.requiredStoryCount !== PERSONAL_FREE_MINIMUM_STORY_COUNT ||
+    research?.candidateSelection !== "deterministic-selected-slate" ||
+    research?.requiredStoryCount !== stories.length ||
     research?.selectedStoryCount !== stories.length ||
+    research?.maxResearchAttempts !== PERSONAL_FREE_MAX_RESEARCH_ATTEMPTS ||
+    research?.researchRetryBelowStoryCount !== PERSONAL_FREE_RETRY_BELOW_STORY_COUNT ||
+    ![1, 2].includes(research?.researchAttemptCount) ||
+    !["not-needed", "improved", "no-improvement", "coverage-fallback"].includes(
+      research?.researchRetryOutcome,
+    ) ||
+    (research.researchAttemptCount === 1 && research.researchRetryOutcome !== "not-needed") ||
+    (research.researchAttemptCount === 2 && research.researchRetryOutcome === "not-needed") ||
     research?.repeatLedgerSchemaVersion !== PERSONAL_STORY_LEDGER_SCHEMA_VERSION ||
     research?.repeatLookbackDays !== PERSONAL_STORY_LEDGER_RETENTION_DAYS ||
     !SHA256_PATTERN.test(research?.repeatStateSha256 ?? "") ||
@@ -341,7 +370,6 @@ export function validatePersonalFreeCandidate(
     ) ||
     research?.maxModelRequests !== PERSONAL_FREE_MAX_MODEL_REQUESTS ||
     research?.ephemeral !== true ||
-    stories.length < PERSONAL_FREE_MINIMUM_STORY_COUNT ||
     stories.length > PERSONAL_FREE_DESKS.length ||
     stories.some((story) => !hasCompleteSourceSet(story)) ||
     !Array.isArray(candidate.frontPage?.storyOrder) ||
@@ -414,6 +442,9 @@ export async function generatePersonalFreeEdition({
     evidencePolicy: PERSONAL_FREE_EVIDENCE_POLICY,
     requireComplete: false,
     minimumStoryCount: PERSONAL_FREE_MINIMUM_STORY_COUNT,
+    draftSelectedSlate: true,
+    maxResearchAttempts: PERSONAL_FREE_MAX_RESEARCH_ATTEMPTS,
+    researchRetryBelowStoryCount: PERSONAL_FREE_RETRY_BELOW_STORY_COUNT,
     lookbackHours: PERSONAL_FREE_LOOKBACK_HOURS,
     minimumScore: PERSONAL_FREE_MINIMUM_SCORE,
     minimumAuthoritativeScore: PERSONAL_FREE_MINIMUM_AUTHORITATIVE_SCORE,
@@ -465,24 +496,16 @@ export async function generatePersonalFreeEditionFile(options = {}) {
     destination,
     relativePath: path.relative(projectRoot, destination),
     sha256: createHash("sha256").update(fileContents).digest("hex"),
+    selectedStoryCount: selectedStories(candidate).length,
     candidate,
   };
 }
 
 export async function generatePersonalFreeEditionOutcome(options = {}) {
-  try {
-    return {
-      status: "created",
-      result: await generatePersonalFreeEditionFile(options),
-    };
-  } catch (error) {
-    if (!(error instanceof InsufficientFreeCandidatesError)) throw error;
-    return {
-      status: "no-edition",
-      availableCount: error.availableCount,
-      requiredCount: error.requiredCount,
-    };
-  }
+  return {
+    status: "created",
+    result: await generatePersonalFreeEditionFile(options),
+  };
 }
 
 function parseCliArguments(argv) {
@@ -516,17 +539,10 @@ function validateGenerationOutcome(outcome) {
   if (
     outcome?.status === "created" &&
     typeof outcome.result?.relativePath === "string" &&
-    SHA256_PATTERN.test(outcome.result?.sha256 ?? "")
-  ) {
-    return outcome;
-  }
-  if (
-    outcome?.status === "no-edition" &&
-    Number.isInteger(outcome.availableCount) &&
-    Number.isInteger(outcome.requiredCount) &&
-    outcome.availableCount >= 0 &&
-    outcome.availableCount < outcome.requiredCount &&
-    outcome.requiredCount === PERSONAL_FREE_MINIMUM_STORY_COUNT
+    SHA256_PATTERN.test(outcome.result?.sha256 ?? "") &&
+    Number.isInteger(outcome.result?.selectedStoryCount) &&
+    outcome.result.selectedStoryCount >= 0 &&
+    outcome.result.selectedStoryCount <= PERSONAL_FREE_DESKS.length
   ) {
     return outcome;
   }
@@ -552,33 +568,31 @@ export async function runPersonalFreeEditionCli({
   const githubSummaryPath = requireNonBlank(env.GITHUB_STEP_SUMMARY, "GITHUB_STEP_SUMMARY");
   const outcome = validateGenerationOutcome(await generateOutcomeImpl(generationOptions));
   if (outcome.status === "created") {
-    await appendFile(githubOutputPath, "candidate_created=true\n", "utf8");
+    const editionFormat = outcome.result.selectedStoryCount >= 2
+      ? "regular"
+      : outcome.result.selectedStoryCount === 1
+        ? "slim"
+        : "quiet";
+    await appendFile(
+      githubOutputPath,
+      `candidate_created=true\nselected_story_count=${outcome.result.selectedStoryCount}\n` +
+        `edition_format=${editionFormat}\n`,
+      "utf8",
+    );
+    await appendFile(
+      githubSummaryPath,
+      `### Personal paper ready\n\nPrepared a ${editionFormat} edition with ` +
+        `${outcome.result.selectedStoryCount} source-checked ` +
+        `${outcome.result.selectedStoryCount === 1 ? "story" : "stories"}. ` +
+        "The editorial thresholds were unchanged.\n",
+      "utf8",
+    );
     logImpl(
       `Created private free candidate ${outcome.result.relativePath} · ` +
         `sha256 ${outcome.result.sha256}`,
     );
     return outcome;
   }
-
-  await appendFile(
-    githubOutputPath,
-    `candidate_created=false\nqualified_story_count=${outcome.availableCount}\n` +
-      `required_story_count=${outcome.requiredCount}\n`,
-    "utf8",
-  );
-  await appendFile(
-    githubSummaryPath,
-    "### No personal paper sent\n\n" +
-      `${outcome.availableCount} of ${outcome.requiredCount} required source-checked stories ` +
-      "cleared the editorial threshold. This is an expected no-edition result; " +
-      "the quality bar was not lowered, the repeat ledger was not advanced, and no email was sent.\n",
-    "utf8",
-  );
-  logImpl(
-    `No private edition created: ${outcome.availableCount} of ${outcome.requiredCount} ` +
-      "required source-checked stories cleared the editorial threshold.",
-  );
-  return outcome;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
