@@ -57,27 +57,36 @@ const STOP_WORDS = new Set([
 const EVENT_MATCH_STOP_WORDS = new Set([
   ...STOP_WORDS,
   "add", "added", "adds", "advisory", "ai", "announce", "announced", "announces",
-  "announcement", "app", "april", "august", "availability", "available", "bring", "brings",
-  "antitrust", "cloud", "company", "court", "critical",
+  "announcement", "april", "august", "availability", "available", "bring", "brings",
+  "antitrust", "can", "cloud", "company", "court", "critical",
   "companies", "coupon", "coupons", "cut", "data", "developer", "developers",
   "debut", "debuted", "debuts", "december", "discount", "disruption",
-  "february", "feature", "features", "first", "fix", "fixed", "fixes",
-  "flagship", "hit", "introduce", "introduced", "introduces", "january",
+  "eliminate", "eliminated", "eliminates", "eliminating",
+  "face", "faced", "faces", "facing",
+  "back", "february", "feature", "features", "first", "fix", "fixed", "fixes",
+  "flagship", "fully", "hit", "inquiries", "inquiry", "investigate", "investigated",
+  "investigates", "investigating", "investigation", "introduce", "introduced",
+  "introduces", "introducing", "january",
   "job", "july", "june", "launch", "launched", "lawsuit", "laying", "layoff",
   "launches", "latest", "million", "billion", "promo",
   "generally", "march", "may", "model", "models", "november", "now", "october",
-  "down", "downtime", "off", "outage", "patch", "patched", "patches", "people", "plan", "plans",
+  "down", "downtime", "off", "open", "opened", "opening", "opens", "outage",
+  "patch", "patched", "patches", "people", "plan", "plans", "probe", "probes", "probing",
   "platform", "product",
-  "products", "release", "released", "releases", "report", "reported", "over",
-  "reports", "research", "ruling", "said", "says", "security", "september",
+  "out", "products", "release", "released", "releases", "report", "reported", "over",
+  "reports", "research", "reduce", "reduced", "reduces", "reducing", "resolved",
+  "resolves", "resolving", "restore", "restored", "restores", "restoring", "return",
+  "returned", "returning", "returns", "roll", "rolled", "rolling", "rolls", "ruling",
+  "said", "says", "security", "september", "shed", "shedding", "sheds",
   "service", "services", "settlement", "software", "unveil", "unveiled", "unveils",
   "vulnerability",
-  "study", "tech", "technology", "tool", "tools", "update", "updated",
+  "normal", "online", "operational", "study", "tech", "technology", "tool", "tools",
+  "under", "update", "updated",
   "updates", "user", "users", "version", "versions",
 ]);
 
 const GENERIC_EVENT_CONTEXT_TOKENS = new Set([
-  "acquisition", "active", "actively", "against", "allow", "allows", "allowing", "app", "cloud", "code",
+  "acquisition", "active", "actively", "against", "allow", "allows", "allowing", "cloud", "code",
   "back", "company", "confirm", "confirmed", "confirms", "cost", "costs", "critical",
   "customer", "customers", "deal", "division", "employee", "employees",
   "enterprise", "execution", "exploit", "exploited", "fee", "fees", "flaw",
@@ -87,6 +96,17 @@ const GENERIC_EVENT_CONTEXT_TOKENS = new Set([
   "staff", "startup", "store", "team", "unit", "workforce", "worker",
   "workers", "zero-day",
 ]);
+const NON_DISTINGUISHING_SUBJECT_DETAIL_TOKENS = new Set([
+  "cutting", "detailed", "frontier", "hundred", "offering", "promise", "reportedly",
+  "staffer", "working",
+]);
+const CLAUDE_MEMORY_DETAIL_TOKENS = new Set(["chat", "paid", "past"]);
+const CHATGPT_YOUNG_USERS_DETAIL_TOKENS = new Set([
+  "backed", "built", "designed", "human", "learning", "less", "make",
+  "protection", "safety", "teen", "younger",
+]);
+const LEGAL_PAYMENT_DETAIL_TOKENS = new Set(["pay", "will"]);
+const PRICING_DETAIL_TOKENS = new Set(["cheaper", "percent"]);
 const ACQUISITION_TARGET_NOISE_TOKENS = new Set([
   "corp", "corporation", "firm", "inc", "incorporated", "ltd", "maker",
 ]);
@@ -892,6 +912,8 @@ function tokenize(value) {
 
 function normalizeEventToken(token) {
   const aliases = {
+    application: "app",
+    applications: "app",
     children: "child",
     cuts: "cut",
     layoffs: "layoff",
@@ -914,6 +936,10 @@ function meaningfulTitleTokenSet(item) {
   return new Set(tokenize(item.title)
     .filter((token) => !EVENT_MATCH_STOP_WORDS.has(token))
     .map(normalizeEventToken)
+    .flatMap((token) =>
+      token.includes("-") && !GENERIC_EVENT_CONTEXT_TOKENS.has(token)
+        ? [token, ...token.split("-")]
+        : [token])
     // A bare four-digit number in a headline is overwhelmingly a calendar
     // year. It can improve neither overlap nor anchoring: otherwise unrelated
     // monthly patch roundups can corroborate each other merely via "2026".
@@ -1118,7 +1144,7 @@ function eventActionFamilies(item) {
     /\b(?:tak(?:e|es|ing)|took)\s+over\b/i.test(title) ||
     /\b(?:bid|offer)\s+for\b/i.test(title)
   ) families.add("acquisition");
-  if (/\b(?:accus(?:e|ed|es|ing)|alleg(?:e|ed|es|ing)|antitrust|case|charg(?:e|ed|es|ing)|complaint|court|fine(?:d|s|ing)?|lawsuit|legal\s+action|penalt(?:y|ies)|penaliz(?:e|ed|es|ing)|sanction(?:ed|s|ing)?|settlement|suit|sue|sued|sues|suing)\b/i.test(title)) {
+  if (/\b(?:accus(?:e|ed|es|ing)|alleg(?:e|ed|es|ing)|antitrust|case|charg(?:e|ed|es|ing)|complaint|court|fine(?:d|s|ing)?|lawsuit|legal\s+action|penalt(?:y|ies)|penaliz(?:e|ed|es|ing)|rulings?|sanction(?:ed|s|ing)?|settlement|suit|sue|sued|sues|suing)\b/i.test(title)) {
     families.add("legal");
   }
   if (
@@ -1157,6 +1183,61 @@ function eventArtifactFamilies(item) {
     families.add("research-artifact");
   }
   return families;
+}
+
+function eventObjectKinds(item) {
+  const title = normalizeEventText(item.title, 240);
+  const documentTitle = title.replace(/\bstudy\s+mode\b/gi, "");
+  const kinds = new Set();
+  const objectPatterns = [
+    [/\badvis(?:ory|ories)\b/i, "advisory"],
+    [/\b(?:analys(?:is|es)|assessments?|evaluations?)\b/i, "analysis"],
+    [/\bbenchmarks?\b/i, "benchmark"],
+    [/\b(?:model|safety|system)\s+cards?\b/i, "card"],
+    [/\breports?\b/i, "report"],
+    [/\bresearch\b/i, "research"],
+    [/\b(?:papers?|stud(?:y|ies)|whitepapers?)\b/i, "study"],
+    [/\b(?:apps?|applications?)\b/i, "app"],
+    [/\bapis?\b/i, "api"],
+    [/\bextensions?\b/i, "extension"],
+    [/\bplugins?\b/i, "plugin"],
+    [/\bmodels?\b/i, "model"],
+    [/\b(?:chips?|processors?|semiconductors?)\b/i, "processor"],
+    [/\baccelerators?\b/i, "accelerator"],
+    [/\b(?:devices?|hardware)\b/i, "hardware"],
+    [/\balgorithms?\b/i, "algorithm"],
+    [/\bcompilers?\b/i, "compiler"],
+    [/\bdecoders?\b/i, "decoder"],
+    [/\bframeworks?\b/i, "framework"],
+    [/\blibraries?\b/i, "library"],
+    [/\bruntimes?\b/i, "runtime"],
+    [/\bsdks?\b/i, "sdk"],
+    [/\btools?\b/i, "tool"],
+    [/\bplatforms?\b/i, "platform"],
+    [/\bservices?\b/i, "service"],
+    [/\bsoftware\b/i, "software"],
+    [/\bfeatures?\b/i, "feature"],
+    [/\bproducts?\b/i, "product"],
+    [/\bdata\b/i, "data"],
+    [/\bdatasets?\b/i, "dataset"],
+    [/\broadmaps?\b/i, "roadmap"],
+    [/\bsystems?\b/i, "system"],
+    [/\b(?:flaws?|vulnerabilit(?:y|ies))\b/i, "vulnerability"],
+    [/\b(?:disruptions?|downtime|outages?)\b/i, "outage"],
+  ];
+  for (const [pattern, kind] of objectPatterns) {
+    if (pattern.test(documentTitle)) kinds.add(kind);
+  }
+  // These generic nouns are removed from fuzzy subject overlap, but when no
+  // concrete object is named they still distinguish different events.
+  if (kinds.size === 0) {
+    if (/\bupdates?\b/i.test(documentTitle)) kinds.add("update");
+    else if (/\bplans?\b/i.test(documentTitle)) kinds.add("plan");
+    else if (/\bannouncements?\b/i.test(documentTitle)) kinds.add("announcement");
+    else if (/\bavailability\b/i.test(documentTitle)) kinds.add("availability");
+    else if (/\brulings?\b/i.test(documentTitle)) kinds.add("legal-decision");
+  }
+  return kinds;
 }
 
 function eventLifecycleFamilies(item) {
@@ -1332,6 +1413,16 @@ function setIntersection(left, right) {
 
 function setsEqual(left, right) {
   return left.size === right.size && [...left].every((token) => right.has(token));
+}
+
+function subjectDetailsCompatible(left, right, additionalAllowed = new Set()) {
+  const unmatched = (source, target) => new Set([...source].filter((token) =>
+    !target.has(token) &&
+    !(token.includes("-") && token.split("-").every((part) => target.has(part)))));
+  const leftOnly = unmatched(left, right);
+  const rightOnly = unmatched(right, left);
+  return [...leftOnly, ...rightOnly].every((token) =>
+    NON_DISTINGUISHING_SUBJECT_DETAIL_TOKENS.has(token) || additionalAllowed.has(token));
 }
 
 function numericAnchorsConflict(left, right) {
@@ -1796,7 +1887,7 @@ function investigationRoleAnchor(item) {
 }
 
 const LEGAL_ISSUE_NOISE_TOKENS = new Set([
-  "action", "advertising", "award", "case", "child", "complaint", "consumer", "fine", "fined", "lawsuit", "legal", "levied",
+  "action", "advertising", "award", "case", "complaint", "fine", "fined", "lawsuit", "legal", "levied",
   "levy", "mobile", "order", "ordered", "pay", "penalty", "penalize", "policy",
   "practice", "protect", "protected", "protecting", "protection", "receive",
   "reache", "reach", "reached", "reaches", "received", "right", "secure", "secured", "settle", "settled", "settlement", "suit", "victory",
@@ -2111,7 +2202,21 @@ function itemsMatch(left, right) {
   if (leftRecovered !== rightRecovered) return false;
   if (hasContradictorySecurityState(left) !== hasContradictorySecurityState(right)) return false;
   const sharedActions = setIntersection(leftActions, rightActions);
-  if (leftActions.size > 0 && rightActions.size > 0 && sharedActions.size === 0) return false;
+  const leftOnlyActions = new Set([...leftActions].filter((action) => !rightActions.has(action)));
+  const rightOnlyActions = new Set([...rightActions].filter((action) => !leftActions.has(action)));
+  const actionDifferences = new Set([...leftOnlyActions, ...rightOnlyActions]);
+  // A headline may add generic release wording to a more specific action
+  // (for example, "releases a patch" versus "patches"). Any other extra
+  // action family is event-defining and cannot be discarded by fuzzy title
+  // matching.
+  const releaseWordingOnly = sharedActions.size > 0 &&
+    actionDifferences.size > 0 &&
+    [...actionDifferences].every((action) => action === "release");
+  if (
+    leftActions.size > 0 &&
+    rightActions.size > 0 &&
+    (sharedActions.size === 0 || (!setsEqual(leftActions, rightActions) && !releaseWordingOnly))
+  ) return false;
   const leftLifecycle = eventLifecycleFamilies(left);
   const rightLifecycle = eventLifecycleFamilies(right);
   if (
@@ -2123,6 +2228,35 @@ function itemsMatch(left, right) {
   if (
     (leftArtifacts.size > 0 || rightArtifacts.size > 0) &&
     setIntersection(leftArtifacts, rightArtifacts).size === 0
+  ) return false;
+  const leftEventObjects = eventObjectKinds(left);
+  const rightEventObjects = eventObjectKinds(right);
+  const sharedEventObjects = setIntersection(leftEventObjects, rightEventObjects);
+  const eventObjectDifferences = [
+    ...[...leftEventObjects].filter((kind) => !rightEventObjects.has(kind)),
+    ...[...rightEventObjects].filter((kind) => !leftEventObjects.has(kind)),
+  ];
+  const outageServiceWordingOnly = sharedEventObjects.has("outage") &&
+    eventObjectDifferences.length > 0 &&
+    eventObjectDifferences.every((kind) => kind === "service");
+  const exactSecurityIdentifier = sharedIdentifiers.size > 0 && sharedActions.has("security-fix");
+  const oneObjectSideEmpty = (leftEventObjects.size === 0) !== (rightEventObjects.size === 0);
+  const nonemptyEventObjects = leftEventObjects.size > 0 ? leftEventObjects : rightEventObjects;
+  const sharedVersionedProducts = setIntersection(leftVersionedProducts, rightVersionedProducts);
+  const optionalVersionedModelNoun = oneObjectSideEmpty &&
+    nonemptyEventObjects.size === 1 &&
+    nonemptyEventObjects.has("model") &&
+    sharedVersionedProducts.size > 0;
+  const optionalNamedFeatureUpdateNoun = oneObjectSideEmpty &&
+    nonemptyEventObjects.size === 1 &&
+    nonemptyEventObjects.has("update") &&
+    sharedProducts.has("feature:chatgpt-young-users");
+  if (
+    !setsEqual(leftEventObjects, rightEventObjects) &&
+    !outageServiceWordingOnly &&
+    !exactSecurityIdentifier &&
+    !optionalVersionedModelNoun &&
+    !optionalNamedFeatureUpdateNoun
   ) return false;
   const leftFacets = eventFacetFamilies(left);
   const rightFacets = eventFacetFamilies(right);
@@ -2144,6 +2278,9 @@ function itemsMatch(left, right) {
   const rightSubjectTokens = subjectEventTokenSet(right);
   const sharedSubjectCount = setIntersection(leftSubjectTokens, rightSubjectTokens).size;
   const subjectSimilarity = jaccard(leftSubjectTokens, rightSubjectTokens);
+  // Without a typed event anchor, unmatched title detail is event-defining
+  // unless every extra token is an explicitly reviewed wording variant.
+  const compatibleSubjectDetails = subjectDetailsCompatible(leftSubjectTokens, rightSubjectTokens);
   const sharesEntity = setIntersection(leftEntities, rightEntities).size > 0;
   const sharesActionFamily = sharedActions.size > 0;
   const sharesNumericAnchor = setIntersection(
@@ -2151,10 +2288,22 @@ function itemsMatch(left, right) {
     flattenedNumericAnchors(right),
   ).size > 0;
   const oneActionMissing = (leftActions.size === 0) !== (rightActions.size === 0);
-  const sharesFeatureProduct = setIntersection(
+  const sharedFeatureProducts = setIntersection(
     identifiersWithPrefix(leftProducts, "feature:"),
     identifiersWithPrefix(rightProducts, "feature:"),
-  ).size > 0;
+  );
+  const sharesFeatureProduct = sharedFeatureProducts.size > 0;
+  const compatibleFeatureDetails =
+    (sharedFeatureProducts.has("feature:claude-memory") && subjectDetailsCompatible(
+      leftSubjectTokens,
+      rightSubjectTokens,
+      CLAUDE_MEMORY_DETAIL_TOKENS,
+    )) ||
+    (sharedFeatureProducts.has("feature:chatgpt-young-users") && subjectDetailsCompatible(
+      leftSubjectTokens,
+      rightSubjectTokens,
+      CHATGPT_YOUNG_USERS_DETAIL_TOKENS,
+    ));
   const sharesAcronymProduct = setIntersection(
     identifiersWithPrefix(leftProducts, "acronym:"),
     identifiersWithPrefix(rightProducts, "acronym:"),
@@ -2200,6 +2349,7 @@ function itemsMatch(left, right) {
   if (
     sharedProducts.size > 0 &&
     (sharesFeatureProduct || bothContextsSparse || sharesProductContext) &&
+    (compatibleSubjectDetails || compatibleFeatureDetails) &&
     (sharesActionFamily || (
       oneActionMissing &&
       (sharesFeatureProduct || bothContextsSparse || sharesProductContext)
@@ -2209,21 +2359,35 @@ function itemsMatch(left, right) {
     left.publisherKey !== right.publisherKey &&
     sharesEntity &&
     sharedFacets.size > 0 &&
-    (sharedProducts.size > 0 || sharedSubjectCount >= 2)
+    (sharedProducts.size > 0 || sharedSubjectCount >= 2) &&
+    compatibleSubjectDetails
   ) return true;
   if (
     left.publisherKey !== right.publisherKey &&
     sharesEntity &&
     sharesActionFamily &&
     sharesNumericAnchor &&
-    (sharedProducts.size > 0 || sharedSubjectCount >= 2)
+    (sharedProducts.size > 0 || sharedSubjectCount >= 2) &&
+    (compatibleSubjectDetails ||
+      (sharedActions.has("legal") && subjectDetailsCompatible(
+        leftSubjectTokens,
+        rightSubjectTokens,
+        LEGAL_PAYMENT_DETAIL_TOKENS,
+      )) ||
+      (["pricing-decrease", "pricing-increase"].some((action) => sharedActions.has(action)) &&
+        subjectDetailsCompatible(
+          leftSubjectTokens,
+          rightSubjectTokens,
+          PRICING_DETAIL_TOKENS,
+        )))
   ) return true;
   if (
     left.publisherKey !== right.publisherKey &&
     sharesEntity &&
     sharesActionFamily &&
     sharedSubjectCount >= 3 &&
-    subjectSimilarity >= 0.35
+    subjectSimilarity >= 0.35 &&
+    compatibleSubjectDetails
   ) return true;
   if (
     leftEventTokens.size >= 3 &&
@@ -2231,7 +2395,10 @@ function itemsMatch(left, right) {
     (left.publisherKey === right.publisherKey || sharesEntity || sharedProducts.size > 0 || sharedIdentifiers.size > 0)
   ) return true;
   if (left.publisherKey !== right.publisherKey) {
-    return sharesEntity && sharedSubjectCount >= 3 && subjectSimilarity >= 0.35;
+    return sharesEntity &&
+      sharedSubjectCount >= 3 &&
+      subjectSimilarity >= 0.35 &&
+      compatibleSubjectDetails;
   }
   return sharedEventCount >= 3 && eventSimilarity >= 0.58;
 }

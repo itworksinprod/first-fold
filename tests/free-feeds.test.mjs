@@ -1278,6 +1278,20 @@ test("anchored paraphrases normalize Unicode, action synonyms, products, identif
       ],
     },
     {
+      label: "hyphenated and spaced subject compounds identify the same event",
+      items: [
+        matchingItem("Google launches quantum error-correction AI decoder breakthrough", "publisher-one", "hyphen-subject-one"),
+        matchingItem("Google releases quantum error correction AI decoder breakthrough", "publisher-two", "hyphen-subject-two"),
+      ],
+    },
+    {
+      label: "app and application identify the same event object",
+      items: [
+        matchingItem("Google launches quantum error correction app", "publisher-one", "app-object-one"),
+        matchingItem("Google releases quantum error correction application", "publisher-two", "app-object-two"),
+      ],
+    },
+    {
       label: "release and availability wording identify the same named AI tool",
       items: [
         matchingItem("Anthropic launches Claude Code in the browser for developers", "publisher-one", "claude-code-one"),
@@ -1313,6 +1327,13 @@ test("anchored paraphrases normalize Unicode, action synonyms, products, identif
           "webrtc-cve-two",
           { summary: "The bulletin lists CVE-2026-2222 before CVE-2026-9999." },
         ),
+      ],
+    },
+    {
+      label: "generic release wording may accompany the same specific security-fix action",
+      items: [
+        matchingItem("Google releases a Chrome WebRTC security patch", "publisher-one", "release-patch-one"),
+        matchingItem("Google patches Chrome WebRTC", "publisher-two", "release-patch-two"),
       ],
     },
     {
@@ -1581,6 +1602,15 @@ test("anchored paraphrases normalize Unicode, action synonyms, products, identif
 test("event anchors veto conflicting versions, amounts, entities, facets, and explicit identifiers", () => {
   const genericImpactSummary =
     "The development affects millions of enterprise customers and requires administrators, developers, and security teams to update workflows and controls.";
+  const highSignalItem = (title, publisherKey, suffix) => matchingItem(
+    title,
+    publisherKey,
+    suffix,
+    {
+      summary: genericImpactSummary,
+      categories: ["AI", "machine learning", "developer tool"],
+    },
+  );
   const cases = [
     {
       label: "different explicit model versions are different events",
@@ -1890,6 +1920,246 @@ test("event anchors veto conflicting versions, amounts, entities, facets, and ex
       items: [
         matchingItem("OpenAI launches GPT-5.4 for millions of enterprise customers", "publisher-one", "model-launch-artifact-one"),
         matchingItem("OpenAI releases GPT-5.4 safety report for millions of enterprise customers", "publisher-two", "model-launch-artifact-two"),
+      ],
+    },
+    {
+      label: "competing event nouns cannot manufacture corroboration from shared context",
+      items: [
+        highSignalItem("Google launches quantum error correction decoder", "publisher-one", "quantum-decoder"),
+        highSignalItem("Google launches quantum error correction chip", "publisher-two", "quantum-chip"),
+      ],
+    },
+    {
+      label: "the action-missing fallback still rejects competing event nouns",
+      items: [
+        highSignalItem("Google launches quantum error correction decoder", "publisher-one", "quantum-action-decoder"),
+        highSignalItem("Google quantum error correction chip detailed", "publisher-two", "quantum-action-chip"),
+      ],
+    },
+    {
+      label: "alternate event-object vocabulary cannot bypass the subject conflict",
+      items: [
+        highSignalItem("OpenAI launches neural inference workflow compiler", "publisher-one", "workflow-compiler"),
+        highSignalItem("OpenAI releases neural inference workflow accelerator", "publisher-two", "workflow-accelerator"),
+      ],
+    },
+    {
+      label: "generic stop words cannot hide conflicting event-object families",
+      items: [
+        highSignalItem("Google launches quantum error correction AI model", "publisher-one", "stopword-model"),
+        highSignalItem("Google releases quantum error correction AI report", "publisher-two", "stopword-report"),
+      ],
+    },
+    {
+      label: "bare stop words cannot hide conflicting event-object families",
+      items: [
+        highSignalItem("Google launches quantum error correction model", "publisher-one", "bare-stopword-model"),
+        highSignalItem("Google releases quantum error correction report", "publisher-two", "bare-stopword-report"),
+      ],
+    },
+    {
+      label: "plural stop words cannot hide conflicting event-object families",
+      items: [
+        highSignalItem("Google launches quantum error correction models", "publisher-one", "plural-stopword-model"),
+        highSignalItem("Google releases quantum error correction reports", "publisher-two", "plural-stopword-report"),
+      ],
+    },
+    {
+      label: "the action-missing fallback retains typed event-object conflicts",
+      items: [
+        highSignalItem("Google launches quantum error correction AI model", "publisher-one", "stopword-action-model"),
+        highSignalItem("Google quantum error correction AI report detailed", "publisher-two", "stopword-action-report"),
+      ],
+    },
+    {
+      label: "shared products cannot hide conflicting extension and plugin events",
+      items: [
+        highSignalItem("Google launches Gemini quantum memory extension", "publisher-one", "gemini-extension"),
+        highSignalItem("Google releases Gemini quantum memory plugin", "publisher-two", "gemini-plugin"),
+      ],
+    },
+    {
+      label: "generic app wording cannot hide an API-versus-app conflict",
+      items: [
+        highSignalItem("Google launches quantum error correction API", "publisher-one", "quantum-api"),
+        highSignalItem("Google releases quantum error correction app", "publisher-two", "quantum-app"),
+      ],
+    },
+    {
+      label: "a shared pricing facet cannot override conflicting event objects",
+      items: [
+        highSignalItem("Google launches Gemini quantum memory extension with new pricing", "publisher-one", "gemini-pricing-extension"),
+        highSignalItem("Google releases Gemini quantum memory plugin with new pricing", "publisher-two", "gemini-pricing-plugin"),
+      ],
+    },
+    {
+      label: "a shared numeric anchor cannot override conflicting event objects",
+      items: [
+        highSignalItem("Google launches Gemini quantum memory extension with 30 percent improvement", "publisher-one", "gemini-numeric-extension"),
+        highSignalItem("Google releases Gemini quantum memory plugin with 30 percent improvement", "publisher-two", "gemini-numeric-plugin"),
+      ],
+    },
+    ...[
+      ["tool", "platform", "generic-tool-platform"],
+      ["service", "software", "generic-service-software"],
+      ["feature", "product", "generic-feature-product"],
+      ["data", "tool", "generic-data-tool"],
+    ].map(([leftObject, rightObject, suffix]) => ({
+      label: `${leftObject} and ${rightObject} remain distinct event objects even when generic matcher words are removed`,
+      items: [
+        highSignalItem(`Google launches quantum error correction ${leftObject}`, "publisher-one", `${suffix}-one`),
+        highSignalItem(`Google releases quantum error correction ${rightObject}`, "publisher-two", `${suffix}-two`),
+      ],
+    })),
+    {
+      label: "one missing action cannot override a named feature object conflict",
+      items: [
+        highSignalItem("OpenAI launches ChatGPT Study Mode tool", "publisher-one", "study-tool"),
+        highSignalItem("OpenAI ChatGPT Study Mode platform detailed", "publisher-two", "study-platform"),
+      ],
+    },
+    {
+      label: "a named feature cannot turn extension and plugin releases into one event",
+      items: [
+        highSignalItem("OpenAI launches ChatGPT Study Mode mobile extension", "publisher-one", "study-extension"),
+        highSignalItem("OpenAI releases ChatGPT Study Mode browser plugin", "publisher-two", "study-plugin"),
+      ],
+    },
+    {
+      label: "retention wording cannot override an extension and plugin conflict",
+      items: [
+        highSignalItem("Google launches Gemini quantum memory extension with data retention controls", "publisher-one", "retention-extension"),
+        highSignalItem("Google releases Gemini quantum memory plugin with data retention controls", "publisher-two", "retention-plugin"),
+      ],
+    },
+    {
+      label: "a shared model noun cannot turn a model analysis into the model launch",
+      items: [
+        highSignalItem("Google launches quantum error correction model", "publisher-one", "model-object"),
+        highSignalItem("Google releases quantum error correction model analysis", "publisher-two", "model-analysis"),
+      ],
+    },
+    {
+      label: "a shared system noun cannot turn a system analysis into the system launch",
+      items: [
+        highSignalItem("Google launches quantum error correction system", "publisher-one", "system-object"),
+        highSignalItem("Google releases quantum error correction system analysis", "publisher-two", "system-analysis"),
+      ],
+    },
+    ...[
+      ["app", "app plugin", "subset-app-plugin"],
+      ["API", "API extension", "subset-api-extension"],
+      ["model", "model compiler", "subset-model-compiler"],
+      ["platform", "platform plugin", "subset-platform-plugin"],
+    ].map(([leftObject, rightObject, suffix]) => ({
+      label: `a base ${leftObject} launch remains distinct from its ${rightObject} add-on`,
+      items: [
+        highSignalItem(`Google launches quantum error correction ${leftObject}`, "publisher-one", `${suffix}-one`),
+        highSignalItem(`Google releases quantum error correction ${rightObject}`, "publisher-two", `${suffix}-two`),
+      ],
+    })),
+    ...[
+      ["research", "open-class-research"],
+      ["whitepaper", "open-class-whitepaper"],
+      ["dataset", "open-class-dataset"],
+      ["advisory", "open-class-advisory"],
+      ["roadmap", "open-class-roadmap"],
+    ].map(([rightObject, suffix]) => ({
+      label: `a model launch remains distinct from a ${rightObject} release`,
+      items: [
+        highSignalItem("Google launches quantum error correction model", "publisher-one", `${suffix}-model`),
+        highSignalItem(`Google releases quantum error correction ${rightObject}`, "publisher-two", `${suffix}-other`),
+      ],
+    })),
+    {
+      label: "a missing action and shared feature cannot merge different Study Mode changes",
+      items: [
+        highSignalItem("OpenAI launches ChatGPT Study Mode privacy controls", "publisher-one", "study-privacy"),
+        highSignalItem("OpenAI ChatGPT Study Mode safety lessons detailed", "publisher-two", "study-safety"),
+      ],
+    },
+    {
+      label: "the young-users feature cannot merge different teen changes",
+      items: [
+        highSignalItem("OpenAI launches ChatGPT teen privacy controls", "publisher-one", "teen-privacy"),
+        highSignalItem("OpenAI launches ChatGPT teen safety lessons", "publisher-two", "teen-safety"),
+      ],
+    },
+    {
+      label: "recovery wording cannot merge separate regional incidents",
+      items: [
+        highSignalItem("Google restores Workspace account access service after east coast outage", "publisher-one", "recovery-east"),
+        highSignalItem("Google Workspace account access service is back online after west coast outage", "publisher-two", "recovery-west"),
+      ],
+    },
+    {
+      label: "recovery wording cannot merge separate service incidents",
+      items: [
+        highSignalItem("Google restores Workspace service after login outage", "publisher-one", "recovery-login"),
+        highSignalItem("Google Workspace service is back online after storage outage", "publisher-two", "recovery-storage"),
+      ],
+    },
+    {
+      label: "a shared legal amount cannot merge different privacy issues",
+      items: [
+        highSignalItem("FTC fines Meta $5 billion over child privacy", "publisher-one", "fine-child"),
+        highSignalItem("FTC fines Meta $5 billion over consumer privacy", "publisher-two", "fine-consumer"),
+      ],
+    },
+    {
+      label: "a shared price percentage cannot merge different customer changes",
+      items: [
+        highSignalItem("Google cuts Workspace price 30 percent for mobile users", "publisher-one", "price-mobile"),
+        highSignalItem("Google cuts Workspace price 30 percent for enterprise users", "publisher-two", "price-enterprise"),
+      ],
+    },
+    {
+      label: "research and advisory documents remain separate Windows events",
+      items: [
+        highSignalItem("Microsoft releases Windows quantum error correction research", "publisher-one", "windows-research"),
+        highSignalItem("Microsoft releases Windows quantum error correction advisory", "publisher-two", "windows-advisory"),
+      ],
+    },
+    {
+      label: "a Chrome security patch remains separate from a password-manager report",
+      items: [
+        highSignalItem("Google releases Chrome password manager patch", "publisher-one", "chrome-password-patch"),
+        highSignalItem("Google releases Chrome password manager report", "publisher-two", "chrome-password-report"),
+      ],
+    },
+    {
+      label: "a security patch remains separate from an AI model release",
+      items: [
+        highSignalItem("Google releases quantum error correction patch", "publisher-one", "quantum-patch"),
+        highSignalItem("Google releases quantum error correction model", "publisher-two", "quantum-model"),
+      ],
+    },
+    ...[
+      ["update", "report", "update-report"],
+      ["update", "model", "update-model"],
+      ["plan", "report", "plan-report"],
+      ["plan", "model", "plan-model"],
+      ["announcement", "report", "announcement-report"],
+      ["availability", "model", "availability-model"],
+    ].map(([leftObject, rightObject, suffix]) => ({
+      label: `${leftObject} and ${rightObject} remain separate when one event noun was formerly generic`,
+      items: [
+        highSignalItem(`Google announces quantum error correction ${leftObject}`, "publisher-one", `${suffix}-one`),
+        highSignalItem(`Google releases quantum error correction ${rightObject}`, "publisher-two", `${suffix}-two`),
+      ],
+    })),
+    {
+      label: "an action-missing plan cannot corroborate a separate model launch",
+      items: [
+        highSignalItem("Google quantum error correction plan detailed", "publisher-one", "plan-action-missing"),
+        highSignalItem("Google launches quantum error correction model", "publisher-two", "model-action-present"),
+      ],
+    },
+    {
+      label: "a regulatory ruling cannot corroborate a separate Chrome security patch",
+      items: [
+        highSignalItem("Google releases Chrome password manager patch", "publisher-one", "chrome-password-patch-ruling"),
+        highSignalItem("FTC ruling on Google Chrome password manager", "publisher-two", "chrome-password-ruling"),
       ],
     },
     ...[
