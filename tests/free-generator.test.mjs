@@ -415,6 +415,7 @@ function aiResult(editorialPayload = buildEditorialPayload()) {
     usage: null,
     requestSha256: "a".repeat(64),
     responseSha256: "b".repeat(64),
+    attemptCount: 1,
   };
 }
 
@@ -513,7 +514,7 @@ test("draftFreeEdition creates a validated, unpublished, QA-passed comparison ca
   assert.equal(aiOptions.accountId, "a".repeat(32));
   assert.equal(aiOptions.apiToken, "cloudflare-test-token-do-not-log");
   assert.equal(aiOptions.model, "@cf/openai/gpt-oss-120b");
-  assert.equal(aiOptions.maxAttempts, 1);
+  assert.equal(aiOptions.maxAttempts, 2);
   assert.equal(aiOptions.maxTokens, undefined);
   assert.equal(aiOptions.schema.type, "object");
   assert.match(aiOptions.messages[0].content, /POLICY_MARKER/);
@@ -1566,7 +1567,7 @@ test("one reader-word-count rejection gets the same bounded corrective rewrite",
   }));
 
   assert.equal(calls.length, 2);
-  assert.deepEqual(calls.map((options) => options.maxAttempts), [1, 1]);
+  assert.deepEqual(calls.map((options) => options.maxAttempts), [2, 1]);
   assert.doesNotMatch(calls[0].messages[0].content, /<free-length-retry>/);
   assert.match(calls[1].messages[0].content, /<free-length-retry>/);
   assert.match(calls[1].messages[0].content, /150–225 words in whatHappened, whyItMatters, and whatToDoOrWatch combined/);
@@ -1600,8 +1601,27 @@ test("reader-word-count failure remains fail-closed after the sole corrective re
 
   assert.equal(calls.length, 2);
   assert.equal(sourceRequests, 0);
-  assert.deepEqual(calls.map((options) => options.maxAttempts), [1, 1]);
+  assert.deepEqual(calls.map((options) => options.maxAttempts), [2, 1]);
   assert.match(calls[1].messages[0].content, /<free-length-retry>/);
+});
+
+test("a transient transport retry consumes the corrective request budget", async () => {
+  const shortPayload = buildEditorialPayload();
+  setReaderFacingWordCount(shortPayload.desks["work-and-tools"].story, 149);
+  const calls = [];
+
+  await assert.rejects(
+    () => draftFreeEdition(draftOptions({
+      aiRequestImpl: async (options) => {
+        calls.push(options);
+        return { ...aiResult(shortPayload), attemptCount: 2 };
+      },
+    })),
+    /model-request budget was exhausted before the corrective draft/,
+  );
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].maxAttempts, 2);
 });
 
 test("security-invalid model output does not spend the editorial retry", async () => {
@@ -1698,7 +1718,7 @@ test("one copy-overlap rejection gets one bounded corrective rewrite", async () 
   assert.equal(researchCalls, 1);
   assert.equal(sourceRequests, 2);
   assert.equal(calls.length, 2);
-  assert.deepEqual(calls.map((options) => options.maxAttempts), [1, 1]);
+  assert.deepEqual(calls.map((options) => options.maxAttempts), [2, 1]);
   assert.deepEqual(calls.map((options) => options.messages.length), [2, 2]);
   assert.deepEqual(calls[1].messages[1], calls[0].messages[1]);
   assert.doesNotMatch(calls[0].messages[0].content, /<free-copy-retry>/);
@@ -1767,7 +1787,7 @@ test("model copy cannot reuse twelve contiguous words after the sole corrective 
     /repeats 12 or more contiguous words from untrusted feed text/,
   );
   assert.equal(calls.length, 2);
-  assert.deepEqual(calls.map((options) => options.maxAttempts), [1, 1]);
+  assert.deepEqual(calls.map((options) => options.maxAttempts), [2, 1]);
   assert.match(calls[1].messages[0].content, /<free-copy-retry>/);
 });
 

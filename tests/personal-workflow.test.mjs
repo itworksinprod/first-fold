@@ -316,7 +316,10 @@ test("source health is exact, public-safe, short-lived, and never an email gate"
   assert.match(sourceHealthProbe, /htmlText !== renderSourceHealthHtml\(snapshot\)/);
   assert.match(sourceHealthProbe, /available = false/);
   assert.match(sourceHealthProbe, /available = true/);
-  assert.match(sourceHealthProbe, /delivery is unaffected/);
+  assert.match(
+    sourceHealthProbe,
+    /source-health report was unavailable; this does not change the candidate step result/,
+  );
   assert.doesNotMatch(
     sourceHealthProbe,
     /candidate_path|PERSONAL_OUTPUT_ROOT|PERSONAL_PAPER_EMAIL|RESEND_API_KEY|PERSONAL_FEEDBACK_SIGNING_KEY/,

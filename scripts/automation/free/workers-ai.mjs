@@ -147,6 +147,16 @@ const defaultSleep = (milliseconds) => new Promise((resolve) => setTimeout(resol
 
 class AttemptTimeoutError extends Error {}
 
+function workersAiTimeoutError(message, code) {
+  const error = new Error(message);
+  Object.defineProperty(error, "code", {
+    value: code,
+    configurable: true,
+    enumerable: false,
+  });
+  return error;
+}
+
 async function cancelResponseBody(response) {
   try {
     await response?.body?.cancel();
@@ -286,7 +296,10 @@ async function requestEnvelope({
         continue;
       }
       if (error instanceof AttemptTimeoutError) {
-        throw new Error(`Cloudflare Workers AI request timed out after ${attempt} attempt(s).`);
+        throw workersAiTimeoutError(
+          `Cloudflare Workers AI request timed out after ${attempt} attempt(s).`,
+          "WORKERS_AI_CLIENT_TIMEOUT",
+        );
       }
       throw new Error(`Cloudflare Workers AI request failed after ${attempt} attempt(s).`);
     }
@@ -295,6 +308,12 @@ async function requestEnvelope({
       if (attempt < maxAttempts && shouldRetryStatus(result.status)) {
         await sleepImpl(250 * (2 ** (attempt - 1)));
         continue;
+      }
+      if (result.status === 408) {
+        throw workersAiTimeoutError(
+          "Cloudflare Workers AI request failed with HTTP 408.",
+          "WORKERS_AI_PROVIDER_TIMEOUT",
+        );
       }
       throw new Error(`Cloudflare Workers AI request failed with HTTP ${result.status}.`);
     }
@@ -305,7 +324,12 @@ async function requestEnvelope({
     } catch {
       throw new Error("Cloudflare Workers AI returned unreadable JSON.");
     }
-    return { envelope, response: result.response, responseText: result.text };
+    return {
+      envelope,
+      response: result.response,
+      responseText: result.text,
+      attemptCount: attempt,
+    };
   }
 
   throw new Error("Cloudflare Workers AI request failed without a response.");
@@ -399,7 +423,7 @@ export async function requestWorkersAiEditorial({
   if (utf8Encoder.encode(requestText).byteLength > maxRequestBytes) {
     throw new Error("Cloudflare Workers AI request exceeded the configured size limit.");
   }
-  const { envelope, response, responseText } = await requestEnvelope({
+  const { envelope, response, responseText, attemptCount } = await requestEnvelope({
     url,
     apiToken: token,
     requestText,
@@ -430,6 +454,7 @@ export async function requestWorkersAiEditorial({
     provider: WORKERS_AI_PROVIDER,
     model: request.model,
     usage: isObject(result.usage) ? cloneJson(result.usage, "Workers AI usage") : null,
+    attemptCount,
     requestSha256: createHash("sha256").update(JSON.stringify({
       provider: WORKERS_AI_PROVIDER,
       model: request.model,

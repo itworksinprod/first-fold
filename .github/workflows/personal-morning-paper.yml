@@ -716,7 +716,7 @@ jobs:
           import path from "node:path";
 
           let available = false;
-          let summary = "The advisory source-health report was unavailable; paper delivery is unaffected.";
+          let summary = "The advisory source-health report was unavailable; this does not change the candidate step result.";
           try {
             const {
               SOURCE_HEALTH_MAX_HTML_BYTES,

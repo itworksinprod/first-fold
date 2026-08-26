@@ -1523,6 +1523,7 @@ async function draftFreeEditionCore({
   sourceLookupImpl,
   sourceCheckTimeoutMs = 5_000,
   timeoutMs,
+  maxModelRequests = 2,
   maxTokens,
   maxRequestBytes,
   maxResponseBytes,
@@ -1557,6 +1558,9 @@ async function draftFreeEditionCore({
     maxResearchAttempts > MAX_FREE_RESEARCH_ATTEMPTS
   ) {
     throw new Error("Free maxResearchAttempts must be 1 or 2.");
+  }
+  if (!Number.isInteger(maxModelRequests) || maxModelRequests < 1 || maxModelRequests > 2) {
+    throw new Error("Free maxModelRequests must be 1 or 2.");
   }
   if (
     !Number.isInteger(researchRetryBelowStoryCount) ||
@@ -1754,7 +1758,14 @@ async function draftFreeEditionCore({
       requireComplete,
       minimumStoryCount: requiredStoryCount,
     });
+    let remainingModelRequests = maxModelRequests;
     const requestInference = async (requestMessages) => {
+      if (remainingModelRequests < 1) {
+        throw new Error(
+          "Workers AI model-request budget was exhausted before the corrective draft.",
+        );
+      }
+      const attemptAllowance = remainingModelRequests;
       const result = await aiRequestImpl({
         accountId,
         apiToken,
@@ -1764,11 +1775,10 @@ async function draftFreeEditionCore({
         validatePayload: validateFreeEditorialPayload,
         fetchImpl,
         timeoutMs,
-        // The free lane permits at most two POSTs: the initial draft and one
-        // locally triggered originality rewrite. Provider transport retries
-        // remain available to other adapter callers, but cannot multiply this
-        // hard-$0 semantic budget.
-        maxAttempts: 1,
+        // Transport recovery and the optional local corrective rewrite share
+        // one hard ceiling, so reliability cannot multiply the free lane's
+        // existing model-request budget.
+        maxAttempts: attemptAllowance,
         maxTokens,
         maxRequestBytes,
         maxResponseBytes,
@@ -1777,10 +1787,14 @@ async function draftFreeEditionCore({
       if (
         !isObject(result) ||
         result.provider !== WORKERS_AI_PROVIDER ||
-        result.model !== modelId
+        result.model !== modelId ||
+        !Number.isInteger(result.attemptCount ?? 1) ||
+        (result.attemptCount ?? 1) < 1 ||
+        (result.attemptCount ?? 1) > attemptAllowance
       ) {
-        throw new Error("Workers AI returned invalid provider or model provenance.");
+        throw new Error("Workers AI returned invalid provider, model, or attempt provenance.");
       }
+      remainingModelRequests -= result.attemptCount ?? 1;
       return {
         aiResult: result,
         inference: {

@@ -18,6 +18,7 @@ import {
 } from "../scripts/automation/source-health.mjs";
 import {
   PERSONAL_FREE_EVIDENCE_POLICY,
+  PERSONAL_FREE_AI_TIMEOUT_MS,
   PERSONAL_FREE_DESKS,
   PERSONAL_FREE_LOOKBACK_HOURS,
   PERSONAL_FREE_MAX_MODEL_REQUESTS,
@@ -379,7 +380,9 @@ test("private free generation fixes the model, evidence lane, lookback, and requ
     PERSONAL_FREE_MINIMUM_AUTHORITATIVE_SCORE,
   );
   assert.equal(draftOptions.maxTokens, PERSONAL_FREE_MAX_TOKENS);
+  assert.equal(draftOptions.maxModelRequests, PERSONAL_FREE_MAX_MODEL_REQUESTS);
   assert.equal(draftOptions.maxRequestBytes, PERSONAL_FREE_MAX_REQUEST_BYTES);
+  assert.equal(draftOptions.timeoutMs, PERSONAL_FREE_AI_TIMEOUT_MS);
   assert.deepEqual(draftOptions.recentRepeatHistory, []);
   assert.equal(
     draftOptions.repeatFingerprintKey,
@@ -485,6 +488,12 @@ test("the GitHub CLI preserves hard failures", async (t) => {
   const summaryPath = path.join(projectRoot, "github-summary.md");
   await writeFile(outputPath, "");
   await writeFile(summaryPath, "");
+  const annotations = [];
+  const failure = new Error("sensitive provider detail must not be reported");
+  Object.defineProperty(failure, "code", {
+    value: "WORKERS_AI_CLIENT_TIMEOUT",
+    enumerable: false,
+  });
   await assert.rejects(
     runPersonalFreeEditionCli({
       argv: ["2026-08-20", "--github-actions-outcome"],
@@ -494,12 +503,22 @@ test("the GitHub CLI preserves hard failures", async (t) => {
         GITHUB_STEP_SUMMARY: summaryPath,
       },
       generateOutcomeImpl: async () => {
-        throw new Error("Workers AI request failed safely.");
+        throw failure;
       },
       logImpl: () => {},
+      errorImpl: (message) => annotations.push(message),
     }),
-    /Workers AI request failed safely/,
+    (error) => error === failure,
   );
+  assert.equal(await readFile(outputPath, "utf8"), "");
+  const summary = await readFile(summaryPath, "utf8");
+  assert.match(summary, /Personal paper not sent/);
+  assert.match(summary, /WORKERS_AI_CLIENT_TIMEOUT/);
+  assert.doesNotMatch(summary, /sensitive provider detail/);
+  assert.deepEqual(annotations, [
+    "::error title=Personal Morning Paper not sent::WORKERS_AI_CLIENT_TIMEOUT — " +
+      "candidate generation failed; no email was sent.",
+  ]);
 });
 
 test("the GitHub CLI reports selected story count and adaptive edition format", async (t) => {

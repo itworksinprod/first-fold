@@ -280,6 +280,7 @@ test("transient HTTP and transport failures retry with bounded backoff", async (
       sleepImpl: async (milliseconds) => sleeps.push(milliseconds),
     }));
     assert.equal(result.editorialPayload.headline, payload.headline);
+    assert.equal(result.attemptCount, 2);
     assert.equal(calls, 2);
     assert.deepEqual(sleeps, [250]);
   });
@@ -356,10 +357,28 @@ test("timeouts, oversized bodies, and non-JSON successes fail closed", async (t)
           return new Promise(() => {});
         },
       })),
-      /timed out after 1 attempt/,
+      (error) => {
+        assert.match(error.message, /timed out after 1 attempt/);
+        assert.equal(error.code, "WORKERS_AI_CLIENT_TIMEOUT");
+        return true;
+      },
     );
     assert.equal(calls, 1);
     assert.equal(requestSignal.aborted, true);
+  });
+
+  await t.test("provider HTTP 408", async () => {
+    await assert.rejects(
+      requestWorkersAiEditorial(requestOptions({
+        maxAttempts: 1,
+        fetchImpl: async () => new Response(null, { status: 408 }),
+      })),
+      (error) => {
+        assert.equal(error.code, "WORKERS_AI_PROVIDER_TIMEOUT");
+        assert.match(error.message, /HTTP 408/);
+        return true;
+      },
+    );
   });
 
   await t.test("oversized response", async () => {

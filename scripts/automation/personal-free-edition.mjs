@@ -24,6 +24,7 @@ import {
 } from "./personal-story-ledger.mjs";
 import {
   validateSourceHealthSnapshot,
+  sourceHealthFailureCode,
   writeSourceHealthBundle,
 } from "./source-health.mjs";
 
@@ -44,6 +45,7 @@ export const PERSONAL_FREE_EVIDENCE_POLICY = "authoritative-or-corroborated";
 export const PERSONAL_FREE_MAX_MODEL_REQUESTS = 2;
 export const PERSONAL_FREE_MAX_TOKENS = 6_000;
 export const PERSONAL_FREE_MAX_REQUEST_BYTES = 100_000;
+export const PERSONAL_FREE_AI_TIMEOUT_MS = 240_000;
 export const PERSONAL_FREE_LOOKBACK_HOURS = 72;
 export const PERSONAL_FREE_MINIMUM_SCORE = 70;
 export const PERSONAL_FREE_MINIMUM_AUTHORITATIVE_SCORE = 70;
@@ -57,6 +59,11 @@ export const PERSONAL_FREE_DESKS = Object.freeze([
   "work-and-tools",
   "security-and-privacy",
   "platforms-and-power",
+]);
+
+const PERSONAL_GENERATION_FAILURE_CODES = new Set([
+  "WORKERS_AI_CLIENT_TIMEOUT",
+  "WORKERS_AI_PROVIDER_TIMEOUT",
 ]);
 
 const EXPECTED_REPOSITORY = "itworksinprod/first-fold";
@@ -212,6 +219,42 @@ function attachSourceHealthBundle(error, sourceHealthBundle) {
     }
   }
   return error;
+}
+
+export function personalFreeFailureCode(error) {
+  if (PERSONAL_GENERATION_FAILURE_CODES.has(error?.code)) return error.code;
+  const researchCode = sourceHealthFailureCode(error);
+  if (researchCode !== "RESEARCH_FAILED") return researchCode;
+  if (error?.sourceHealth) {
+    return Number.isInteger(error.sourceHealth.selectedAttempt)
+      ? "EDITION_GENERATION_FAILED"
+      : "RESEARCH_FAILED";
+  }
+  return "PERSONAL_PIPELINE_FAILED";
+}
+
+async function reportPersonalFreeFailure(error, { githubSummaryPath, errorImpl }) {
+  const failureCode = personalFreeFailureCode(error);
+  try {
+    await appendFile(
+      githubSummaryPath,
+      "### Personal paper not sent\n\n" +
+        `Failure code: \`${failureCode}\`\n\n` +
+        "Candidate generation failed; no private email was sent. " +
+        "A source-health report, when present, describes research only.\n",
+      "utf8",
+    );
+  } catch {
+    // Reporting must never replace the original generation failure.
+  }
+  try {
+    errorImpl(
+      `::error title=Personal Morning Paper not sent::${failureCode} — ` +
+        "candidate generation failed; no email was sent.",
+    );
+  } catch {
+    // Reporting must never replace the original generation failure.
+  }
 }
 
 async function loadPersonalStoryLedger(env, editionDate, fingerprintKey) {
@@ -579,8 +622,10 @@ async function generatePersonalFreeEditionWithHealth({
     minimumAuthoritativeScore: PERSONAL_FREE_MINIMUM_AUTHORITATIVE_SCORE,
     recentRepeatHistory: repeatHistory.entries,
     repeatFingerprintKey: apiToken,
+    maxModelRequests: PERSONAL_FREE_MAX_MODEL_REQUESTS,
     maxTokens: PERSONAL_FREE_MAX_TOKENS,
     maxRequestBytes: PERSONAL_FREE_MAX_REQUEST_BYTES,
+    timeoutMs: PERSONAL_FREE_AI_TIMEOUT_MS,
     researchImpl,
     feedSources: effectiveFeedSources,
     feedRequestImpl,
@@ -739,6 +784,7 @@ export async function runPersonalFreeEditionCli({
   generateFileImpl = generatePersonalFreeEditionFile,
   generateOutcomeImpl = generatePersonalFreeEditionOutcome,
   logImpl = console.log,
+  errorImpl = console.error,
 } = {}) {
   const { editionDate, runMode, reportGitHubOutcome } = parseCliArguments(argv);
   const generationOptions = { editionDate, runMode, env };
@@ -750,7 +796,13 @@ export async function runPersonalFreeEditionCli({
 
   const githubOutputPath = requireNonBlank(env.GITHUB_OUTPUT, "GITHUB_OUTPUT");
   const githubSummaryPath = requireNonBlank(env.GITHUB_STEP_SUMMARY, "GITHUB_STEP_SUMMARY");
-  const outcome = validateGenerationOutcome(await generateOutcomeImpl(generationOptions));
+  let outcome;
+  try {
+    outcome = validateGenerationOutcome(await generateOutcomeImpl(generationOptions));
+  } catch (error) {
+    await reportPersonalFreeFailure(error, { githubSummaryPath, errorImpl });
+    throw error;
+  }
   if (outcome.status === "created") {
     const editionFormat = outcome.result.selectedStoryCount >= 2
       ? "regular"
@@ -781,7 +833,14 @@ export async function runPersonalFreeEditionCli({
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   runPersonalFreeEditionCli().catch((error) => {
-    console.error(`Personal free edition generation failed: ${error.message}`);
+    if (
+      process.env.GITHUB_ACTIONS === "true" &&
+      process.argv.includes(PERSONAL_FREE_GITHUB_OUTCOME_FLAG)
+    ) {
+      console.error(`Personal free edition generation failed: ${personalFreeFailureCode(error)}.`);
+    } else {
+      console.error(`Personal free edition generation failed: ${error.message}`);
+    }
     process.exitCode = 1;
   });
 }
