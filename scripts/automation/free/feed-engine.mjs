@@ -3016,6 +3016,46 @@ function sanitizeFailure(source, error) {
   };
 }
 
+function compareEligibleFeedItems(left, right) {
+  return Date.parse(right.eligibility.instant) - Date.parse(left.eligibility.instant) ||
+    left.sourceId.localeCompare(right.sourceId) ||
+    left.itemId.localeCompare(right.itemId);
+}
+
+function selectSourceFairEligibleItems(results, maxTotalItems) {
+  const queues = results
+    .map((result) => ({
+      sourceId: result.result.sourceId,
+      items: [...result.items].sort(compareEligibleFeedItems),
+      next: 0,
+    }))
+    .filter((queue) => queue.items.length > 0)
+    .sort((left, right) => left.sourceId.localeCompare(right.sourceId));
+  const selected = [];
+  while (selected.length < maxTotalItems) {
+    const round = [];
+    for (const queue of queues) {
+      const item = queue.items[queue.next];
+      if (!item) continue;
+      round.push({ queue, item });
+    }
+    if (round.length === 0) break;
+    const remaining = maxTotalItems - selected.length;
+    if (round.length > remaining) {
+      selected.push(...round
+        .sort((left, right) => compareEligibleFeedItems(left.item, right.item))
+        .slice(0, remaining)
+        .map(({ item }) => item));
+      break;
+    }
+    for (const { queue, item } of round) {
+      queue.next += 1;
+      selected.push(item);
+    }
+  }
+  return selected.sort(compareEligibleFeedItems);
+}
+
 export async function ingestCuratedFeeds({
   sources = FREE_FEED_SOURCES,
   reportingWindow,
@@ -3130,12 +3170,13 @@ export async function ingestCuratedFeeds({
     }
   };
   await Promise.all(Array.from({ length: Math.min(concurrency, sources.length) }, worker));
-  const items = results.flatMap((result) => result.items).sort((left, right) =>
-    Date.parse(right.eligibility.instant) - Date.parse(left.eligibility.instant) ||
-    left.sourceId.localeCompare(right.sourceId) || left.itemId.localeCompare(right.itemId));
-  if (items.length > maxTotalItems) {
-    throw new FeedError("TOTAL_ITEM_LIMIT", `Eligible feed items exceeded the ${maxTotalItems}-item run limit.`);
-  }
+  const eligibleItemCount = results.reduce((sum, result) => sum + result.items.length, 0);
+  // Keep downstream ranking bounded without allowing one high-volume source
+  // to crowd every other reviewed source out of the candidate pool. The
+  // checked-in source id provides a deterministic round-robin order. Complete
+  // rounds are source-fair; if the final round is partial, its freshest items
+  // win with source id and item id as stable tie-breakers.
+  const items = selectSourceFairEligibleItems(results, maxTotalItems);
   const sourceResults = results.map((result) => result.result);
   const parsedItemCount = sourceResults.reduce((sum, result) => sum + result.parsedItemCount, 0);
   const coverageByDesk = Object.fromEntries(FREE_DESKS.map((desk) => {
@@ -3162,6 +3203,7 @@ export async function ingestCuratedFeeds({
     reportingWindow: window,
     retrievedAt: normalizedRetrievedAt,
     items,
+    eligibleItemCount,
     parsedItemCount,
     sourceResults,
     coverageByDesk,
@@ -3222,7 +3264,7 @@ export async function collectFreeResearchSnapshot(options = {}) {
     diagnostics: {
       sourceResults: ingestion.sourceResults,
       parsedItemCount: ingestion.parsedItemCount,
-      eligibleItemCount: ingestion.items.length,
+      eligibleItemCount: ingestion.eligibleItemCount,
       candidateCount: candidates.length,
       rankedCandidateCount: rankedCandidates.length,
       rejectedCandidateCount: assessments.filter((assessment) =>

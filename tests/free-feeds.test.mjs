@@ -2770,25 +2770,25 @@ test("XML complexity, DTDs, body size, and aggregate item limits are bounded", a
         date_published: `2026-08-21T1${value}:00:00Z`,
       })),
     });
-    await assert.rejects(
-      ingestCuratedFeeds({
-        sources: [source({
-          format: "json",
-          url: "https://feeds.example/feed.json",
-          itemHosts: ["report.example"],
-        })],
-        reportingWindow,
-        retrievedAt,
-        maxTotalItems: 1,
-        lookupImpl: publicLookup,
-        requestImpl: async () => ({
-          status: 200,
-          headers: { "content-type": "application/feed+json" },
-          body: manyItems,
-        }),
+    const result = await ingestCuratedFeeds({
+      sources: [source({
+        format: "json",
+        url: "https://feeds.example/feed.json",
+        itemHosts: ["report.example"],
+      })],
+      reportingWindow,
+      retrievedAt,
+      maxTotalItems: 1,
+      lookupImpl: publicLookup,
+      requestImpl: async () => ({
+        status: 200,
+        headers: { "content-type": "application/feed+json" },
+        body: manyItems,
       }),
-      (error) => error.code === "TOTAL_ITEM_LIMIT",
-    );
+    });
+    assert.equal(result.eligibleItemCount, 2);
+    assert.equal(result.items.length, 1);
+    assert.equal(result.items[0].url, "https://report.example/item-2");
   });
 
   await t.test("aggregate bytes", async () => {
@@ -2841,6 +2841,63 @@ test("XML complexity, DTDs, body size, and aggregate item limits are bounded", a
     assert.equal(result.sourceResults.filter((item) => item.status === "ok").length, 3);
     assert.equal(result.consumedBytes, bodyBytes * sources.length);
   });
+});
+
+test("the aggregate item cap truncates the 46-by-7 production boundary source-fairly", async () => {
+  const sourceByUrl = new Map(FREE_FEED_SOURCES.map((item) => [item.url, item]));
+  const lexicalSourceIds = FREE_FEED_SOURCES.map((item) => item.id).sort();
+  const finalMinuteBySourceId = new Map(lexicalSourceIds.map((sourceId, index) => [sourceId, index]));
+  const bodyForSource = (feedSource) => `<?xml version="1.0"?><rss><channel>${
+    Array.from({ length: 7 }, (_, index) => `<item>` +
+      `<guid>first-fold-limit-${feedSource.id}-${index}</guid>` +
+      `<title>Security platform update ${feedSource.id} ${index}</title>` +
+      `<link>https://${feedSource.itemHosts[0]}/first-fold-limit-${feedSource.id}-${index}</link>` +
+      `<pubDate>Fri, 21 Aug 2026 ${index === 0
+        ? `10:${String(finalMinuteBySourceId.get(feedSource.id)).padStart(2, "0")}`
+        : `${String(10 + index).padStart(2, "0")}:00`}:00 GMT</pubDate>` +
+      `<description>A bounded source-fair feed item for regression coverage.</description>` +
+      `</item>`).join("")
+  }</channel></rss>`;
+  const run = (concurrency) => ingestCuratedFeeds({
+    sources: FREE_FEED_SOURCES,
+    reportingWindow,
+    retrievedAt,
+    concurrency,
+    lookupImpl: publicLookup,
+    requestImpl: async (url) => ({
+      status: 200,
+      headers: { "content-type": "application/rss+xml" },
+      body: bodyForSource(sourceByUrl.get(url)),
+    }),
+  });
+
+  const serial = await run(1);
+  const concurrent = await run(8);
+  assert.equal(serial.eligibleItemCount, 322);
+  assert.equal(serial.parsedItemCount, 322);
+  assert.equal(serial.items.length, 320);
+  assert.equal(serial.sourceResults.length, FREE_FEED_SOURCES.length);
+  assert.ok(serial.sourceResults.every((result) =>
+    result.status === "ok" && result.eligibleItemCount === 7));
+  assert.deepEqual(
+    concurrent.items.map((item) => item.itemId),
+    serial.items.map((item) => item.itemId),
+    "concurrency must not change the retained item set or order",
+  );
+
+  const retainedBySource = new Map(FREE_FEED_SOURCES.map((item) => [item.id, 0]));
+  for (const item of serial.items) {
+    retainedBySource.set(item.sourceId, retainedBySource.get(item.sourceId) + 1);
+  }
+  assert.deepEqual(
+    [...retainedBySource.values()].sort((left, right) => left - right),
+    [6, 6, ...Array(44).fill(7)],
+    "every source contributes six items before any source contributes a seventh",
+  );
+  assert.equal(retainedBySource.get(lexicalSourceIds[0]), 6);
+  assert.equal(retainedBySource.get(lexicalSourceIds[1]), 6);
+  assert.ok(lexicalSourceIds.slice(2).every((sourceId) => retainedBySource.get(sourceId) === 7),
+    "the freshest items win the incomplete final round instead of lexicographic source order");
 });
 
 test("pathological unmatched HTML-like feed fields are capped before regex cleanup", { timeout: 1_000 }, () => {
