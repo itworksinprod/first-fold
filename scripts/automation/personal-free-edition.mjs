@@ -51,7 +51,7 @@ export const PERSONAL_FREE_MINIMUM_SCORE = 70;
 export const PERSONAL_FREE_MINIMUM_AUTHORITATIVE_SCORE = 70;
 export const PERSONAL_FREE_MINIMUM_STORY_COUNT = 0;
 export const PERSONAL_FREE_MAX_RESEARCH_ATTEMPTS = 2;
-export const PERSONAL_FREE_RETRY_BELOW_STORY_COUNT = 2;
+export const PERSONAL_FREE_RETRY_BELOW_STORY_COUNT = 3;
 export const PERSONAL_FREE_GITHUB_OUTCOME_FLAG = "--github-actions-outcome";
 export const PERSONAL_FREE_RUN_MODES = Object.freeze(["on_time", "same_day_backfill"]);
 export const PERSONAL_FREE_DESKS = Object.freeze([
@@ -62,6 +62,11 @@ export const PERSONAL_FREE_DESKS = Object.freeze([
 ]);
 
 const PERSONAL_GENERATION_FAILURE_CODES = new Set([
+  "EDITORIAL_AUTHORITATIVE_STRUCTURE_RETRY_EXHAUSTED",
+  "EDITORIAL_CORRECTION_BUDGET_EXHAUSTED",
+  "EDITORIAL_FORMAT_RETRY_EXHAUSTED",
+  "EDITORIAL_LENGTH_RETRY_EXHAUSTED",
+  "EDITORIAL_ORIGINALITY_RETRY_EXHAUSTED",
   "WORKERS_AI_CLIENT_TIMEOUT",
   "WORKERS_AI_PROVIDER_TIMEOUT",
 ]);
@@ -222,6 +227,9 @@ function attachSourceHealthBundle(error, sourceHealthBundle) {
 }
 
 export function personalFreeFailureCode(error) {
+  if (PERSONAL_GENERATION_FAILURE_CODES.has(error?.diagnosticCode)) {
+    return error.diagnosticCode;
+  }
   if (PERSONAL_GENERATION_FAILURE_CODES.has(error?.code)) return error.code;
   const researchCode = sourceHealthFailureCode(error);
   if (researchCode !== "RESEARCH_FAILED") return researchCode;

@@ -21,6 +21,7 @@ import {
 } from "./free/feed-engine.mjs";
 import { FREE_FEED_SOURCES } from "./free/feed-sources.mjs";
 import {
+  WORKERS_AI_EDITORIAL_FORMAT_INVALID,
   WORKERS_AI_PROVIDER,
   requestWorkersAiEditorial,
   resolveCloudflareAiModel,
@@ -677,9 +678,13 @@ authoritative-single. Corroborated dossiers retain the normal two-article,
 two-publisher requirement. An authoritative-single dossier may be used only
 when it contains exactly one non-context originating article and at least one
 distinct context feed URL from the same reviewed publisher. Cite the
-originating article in every evidence claim, explicitly attribute reported
-facts to the named publisher, and do not describe the event as independently
-confirmed, corroborated, or supported by multiple publishers or sources. An
+originating article in every evidence claim. Keep the headline, deck,
+whatHappened, and each evidence statement to one publisher-attributed clause
+with no colon or semicolon. Start each with the originating source's exact
+publisher field followed by a reporting verb such as reports, says, states,
+describes, or announces. Omit
+claims that article does not support. Do not use confirmed, verified,
+corroborated, independently, multiple-source, or equivalent certainty language. An
 authoritative-single story must not use critical priority or high confidence.
 Set every authoritative-single evidence[].verification to company-claimed or
 preliminary, never confirmed or disputed. An authoritative-single story cannot
@@ -870,8 +875,19 @@ function buildFreeWorkersAiCorrectiveRetryMessages(messages, repairKind) {
         `story.priority to high or notable; set confidence.level to medium or developing; never name that story ` +
         `in frontPage.stopThePressesStoryId; include the exact originating article and context source records; ` +
         `include the originating article id in every evidence[].sourceIds; set every evidence[].verification to ` +
-        `company-claimed or preliminary; explicitly attribute reported facts to the named publisher; and never ` +
-        `claim independent confirmation, corroboration, multiple publishers, or multiple sources.`,
+        `company-claimed or preliminary; keep the headline, deck, whatHappened, and each evidence[].statement ` +
+        `to one publisher-attributed clause with no colon or semicolon; start each with the originating ` +
+        `source's exact publisher field followed by reports, says, states, describes, announces, or another ` +
+        `allowed reporting verb; ` +
+        `omit any claim that the originating article does not support; and ` +
+        `never use confirmed, verified, corroborated, independently, multiple-source, or equivalent certainty language.`,
+    },
+    format: {
+      tag: "free-format-retry",
+      reason: `The prior response did not satisfy the supplied JSON schema. Return exactly one complete object ` +
+        `with frontPage, all four desk keys, and backPage.tryThisTomorrow. Use null only where the schema allows ` +
+        `it, preserve exact RUN_CONTEXT identifiers and source records, include no markdown or commentary, and ` +
+        `return JSON only.`,
     },
   };
   const instruction = retryInstructions[repairKind];
@@ -935,7 +951,7 @@ function modelStoryPassages(story) {
 
 function assertsIndependentConfirmationText(prose) {
   if (typeof prose !== "string") return false;
-  return /\b(?:independent(?:ly)?\s+(?:confirm\w*|corroborat\w*)|(?:confirm\w*|corroborat\w*)\s+by\s+(?:an?\s+)?independent|multiple\s+(?:independent\s+)?(?:publishers|sources)|two\s+(?:independent\s+)?(?:publishers|sources)|second\s+publisher\s+confirm\w*)\b/iu
+  return /\b(?:independent(?:ly)?\s+(?:confirm\w*|corroborat\w*|verif\w*)|(?:confirm\w*|corroborat\w*|verif\w*)\s+by\s+(?:an?\s+)?independent|(?:multiple|two|several|another|other|second)\s+(?:independent\s+)?(?:publishers?|sources?|outlets?|reports?)|(?:publishers?|sources?|outlets?|reports?)\s+(?:independent(?:ly)?\s+)?(?:confirm\w*|corroborat\w*|verif\w*)|(?:confirm\w*|corroborat\w*|verif\w*)\s+across\s+(?:publishers?|sources?|outlets?|reports?)|proven|definitive(?:ly)?|undisputed)\b/iu
     .test(prose);
 }
 
@@ -943,11 +959,91 @@ function assertsIndependentConfirmation(story) {
   return assertsIndependentConfirmationText(modelStoryPassages(story).join(" "));
 }
 
+const AUTHORITATIVE_ATTRIBUTION_VERBS = new Set([
+  "advises",
+  "announced",
+  "announces",
+  "described",
+  "describes",
+  "disclosed",
+  "discloses",
+  "documented",
+  "documents",
+  "noted",
+  "notes",
+  "published",
+  "publishes",
+  "reported",
+  "reports",
+  "said",
+  "says",
+  "stated",
+  "states",
+  "warned",
+  "warns",
+  "writes",
+  "wrote",
+]);
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+function isSinglePublisherAttributedPassage(value, publisher) {
+  if (typeof value !== "string" || !value.trim()) return false;
+  if (typeof publisher !== "string" || !publisher.trim()) return false;
+  const numericDotSentinel = "firstfoldnumericdotsentinel";
+  const publisherPrefixPattern = new RegExp(
+    `^\\s*${escapeRegExp(publisher)}(?=\\s)`,
+    "iu",
+  );
+  if (!publisherPrefixPattern.test(value)) return false;
+  const masked = value
+    .replace(publisherPrefixPattern, "")
+    .replace(/\b\d+(?:\.\d+)+\b/gu, (numericToken) =>
+      numericToken.replaceAll(".", numericDotSentinel));
+  const clauses = masked
+    .split(/[.!?;:]+/u)
+    .map((clause) => clause.trim())
+    .filter(Boolean);
+  if (clauses.length !== 1) return false;
+  const words = normalizedWords(clauses[0]);
+  return AUTHORITATIVE_ATTRIBUTION_VERBS.has(words[0]);
+}
+
+function explicitlyAttributesAuthoritativeFacts(story, publisher) {
+  return [story.headline, story.deck, story.whatHappened]
+    .every((passage) => isSinglePublisherAttributedPassage(passage, publisher)) &&
+    story.evidence.every((claim) =>
+      isSinglePublisherAttributedPassage(claim.statement, publisher));
+}
+
+const FREE_EDITORIAL_DIAGNOSTIC_BY_REPAIR_KIND = Object.freeze({
+  length: "EDITORIAL_LENGTH_RETRY_EXHAUSTED",
+  originality: "EDITORIAL_ORIGINALITY_RETRY_EXHAUSTED",
+  "authoritative-structure": "EDITORIAL_AUTHORITATIVE_STRUCTURE_RETRY_EXHAUSTED",
+});
+
+function freeEditorialDiagnosticError(message, diagnosticCode) {
+  const error = new Error(message);
+  Object.defineProperty(error, "diagnosticCode", {
+    value: diagnosticCode,
+    configurable: true,
+    enumerable: false,
+  });
+  return error;
+}
+
 class FreeEditorialRepairError extends Error {
   constructor(message, repairKind) {
     super(message);
     this.name = "FreeEditorialRepairError";
     this.repairKind = repairKind;
+    Object.defineProperty(this, "diagnosticCode", {
+      value: FREE_EDITORIAL_DIAGNOSTIC_BY_REPAIR_KIND[repairKind],
+      configurable: true,
+      enumerable: false,
+    });
   }
 }
 
@@ -1124,6 +1220,7 @@ export function normalizeFreeEditorialAgainstCandidates(
   if (!validation.valid) {
     throw new Error(`Workers AI editorial payload failed local schema validation: ${validation.issues.join(" ")}`);
   }
+  const frontPage = structuredClone(payload.frontPage);
   const candidateByEventKey = new Map();
   for (const candidate of candidates) {
     if (candidateByEventKey.has(candidate.canonicalEventKey)) {
@@ -1266,8 +1363,12 @@ export function normalizeFreeEditorialAgainstCandidates(
       if (
         story.priority === "critical" ||
         story.confidence?.level === "high" ||
-        payload.frontPage.stopThePressesStoryId === story.id ||
-        assertsIndependentConfirmation(story)
+        frontPage.stopThePressesStoryId === story.id ||
+        assertsIndependentConfirmation(story) ||
+        !explicitlyAttributesAuthoritativeFacts(
+          story,
+          candidateArticleSources[0].publisher,
+        )
       ) {
         editorialRepairError = preferredFreeEditorialRepairError(
           editorialRepairError,
@@ -1279,21 +1380,21 @@ export function normalizeFreeEditorialAgainstCandidates(
       if (claim.sourceIds.some((sourceId) => !seenSourceIds.has(sourceId))) {
         throw new Error(`Workers AI story ${story.id} cites evidence outside its matched dossier.`);
       }
-      if (isAuthoritativeSingle && !claim.sourceIds.some((sourceId) =>
-        candidateSources.get(sourceId)?.relationship === "originating")) {
-        editorialRepairError = preferredFreeEditorialRepairError(
-          editorialRepairError,
-          new FreeAuthoritativeStructureError(),
-        );
-      }
-      if (
-        isAuthoritativeSingle &&
-        !["company-claimed", "preliminary"].includes(claim.verification)
-      ) {
-        editorialRepairError = preferredFreeEditorialRepairError(
-          editorialRepairError,
-          new FreeAuthoritativeStructureError(),
-        );
+      if (isAuthoritativeSingle) {
+        const originatingSourceId = candidateArticleSources[0].id;
+        if (
+          !claim.sourceIds.includes(originatingSourceId) ||
+          !["company-claimed", "preliminary"].includes(claim.verification)
+        ) {
+          editorialRepairError = preferredFreeEditorialRepairError(
+            editorialRepairError,
+            new FreeAuthoritativeStructureError(),
+          );
+        } else {
+          // Context feeds may help establish recency, but only the already
+          // cited originating article may support an authoritative claim.
+          claim.sourceIds = [originatingSourceId];
+        }
       }
     }
     const citedSourceIds = new Set(story.evidence.flatMap((claim) => claim.sourceIds));
@@ -1365,16 +1466,11 @@ export function normalizeFreeEditorialAgainstCandidates(
     if (story.securityAction === null) delete story.securityAction;
     desks[desk] = { desk, story };
   }
-  if (
-    authoritativeStoryIds.size > 0 &&
-    assertsIndependentConfirmationText(payload.frontPage.note)
-  ) {
-    editorialRepairError = preferredFreeEditorialRepairError(
-      editorialRepairError,
-      new FreeAuthoritativeStructureError(),
-    );
+  if (authoritativeStoryIds.size > 0) {
+    frontPage.note =
+      "Single-publisher stories carry conservative confidence labels and preliminary evidence markings.";
   }
-  assertFreeEditorialRelationalIntegrity(payload, desks, authoritativeStoryIds);
+  assertFreeEditorialRelationalIntegrity({ ...payload, frontPage }, desks, authoritativeStoryIds);
   if (requiredEventKeySet !== null && (
     usedEventKeys.size !== requiredEventKeySet.size ||
     [...requiredEventKeySet].some((eventKey) => !usedEventKeys.has(eventKey))
@@ -1385,7 +1481,7 @@ export function normalizeFreeEditorialAgainstCandidates(
   }
   if (editorialRepairError) throw editorialRepairError;
   return {
-    frontPage: structuredClone(payload.frontPage),
+    frontPage,
     desks,
     backPage: {
       tryThisTomorrow: structuredClone(payload.backPage.tryThisTomorrow),
@@ -1944,29 +2040,45 @@ async function draftFreeEditionCore({
     let remainingModelRequests = maxModelRequests;
     const requestInference = async (requestMessages) => {
       if (remainingModelRequests < 1) {
-        throw new Error(
+        throw freeEditorialDiagnosticError(
           "Workers AI model-request budget was exhausted before the corrective draft.",
+          "EDITORIAL_CORRECTION_BUDGET_EXHAUSTED",
         );
       }
       const attemptAllowance = remainingModelRequests;
-      const result = await aiRequestImpl({
-        accountId,
-        apiToken,
-        model: modelId,
-        messages: requestMessages,
-        schema: FREE_EDITORIAL_OUTPUT_SCHEMA,
-        validatePayload: validateFreeEditorialPayload,
-        fetchImpl,
-        timeoutMs,
-        // Transport recovery and the optional local corrective rewrite share
-        // one hard ceiling, so reliability cannot multiply the free lane's
-        // existing model-request budget.
-        maxAttempts: attemptAllowance,
-        maxTokens,
-        maxRequestBytes,
-        maxResponseBytes,
-        sleepImpl,
-      });
+      let result;
+      try {
+        result = await aiRequestImpl({
+          accountId,
+          apiToken,
+          model: modelId,
+          messages: requestMessages,
+          schema: FREE_EDITORIAL_OUTPUT_SCHEMA,
+          validatePayload: validateFreeEditorialPayload,
+          fetchImpl,
+          timeoutMs,
+          // Transport recovery and the optional local corrective rewrite share
+          // one hard ceiling, so reliability cannot multiply the free lane's
+          // existing model-request budget.
+          maxAttempts: attemptAllowance,
+          maxTokens,
+          maxRequestBytes,
+          maxResponseBytes,
+          sleepImpl,
+        });
+      } catch (error) {
+        if (error?.code === WORKERS_AI_EDITORIAL_FORMAT_INVALID) {
+          if (
+            !Number.isInteger(error.attemptCount) ||
+            error.attemptCount < 1 ||
+            error.attemptCount > attemptAllowance
+          ) {
+            throw new Error("Workers AI returned invalid format-error attempt provenance.");
+          }
+          remainingModelRequests -= error.attemptCount;
+        }
+        throw error;
+      }
       if (
         !isObject(result) ||
         result.provider !== WORKERS_AI_PROVIDER ||
@@ -1991,19 +2103,41 @@ async function draftFreeEditionCore({
       };
     };
 
-    let accepted = await requestInference(messages);
+    let accepted;
+    let repairKind = null;
     try {
-      editorial = normalizeFreeEditorialAgainstCandidates(
-        accepted.aiResult.editorialPayload,
-        candidates,
-        generatedAt,
-        { evidencePolicy: normalizedEvidencePolicy, requiredEventKeys },
-      );
+      accepted = await requestInference(messages);
     } catch (error) {
-      if (!(error instanceof FreeEditorialRepairError)) throw error;
-      accepted = await requestInference(
-        buildFreeWorkersAiCorrectiveRetryMessages(messages, error.repairKind),
-      );
+      if (error?.code !== WORKERS_AI_EDITORIAL_FORMAT_INVALID) throw error;
+      repairKind = "format";
+    }
+    if (accepted) {
+      try {
+        editorial = normalizeFreeEditorialAgainstCandidates(
+          accepted.aiResult.editorialPayload,
+          candidates,
+          generatedAt,
+          { evidencePolicy: normalizedEvidencePolicy, requiredEventKeys },
+        );
+      } catch (error) {
+        if (!(error instanceof FreeEditorialRepairError)) throw error;
+        repairKind = error.repairKind;
+      }
+    }
+    if (repairKind !== null) {
+      try {
+        accepted = await requestInference(
+          buildFreeWorkersAiCorrectiveRetryMessages(messages, repairKind),
+        );
+      } catch (error) {
+        if (error?.code === WORKERS_AI_EDITORIAL_FORMAT_INVALID) {
+          throw freeEditorialDiagnosticError(
+            "Workers AI corrective draft did not satisfy the required format contract.",
+            "EDITORIAL_FORMAT_RETRY_EXHAUSTED",
+          );
+        }
+        throw error;
+      }
       editorial = normalizeFreeEditorialAgainstCandidates(
         accepted.aiResult.editorialPayload,
         candidates,

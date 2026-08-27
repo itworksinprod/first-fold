@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import test from "node:test";
 import {
   DEFAULT_CLOUDFLARE_AI_MODEL,
+  WORKERS_AI_EDITORIAL_FORMAT_INVALID,
   WORKERS_AI_PROVIDER,
   buildWorkersAiRequest,
   requestWorkersAiEditorial,
@@ -188,6 +189,42 @@ test("string JSON responses are parsed but markdown and non-object payloads fail
       );
     });
   }
+});
+
+test("editorial format failures expose only fixed code and bounded attempt provenance", async () => {
+  await assert.rejects(
+    requestWorkersAiEditorial(requestOptions({
+      fetchImpl: async () => cloudflareResponse(
+        `\`\`\`json\n{\"headline\":\"${apiToken}\"}\n\`\`\``,
+      ),
+    })),
+    (error) => {
+      assert.equal(error.code, WORKERS_AI_EDITORIAL_FORMAT_INVALID);
+      assert.equal(error.attemptCount, 1);
+      assert.deepEqual(Object.keys(error), []);
+      assert.doesNotMatch(error.message, /cloudflare-test-token/);
+      assert.doesNotMatch(JSON.stringify(error), /cloudflare-test-token/);
+      return true;
+    },
+  );
+
+  let calls = 0;
+  await assert.rejects(
+    requestWorkersAiEditorial(requestOptions({
+      fetchImpl: async () => {
+        calls += 1;
+        return calls === 1
+          ? new Response(null, { status: 429 })
+          : cloudflareResponse("not-json");
+      },
+    })),
+    (error) => {
+      assert.equal(error.code, WORKERS_AI_EDITORIAL_FORMAT_INVALID);
+      assert.equal(error.attemptCount, 2);
+      return true;
+    },
+  );
+  assert.equal(calls, 2);
 });
 
 test("the documented gpt-oss Chat Completions result is parsed and locally validated", async () => {

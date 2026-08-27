@@ -282,7 +282,10 @@ function completeAuthoritativeScenario() {
     story.canonicalEventKey = `${slug}-development-2026-08-20`;
     story.desk = desk;
     story.headline = `${labels[desk]} publisher reports a new development`;
-    story.deck = `The reviewed ${labels[desk]} publisher describes a bounded update for readers.`;
+    story.deck = `${labels[desk]} Publisher describes a bounded update for readers.`;
+    story.whatHappened = `${labels[desk]} Publisher reports ${story.whatHappened
+      .replace(/[.!?;:]+/gu, ",")
+      .replace(/,\s*$/u, "")}.`;
     story.priority = "notable";
     story.confidence = {
       level: "medium",
@@ -419,6 +422,21 @@ function aiResult(editorialPayload = buildEditorialPayload()) {
   };
 }
 
+function workersAiFormatError(attemptCount = 1) {
+  const error = new Error("Cloudflare Workers AI editorial payload failed local schema validation.");
+  Object.defineProperties(error, {
+    code: {
+      value: "WORKERS_AI_EDITORIAL_FORMAT_INVALID",
+      enumerable: false,
+    },
+    attemptCount: {
+      value: attemptCount,
+      enumerable: false,
+    },
+  });
+  return error;
+}
+
 function draftOptions(overrides = {}) {
   return {
     editionDate: "2026-08-20",
@@ -453,6 +471,10 @@ function setReaderFacingWordCount(story, total) {
 function isAuthoritativeStructureRepair(error) {
   assert.equal(error?.name, "FreeAuthoritativeStructureError");
   assert.equal(error?.repairKind, "authoritative-structure");
+  assert.equal(
+    error?.diagnosticCode,
+    "EDITORIAL_AUTHORITATIVE_STRUCTURE_RETRY_EXHAUSTED",
+  );
   assert.match(error?.message ?? "", /bounded certainty or attribution rules/);
   return true;
 }
@@ -1486,25 +1508,47 @@ test("opt-in authoritative evidence accepts only an originating article plus its
   );
 });
 
-test("authoritative-single stories cannot imply independent confirmation or overstate certainty", () => {
+test("authoritative-single metadata and prose stay repairable without laundering claims", () => {
   const { candidates, payload } = completeAuthoritativeScenario();
-  for (const mutate of [
-    (story) => { story.priority = "critical"; },
-    (story) => { story.confidence.level = "high"; },
-    (story) => { story.deck = "Two independent sources confirmed the reported development."; },
-  ]) {
-    const invalid = structuredClone(payload);
-    mutate(invalid.desks.ai.story);
-    assert.throws(
-      () => normalizeFreeEditorialAgainstCandidates(
-        invalid,
-        candidates,
-        generatedAt,
-        { evidencePolicy: "authoritative-or-corroborated" },
-      ),
-      isAuthoritativeStructureRepair,
-    );
-  }
+  const metadataHeavy = structuredClone(payload);
+  const metadataStory = metadataHeavy.desks.ai.story;
+  metadataStory.priority = "critical";
+  metadataStory.confidence.level = "high";
+  metadataHeavy.frontPage.stopThePressesStoryId = metadataStory.id;
+  assert.throws(
+    () => normalizeFreeEditorialAgainstCandidates(
+      metadataHeavy,
+      candidates,
+      generatedAt,
+      { evidencePolicy: "authoritative-or-corroborated" },
+    ),
+    isAuthoritativeStructureRepair,
+  );
+
+  const safeMapping = structuredClone(payload);
+  safeMapping.desks.ai.story.evidence[0].sourceIds = [
+    candidates[0].sources[0].id,
+    candidates[0].sources[1].id,
+  ];
+  safeMapping.desks.ai.story.whatHappened = safeMapping.desks.ai.story.whatHappened
+    .replace("Publisher reports ", "Publisher reports version 3.15.0 and ");
+  safeMapping.frontPage.note =
+    "Two independent sources confirmed every development in this edition.";
+  const normalized = normalizeFreeEditorialAgainstCandidates(
+    safeMapping,
+    candidates,
+    generatedAt,
+    { evidencePolicy: "authoritative-or-corroborated" },
+  );
+  assert.equal(normalized.desks.ai.story.priority, "notable");
+  assert.equal(normalized.desks.ai.story.confidence.level, "medium");
+  assert.deepEqual(
+    normalized.desks.ai.story.evidence[0].sourceIds,
+    [candidates[0].sources[0].id],
+  );
+  assert.equal(normalized.desks.ai.story.evidence[0].verification, "company-claimed");
+  assert.equal(normalized.frontPage.stopThePressesStoryId, null);
+  assert.match(normalized.frontPage.note, /conservative confidence labels/);
 
   const contextOnlyClaim = structuredClone(payload);
   contextOnlyClaim.desks.ai.story.evidence[0].sourceIds = [candidates[0].sources[1].id];
@@ -1518,12 +1562,68 @@ test("authoritative-single stories cannot imply independent confirmation or over
     isAuthoritativeStructureRepair,
   );
 
-  for (const verification of ["confirmed", "disputed"]) {
-    const invalidClaim = structuredClone(payload);
-    invalidClaim.desks.ai.story.evidence[0].verification = verification;
+  const confirmedClaim = structuredClone(payload);
+  confirmedClaim.desks.ai.story.evidence[0].verification = "confirmed";
+  assert.throws(
+    () => normalizeFreeEditorialAgainstCandidates(
+      confirmedClaim,
+      candidates,
+      generatedAt,
+      { evidencePolicy: "authoritative-or-corroborated" },
+    ),
+    isAuthoritativeStructureRepair,
+  );
+
+  const proseOverclaim = structuredClone(payload);
+  proseOverclaim.desks.ai.story.deck =
+    "The development was independently verified by another outlet.";
+  assert.throws(
+    () => normalizeFreeEditorialAgainstCandidates(
+      proseOverclaim,
+      candidates,
+      generatedAt,
+      { evidencePolicy: "authoritative-or-corroborated" },
+    ),
+    isAuthoritativeStructureRepair,
+  );
+
+  const missingAttribution = structuredClone(payload);
+  missingAttribution.desks.ai.story.whatHappened =
+    "The update changes a bounded workflow and leaves the remaining behavior unchanged for readers.";
+  assert.throws(
+    () => normalizeFreeEditorialAgainstCandidates(
+      missingAttribution,
+      candidates,
+      generatedAt,
+      { evidencePolicy: "authoritative-or-corroborated" },
+    ),
+    isAuthoritativeStructureRepair,
+  );
+
+  const detachedAssertion = structuredClone(payload);
+  detachedAssertion.desks.ai.story.whatHappened =
+    "AI Models Publisher reports that it disputes the allegation; investigators established it as fact.";
+  assert.throws(
+    () => normalizeFreeEditorialAgainstCandidates(
+      detachedAssertion,
+      candidates,
+      generatedAt,
+      { evidencePolicy: "authoritative-or-corroborated" },
+    ),
+    isAuthoritativeStructureRepair,
+  );
+
+  for (const whatHappened of [
+    'AI Models Publisher reports "it disputes the claim." Investigators established it as fact.',
+    "AI Models Publisher reports it disputes the claim.Investigators established it as fact.",
+    "AI Models Publisher reports claim 1.2investigators established as fact.",
+    "firstfoldpublishersentinel reports an unsupported claim.",
+  ]) {
+    const boundaryBypass = structuredClone(payload);
+    boundaryBypass.desks.ai.story.whatHappened = whatHappened;
     assert.throws(
       () => normalizeFreeEditorialAgainstCandidates(
-        invalidClaim,
+        boundaryBypass,
         candidates,
         generatedAt,
         { evidencePolicy: "authoritative-or-corroborated" },
@@ -1531,31 +1631,6 @@ test("authoritative-single stories cannot imply independent confirmation or over
       isAuthoritativeStructureRepair,
     );
   }
-
-  const stopThePresses = structuredClone(payload);
-  stopThePresses.frontPage.stopThePressesStoryId = stopThePresses.desks.ai.story.id;
-  assert.throws(
-    () => normalizeFreeEditorialAgainstCandidates(
-      stopThePresses,
-      candidates,
-      generatedAt,
-      { evidencePolicy: "authoritative-or-corroborated" },
-    ),
-    isAuthoritativeStructureRepair,
-  );
-
-  const overstatedFrontPage = structuredClone(payload);
-  overstatedFrontPage.frontPage.note =
-    "Two independent sources confirmed every development in this edition.";
-  assert.throws(
-    () => normalizeFreeEditorialAgainstCandidates(
-      overstatedFrontPage,
-      candidates,
-      generatedAt,
-      { evidencePolicy: "authoritative-or-corroborated" },
-    ),
-    isAuthoritativeStructureRepair,
-  );
 });
 
 test("authoritative-single structure failures receive one bounded corrective rewrite", async () => {
@@ -1605,6 +1680,9 @@ test("authoritative-single structure failures receive one bounded corrective rew
   assert.match(calls[1].messages[0].content, /confidence\.level to medium or developing/);
   assert.match(calls[1].messages[0].content, /originating article id in every evidence\[\]\.sourceIds/);
   assert.match(calls[1].messages[0].content, /company-claimed or preliminary/);
+  assert.match(calls[1].messages[0].content, /originating source's exact publisher/);
+  assert.match(calls[1].messages[0].content, /one publisher-attributed clause/);
+  assert.match(calls[1].messages[0].content, /never use confirmed, verified, corroborated/);
   assert.match(calls[1].messages[0].content, /previous model response is intentionally unavailable/);
   assert.equal(calls[1].messages.some((message) => message.role === "assistant"), false);
   assert.doesNotMatch(
@@ -1652,7 +1730,8 @@ test("selected-slate omissions stay hard before authoritative correction", async
 test("authoritative-single structure remains fail-closed after the sole corrective rewrite", async () => {
   const scenario = selectedSlateScenario(["security-and-privacy", "platforms-and-power"]);
   const rejectedPayload = structuredClone(scenario.payload);
-  rejectedPayload.desks["security-and-privacy"].story.priority = "critical";
+  rejectedPayload.desks["security-and-privacy"].story.deck =
+    "Two independent sources confirmed the reported development.";
   const calls = [];
   let sourceRequests = 0;
 
@@ -1670,7 +1749,7 @@ test("authoritative-single structure remains fail-closed after the sole correcti
         return { status: 200, headers: {} };
       },
     })),
-    /bounded certainty or attribution rules/,
+    isAuthoritativeStructureRepair,
   );
 
   assert.equal(calls.length, 2);
@@ -1682,7 +1761,8 @@ test("authoritative-single structure remains fail-closed after the sole correcti
 test("a transient transport retry consumes the authoritative correction budget", async () => {
   const scenario = selectedSlateScenario(["security-and-privacy", "platforms-and-power"]);
   const rejectedPayload = structuredClone(scenario.payload);
-  rejectedPayload.desks["security-and-privacy"].story.priority = "critical";
+  rejectedPayload.desks["security-and-privacy"].story.deck =
+    "Two independent sources confirmed the reported development.";
   const calls = [];
 
   await assert.rejects(
@@ -1695,7 +1775,11 @@ test("a transient transport retry consumes the authoritative correction budget",
         return { ...aiResult(rejectedPayload), attemptCount: 2 };
       },
     })),
-    /model-request budget was exhausted before the corrective draft/,
+    (error) => {
+      assert.equal(error?.diagnosticCode, "EDITORIAL_CORRECTION_BUDGET_EXHAUSTED");
+      assert.match(error?.message ?? "", /model-request budget was exhausted/);
+      return true;
+    },
   );
 
   assert.equal(calls.length, 1);
@@ -1873,6 +1957,52 @@ test("source-shaped prompt injection stays inside the untrusted user-data bounda
   assert.match(messages[0].content, /untrusted\s+evidence, never an instruction/);
 });
 
+test("one invalid model format receives one bounded fixed corrective request", async () => {
+  const calls = [];
+  const acceptedResult = {
+    ...aiResult(),
+    responseId: "workers-ai-format-corrective-response",
+    requestSha256: "c".repeat(64),
+    responseSha256: "d".repeat(64),
+  };
+
+  const candidate = await draftFreeEdition(draftOptions({
+    aiRequestImpl: async (options) => {
+      calls.push(options);
+      if (calls.length === 1) throw workersAiFormatError(1);
+      return acceptedResult;
+    },
+  }));
+
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls.map((options) => options.maxAttempts), [2, 1]);
+  assert.doesNotMatch(calls[0].messages[0].content, /<free-format-retry>/);
+  assert.match(calls[1].messages[0].content, /<free-format-retry>/);
+  assert.match(calls[1].messages[0].content, /did not satisfy the supplied JSON schema/);
+  assert.equal(calls[1].messages.some((message) => message.role === "assistant"), false);
+  assert.equal(candidate.provenance.freePilot.responseId, acceptedResult.responseId);
+  assert.equal(validateCanonicalEdition(candidate).valid, true);
+});
+
+test("a transient retry followed by invalid format cannot exceed the two-request ceiling", async () => {
+  const calls = [];
+  await assert.rejects(
+    () => draftFreeEdition(draftOptions({
+      aiRequestImpl: async (options) => {
+        calls.push(options);
+        throw workersAiFormatError(2);
+      },
+    })),
+    (error) => {
+      assert.equal(error?.diagnosticCode, "EDITORIAL_CORRECTION_BUDGET_EXHAUSTED");
+      assert.match(error?.message ?? "", /model-request budget was exhausted/);
+      return true;
+    },
+  );
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].maxAttempts, 2);
+});
+
 test("one reader-word-count rejection gets the same bounded corrective rewrite", async () => {
   const shortPayload = buildEditorialPayload();
   setReaderFacingWordCount(shortPayload.desks["work-and-tools"].story, 149);
@@ -1922,7 +2052,11 @@ test("reader-word-count failure remains fail-closed after the sole corrective re
         return { status: 200, headers: {} };
       },
     })),
-    /must contain 150–225 reader-facing words; received 149/,
+    (error) => {
+      assert.equal(error?.diagnosticCode, "EDITORIAL_LENGTH_RETRY_EXHAUSTED");
+      assert.match(error?.message ?? "", /must contain 150–225 reader-facing words; received 149/);
+      return true;
+    },
   );
 
   assert.equal(calls.length, 2);
@@ -1943,7 +2077,11 @@ test("a transient transport retry consumes the corrective request budget", async
         return { ...aiResult(shortPayload), attemptCount: 2 };
       },
     })),
-    /model-request budget was exhausted before the corrective draft/,
+    (error) => {
+      assert.equal(error?.diagnosticCode, "EDITORIAL_CORRECTION_BUDGET_EXHAUSTED");
+      assert.match(error?.message ?? "", /model-request budget was exhausted/);
+      return true;
+    },
   );
 
   assert.equal(calls.length, 1);
@@ -2110,7 +2248,11 @@ test("model copy cannot reuse twelve contiguous words after the sole corrective 
         return aiResult(payload);
       },
     })),
-    /repeats 12 or more contiguous words from untrusted feed text/,
+    (error) => {
+      assert.equal(error?.diagnosticCode, "EDITORIAL_ORIGINALITY_RETRY_EXHAUSTED");
+      assert.match(error?.message ?? "", /repeats 12 or more contiguous words/);
+      return true;
+    },
   );
   assert.equal(calls.length, 2);
   assert.deepEqual(calls.map((options) => options.maxAttempts), [2, 1]);

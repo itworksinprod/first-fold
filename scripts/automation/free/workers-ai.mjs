@@ -9,6 +9,7 @@ export const DEFAULT_WORKERS_AI_TIMEOUT_MS = 120_000;
 export const DEFAULT_WORKERS_AI_MAX_ATTEMPTS = 2;
 export const DEFAULT_WORKERS_AI_MAX_REQUEST_BYTES = 500_000;
 export const DEFAULT_WORKERS_AI_MAX_RESPONSE_BYTES = 1_000_000;
+export const WORKERS_AI_EDITORIAL_FORMAT_INVALID = "WORKERS_AI_EDITORIAL_FORMAT_INVALID";
 
 const CLOUDFLARE_API_ORIGIN = "https://api.cloudflare.com";
 const ACCOUNT_ID_PATTERN = /^[a-f0-9]{32}$/i;
@@ -153,6 +154,23 @@ function workersAiTimeoutError(message, code) {
     value: code,
     configurable: true,
     enumerable: false,
+  });
+  return error;
+}
+
+function workersAiEditorialFormatError(message, attemptCount) {
+  const error = new Error(message);
+  Object.defineProperties(error, {
+    code: {
+      value: WORKERS_AI_EDITORIAL_FORMAT_INVALID,
+      configurable: true,
+      enumerable: false,
+    },
+    attemptCount: {
+      value: attemptCount,
+      configurable: true,
+      enumerable: false,
+    },
   });
   return error;
 }
@@ -433,16 +451,33 @@ export async function requestWorkersAiEditorial({
     maxResponseBytes,
     sleepImpl,
   });
-  const editorialPayload = extractEditorialPayload(envelope);
+  let editorialPayload;
+  try {
+    editorialPayload = extractEditorialPayload(envelope);
+  } catch (error) {
+    if (
+      error?.message === "Cloudflare Workers AI result did not contain an editorial payload." ||
+      error?.message === "Cloudflare Workers AI editorial payload was not valid JSON."
+    ) {
+      throw workersAiEditorialFormatError(error.message, attemptCount);
+    }
+    throw error;
+  }
 
   let validation;
   try {
     validation = await validatePayload(cloneJson(editorialPayload, "Workers AI editorial payload"));
   } catch {
-    throw new Error("Cloudflare Workers AI editorial payload failed local schema validation.");
+    throw workersAiEditorialFormatError(
+      "Cloudflare Workers AI editorial payload failed local schema validation.",
+      attemptCount,
+    );
   }
   if (!validationPassed(validation)) {
-    throw new Error("Cloudflare Workers AI editorial payload failed local schema validation.");
+    throw workersAiEditorialFormatError(
+      "Cloudflare Workers AI editorial payload failed local schema validation.",
+      attemptCount,
+    );
   }
 
   const result = envelope.result;

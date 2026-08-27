@@ -33,6 +33,7 @@ import {
   generatePersonalFreeEdition,
   generatePersonalFreeEditionFile,
   generatePersonalFreeEditionOutcome,
+  personalFreeFailureCode,
   runPersonalFreeEditionCli,
   validatePersonalFreeCandidate,
 } from "../scripts/automation/personal-free-edition.mjs";
@@ -519,6 +520,66 @@ test("the GitHub CLI preserves hard failures", async (t) => {
     "::error title=Personal Morning Paper not sent::WORKERS_AI_CLIENT_TIMEOUT — " +
       "candidate generation failed; no email was sent.",
   ]);
+});
+
+test("the GitHub CLI exposes only allowlisted editorial diagnostics", async (t) => {
+  const projectRoot = await createProject(t);
+  const codes = [
+    "EDITORIAL_AUTHORITATIVE_STRUCTURE_RETRY_EXHAUSTED",
+    "EDITORIAL_CORRECTION_BUDGET_EXHAUSTED",
+    "EDITORIAL_FORMAT_RETRY_EXHAUSTED",
+    "EDITORIAL_LENGTH_RETRY_EXHAUSTED",
+    "EDITORIAL_ORIGINALITY_RETRY_EXHAUSTED",
+  ];
+
+  for (const code of codes) {
+    const outputPath = path.join(projectRoot, `${code}-output.txt`);
+    const summaryPath = path.join(projectRoot, `${code}-summary.md`);
+    await writeFile(outputPath, "");
+    await writeFile(summaryPath, "");
+    const annotations = [];
+    const failure = new Error(
+      "secret-token-canary\n::warning title=Injected::untrusted feed headline",
+    );
+    Object.defineProperty(failure, "diagnosticCode", {
+      value: code,
+      enumerable: false,
+    });
+
+    await assert.rejects(
+      runPersonalFreeEditionCli({
+        argv: ["2026-08-20", "--github-actions-outcome"],
+        env: {
+          ...automationEnv,
+          GITHUB_OUTPUT: outputPath,
+          GITHUB_STEP_SUMMARY: summaryPath,
+        },
+        generateOutcomeImpl: async () => { throw failure; },
+        logImpl: () => {},
+        errorImpl: (message) => annotations.push(message),
+      }),
+      (error) => error === failure,
+    );
+
+    const summary = await readFile(summaryPath, "utf8");
+    assert.match(summary, new RegExp(code));
+    assert.doesNotMatch(summary, /secret-token-canary|untrusted feed headline|::warning/);
+    assert.deepEqual(annotations, [
+      `::error title=Personal Morning Paper not sent::${code} — ` +
+        "candidate generation failed; no email was sent.",
+    ]);
+  }
+
+  const unknown = new Error("unknown diagnostic must stay private");
+  Object.defineProperty(unknown, "diagnosticCode", {
+    value: "EDITORIAL_ARBITRARY_UNTRUSTED_VALUE",
+    enumerable: false,
+  });
+  Object.defineProperty(unknown, "sourceHealth", {
+    value: { selectedAttempt: 1 },
+    enumerable: false,
+  });
+  assert.equal(personalFreeFailureCode(unknown), "EDITION_GENERATION_FAILED");
 });
 
 test("the GitHub CLI reports selected story count and adaptive edition format", async (t) => {

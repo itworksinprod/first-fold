@@ -128,7 +128,7 @@ function personalCandidate() {
     requiredStoryCount: 4,
     selectedStoryCount: 4,
     maxResearchAttempts: 2,
-    researchRetryBelowStoryCount: 2,
+    researchRetryBelowStoryCount: 3,
     researchAttemptCount: 1,
     researchRetryOutcome: "not-needed",
     repeatLedgerSchemaVersion: 2,

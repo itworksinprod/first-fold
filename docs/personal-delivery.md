@@ -91,7 +91,7 @@ At the matching 5:05 AM event on every day:
    must stay explicitly attributed and cannot be presented as independently
    confirmed or critical. Independent allegations and critical claims still
    require independent evidence.
-6. When the first healthy research pass selects fewer than two stories, the job
+6. When the first healthy research pass selects fewer than three stories, the job
    makes exactly one bounded, feed-only research retry before any Workers AI
    request. Both attempts use the same reporting window, cutoff, source
    allowlist, and editorial rules. The retry replaces the first snapshot only
