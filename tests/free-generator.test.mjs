@@ -450,6 +450,13 @@ function setReaderFacingWordCount(story, total) {
   return story;
 }
 
+function isAuthoritativeStructureRepair(error) {
+  assert.equal(error?.name, "FreeAuthoritativeStructureError");
+  assert.equal(error?.repairKind, "authoritative-structure");
+  assert.match(error?.message ?? "", /bounded certainty or attribution rules/);
+  return true;
+}
+
 test("draftFreeEdition creates a validated, unpublished, QA-passed comparison candidate", async () => {
   let researchOptions;
   let aiOptions;
@@ -1043,7 +1050,7 @@ test("malformed selection diagnostics remain a hard failure, not a quiet edition
   assert.equal(aiCalls, 0);
 });
 
-test("complete mode rejects a quiet model payload before source checks", async () => {
+test("complete mode treats omitted desks as hard before correction or source checks", async () => {
   const { payload, research } = completeAuthoritativeScenario();
   const quietPayload = structuredClone(payload);
   for (const desk of ["ai", "security-and-privacy", "platforms-and-power"]) {
@@ -1054,22 +1061,28 @@ test("complete mode rejects a quiet model payload before source checks", async (
     };
   }
   const workStory = quietPayload.desks["work-and-tools"].story;
+  workStory.priority = "critical";
   quietPayload.frontPage.leadStoryId = workStory.id;
   quietPayload.frontPage.storyOrder = [workStory.id];
+  let aiCalls = 0;
   let sourceChecks = 0;
   await assert.rejects(
     () => draftFreeEdition(draftOptions({
       evidencePolicy: "authoritative-or-corroborated",
       requireComplete: true,
       researchImpl: async () => research,
-      aiRequestImpl: async () => aiResult(quietPayload),
+      aiRequestImpl: async () => {
+        aiCalls += 1;
+        return aiResult(quietPayload);
+      },
       sourceRequestImpl: async () => {
         sourceChecks += 1;
         return { status: 200, headers: {} };
       },
     })),
-    /requires at least 4 model-authored stories before delivery/,
+    /must draft every deterministic selected candidate/,
   );
+  assert.equal(aiCalls, 1);
   assert.equal(sourceChecks, 0);
 });
 
@@ -1489,7 +1502,7 @@ test("authoritative-single stories cannot imply independent confirmation or over
         generatedAt,
         { evidencePolicy: "authoritative-or-corroborated" },
       ),
-      /violates authoritative-single evidence limits/,
+      isAuthoritativeStructureRepair,
     );
   }
 
@@ -1502,20 +1515,22 @@ test("authoritative-single stories cannot imply independent confirmation or over
       generatedAt,
       { evidencePolicy: "authoritative-or-corroborated" },
     ),
-    /must cite its authoritative originating article for every claim/,
+    isAuthoritativeStructureRepair,
   );
 
-  const confirmedClaim = structuredClone(payload);
-  confirmedClaim.desks.ai.story.evidence[0].verification = "confirmed";
-  assert.throws(
-    () => normalizeFreeEditorialAgainstCandidates(
-      confirmedClaim,
-      candidates,
-      generatedAt,
-      { evidencePolicy: "authoritative-or-corroborated" },
-    ),
-    /must label authoritative-single claims as company-claimed or preliminary/,
-  );
+  for (const verification of ["confirmed", "disputed"]) {
+    const invalidClaim = structuredClone(payload);
+    invalidClaim.desks.ai.story.evidence[0].verification = verification;
+    assert.throws(
+      () => normalizeFreeEditorialAgainstCandidates(
+        invalidClaim,
+        candidates,
+        generatedAt,
+        { evidencePolicy: "authoritative-or-corroborated" },
+      ),
+      isAuthoritativeStructureRepair,
+    );
+  }
 
   const stopThePresses = structuredClone(payload);
   stopThePresses.frontPage.stopThePressesStoryId = stopThePresses.desks.ai.story.id;
@@ -1526,8 +1541,313 @@ test("authoritative-single stories cannot imply independent confirmation or over
       generatedAt,
       { evidencePolicy: "authoritative-or-corroborated" },
     ),
-    /violates authoritative-single evidence limits/,
+    isAuthoritativeStructureRepair,
   );
+
+  const overstatedFrontPage = structuredClone(payload);
+  overstatedFrontPage.frontPage.note =
+    "Two independent sources confirmed every development in this edition.";
+  assert.throws(
+    () => normalizeFreeEditorialAgainstCandidates(
+      overstatedFrontPage,
+      candidates,
+      generatedAt,
+      { evidencePolicy: "authoritative-or-corroborated" },
+    ),
+    isAuthoritativeStructureRepair,
+  );
+});
+
+test("authoritative-single structure failures receive one bounded corrective rewrite", async () => {
+  const scenario = selectedSlateScenario(["security-and-privacy", "platforms-and-power"]);
+  const rejectedPayload = structuredClone(scenario.payload);
+  const securityStory = rejectedPayload.desks["security-and-privacy"].story;
+  const platformStory = rejectedPayload.desks["platforms-and-power"].story;
+  securityStory.priority = "critical";
+  securityStory.deck =
+    "PRIVATE FIRST RESPONSE CANARY: two independent sources confirmed the reported development.";
+  securityStory.evidence[0].sourceIds = [securityStory.sources[1].id];
+  securityStory.evidence[0].verification = "confirmed";
+  platformStory.confidence.level = "high";
+  rejectedPayload.frontPage.stopThePressesStoryId = securityStory.id;
+
+  const acceptedResult = {
+    ...aiResult(scenario.payload),
+    responseId: "workers-ai-authoritative-corrective-response",
+    requestSha256: "c".repeat(64),
+    responseSha256: "d".repeat(64),
+  };
+  const calls = [];
+  let sourceRequests = 0;
+
+  const candidate = await draftFreeEdition(draftOptions({
+    evidencePolicy: "authoritative-or-corroborated",
+    draftSelectedSlate: true,
+    researchImpl: async () => scenario.research,
+    aiRequestImpl: async (options) => {
+      calls.push(options);
+      return calls.length === 1 ? aiResult(rejectedPayload) : acceptedResult;
+    },
+    sourceRequestImpl: async () => {
+      sourceRequests += 1;
+      return { status: 200, headers: {} };
+    },
+  }));
+
+  assert.equal(calls.length, 2);
+  assert.equal(sourceRequests, 4);
+  assert.deepEqual(calls.map((options) => options.maxAttempts), [2, 1]);
+  assert.deepEqual(calls.map((options) => options.messages.length), [2, 2]);
+  assert.deepEqual(calls[1].messages[1], calls[0].messages[1]);
+  assert.doesNotMatch(calls[0].messages[0].content, /<free-authoritative-structure-retry>/);
+  assert.match(calls[1].messages[0].content, /<free-authoritative-structure-retry>/);
+  assert.match(calls[1].messages[0].content, /story\.priority to high or notable/);
+  assert.match(calls[1].messages[0].content, /confidence\.level to medium or developing/);
+  assert.match(calls[1].messages[0].content, /originating article id in every evidence\[\]\.sourceIds/);
+  assert.match(calls[1].messages[0].content, /company-claimed or preliminary/);
+  assert.match(calls[1].messages[0].content, /previous model response is intentionally unavailable/);
+  assert.equal(calls[1].messages.some((message) => message.role === "assistant"), false);
+  assert.doesNotMatch(
+    JSON.stringify(calls[1].messages),
+    /PRIVATE FIRST RESPONSE CANARY/,
+  );
+  assert.equal(candidate.provenance.freePilot.responseId, acceptedResult.responseId);
+  assert.equal(candidate.provenance.freePilot.requestSha256, acceptedResult.requestSha256);
+  assert.equal(candidate.provenance.freePilot.responseSha256, acceptedResult.responseSha256);
+  assert.equal(candidate.desks["security-and-privacy"].story.priority, "notable");
+  assert.equal(candidate.desks["platforms-and-power"].story.confidence.level, "medium");
+  assert.equal(validateCanonicalEdition(candidate).valid, true);
+});
+
+test("selected-slate omissions stay hard before authoritative correction", async () => {
+  const scenario = selectedSlateScenario(["security-and-privacy", "platforms-and-power"]);
+  const partialPayload = structuredClone(scenario.payload);
+  const selectedStory = partialPayload.desks["security-and-privacy"].story;
+  selectedStory.priority = "critical";
+  partialPayload.desks["platforms-and-power"] = {
+    desk: "platforms-and-power",
+    story: null,
+    emptyReason: "The model omitted this deterministic selected candidate.",
+  };
+  partialPayload.frontPage.leadStoryId = selectedStory.id;
+  partialPayload.frontPage.storyOrder = [selectedStory.id];
+  let aiCalls = 0;
+
+  await assert.rejects(
+    () => draftFreeEdition(draftOptions({
+      evidencePolicy: "authoritative-or-corroborated",
+      draftSelectedSlate: true,
+      researchImpl: async () => scenario.research,
+      aiRequestImpl: async () => {
+        aiCalls += 1;
+        return aiResult(partialPayload);
+      },
+    })),
+    /must draft every deterministic selected candidate/,
+  );
+
+  assert.equal(aiCalls, 1);
+});
+
+test("authoritative-single structure remains fail-closed after the sole corrective rewrite", async () => {
+  const scenario = selectedSlateScenario(["security-and-privacy", "platforms-and-power"]);
+  const rejectedPayload = structuredClone(scenario.payload);
+  rejectedPayload.desks["security-and-privacy"].story.priority = "critical";
+  const calls = [];
+  let sourceRequests = 0;
+
+  await assert.rejects(
+    () => draftFreeEdition(draftOptions({
+      evidencePolicy: "authoritative-or-corroborated",
+      draftSelectedSlate: true,
+      researchImpl: async () => scenario.research,
+      aiRequestImpl: async (options) => {
+        calls.push(options);
+        return aiResult(rejectedPayload);
+      },
+      sourceRequestImpl: async () => {
+        sourceRequests += 1;
+        return { status: 200, headers: {} };
+      },
+    })),
+    /bounded certainty or attribution rules/,
+  );
+
+  assert.equal(calls.length, 2);
+  assert.equal(sourceRequests, 0);
+  assert.deepEqual(calls.map((options) => options.maxAttempts), [2, 1]);
+  assert.match(calls[1].messages[0].content, /<free-authoritative-structure-retry>/);
+});
+
+test("a transient transport retry consumes the authoritative correction budget", async () => {
+  const scenario = selectedSlateScenario(["security-and-privacy", "platforms-and-power"]);
+  const rejectedPayload = structuredClone(scenario.payload);
+  rejectedPayload.desks["security-and-privacy"].story.priority = "critical";
+  const calls = [];
+
+  await assert.rejects(
+    () => draftFreeEdition(draftOptions({
+      evidencePolicy: "authoritative-or-corroborated",
+      draftSelectedSlate: true,
+      researchImpl: async () => scenario.research,
+      aiRequestImpl: async (options) => {
+        calls.push(options);
+        return { ...aiResult(rejectedPayload), attemptCount: 2 };
+      },
+    })),
+    /model-request budget was exhausted before the corrective draft/,
+  );
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].maxAttempts, 2);
+});
+
+test("authoritative correction never masks closed-world security failures", async () => {
+  const cases = [
+    {
+      name: "unknown event",
+      expected: /selected an unknown free event/,
+      mutate: (story) => { story.canonicalEventKey = "invented-event"; },
+    },
+    {
+      name: "wrong desk",
+      expected: /under the wrong desk/,
+      mutate: (story) => { story.desk = "work-and-tools"; },
+    },
+    {
+      name: "laundered source metadata",
+      expected: /changed or laundered dossier source metadata/,
+      mutate: (story) => { story.sources[0].url = "https://invented.example/story"; },
+    },
+    {
+      name: "evidence outside the dossier",
+      expected: /cites evidence outside its matched dossier/,
+      mutate: (story) => { story.evidence[0].sourceIds = ["invented-source-id"]; },
+    },
+  ];
+
+  for (const testCase of cases) {
+    const scenario = selectedSlateScenario(["ai"]);
+    const payload = structuredClone(scenario.payload);
+    const story = payload.desks.ai.story;
+    story.priority = "critical";
+    testCase.mutate(story);
+    let aiCalls = 0;
+
+    await assert.rejects(
+      () => draftFreeEdition(draftOptions({
+        evidencePolicy: "authoritative-or-corroborated",
+        draftSelectedSlate: true,
+        researchImpl: async () => scenario.research,
+        aiRequestImpl: async () => {
+          aiCalls += 1;
+          return aiResult(payload);
+        },
+      })),
+      testCase.expected,
+      testCase.name,
+    );
+    assert.equal(aiCalls, 1, `${testCase.name} must not spend the corrective request`);
+  }
+});
+
+test("authoritative correction never masks cross-candidate source laundering", async () => {
+  const scenario = selectedSlateScenario(["ai", "work-and-tools"]);
+  const payload = structuredClone(scenario.payload);
+  const aiStory = payload.desks.ai.story;
+  aiStory.priority = "critical";
+  aiStory.sources[0] = structuredClone(
+    payload.desks["work-and-tools"].story.sources[0],
+  );
+  let aiCalls = 0;
+
+  await assert.rejects(
+    () => draftFreeEdition(draftOptions({
+      evidencePolicy: "authoritative-or-corroborated",
+      draftSelectedSlate: true,
+      researchImpl: async () => scenario.research,
+      aiRequestImpl: async () => {
+        aiCalls += 1;
+        return aiResult(payload);
+      },
+    })),
+    /changed or laundered dossier source metadata/,
+  );
+  assert.equal(aiCalls, 1);
+});
+
+test("a later hard failure overrides an earlier authoritative repair condition", async () => {
+  const scenario = selectedSlateScenario(["ai", "work-and-tools"]);
+  const payload = structuredClone(scenario.payload);
+  payload.desks.ai.story.priority = "critical";
+  payload.desks["work-and-tools"].story.sources[0].publisher = "Injected Publisher";
+  let aiCalls = 0;
+
+  await assert.rejects(
+    () => draftFreeEdition(draftOptions({
+      evidencePolicy: "authoritative-or-corroborated",
+      draftSelectedSlate: true,
+      researchImpl: async () => scenario.research,
+      aiRequestImpl: async () => {
+        aiCalls += 1;
+        return aiResult(payload);
+      },
+    })),
+    /changed or laundered dossier source metadata/,
+  );
+  assert.equal(aiCalls, 1);
+});
+
+test("front-page relational failures stay hard when an authoritative repair is also present", async () => {
+  const cases = [
+    {
+      name: "duplicate selected story id",
+      selectedDesks: ["ai", "work-and-tools"],
+      expected: /missing or repeated selected story id/,
+      mutate: (payload) => {
+        payload.desks["work-and-tools"].story.id = payload.desks.ai.story.id;
+      },
+    },
+    {
+      name: "invented front-page order id",
+      selectedDesks: ["ai"],
+      expected: /front-page order must reference every selected story exactly once/,
+      mutate: (payload) => {
+        payload.frontPage.storyOrder = ["invented-story-id"];
+      },
+    },
+    {
+      name: "invented lead story id",
+      selectedDesks: ["ai"],
+      expected: /lead story must reference a selected story/,
+      mutate: (payload) => {
+        payload.frontPage.leadStoryId = "invented-story-id";
+      },
+    },
+  ];
+
+  for (const testCase of cases) {
+    const scenario = selectedSlateScenario(testCase.selectedDesks);
+    const payload = structuredClone(scenario.payload);
+    payload.desks.ai.story.priority = "critical";
+    testCase.mutate(payload);
+    let aiCalls = 0;
+
+    await assert.rejects(
+      () => draftFreeEdition(draftOptions({
+        evidencePolicy: "authoritative-or-corroborated",
+        draftSelectedSlate: true,
+        researchImpl: async () => scenario.research,
+        aiRequestImpl: async () => {
+          aiCalls += 1;
+          return aiResult(payload);
+        },
+      })),
+      testCase.expected,
+      testCase.name,
+    );
+    assert.equal(aiCalls, 1, `${testCase.name} must not spend the corrective request`);
+  }
 });
 
 test("source-shaped prompt injection stays inside the untrusted user-data boundary", () => {

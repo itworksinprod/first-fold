@@ -851,21 +851,42 @@ export function buildFreeWorkersAiMessages({
 
 function buildFreeWorkersAiCorrectiveRetryMessages(messages, repairKind) {
   const retryMessages = structuredClone(messages);
-  const lengthRepair = repairKind === "length";
-  const tag = lengthRepair ? "free-length-retry" : "free-copy-retry";
-  const reason = lengthRepair
-    ? `Trusted local word-count validation rejected the prior result. Every selected story must contain ` +
-      `${MIN_READER_FACING_STORY_WORDS}–${MAX_READER_FACING_STORY_WORDS} words in whatHappened, whyItMatters, and whatToDoOrWatch combined, inclusive. ` +
-      `Count only those three fields before returning JSON and aim for 175–200 words.`
-    : `Trusted local originality validation rejected the prior result.`;
-  retryMessages[0].content += `\n\n<${tag}>\n` +
-    `CORRECTIVE RETRY: ${reason} Produce one complete ` +
+  const retryInstructions = {
+    length: {
+      tag: "free-length-retry",
+      reason: `Trusted local word-count validation rejected the prior result. Every selected story must contain ` +
+        `${MIN_READER_FACING_STORY_WORDS}–${MAX_READER_FACING_STORY_WORDS} words in whatHappened, whyItMatters, and whatToDoOrWatch combined, inclusive. ` +
+        `Count only those three fields before returning JSON and aim for 175–200 words.`,
+    },
+    originality: {
+      tag: "free-copy-retry",
+      reason: "Trusted local originality validation rejected the prior result.",
+    },
+    "authoritative-structure": {
+      tag: "free-authoritative-structure-retry",
+      reason: `Trusted local closed-world validation found that the prior payload otherwise preserved the ` +
+        `selected event, desk, and exact dossier source metadata, but at least one authoritative-single story ` +
+        `violated its bounded certainty or attribution contract. For every authoritative-single story, set ` +
+        `story.priority to high or notable; set confidence.level to medium or developing; never name that story ` +
+        `in frontPage.stopThePressesStoryId; include the exact originating article and context source records; ` +
+        `include the originating article id in every evidence[].sourceIds; set every evidence[].verification to ` +
+        `company-claimed or preliminary; explicitly attribute reported facts to the named publisher; and never ` +
+        `claim independent confirmation, corroboration, multiple publishers, or multiple sources.`,
+    },
+  };
+  const instruction = retryInstructions[repairKind];
+  if (!instruction) {
+    throw new Error("Free editorial corrective retry kind is invalid.");
+  }
+  retryMessages[0].content += `\n\n<${instruction.tag}>\n` +
+    `CORRECTIVE RETRY: ${instruction.reason} The previous model response is intentionally unavailable. ` +
+    `Produce one complete ` +
     `replacement editorial payload from the same RUN_CONTEXT. Rewrite every model-authored prose field from ` +
     `scratch, including evidence[].statement, while preserving only supported meaning and the dossier's exact ` +
     `non-prose identifiers and source metadata. After ignoring capitalization and punctuation, no story prose ` +
     `may repeat ${FREE_COPY_OVERLAP_WORDS} or more contiguous words from a candidate title, verifiedFacts entry, ` +
     `or sources[].title. Return JSON only.\n` +
-    `</${tag}>`;
+    `</${instruction.tag}>`;
   return retryMessages;
 }
 
@@ -912,10 +933,14 @@ function modelStoryPassages(story) {
   ].filter((value) => typeof value === "string" && value.trim());
 }
 
-function assertsIndependentConfirmation(story) {
-  const prose = modelStoryPassages(story).join(" ");
+function assertsIndependentConfirmationText(prose) {
+  if (typeof prose !== "string") return false;
   return /\b(?:independent(?:ly)?\s+(?:confirm\w*|corroborat\w*)|(?:confirm\w*|corroborat\w*)\s+by\s+(?:an?\s+)?independent|multiple\s+(?:independent\s+)?(?:publishers|sources)|two\s+(?:independent\s+)?(?:publishers|sources)|second\s+publisher\s+confirm\w*)\b/iu
     .test(prose);
+}
+
+function assertsIndependentConfirmation(story) {
+  return assertsIndependentConfirmationText(modelStoryPassages(story).join(" "));
 }
 
 class FreeEditorialRepairError extends Error {
@@ -944,6 +969,104 @@ class FreeStoryWordCountError extends FreeEditorialRepairError {
       "length",
     );
     this.name = "FreeStoryWordCountError";
+  }
+}
+
+class FreeAuthoritativeStructureError extends FreeEditorialRepairError {
+  constructor() {
+    super(
+      "Workers AI authoritative-single story violates bounded certainty or attribution rules.",
+      "authoritative-structure",
+    );
+    this.name = "FreeAuthoritativeStructureError";
+  }
+}
+
+function preferredFreeEditorialRepairError(current, next) {
+  if (!(next instanceof FreeEditorialRepairError)) {
+    throw new TypeError("Free editorial repair classification must use a trusted repair error.");
+  }
+  if (
+    current === null ||
+    (
+      next.repairKind === "authoritative-structure" &&
+      current.repairKind !== "authoritative-structure"
+    )
+  ) {
+    return next;
+  }
+  return current;
+}
+
+function assertFreeEditorialRelationalIntegrity(payload, desks, authoritativeStoryIds) {
+  const selectedStories = FREE_DESKS
+    .map((desk) => desks[desk]?.story)
+    .filter((story) => isObject(story));
+  const storyIds = selectedStories.map((story) => story.id);
+  const selectedStoryIds = new Set(storyIds);
+  if (
+    storyIds.some((storyId) => typeof storyId !== "string" || !storyId.trim()) ||
+    selectedStoryIds.size !== storyIds.length
+  ) {
+    throw new Error("Workers AI editorial payload has a missing or repeated selected story id.");
+  }
+
+  const storyOrder = payload.frontPage.storyOrder;
+  if (
+    storyOrder.length !== storyIds.length ||
+    new Set(storyOrder).size !== storyOrder.length ||
+    storyOrder.some((storyId) => !selectedStoryIds.has(storyId))
+  ) {
+    throw new Error("Workers AI front-page order must reference every selected story exactly once.");
+  }
+  if (
+    payload.frontPage.leadStoryId !== null &&
+    !selectedStoryIds.has(payload.frontPage.leadStoryId)
+  ) {
+    throw new Error("Workers AI lead story must reference a selected story.");
+  }
+
+  const stopThePressesId = payload.frontPage.stopThePressesStoryId;
+  if (stopThePressesId !== null) {
+    const alertStory = selectedStories.find((story) => story.id === stopThePressesId);
+    if (!alertStory) {
+      throw new Error("Workers AI Stop the Presses must reference a selected story.");
+    }
+    // An authoritative-single alert is already a deferred repairable error;
+    // its correction must clear the field. For a corroborated story, retain
+    // the canonical Security & Privacy action requirement as a hard gate.
+    if (
+      !authoritativeStoryIds.has(stopThePressesId) &&
+      (alertStory.desk !== "security-and-privacy" || !isObject(alertStory.securityAction))
+    ) {
+      throw new Error(
+        "Workers AI Stop the Presses must reference a selected Security & Privacy action story.",
+      );
+    }
+  }
+
+  for (const story of selectedStories) {
+    if (isObject(story.securityAction) && story.desk !== "security-and-privacy") {
+      throw new Error("Workers AI placed a security action outside the Security & Privacy desk.");
+    }
+  }
+
+  const primaryEntityCounts = new Map();
+  for (const story of selectedStories) {
+    const entityKey = story.editorial.primaryEntity.trim().toLocaleLowerCase("en-US");
+    primaryEntityCounts.set(entityKey, (primaryEntityCounts.get(entityKey) ?? 0) + 1);
+  }
+  const hasRepeatedEntity = [...primaryEntityCounts.values()].some((count) => count > 1);
+  const diversityException = payload.frontPage.diversityException;
+  if (
+    (hasRepeatedEntity &&
+      (typeof diversityException !== "string" || !diversityException.trim())) ||
+    (!hasRepeatedEntity && diversityException !== null)
+  ) {
+    throw new Error("Workers AI front-page diversity exception does not match the selected entities.");
+  }
+  if (selectedStories.filter((story) => story.editorial.aiAdjacent === true).length > 2) {
+    throw new Error("Workers AI editorial payload selected more than two AI-adjacent stories.");
   }
 }
 
@@ -991,7 +1114,10 @@ export function normalizeFreeEditorialAgainstCandidates(
   payload,
   candidates,
   generatedAt,
-  { evidencePolicy = "corroborated" } = {},
+  {
+    evidencePolicy = "corroborated",
+    requiredEventKeys = null,
+  } = {},
 ) {
   const normalizedEvidencePolicy = requireEvidencePolicy(evidencePolicy);
   const validation = validateFreeEditorialPayload(payload);
@@ -1005,7 +1131,24 @@ export function normalizeFreeEditorialAgainstCandidates(
     }
     candidateByEventKey.set(candidate.canonicalEventKey, candidate);
   }
+  if (requiredEventKeys !== null && !Array.isArray(requiredEventKeys)) {
+    throw new Error("Free requiredEventKeys must be an array or null.");
+  }
+  const requiredEventKeySet = requiredEventKeys === null
+    ? null
+    : new Set(requiredEventKeys);
+  if (requiredEventKeySet !== null) {
+    if (requiredEventKeySet.size !== requiredEventKeys.length) {
+      throw new Error("Free requiredEventKeys must not contain duplicates.");
+    }
+    for (const eventKey of requiredEventKeySet) {
+      if (typeof eventKey !== "string" || !candidateByEventKey.has(eventKey)) {
+        throw new Error("Free requiredEventKeys must reference known feed dossiers.");
+      }
+    }
+  }
   const usedEventKeys = new Set();
+  const authoritativeStoryIds = new Set();
   let editorialRepairError = null;
   const desks = {};
   for (const desk of FREE_DESKS) {
@@ -1073,6 +1216,7 @@ export function normalizeFreeEditorialAgainstCandidates(
     if (!isCorroborated && !isAuthoritativeSingle) {
       throw new Error(`Workers AI selected uncorroborated free event ${candidate.canonicalEventKey}.`);
     }
+    if (isAuthoritativeSingle) authoritativeStoryIds.add(story.id);
     if (story.sources.length < 2 || new Set(story.sources.map((source) => source.url)).size < 2) {
       throw new Error(`Workers AI story ${story.id} needs two distinct dossier sources.`);
     }
@@ -1106,21 +1250,30 @@ export function normalizeFreeEditorialAgainstCandidates(
       ) {
         throw new Error(`Workers AI story ${story.id} lacks two-publisher article corroboration.`);
       }
-    } else if (
-      corroboratingSources.length !== 1 ||
-      corroboratingSources[0].relationship !== "originating" ||
-      corroboratingUrls.size !== 1 ||
-      corroboratingPublisherKeys.size !== 1 ||
-      selectedContextUrls.size < 1 ||
-      ![...selectedContextUrls].some((url) => candidateContextUrls.has(url)) ||
-      story.priority === "critical" ||
-      story.confidence?.level === "high" ||
-      payload.frontPage.stopThePressesStoryId === story.id ||
-      assertsIndependentConfirmation(story)
-    ) {
-      throw new Error(
-        `Workers AI story ${story.id} violates authoritative-single evidence limits.`,
-      );
+    } else {
+      if (
+        corroboratingSources.length !== 1 ||
+        corroboratingSources[0].relationship !== "originating" ||
+        corroboratingUrls.size !== 1 ||
+        corroboratingPublisherKeys.size !== 1 ||
+        selectedContextUrls.size < 1 ||
+        ![...selectedContextUrls].some((url) => candidateContextUrls.has(url))
+      ) {
+        throw new Error(
+          `Workers AI story ${story.id} violates authoritative-single evidence limits.`,
+        );
+      }
+      if (
+        story.priority === "critical" ||
+        story.confidence?.level === "high" ||
+        payload.frontPage.stopThePressesStoryId === story.id ||
+        assertsIndependentConfirmation(story)
+      ) {
+        editorialRepairError = preferredFreeEditorialRepairError(
+          editorialRepairError,
+          new FreeAuthoritativeStructureError(),
+        );
+      }
     }
     for (const claim of story.evidence) {
       if (claim.sourceIds.some((sourceId) => !seenSourceIds.has(sourceId))) {
@@ -1128,16 +1281,18 @@ export function normalizeFreeEditorialAgainstCandidates(
       }
       if (isAuthoritativeSingle && !claim.sourceIds.some((sourceId) =>
         candidateSources.get(sourceId)?.relationship === "originating")) {
-        throw new Error(
-          `Workers AI story ${story.id} must cite its authoritative originating article for every claim.`,
+        editorialRepairError = preferredFreeEditorialRepairError(
+          editorialRepairError,
+          new FreeAuthoritativeStructureError(),
         );
       }
       if (
         isAuthoritativeSingle &&
         !["company-claimed", "preliminary"].includes(claim.verification)
       ) {
-        throw new Error(
-          `Workers AI story ${story.id} must label authoritative-single claims as company-claimed or preliminary.`,
+        editorialRepairError = preferredFreeEditorialRepairError(
+          editorialRepairError,
+          new FreeAuthoritativeStructureError(),
         );
       }
     }
@@ -1201,11 +1356,32 @@ export function normalizeFreeEditorialAgainstCandidates(
         assertion();
       } catch (error) {
         if (!(error instanceof FreeEditorialRepairError)) throw error;
-        editorialRepairError ??= error;
+        editorialRepairError = preferredFreeEditorialRepairError(
+          editorialRepairError,
+          error,
+        );
       }
     }
     if (story.securityAction === null) delete story.securityAction;
     desks[desk] = { desk, story };
+  }
+  if (
+    authoritativeStoryIds.size > 0 &&
+    assertsIndependentConfirmationText(payload.frontPage.note)
+  ) {
+    editorialRepairError = preferredFreeEditorialRepairError(
+      editorialRepairError,
+      new FreeAuthoritativeStructureError(),
+    );
+  }
+  assertFreeEditorialRelationalIntegrity(payload, desks, authoritativeStoryIds);
+  if (requiredEventKeySet !== null && (
+    usedEventKeys.size !== requiredEventKeySet.size ||
+    [...requiredEventKeySet].some((eventKey) => !usedEventKeys.has(eventKey))
+  )) {
+    throw new Error(
+      "Free selected-slate generation must draft every deterministic selected candidate.",
+    );
   }
   if (editorialRepairError) throw editorialRepairError;
   return {
@@ -1731,6 +1907,9 @@ async function draftFreeEditionCore({
     diagnostics: research.diagnostics,
   };
   const feedSnapshotSha256 = sha256Json(feedSnapshot);
+  const requiredEventKeys = (draftSelectedSlate || requireComplete)
+    ? candidates.map((candidate) => candidate.canonicalEventKey)
+    : null;
 
   let editorial;
   let inference;
@@ -1818,7 +1997,7 @@ async function draftFreeEditionCore({
         accepted.aiResult.editorialPayload,
         candidates,
         generatedAt,
-        { evidencePolicy: normalizedEvidencePolicy },
+        { evidencePolicy: normalizedEvidencePolicy, requiredEventKeys },
       );
     } catch (error) {
       if (!(error instanceof FreeEditorialRepairError)) throw error;
@@ -1829,7 +2008,7 @@ async function draftFreeEditionCore({
         accepted.aiResult.editorialPayload,
         candidates,
         generatedAt,
-        { evidencePolicy: normalizedEvidencePolicy },
+        { evidencePolicy: normalizedEvidencePolicy, requiredEventKeys },
       );
     }
     inference = accepted.inference;
