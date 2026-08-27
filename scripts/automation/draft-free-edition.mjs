@@ -681,8 +681,7 @@ distinct context feed URL from the same reviewed publisher. Cite the
 originating article in every evidence claim. Keep the headline, deck,
 whatHappened, and each evidence statement to one publisher-attributed clause
 with no colon or semicolon. Start each with the originating source's exact
-publisher field followed by a reporting verb such as reports, says, states,
-describes, or announces. Omit
+publisher field followed by the exact word reports. Omit
 claims that article does not support. Do not use confirmed, verified,
 corroborated, independently, multiple-source, or equivalent certainty language. An
 authoritative-single story must not use critical priority or high confidence.
@@ -877,8 +876,7 @@ function buildFreeWorkersAiCorrectiveRetryMessages(messages, repairKind) {
         `include the originating article id in every evidence[].sourceIds; set every evidence[].verification to ` +
         `company-claimed or preliminary; keep the headline, deck, whatHappened, and each evidence[].statement ` +
         `to one publisher-attributed clause with no colon or semicolon; start each with the originating ` +
-        `source's exact publisher field followed by reports, says, states, describes, announces, or another ` +
-        `allowed reporting verb; ` +
+        `source's exact publisher field followed by the exact word reports; ` +
         `omit any claim that the originating article does not support; and ` +
         `never use confirmed, verified, corroborated, independently, multiple-source, or equivalent certainty language.`,
     },
@@ -989,6 +987,19 @@ function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
 
+const AUTHORITATIVE_DOTTED_PRODUCT_IDENTIFIERS = Object.freeze([
+  "Next.js",
+  "Node.js",
+]);
+
+const authoritativeDottedProductPattern = new RegExp(
+  `\\b(?:${AUTHORITATIVE_DOTTED_PRODUCT_IDENTIFIERS.map(escapeRegExp).join("|")})\\b`,
+  "giu",
+);
+
+const AUTHORITATIVE_CLAUSE_SEPARATOR_PATTERN =
+  /(?:(?!,)\p{Terminal_Punctuation}|[\u2026\u204F\u205A-\u205E\u22EE-\u22F1\u2E35]|\r\n|[\n\v\f\r\u0085\u2028\u2029])+/u;
+
 function isSinglePublisherAttributedPassage(value, publisher) {
   if (typeof value !== "string" || !value.trim()) return false;
   if (typeof publisher !== "string" || !publisher.trim()) return false;
@@ -1000,10 +1011,18 @@ function isSinglePublisherAttributedPassage(value, publisher) {
   if (!publisherPrefixPattern.test(value)) return false;
   const masked = value
     .replace(publisherPrefixPattern, "")
+    // Only code-reviewed product names may contain a non-sentence dot. A
+    // generic dotted-word exception would let `claim.Investigators` hide a
+    // detached second assertion from the closed-world attribution check.
+    .replace(authoritativeDottedProductPattern, (productName) =>
+      productName.replaceAll(".", numericDotSentinel))
     .replace(/\b\d+(?:\.\d+)+\b/gu, (numericToken) =>
-      numericToken.replaceAll(".", numericDotSentinel));
+      numericToken.replaceAll(".", numericDotSentinel))
+    // Normalize only after masking the exact reviewed dot exceptions. This
+    // exposes compatibility punctuation without broadening the allowlist.
+    .normalize("NFKC");
   const clauses = masked
-    .split(/[.!?;:]+/u)
+    .split(AUTHORITATIVE_CLAUSE_SEPARATOR_PATTERN)
     .map((clause) => clause.trim())
     .filter(Boolean);
   if (clauses.length !== 1) return false;

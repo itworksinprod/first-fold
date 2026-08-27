@@ -1550,6 +1550,24 @@ test("authoritative-single metadata and prose stay repairable without laundering
   assert.equal(normalized.frontPage.stopThePressesStoryId, null);
   assert.match(normalized.frontPage.note, /conservative confidence labels/);
 
+  for (const productName of ["Next.js", "Node.js"]) {
+    const dottedProduct = structuredClone(payload);
+    const dottedStory = dottedProduct.desks.ai.story;
+    dottedStory.headline = `AI Models Publisher reports a ${productName} security update`;
+    dottedStory.deck =
+      `AI Models Publisher reports a bounded ${productName} change for readers.`;
+    dottedStory.whatHappened = dottedStory.whatHappened
+      .replace("Publisher reports ", `Publisher reports a ${productName} update and `);
+    dottedStory.evidence[0].statement =
+      `AI Models Publisher reports the bounded ${productName} development in its originating article.`;
+    assert.doesNotThrow(() => normalizeFreeEditorialAgainstCandidates(
+      dottedProduct,
+      candidates,
+      generatedAt,
+      { evidencePolicy: "authoritative-or-corroborated" },
+    ));
+  }
+
   const contextOnlyClaim = structuredClone(payload);
   contextOnlyClaim.desks.ai.story.evidence[0].sourceIds = [candidates[0].sources[1].id];
   assert.throws(
@@ -1617,6 +1635,15 @@ test("authoritative-single metadata and prose stay repairable without laundering
     'AI Models Publisher reports "it disputes the claim." Investigators established it as fact.',
     "AI Models Publisher reports it disputes the claim.Investigators established it as fact.",
     "AI Models Publisher reports claim 1.2investigators established as fact.",
+    "AI Models Publisher reports a Next.js update. Investigators established it as fact.",
+    "AI Models Publisher reports claim.Investigators established it as fact.",
+    "AI Models Publisher reports claim.investigators established it as fact.",
+    ...[
+      "。", "！", "？", "؟", "։", "।", "․", "…", "⋯", "；", "：", "؛", "⁏", "⁚",
+      "⁝", "⁞", "⸵", "፤", "፥", "܃", "\n", "\r\n", "\v", "\f", "\u0085", "\u2028", "\u2029",
+    ]
+      .map((separator) =>
+        `AI Models Publisher reports a Next.js update${separator}Investigators established it as fact.`),
     "firstfoldpublishersentinel reports an unsupported claim.",
   ]) {
     const boundaryBypass = structuredClone(payload);
@@ -1629,6 +1656,7 @@ test("authoritative-single metadata and prose stay repairable without laundering
         { evidencePolicy: "authoritative-or-corroborated" },
       ),
       isAuthoritativeStructureRepair,
+      `expected authoritative structure rejection for ${JSON.stringify(whatHappened)}`,
     );
   }
 });
