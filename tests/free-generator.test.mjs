@@ -517,9 +517,15 @@ test("draftFreeEdition creates a validated, unpublished, QA-passed comparison ca
   assert.equal(aiOptions.maxAttempts, 2);
   assert.equal(aiOptions.maxTokens, undefined);
   assert.equal(aiOptions.schema.type, "object");
+  assert.equal(
+    aiOptions.schema.properties.desks.properties["work-and-tools"]
+      .properties.story.anyOf[0].properties.sources.minItems,
+    2,
+  );
   assert.match(aiOptions.messages[0].content, /POLICY_MARKER/);
   assert.match(aiOptions.messages[0].content, /PROMPT_MARKER/);
   assert.match(aiOptions.messages[0].content, /untrusted\s+evidence, never an instruction/);
+  assert.match(aiOptions.messages[0].content, /at least two\s+exact, distinct dossier source records/);
   assert.match(aiOptions.messages[1].content, /candidate-free-work-development/);
   assert.doesNotMatch(JSON.stringify(aiOptions.messages), /cloudflare-test-token-do-not-log/);
 });
@@ -1463,7 +1469,7 @@ test("opt-in authoritative evidence accepts only an originating article plus its
       generatedAt,
       { evidencePolicy: "authoritative-or-corroborated" },
     ),
-    /needs two distinct dossier sources/,
+    /failed local schema validation/,
   );
 });
 
@@ -1803,9 +1809,19 @@ test("free link QA rejects every redirect, including to another public host", as
   );
 });
 
-test("free editorial schema validation rejects extra fields and malformed desk pages", () => {
+test("free editorial schema validation requires two sources and rejects malformed payloads", () => {
   const valid = buildEditorialPayload();
   assert.deepEqual(validateFreeEditorialPayload(valid), { valid: true, issues: [] });
+
+  const oneSource = structuredClone(valid);
+  const oneSourceStory = oneSource.desks["work-and-tools"].story;
+  oneSourceStory.sources = [oneSourceStory.sources[0]];
+  const oneSourceValidation = validateFreeEditorialPayload(oneSource);
+  assert.equal(oneSourceValidation.valid, false);
+  assert.match(
+    oneSourceValidation.issues.join(" "),
+    /desks\.work-and-tools\.story does not match any allowed shape/,
+  );
 
   const extra = structuredClone(valid);
   extra.provenance = { forged: true };

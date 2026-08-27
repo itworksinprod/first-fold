@@ -50,7 +50,7 @@ const securityActionSchema = strictObject({
   deadline: nullableString,
 });
 
-const storySchema = strictObject({
+const storySchema = (minimumSources = 1) => strictObject({
   id: nonBlankString,
   canonicalEventKey: nonBlankString,
   desk: { enum: DESKS },
@@ -83,7 +83,7 @@ const storySchema = strictObject({
   }),
   sources: {
     type: "array",
-    minItems: 1,
+    minItems: minimumSources,
     maxItems: 8,
     items: sourceSchema,
   },
@@ -100,9 +100,9 @@ const storySchema = strictObject({
   },
 });
 
-const deskPageSchema = (desk) => strictObject({
+const deskPageSchema = (desk, minimumSources = 1) => strictObject({
   desk: { const: desk },
-  story: { anyOf: [storySchema, { type: "null" }] },
+  story: { anyOf: [storySchema(minimumSources), { type: "null" }] },
   // The normalizer removes emptyReason from populated canonical desk pages.
   emptyReason: nullableString,
 });
@@ -140,14 +140,22 @@ const experimentSchema = strictObject({
  * Watch Next is also held empty for the automatic pilot because its canonical
  * shape has no evidence/source mapping.
  */
-export const EDITORIAL_OUTPUT_SCHEMA = strictObject({
+const editorialOutputSchema = (minimumSources = 1) => strictObject({
   frontPage: frontPageSchema,
   desks: strictObject(Object.fromEntries(
-    DESKS.map((desk) => [desk, deskPageSchema(desk)]),
+    DESKS.map((desk) => [desk, deskPageSchema(desk, minimumSources)]),
   )),
   backPage: strictObject({
     tryThisTomorrow: { anyOf: [experimentSchema, { type: "null" }] },
   }),
 });
+
+export const EDITORIAL_OUTPUT_SCHEMA = editorialOutputSchema();
+
+// The bounded free lane always requires either two independent article URLs
+// or an originating article plus its reviewed same-publisher context feed.
+// Encode that invariant in the model contract instead of accepting a
+// one-source payload that the trusted free-lane binder must reject later.
+export const FREE_EDITORIAL_OUTPUT_SCHEMA = editorialOutputSchema(2);
 
 export const EDITORIAL_OUTPUT_SCHEMA_NAME = "first_fold_editorial_selection_v2";
