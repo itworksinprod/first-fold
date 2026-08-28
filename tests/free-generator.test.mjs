@@ -1515,14 +1515,19 @@ test("authoritative-single metadata and prose stay repairable without laundering
   metadataStory.priority = "critical";
   metadataStory.confidence.level = "high";
   metadataHeavy.frontPage.stopThePressesStoryId = metadataStory.id;
-  assert.throws(
-    () => normalizeFreeEditorialAgainstCandidates(
-      metadataHeavy,
-      candidates,
-      generatedAt,
-      { evidencePolicy: "authoritative-or-corroborated" },
-    ),
-    isAuthoritativeStructureRepair,
+  metadataStory.evidence[0].verification = "confirmed";
+  const normalizedMetadata = normalizeFreeEditorialAgainstCandidates(
+    metadataHeavy,
+    candidates,
+    generatedAt,
+    { evidencePolicy: "authoritative-or-corroborated" },
+  );
+  assert.equal(normalizedMetadata.desks.ai.story.priority, "notable");
+  assert.equal(normalizedMetadata.desks.ai.story.confidence.level, "medium");
+  assert.equal(normalizedMetadata.frontPage.stopThePressesStoryId, null);
+  assert.equal(
+    normalizedMetadata.desks.ai.story.evidence[0].verification,
+    "company-claimed",
   );
 
   const safeMapping = structuredClone(payload);
@@ -1582,9 +1587,22 @@ test("authoritative-single metadata and prose stay repairable without laundering
 
   const confirmedClaim = structuredClone(payload);
   confirmedClaim.desks.ai.story.evidence[0].verification = "confirmed";
+  const normalizedConfirmedClaim = normalizeFreeEditorialAgainstCandidates(
+    confirmedClaim,
+    candidates,
+    generatedAt,
+    { evidencePolicy: "authoritative-or-corroborated" },
+  );
+  assert.equal(
+    normalizedConfirmedClaim.desks.ai.story.evidence[0].verification,
+    "company-claimed",
+  );
+
+  const disputedClaim = structuredClone(payload);
+  disputedClaim.desks.ai.story.evidence[0].verification = "disputed";
   assert.throws(
     () => normalizeFreeEditorialAgainstCandidates(
-      confirmedClaim,
+      disputedClaim,
       candidates,
       generatedAt,
       { evidencePolicy: "authoritative-or-corroborated" },
@@ -1606,16 +1624,24 @@ test("authoritative-single metadata and prose stay repairable without laundering
   );
 
   const missingAttribution = structuredClone(payload);
-  missingAttribution.desks.ai.story.whatHappened =
-    "The update changes a bounded workflow and leaves the remaining behavior unchanged for readers.";
-  assert.throws(
-    () => normalizeFreeEditorialAgainstCandidates(
-      missingAttribution,
-      candidates,
-      generatedAt,
-      { evidencePolicy: "authoritative-or-corroborated" },
-    ),
-    isAuthoritativeStructureRepair,
+  missingAttribution.desks.ai.story.headline =
+    missingAttribution.desks.ai.story.headline.replace(
+      "AI Models publisher reports ",
+      "",
+    );
+  const normalizedMissingAttribution = normalizeFreeEditorialAgainstCandidates(
+    missingAttribution,
+    candidates,
+    generatedAt,
+    { evidencePolicy: "authoritative-or-corroborated" },
+  );
+  assert.equal(
+    normalizedMissingAttribution.desks.ai.story.headline,
+    "AI Models Publisher reports a new development",
+  );
+  assert.match(
+    normalizedMissingAttribution.desks.ai.story.deck,
+    /^AI Models Publisher reports /,
   );
 
   const detachedAssertion = structuredClone(payload);
@@ -1645,6 +1671,7 @@ test("authoritative-single metadata and prose stay repairable without laundering
       .map((separator) =>
         `AI Models Publisher reports a Next.js update${separator}Investigators established it as fact.`),
     "firstfoldpublishersentinel reports an unsupported claim.",
+    "The Cybersecurity and Infrastructure Security Agency reports an unsupported claim.",
   ]) {
     const boundaryBypass = structuredClone(payload);
     boundaryBypass.desks.ai.story.whatHappened = whatHappened;
@@ -1709,7 +1736,8 @@ test("authoritative-single structure failures receive one bounded corrective rew
   assert.match(calls[1].messages[0].content, /originating article id in every evidence\[\]\.sourceIds/);
   assert.match(calls[1].messages[0].content, /company-claimed or preliminary/);
   assert.match(calls[1].messages[0].content, /originating source's exact publisher/);
-  assert.match(calls[1].messages[0].content, /one publisher-attributed clause/);
+  assert.match(calls[1].messages[0].content, /one neutral bounded clause/);
+  assert.match(calls[1].messages[0].content, /trusted local code adds/i);
   assert.match(calls[1].messages[0].content, /never use confirmed, verified, corroborated/);
   assert.match(calls[1].messages[0].content, /previous model response is intentionally unavailable/);
   assert.equal(calls[1].messages.some((message) => message.role === "assistant"), false);
@@ -1722,6 +1750,65 @@ test("authoritative-single structure failures receive one bounded corrective rew
   assert.equal(candidate.provenance.freePilot.responseSha256, acceptedResult.responseSha256);
   assert.equal(candidate.desks["security-and-privacy"].story.priority, "notable");
   assert.equal(candidate.desks["platforms-and-power"].story.confidence.level, "medium");
+  assert.equal(validateCanonicalEdition(candidate).valid, true);
+});
+
+test("trusted authoritative normalization absorbs mechanical model variance without a retry", async () => {
+  const scenario = selectedSlateScenario(["security-and-privacy", "platforms-and-power"]);
+  const variedPayload = structuredClone(scenario.payload);
+  const selectedStories = [
+    variedPayload.desks["security-and-privacy"].story,
+    variedPayload.desks["platforms-and-power"].story,
+  ];
+  for (const story of selectedStories) {
+    const publisher = story.sources[0].publisher;
+    story.headline = story.headline.replace(`${publisher} reports `, "");
+    story.deck = story.deck.replace(`${publisher} describes `, "");
+    story.priority = "critical";
+    story.confidence.level = "high";
+    story.evidence = story.evidence.map((claim) => ({
+      ...claim,
+      statement: claim.statement
+        .replace(`${publisher} reports `, "")
+        .replace("described in its feed item", "covered by its feed item"),
+      sourceIds: story.sources.map((source) => source.id),
+      verification: "confirmed",
+    }));
+  }
+  variedPayload.frontPage.stopThePressesStoryId = selectedStories[0].id;
+  const calls = [];
+  let sourceRequests = 0;
+
+  const candidate = await draftFreeEdition(draftOptions({
+    evidencePolicy: "authoritative-or-corroborated",
+    draftSelectedSlate: true,
+    researchImpl: async () => scenario.research,
+    aiRequestImpl: async (options) => {
+      calls.push(options);
+      return aiResult(variedPayload);
+    },
+    sourceRequestImpl: async () => {
+      sourceRequests += 1;
+      return { status: 200, headers: {} };
+    },
+  }));
+
+  assert.equal(calls.length, 1);
+  assert.equal(sourceRequests, 4);
+  assert.doesNotMatch(calls[0].messages[0].content, /<free-authoritative-structure-retry>/);
+  assert.equal(candidate.frontPage.stopThePressesStoryId, null);
+  for (const desk of ["security-and-privacy", "platforms-and-power"]) {
+    const story = candidate.desks[desk].story;
+    const publisher = story.sources[0].publisher;
+    assert.equal(story.priority, "notable");
+    assert.equal(story.confidence.level, "medium");
+    assert.match(story.headline, new RegExp(`^${publisher} reports `));
+    assert.match(story.deck, new RegExp(`^${publisher} reports `));
+    assert.match(story.whatHappened, new RegExp(`^${publisher} reports `));
+    assert.deepEqual(story.evidence[0].sourceIds, [story.sources[0].id]);
+    assert.equal(story.evidence[0].verification, "company-claimed");
+    assert.match(story.evidence[0].statement, new RegExp(`^${publisher} reports `));
+  }
   assert.equal(validateCanonicalEdition(candidate).valid, true);
 });
 

@@ -679,9 +679,9 @@ two-publisher requirement. An authoritative-single dossier may be used only
 when it contains exactly one non-context originating article and at least one
 distinct context feed URL from the same reviewed publisher. Cite the
 originating article in every evidence claim. Keep the headline, deck,
-whatHappened, and each evidence statement to one publisher-attributed clause
-with no colon or semicolon. Start each with the originating source's exact
-publisher field followed by the exact word reports. Omit
+whatHappened, and each evidence statement to one neutral bounded clause with
+no colon or semicolon. Trusted local code adds the originating source's exact
+publisher field followed by the word reports. Omit
 claims that article does not support. Do not use confirmed, verified,
 corroborated, independently, multiple-source, or equivalent certainty language. An
 authoritative-single story must not use critical priority or high confidence.
@@ -875,8 +875,8 @@ function buildFreeWorkersAiCorrectiveRetryMessages(messages, repairKind) {
         `in frontPage.stopThePressesStoryId; include the exact originating article and context source records; ` +
         `include the originating article id in every evidence[].sourceIds; set every evidence[].verification to ` +
         `company-claimed or preliminary; keep the headline, deck, whatHappened, and each evidence[].statement ` +
-        `to one publisher-attributed clause with no colon or semicolon; start each with the originating ` +
-        `source's exact publisher field followed by the exact word reports; ` +
+        `to one neutral bounded clause with no colon or semicolon; trusted local code adds the originating ` +
+        `source's exact publisher field followed by the word reports; ` +
         `omit any claim that the originating article does not support; and ` +
         `never use confirmed, verified, corroborated, independently, multiple-source, or equivalent certainty language.`,
     },
@@ -1028,6 +1028,44 @@ function isSinglePublisherAttributedPassage(value, publisher) {
   if (clauses.length !== 1) return false;
   const words = normalizedWords(clauses[0]);
   return AUTHORITATIVE_ATTRIBUTION_VERBS.has(words[0]);
+}
+
+function canonicalizeAuthoritativePassage(value, publisher) {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new FreeAuthoritativeStructureError();
+  }
+  if (typeof publisher !== "string" || !publisher.trim()) {
+    throw new FreeAuthoritativeStructureError();
+  }
+  const publisherPrefixPattern = new RegExp(
+    `^\\s*${escapeRegExp(publisher)}(?=\\s)`,
+    "iu",
+  );
+  let body = value.trim();
+  const hasExactPublisherPrefix = publisherPrefixPattern.test(body);
+  if (hasExactPublisherPrefix) {
+    body = body.replace(publisherPrefixPattern, "").trim();
+    const words = normalizedWords(body);
+    if (AUTHORITATIVE_ATTRIBUTION_VERBS.has(words[0])) {
+      body = body.replace(/^\s*\S+\s*/u, "").trim();
+    }
+  } else if (
+    normalizedWords(body)
+      .some((word) => AUTHORITATIVE_ATTRIBUTION_VERBS.has(word))
+  ) {
+    // Do not turn a different named account into the trusted publisher's
+    // statement, even when its reporting verb follows a long organization
+    // name. Missing attribution is supplied only to a neutral body; any
+    // existing attribution remains a repairable, fail-closed model error.
+    throw new FreeAuthoritativeStructureError();
+  }
+  if (!body) throw new FreeAuthoritativeStructureError();
+
+  const candidatePassage = `${publisher} reports ${body}`;
+  if (!isSinglePublisherAttributedPassage(candidatePassage, publisher)) {
+    throw new FreeAuthoritativeStructureError();
+  }
+  return candidatePassage;
 }
 
 function explicitlyAttributesAuthoritativeFacts(story, publisher) {
@@ -1379,20 +1417,48 @@ export function normalizeFreeEditorialAgainstCandidates(
           `Workers AI story ${story.id} violates authoritative-single evidence limits.`,
         );
       }
-      if (
-        story.priority === "critical" ||
-        story.confidence?.level === "high" ||
-        frontPage.stopThePressesStoryId === story.id ||
-        assertsIndependentConfirmation(story) ||
-        !explicitlyAttributesAuthoritativeFacts(
-          story,
-          candidateArticleSources[0].publisher,
-        )
-      ) {
+      const originatingPublisher = candidateArticleSources[0].publisher;
+      if (assertsIndependentConfirmation(story)) {
         editorialRepairError = preferredFreeEditorialRepairError(
           editorialRepairError,
           new FreeAuthoritativeStructureError(),
         );
+      }
+      try {
+        const canonicalPassages = {
+          headline: canonicalizeAuthoritativePassage(story.headline, originatingPublisher),
+          deck: canonicalizeAuthoritativePassage(story.deck, originatingPublisher),
+          whatHappened: canonicalizeAuthoritativePassage(
+            story.whatHappened,
+            originatingPublisher,
+          ),
+          evidenceStatements: story.evidence.map((claim) =>
+            canonicalizeAuthoritativePassage(claim.statement, originatingPublisher)),
+        };
+        story.headline = canonicalPassages.headline;
+        story.deck = canonicalPassages.deck;
+        story.whatHappened = canonicalPassages.whatHappened;
+        story.evidence = story.evidence.map((claim, index) => ({
+          ...claim,
+          statement: canonicalPassages.evidenceStatements[index],
+        }));
+        if (!explicitlyAttributesAuthoritativeFacts(story, originatingPublisher)) {
+          throw new Error("Trusted authoritative attribution normalization failed its postcondition.");
+        }
+      } catch (error) {
+        if (!(error instanceof FreeAuthoritativeStructureError)) throw error;
+        editorialRepairError = preferredFreeEditorialRepairError(
+          editorialRepairError,
+          error,
+        );
+      }
+      // These are conservative editorial labels, not factual claims. Own them
+      // locally so a model cannot promote a single-publisher account to the
+      // strongest urgency or certainty treatment.
+      if (story.priority === "critical") story.priority = "notable";
+      if (story.confidence?.level === "high") story.confidence.level = "medium";
+      if (frontPage.stopThePressesStoryId === story.id) {
+        frontPage.stopThePressesStoryId = null;
       }
     }
     for (const claim of story.evidence) {
@@ -1401,10 +1467,7 @@ export function normalizeFreeEditorialAgainstCandidates(
       }
       if (isAuthoritativeSingle) {
         const originatingSourceId = candidateArticleSources[0].id;
-        if (
-          !claim.sourceIds.includes(originatingSourceId) ||
-          !["company-claimed", "preliminary"].includes(claim.verification)
-        ) {
+        if (!claim.sourceIds.includes(originatingSourceId)) {
           editorialRepairError = preferredFreeEditorialRepairError(
             editorialRepairError,
             new FreeAuthoritativeStructureError(),
@@ -1413,6 +1476,17 @@ export function normalizeFreeEditorialAgainstCandidates(
           // Context feeds may help establish recency, but only the already
           // cited originating article may support an authoritative claim.
           claim.sourceIds = [originatingSourceId];
+          if (claim.verification === "confirmed") {
+            claim.verification = "company-claimed";
+          } else if (claim.verification === "disputed") {
+            // A dispute is substantive editorial information, not a stronger
+            // certainty label that trusted code may safely downgrade. Require
+            // a bounded rewrite instead of erasing the contradiction.
+            editorialRepairError = preferredFreeEditorialRepairError(
+              editorialRepairError,
+              new FreeAuthoritativeStructureError(),
+            );
+          }
         }
       }
     }
