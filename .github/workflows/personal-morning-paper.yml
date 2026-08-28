@@ -57,6 +57,9 @@ jobs:
       github.actor == 'itworksinprod'
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    outputs:
+      delivered: ${{ steps.delivered.outputs.delivered }}
+      edition_date: ${{ steps.gate.outputs.edition_date }}
     permissions:
       actions: read
       contents: read
@@ -844,3 +847,65 @@ jobs:
             echo ""
             echo "Private feedback links: ${feedback_status}. Feedback is advisory and cannot tune the paper automatically."
           } >> "${GITHUB_STEP_SUMMARY}" || true
+
+      - name: Confirm private delivery before shadow observation
+        id: delivered
+        if: >-
+          steps.dedupe.outputs.should_send == 'true' &&
+          steps.preflight.outputs.delivery_enabled == 'true' &&
+          steps.candidate.outputs.candidate_created == 'true'
+        shell: bash
+        run: printf '%s\n' 'delivered=true' >> "${GITHUB_OUTPUT}"
+
+  shadow-feed-trial:
+    name: Observe trial feeds after private delivery
+    needs: send
+    if: >-
+      needs.send.result == 'success' &&
+      needs.send.outputs.delivered == 'true' &&
+      github.repository == 'itworksinprod/first-fold' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'itworksinprod'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the delivered trusted revision without credentials
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Set up Node.js for the isolated observer
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Observe the fixed shadow feed trial without editorial influence
+        id: shadow
+        continue-on-error: true
+        env:
+          EDITION_DATE: ${{ needs.send.outputs.edition_date }}
+          SHADOW_OUTPUT_DIRECTORY: ${{ runner.temp }}/first-fold-shadow-feed-trial/${{ needs.send.outputs.edition_date }}
+        run: >-
+          node scripts/automation/shadow-feed-trial.mjs
+          "${EDITION_DATE}" "${SHADOW_OUTPUT_DIRECTORY}"
+
+      - name: Upload only the counts-only shadow trial report
+        if: >-
+          steps.shadow.outputs.active == 'true' &&
+          steps.shadow.outputs.available == 'true'
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: shadow-feed-trial-${{ github.run_id }}-${{ needs.send.outputs.edition_date }}
+          path: |
+            ${{ runner.temp }}/first-fold-shadow-feed-trial/${{ needs.send.outputs.edition_date }}/shadow-feed-trial.json
+            ${{ runner.temp }}/first-fold-shadow-feed-trial/${{ needs.send.outputs.edition_date }}/shadow-feed-trial.html
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 9
+          overwrite: false
+          include-hidden-files: false

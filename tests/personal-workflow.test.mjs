@@ -8,7 +8,10 @@ const workflow = await readFile(
 );
 
 const triggerBlock = workflow.slice(workflow.indexOf("on:"), workflow.indexOf("permissions:"));
-const job = workflow.slice(workflow.indexOf("  send:"));
+const shadowJobName = "  shadow-feed-trial:";
+const shadowJobIndex = workflow.indexOf(shadowJobName);
+const job = workflow.slice(workflow.indexOf("  send:"), shadowJobIndex);
+const shadowJob = workflow.slice(shadowJobIndex);
 const dedupe = job.slice(
   job.indexOf("Suppress an already successful delivery"),
   job.indexOf("Require all private-delivery configuration"),
@@ -47,9 +50,12 @@ const ledgerRecord = job.slice(
 );
 const emailStepName = "Send only the validated paper to its private recipient";
 const emailStepIndex = job.lastIndexOf(emailStepName);
+const deliveredStepName = "Confirm private delivery before shadow observation";
+const deliveredStepIndex = job.indexOf(deliveredStepName);
 const ledgerUploadIndex = job.indexOf("Stage the immutable hash-only repeat ledger before delivery");
 const ledgerUpload = job.slice(ledgerUploadIndex, emailStepIndex);
-const email = job.slice(emailStepIndex);
+const email = job.slice(emailStepIndex, deliveredStepIndex);
+const delivered = job.slice(deliveredStepIndex);
 
 test("the personal paper is dispatch-only, trusted-main-only, and private", () => {
   assert.match(workflow, /^name: Send personal Morning Paper$/m);
@@ -80,7 +86,7 @@ test("the personal paper is dispatch-only, trusted-main-only, and private", () =
   assert.doesNotMatch(permissions, /write|pages:|id-token:|issues:|pull-requests:|statuses:/);
   assert.doesNotMatch(workflow, /deploy-pages|configure-pages|gh pr|git push|git commit|pulls\/|\/statuses\//);
   assert.equal(workflow.match(/actions\/download-artifact@/g)?.length, 1);
-  assert.equal(workflow.match(/actions\/upload-artifact@/g)?.length, 2);
+  assert.equal(workflow.match(/actions\/upload-artifact@/g)?.length, 3);
 });
 
 test("scheduled delivery accepts exactly the daily 5:05 New York provenance", () => {
@@ -148,11 +154,11 @@ test("successful same-key runs are deduplicated before any credential or AI use"
   );
   assert.equal(
     job.match(/steps\.dedupe\.outputs\.should_send == 'true'/g)?.length,
-    14,
+    15,
   );
   assert.equal(
     job.match(/steps\.preflight\.outputs\.delivery_enabled == 'true'/g)?.length,
-    13,
+    14,
   );
 });
 
@@ -230,6 +236,9 @@ test("trusted pinned code tests, records, and emails every adaptive daily candid
     "uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0",
     "uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1",
     "uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1",
+    "uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0",
+    "uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0",
+    "uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1",
   ]);
   assert.match(workflow, /ref: \$\{\{ github\.sha \}\}/);
   assert.match(workflow, /persist-credentials: false/);
@@ -266,7 +275,7 @@ test("trusted pinned code tests, records, and emails every adaptive daily candid
   assert.ok(
     ledgerUploadIndex < emailStepIndex,
   );
-  for (const candidateDependentStep of [candidateTest, ledgerRecord, ledgerUpload, email]) {
+  for (const candidateDependentStep of [candidateTest, ledgerRecord, ledgerUpload, email, delivered]) {
     assert.match(
       candidateDependentStep,
       /steps\.candidate\.outputs\.candidate_created == 'true'/,
@@ -278,7 +287,7 @@ test("trusted pinned code tests, records, and emails every adaptive daily candid
   }
   assert.equal(
     job.match(/steps\.candidate\.outputs\.candidate_created == 'true'/g)?.length,
-    4,
+    5,
   );
   assert.doesNotMatch(ledgerPrepare, /steps\.candidate\.outputs\.candidate_created/);
   assert.doesNotMatch(
@@ -286,6 +295,54 @@ test("trusted pinned code tests, records, and emails every adaptive daily candid
     /candidate_created == 'false'|qualified_story_count|required_story_count|no[- ]edition|at least three|three stor(?:y|ies)/i,
   );
   assert.doesNotMatch(workflow, /content\/editions\/|console\.log\(|cat\s+.*candidate|tee\s+/);
+});
+
+test("the fixed shadow trial is isolated, post-delivery, non-gating, and secret-free", () => {
+  assert.ok(shadowJobIndex > emailStepIndex);
+  assert.match(job, /^    outputs:$/m);
+  assert.match(job, /delivered: \$\{\{ steps\.delivered\.outputs\.delivered \}\}/);
+  assert.match(job, /edition_date: \$\{\{ steps\.gate\.outputs\.edition_date \}\}/);
+  assert.match(delivered, /^        id: delivered$/m);
+  assert.match(delivered, /delivered=true/);
+
+  assert.match(shadowJob, /^  shadow-feed-trial:$/m);
+  assert.match(shadowJob, /^    needs: send$/m);
+  assert.match(shadowJob, /needs\.send\.result == 'success'/);
+  assert.match(shadowJob, /needs\.send\.outputs\.delivered == 'true'/);
+  assert.match(shadowJob, /github\.repository == 'itworksinprod\/first-fold'/);
+  assert.match(shadowJob, /github\.ref == 'refs\/heads\/main'/);
+  assert.match(shadowJob, /github\.actor == 'itworksinprod'/);
+  assert.match(shadowJob, /^    timeout-minutes: 10$/m);
+  assert.match(shadowJob, /^      contents: read$/m);
+  const shadowPermissions = shadowJob.slice(
+    shadowJob.indexOf("    permissions:"),
+    shadowJob.indexOf("    steps:"),
+  );
+  assert.doesNotMatch(
+    shadowPermissions,
+    /^\s+(?:actions|id-token|issues|pull-requests|statuses):|\bwrite\b/m,
+  );
+  assert.match(shadowJob, /ref: \$\{\{ github\.sha \}\}/);
+  assert.match(shadowJob, /persist-credentials: false/);
+  assert.match(shadowJob, /id: shadow/);
+  assert.match(shadowJob, /continue-on-error: true/);
+  assert.match(
+    shadowJob,
+    /node scripts\/automation\/shadow-feed-trial\.mjs\s+"\$\{EDITION_DATE\}" "\$\{SHADOW_OUTPUT_DIRECTORY\}"/,
+  );
+  assert.match(shadowJob, /steps\.shadow\.outputs\.active == 'true'/);
+  assert.match(shadowJob, /steps\.shadow\.outputs\.available == 'true'/);
+  assert.match(shadowJob, /shadow-feed-trial\.json/);
+  assert.match(shadowJob, /shadow-feed-trial\.html/);
+  assert.match(shadowJob, /retention-days: 14/);
+  assert.match(shadowJob, /if-no-files-found: error/);
+  assert.match(shadowJob, /overwrite: false/);
+  assert.match(shadowJob, /include-hidden-files: false/);
+  assert.doesNotMatch(
+    shadowJob,
+    /secrets\.|CLOUDFLARE|OPENAI|RESEND|PERSONAL_PAPER_EMAIL|PERSONAL_FEEDBACK|candidate_path|personal-candidates|repeat-ledger|github\.token|GH_TOKEN/,
+  );
+  assert.doesNotMatch(job, /steps\.shadow|shadow-feed-trial\.mjs|SHADOW_OUTPUT_DIRECTORY/);
 });
 
 test("source health is exact, public-safe, short-lived, and never an email gate", () => {
