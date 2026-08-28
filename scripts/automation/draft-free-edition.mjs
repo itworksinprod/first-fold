@@ -50,6 +50,16 @@ const FREE_RESEARCH_RETRY_OUTCOMES = Object.freeze([
   "coverage-fallback",
 ]);
 
+const FREE_DRAFTING_MODES = Object.freeze([
+  "model",
+  "trusted-authoritative-source-alert",
+  "quiet",
+]);
+
+const AUTHORITATIVE_SOURCE_ALERT_NOTE =
+  "The automated writer did not produce a safe bounded summary after two attempts, so this edition uses " +
+  "trusted source alerts with primary links and no added factual synthesis.";
+
 export class InsufficientFreeCandidatesError extends Error {
   constructor({ availableCount, requiredCount }) {
     if (
@@ -947,20 +957,39 @@ function modelStoryPassages(story) {
   ].filter((value) => typeof value === "string" && value.trim());
 }
 
+const SAFE_NEGATED_AUTHORITATIVE_CERTAINTY_PATTERN =
+  /\b(?:(?:not|never)(?:\s+yet)?(?:\s+be(?:en)?)?\s+(?:independent(?:ly)?\s+(?:confirm\w*|corroborat\w*|verif\w*)|(?:confirm\w*|corroborat\w*|verif\w*)\s+by\s+(?:an?\s+)?independent|proven|definitive(?:ly)?|undisputed)|without\s+(?:independent\s+(?:confirm\w*|corroborat\w*|verif\w*)|(?:confirm\w*|corroborat\w*|verif\w*)\s+by\s+(?:an?\s+)?independent))(?:\s+by\s+(?:(?:an?|another|other|second|multiple|two|several)\s+)?(?:independent\s+)?(?:publishers?|sources?|outlets?|reports?))?(?:\s+yet)?(?=\s*(?:$|[.,;:!?]))/giu;
+
+const POSITIVE_AUTHORITATIVE_CERTAINTY_PATTERN =
+  /\b(?:independent(?:ly)?\s+(?:confirm\w*|corroborat\w*|verif\w*)|(?:confirm\w*|corroborat\w*|verif\w*)\s+by\s+(?:an?\s+)?independent|(?:multiple|two|several|another|other|second)\s+(?:independent\s+)?(?:publishers?|sources?|outlets?|reports?)|(?:publishers?|sources?|outlets?|reports?)\s+(?:independent(?:ly)?\s+)?(?:confirm\w*|corroborat\w*|verif\w*)|(?:confirm\w*|corroborat\w*|verif\w*)\s+across\s+(?:publishers?|sources?|outlets?|reports?)|proven|definitive(?:ly)?|undisputed)\b/iu;
+
 function assertsIndependentConfirmationText(prose) {
   if (typeof prose !== "string") return false;
-  return /\b(?:independent(?:ly)?\s+(?:confirm\w*|corroborat\w*|verif\w*)|(?:confirm\w*|corroborat\w*|verif\w*)\s+by\s+(?:an?\s+)?independent|(?:multiple|two|several|another|other|second)\s+(?:independent\s+)?(?:publishers?|sources?|outlets?|reports?)|(?:publishers?|sources?|outlets?|reports?)\s+(?:independent(?:ly)?\s+)?(?:confirm\w*|corroborat\w*|verif\w*)|(?:confirm\w*|corroborat\w*|verif\w*)\s+across\s+(?:publishers?|sources?|outlets?|reports?)|proven|definitive(?:ly)?|undisputed)\b/iu
-    .test(prose);
+  const remainingProse = prose
+    .normalize("NFKC")
+    .replace(SAFE_NEGATED_AUTHORITATIVE_CERTAINTY_PATTERN, " ");
+  return POSITIVE_AUTHORITATIVE_CERTAINTY_PATTERN.test(remainingProse);
 }
 
 function assertsIndependentConfirmation(story) {
-  return assertsIndependentConfirmationText(modelStoryPassages(story).join(" "));
+  // Inspect fields independently so a trailing negation in one field can
+  // never suppress a positive certainty claim at the start of the next.
+  return modelStoryPassages(story).some(assertsIndependentConfirmationText);
 }
 
 const AUTHORITATIVE_ATTRIBUTION_VERBS = new Set([
+  "according",
   "advises",
   "announced",
   "announces",
+  "asserted",
+  "asserts",
+  "claim",
+  "claimed",
+  "claiming",
+  "claims",
+  "confirmed",
+  "confirms",
   "described",
   "describes",
   "disclosed",
@@ -973,7 +1002,9 @@ const AUTHORITATIVE_ATTRIBUTION_VERBS = new Set([
   "publishes",
   "reported",
   "reports",
+  "say",
   "said",
+  "saying",
   "says",
   "stated",
   "states",
@@ -983,8 +1014,60 @@ const AUTHORITATIVE_ATTRIBUTION_VERBS = new Set([
   "wrote",
 ]);
 
+const AUTHORITATIVE_TRUSTED_WRAPPER_NOUNS = Object.freeze([
+  "announcement",
+  "advisory",
+  "changelog",
+  "feed index",
+  "feed",
+  "release notes",
+  "release",
+  "update",
+]);
+
+const AUTHORITATIVE_DIAGNOSTIC_SUBCODES = new Set([
+  "EDITORIAL_AUTHORITATIVE_INDEPENDENT_CERTAINTY",
+  "EDITORIAL_AUTHORITATIVE_PASSAGE_SHAPE_OR_ATTRIBUTION",
+  "EDITORIAL_AUTHORITATIVE_ORIGIN_CITATION_MISSING",
+  "EDITORIAL_AUTHORITATIVE_DISPUTED_VERIFICATION",
+]);
+
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+const authoritativeAttributionVerbAlternation = [...AUTHORITATIVE_ATTRIBUTION_VERBS]
+  .sort((left, right) => right.length - left.length)
+  .map(escapeRegExp)
+  .join("|");
+
+const authoritativeTrustedWrapperNounAlternation = AUTHORITATIVE_TRUSTED_WRAPPER_NOUNS
+  .slice()
+  .sort((left, right) => right.length - left.length)
+  .map((noun) => escapeRegExp(noun).replaceAll("\\ ", "\\s+"))
+  .join("|");
+
+function trustedPublisherAttributionPattern(publisher) {
+  return new RegExp(
+    `^\\s*${escapeRegExp(publisher)}(?:` +
+      `\\s+(?:${authoritativeAttributionVerbAlternation})|` +
+      `(?:['’]s?|\\s+)\\s*(?:${authoritativeTrustedWrapperNounAlternation})` +
+        `\\s+(?:${authoritativeAttributionVerbAlternation})` +
+    `)(?=\\s|:|$)\\s*:?\\s*`,
+    "iu",
+  );
+}
+
+function isTrustedPublisherSelfAttribution(value) {
+  const selfAttributionPattern = new RegExp(
+    `^\\s*(?:it|its\\s+(?:${authoritativeTrustedWrapperNounAlternation}))` +
+      `\\s+(?:${authoritativeAttributionVerbAlternation})(?=\\s|:|$)\\s*:?\\s*`,
+    "iu",
+  );
+  if (!selfAttributionPattern.test(value)) return false;
+  const remainingBody = value.replace(selfAttributionPattern, "").trim();
+  return Boolean(remainingBody) && !normalizedWords(remainingBody)
+    .some((word) => AUTHORITATIVE_ATTRIBUTION_VERBS.has(word));
 }
 
 const AUTHORITATIVE_DOTTED_PRODUCT_IDENTIFIERS = Object.freeze([
@@ -1032,38 +1115,50 @@ function isSinglePublisherAttributedPassage(value, publisher) {
 
 function canonicalizeAuthoritativePassage(value, publisher) {
   if (typeof value !== "string" || !value.trim()) {
-    throw new FreeAuthoritativeStructureError();
+    throw new FreeAuthoritativeStructureError(
+      "EDITORIAL_AUTHORITATIVE_PASSAGE_SHAPE_OR_ATTRIBUTION",
+    );
   }
   if (typeof publisher !== "string" || !publisher.trim()) {
-    throw new FreeAuthoritativeStructureError();
+    throw new FreeAuthoritativeStructureError(
+      "EDITORIAL_AUTHORITATIVE_PASSAGE_SHAPE_OR_ATTRIBUTION",
+    );
   }
-  const publisherPrefixPattern = new RegExp(
-    `^\\s*${escapeRegExp(publisher)}(?=\\s)`,
-    "iu",
-  );
   let body = value.trim();
-  const hasExactPublisherPrefix = publisherPrefixPattern.test(body);
-  if (hasExactPublisherPrefix) {
-    body = body.replace(publisherPrefixPattern, "").trim();
-    const words = normalizedWords(body);
-    if (AUTHORITATIVE_ATTRIBUTION_VERBS.has(words[0])) {
-      body = body.replace(/^\s*\S+\s*/u, "").trim();
-    }
-  } else if (
-    normalizedWords(body)
-      .some((word) => AUTHORITATIVE_ATTRIBUTION_VERBS.has(word))
-  ) {
-    // Do not turn a different named account into the trusted publisher's
-    // statement, even when its reporting verb follows a long organization
-    // name. Missing attribution is supplied only to a neutral body; any
-    // existing attribution remains a repairable, fail-closed model error.
-    throw new FreeAuthoritativeStructureError();
+  const trustedAttributionPattern = trustedPublisherAttributionPattern(publisher);
+  if (trustedAttributionPattern.test(body)) {
+    // The feed dossiers use exact same-publisher wrappers such as
+    // `Netlify's feed reports:`. Strip only an anchored wrapper owned by the
+    // already-bound originating publisher, then add the canonical prefix.
+    // A bare product phrase such as `AWS Glue 5.1` is not an attribution
+    // wrapper and therefore retains the publisher name in the factual body.
+    body = body.replace(trustedAttributionPattern, "").trim();
   }
-  if (!body) throw new FreeAuthoritativeStructureError();
+  if (
+    normalizedWords(body)
+      .some((word) => AUTHORITATIVE_ATTRIBUTION_VERBS.has(word)) &&
+    !isTrustedPublisherSelfAttribution(body)
+  ) {
+    // Rescan after stripping an exact trusted wrapper. Otherwise a nested
+    // account such as `Publisher's feed reports: Rival says ...` would be
+    // laundered into the originating publisher's statement. Missing
+    // attribution is supplied only to a neutral body; any remaining
+    // recognized attribution stays a repairable, fail-closed model error.
+    throw new FreeAuthoritativeStructureError(
+      "EDITORIAL_AUTHORITATIVE_PASSAGE_SHAPE_OR_ATTRIBUTION",
+    );
+  }
+  if (!body) {
+    throw new FreeAuthoritativeStructureError(
+      "EDITORIAL_AUTHORITATIVE_PASSAGE_SHAPE_OR_ATTRIBUTION",
+    );
+  }
 
   const candidatePassage = `${publisher} reports ${body}`;
   if (!isSinglePublisherAttributedPassage(candidatePassage, publisher)) {
-    throw new FreeAuthoritativeStructureError();
+    throw new FreeAuthoritativeStructureError(
+      "EDITORIAL_AUTHORITATIVE_PASSAGE_SHAPE_OR_ATTRIBUTION",
+    );
   }
   return candidatePassage;
 }
@@ -1126,12 +1221,20 @@ class FreeStoryWordCountError extends FreeEditorialRepairError {
 }
 
 class FreeAuthoritativeStructureError extends FreeEditorialRepairError {
-  constructor() {
+  constructor(diagnosticSubcode) {
+    if (!AUTHORITATIVE_DIAGNOSTIC_SUBCODES.has(diagnosticSubcode)) {
+      throw new TypeError("Authoritative structure errors require a trusted diagnostic subcode.");
+    }
     super(
       "Workers AI authoritative-single story violates bounded certainty or attribution rules.",
       "authoritative-structure",
     );
     this.name = "FreeAuthoritativeStructureError";
+    Object.defineProperty(this, "diagnosticSubcode", {
+      value: diagnosticSubcode,
+      configurable: true,
+      enumerable: false,
+    });
   }
 }
 
@@ -1421,7 +1524,9 @@ export function normalizeFreeEditorialAgainstCandidates(
       if (assertsIndependentConfirmation(story)) {
         editorialRepairError = preferredFreeEditorialRepairError(
           editorialRepairError,
-          new FreeAuthoritativeStructureError(),
+          new FreeAuthoritativeStructureError(
+            "EDITORIAL_AUTHORITATIVE_INDEPENDENT_CERTAINTY",
+          ),
         );
       }
       try {
@@ -1470,7 +1575,9 @@ export function normalizeFreeEditorialAgainstCandidates(
         if (!claim.sourceIds.includes(originatingSourceId)) {
           editorialRepairError = preferredFreeEditorialRepairError(
             editorialRepairError,
-            new FreeAuthoritativeStructureError(),
+            new FreeAuthoritativeStructureError(
+              "EDITORIAL_AUTHORITATIVE_ORIGIN_CITATION_MISSING",
+            ),
           );
         } else {
           // Context feeds may help establish recency, but only the already
@@ -1484,7 +1591,9 @@ export function normalizeFreeEditorialAgainstCandidates(
             // a bounded rewrite instead of erasing the contradiction.
             editorialRepairError = preferredFreeEditorialRepairError(
               editorialRepairError,
-              new FreeAuthoritativeStructureError(),
+              new FreeAuthoritativeStructureError(
+                "EDITORIAL_AUTHORITATIVE_DISPUTED_VERIFICATION",
+              ),
             );
           }
         }
@@ -1604,6 +1713,149 @@ function buildQuietEditorial(research, coverage) {
   };
 }
 
+function sourceWithoutPublisherKey(source) {
+  const { publisherKey: _publisherKey, ...editorialSource } = structuredClone(source);
+  return editorialSource;
+}
+
+function buildTrustedAuthoritativeSourceAlertStory(candidate) {
+  const originatingSources = candidate.sources.filter((source) =>
+    source.relationship !== "context");
+  const contextSources = candidate.sources.filter((source) =>
+    source.relationship === "context");
+  if (
+    candidate.ranking?.evidenceTier !== "authoritative-single" ||
+    originatingSources.length !== 1 ||
+    originatingSources[0].relationship !== "originating" ||
+    contextSources.length < 1 ||
+    contextSources.some((source) =>
+      source.publisherKey !== originatingSources[0].publisherKey)
+  ) {
+    throw new Error("Trusted authoritative source-alert input is invalid.");
+  }
+  const originatingSource = originatingSources[0];
+  const publisher = originatingSource.publisher;
+  const deskLabel = DESK_LABELS[candidate.suggestedDesk];
+  const isMaterialUpdate =
+    candidate.ranking?.eligibility === "material-update" ||
+    Boolean(candidate.materiallyUpdatedAt);
+  const story = {
+    id: `trusted-source-alert-${candidate.candidateId}`,
+    canonicalEventKey: candidate.canonicalEventKey,
+    desk: candidate.suggestedDesk,
+    headline: `${publisher} reports a reviewed ${deskLabel} development`,
+    deck: `${publisher} reports a source item selected by First Fold's deterministic editorial scorecard`,
+    status: isMaterialUpdate ? "material-update" : "new-development",
+    priority: "notable",
+    timing: {
+      eventAt: candidate.eventAt,
+      firstPublishedAt: candidate.firstPublishedAt,
+      materiallyUpdatedAt: isMaterialUpdate ? candidate.materiallyUpdatedAt : null,
+    },
+    whatHappened:
+      `${publisher} reports a reviewed development selected for the ${deskLabel} desk through its ` +
+      "originating source item",
+    whyItMatters:
+      "This source alert appears because the selected dossier cleared First Fold's deterministic checks for " +
+      "newsworthiness, desk relevance, source strength, reader usefulness, and freshness, while the automated " +
+      "writer did not produce a safe bounded summary after two attempts. The recorded score indicates editorial " +
+      "priority, not wider factual agreement. Only the named publisher supports the substantive account in this " +
+      "edition. The source title and link below preserve the useful trail without adding details that the bounded " +
+      "feed evidence cannot safely support.",
+    whatToDoOrWatch:
+      "Open the primary-source link and read the publisher's wording before relying on the report. Check its " +
+      "scope, dates, affected products or services, eligibility, and stated caveats. Do not infer any detail that " +
+      "is absent from that page. The context link shows the item through the same reviewed publishing channel and " +
+      "is not separate reporting. Watch for later coverage from a different organization, changes to the " +
+      "originating page, or added documentation. Until then, treat the substantive account as preliminary and " +
+      "keep decisions reversible.",
+    editorial: {
+      primaryEntity: candidate.primaryEntity,
+      aiAdjacent: candidate.aiAdjacent,
+      maturity: "verified-development",
+      deskFit: `The deterministic scorecard selected this source item for the ${deskLabel} desk.`,
+    },
+    selection: {
+      score: candidate.ranking.score,
+      selectedBecause:
+        "The dossier cleared the trusted scorecard before the automated drafting attempts began.",
+      materialDelta: isMaterialUpdate
+        ? "The deterministic feed classifier marked this dossier as a material update."
+        : null,
+    },
+    confidence: {
+      level: "developing",
+      rationale: "Only the named publisher supports the substantive account in this edition.",
+    },
+    sources: candidate.sources.map(sourceWithoutPublisherKey),
+    evidence: [{
+      id: `trusted-source-alert-claim-${candidate.candidateId}`,
+      statement: `${publisher} reports the selected development in its originating source item`,
+      sourceIds: [originatingSource.id],
+      verification: "preliminary",
+    }],
+    securityAction: null,
+  };
+  const readerWords = countReaderFacingStoryWords(story);
+  if (
+    readerWords < MIN_READER_FACING_STORY_WORDS ||
+    readerWords > MAX_READER_FACING_STORY_WORDS
+  ) {
+    throw new Error("Trusted authoritative source-alert copy is outside the canonical word range.");
+  }
+  return story;
+}
+
+function buildTrustedAuthoritativeSourceAlertPayload(payload, candidates) {
+  const rebuilt = structuredClone(payload);
+  const candidateByEventKey = new Map(candidates.map((candidate) =>
+    [candidate.canonicalEventKey, candidate]));
+  let replacementCount = 0;
+  for (const desk of FREE_DESKS) {
+    const page = rebuilt.desks?.[desk];
+    if (!isObject(page?.story)) continue;
+    const candidate = candidateByEventKey.get(page.story.canonicalEventKey);
+    if (!candidate) {
+      throw new Error("Trusted source-alert payload referenced an unknown selected event.");
+    }
+    if (candidate.ranking?.evidenceTier !== "authoritative-single") continue;
+    page.story = buildTrustedAuthoritativeSourceAlertStory(candidate);
+    page.emptyReason = null;
+    replacementCount += 1;
+  }
+  if (replacementCount < 1) {
+    throw new Error("Trusted source-alert fallback requires an authoritative-single story.");
+  }
+  const selectedStories = FREE_DESKS
+    .map((desk) => rebuilt.desks?.[desk]?.story)
+    .filter((story) => isObject(story));
+  const selectedCandidates = selectedStories.map((story) => {
+    const candidate = candidateByEventKey.get(story.canonicalEventKey);
+    if (!candidate) {
+      throw new Error("Trusted source-alert payload lost its selected event binding.");
+    }
+    return candidate;
+  });
+  const entityCounts = new Map();
+  for (const candidate of selectedCandidates) {
+    const key = candidate.primaryEntity.trim().toLocaleLowerCase("en-US");
+    entityCounts.set(key, (entityCounts.get(key) ?? 0) + 1);
+  }
+  const hasRepeatedEntity = [...entityCounts.values()].some((count) => count > 1);
+  rebuilt.frontPage = {
+    note: AUTHORITATIVE_SOURCE_ALERT_NOTE,
+    estimatedMinutes: Math.max(1, Math.min(6, selectedStories.length * 2)),
+    leadStoryId: selectedStories[0]?.id ?? null,
+    storyOrder: selectedStories.map((story) => story.id),
+    stopThePressesStoryId: null,
+    diversityException: hasRepeatedEntity
+      ? "The deterministic selected slate contains more than one source alert about the same primary entity."
+      : null,
+  };
+  rebuilt.backPage = { tryThisTomorrow: null };
+  return rebuilt;
+}
+
 function applyTrustedQuietReasons(editorial, research) {
   for (const desk of FREE_DESKS) {
     const page = editorial.desks?.[desk];
@@ -1721,6 +1973,7 @@ export function validateFreePilotProvenance(
     freePilot.generatedAt !== candidate.publication.generatedAt ||
     !isInstant(freePilot.generatedAt) ||
     !["workers-ai", "skipped-no-eligible-candidates"].includes(freePilot.inference) ||
+    !FREE_DRAFTING_MODES.includes(freePilot.draftingMode) ||
     !Number.isInteger(freePilot.feedSourceCount) ||
     freePilot.feedSourceCount < 1 ||
     !Number.isInteger(freePilot.successfulFeedSourceCount) ||
@@ -1769,11 +2022,13 @@ export function validateFreePilotProvenance(
   if (
     (freePilot.candidateCount === 0 && (
       freePilot.inference !== "skipped-no-eligible-candidates" ||
-      freePilot.responseId !== "not-invoked"
+      freePilot.responseId !== "not-invoked" ||
+      freePilot.draftingMode !== "quiet"
     )) ||
     (freePilot.candidateCount > 0 && (
       freePilot.inference !== "workers-ai" ||
-      freePilot.responseId === "not-invoked"
+      freePilot.responseId === "not-invoked" ||
+      !["model", "trusted-authoritative-source-alert"].includes(freePilot.draftingMode)
     ))
   ) {
     throw new Error("Free candidate inference provenance conflicts with its candidate count.");
@@ -2102,6 +2357,7 @@ async function draftFreeEditionCore({
 
   let editorial;
   let inference;
+  let draftingMode = candidates.length === 0 ? "quiet" : "model";
   if (candidates.length === 0) {
     editorial = buildQuietEditorial(research, coverage);
     const skippedRequest = {
@@ -2231,12 +2487,35 @@ async function draftFreeEditionCore({
         }
         throw error;
       }
-      editorial = normalizeFreeEditorialAgainstCandidates(
-        accepted.aiResult.editorialPayload,
-        candidates,
-        generatedAt,
-        { evidencePolicy: normalizedEvidencePolicy, requiredEventKeys },
-      );
+      try {
+        editorial = normalizeFreeEditorialAgainstCandidates(
+          accepted.aiResult.editorialPayload,
+          candidates,
+          generatedAt,
+          { evidencePolicy: normalizedEvidencePolicy, requiredEventKeys },
+        );
+      } catch (error) {
+        if (
+          repairKind !== "authoritative-structure" ||
+          !(error instanceof FreeAuthoritativeStructureError) ||
+          !draftSelectedSlate ||
+          normalizedEvidencePolicy !== "authoritative-or-corroborated"
+        ) {
+          throw error;
+        }
+        const fallbackPayload = buildTrustedAuthoritativeSourceAlertPayload(
+          accepted.aiResult.editorialPayload,
+          candidates,
+        );
+        editorial = normalizeFreeEditorialAgainstCandidates(
+          fallbackPayload,
+          candidates,
+          generatedAt,
+          { evidencePolicy: normalizedEvidencePolicy, requiredEventKeys },
+        );
+        editorial.frontPage.note = AUTHORITATIVE_SOURCE_ALERT_NOTE;
+        draftingMode = "trusted-authoritative-source-alert";
+      }
     }
     inference = accepted.inference;
   }
@@ -2290,6 +2569,7 @@ async function draftFreeEditionCore({
         responseSha256: inference.responseSha256,
         responseId: inference.responseId,
         inference: inference.kind,
+        draftingMode,
         feedSourceCount: coverage.sourceCount,
         successfulFeedSourceCount: coverage.successfulSourceCount,
         coveredDeskCount: FREE_DESKS.length,

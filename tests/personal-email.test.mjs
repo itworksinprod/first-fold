@@ -111,6 +111,7 @@ function personalCandidate() {
     runMode: "on_time",
     generatedAt: candidate.publication.generatedAt,
     inference: "workers-ai",
+    draftingMode: "model",
     feedSnapshotSha256: "a".repeat(64),
     requestSha256: "b".repeat(64),
     responseSha256: "c".repeat(64),
@@ -177,6 +178,7 @@ function leaveDeskQuiet(candidate, desk) {
   research.inference = selectedStoryCount === 0
     ? "skipped-no-eligible-candidates"
     : "workers-ai";
+  research.draftingMode = selectedStoryCount === 0 ? "quiet" : "model";
   research.responseId = selectedStoryCount === 0
     ? "not-invoked"
     : "workers_ai_personal_test";

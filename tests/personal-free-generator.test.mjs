@@ -235,6 +235,7 @@ function freeCandidate({
     responseSha256: "c".repeat(64),
     responseId: effectiveInference === "workers-ai" ? "workers_ai_private_test" : "not-invoked",
     inference: effectiveInference,
+    draftingMode: selected.length === 0 ? "quiet" : "model",
     feedSourceCount: feedSources.length,
     successfulFeedSourceCount: feedSources.length,
     coveredDeskCount: 4,

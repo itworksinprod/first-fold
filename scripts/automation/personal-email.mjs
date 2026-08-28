@@ -26,6 +26,11 @@ const PERSONAL_RESEARCH_MINIMUM_SCORE = 70;
 const PERSONAL_RESEARCH_MINIMUM_AUTHORITATIVE_SCORE = 70;
 const PERSONAL_RESEARCH_MAX_RESEARCH_ATTEMPTS = 2;
 const PERSONAL_RESEARCH_RETRY_BELOW_STORY_COUNT = 3;
+const PERSONAL_RESEARCH_DRAFTING_MODES = Object.freeze([
+  "model",
+  "trusted-authoritative-source-alert",
+  "quiet",
+]);
 const PERSONAL_REPEAT_LOOKBACK_DAYS = 30;
 const RECEIPT_COMPONENT_MAXIMUMS = Object.freeze({
   materialityNewsworthiness: 30,
@@ -463,6 +468,11 @@ export function assertPersonalEmailCandidate(candidate) {
     !["on_time", "same_day_backfill"].includes(research.runMode) ||
     research.generatedAt !== candidate.publication.generatedAt ||
     !inferenceIsValid ||
+    !PERSONAL_RESEARCH_DRAFTING_MODES.includes(research.draftingMode) ||
+    (selectedStoryCount === 0 && research.draftingMode !== "quiet") ||
+    (selectedStoryCount > 0 && !["model", "trusted-authoritative-source-alert"].includes(
+      research.draftingMode,
+    )) ||
     typeof research.responseId !== "string" ||
     !RESPONSE_ID_PATTERN.test(research.responseId) ||
     !/^[a-f0-9]{64}$/.test(research.feedSnapshotSha256 ?? "") ||

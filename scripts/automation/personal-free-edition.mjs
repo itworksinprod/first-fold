@@ -54,6 +54,11 @@ export const PERSONAL_FREE_MAX_RESEARCH_ATTEMPTS = 2;
 export const PERSONAL_FREE_RETRY_BELOW_STORY_COUNT = 3;
 export const PERSONAL_FREE_GITHUB_OUTCOME_FLAG = "--github-actions-outcome";
 export const PERSONAL_FREE_RUN_MODES = Object.freeze(["on_time", "same_day_backfill"]);
+export const PERSONAL_FREE_DRAFTING_MODES = Object.freeze([
+  "model",
+  "trusted-authoritative-source-alert",
+  "quiet",
+]);
 export const PERSONAL_FREE_DESKS = Object.freeze([
   "ai",
   "work-and-tools",
@@ -425,6 +430,7 @@ function buildPersonalCandidate(
     runMode,
     generatedAt: candidate.publication.generatedAt,
     inference: freePilot.inference,
+    draftingMode: freePilot.draftingMode,
     feedSnapshotSha256: freePilot.feedSnapshotSha256,
     requestSha256: freePilot.requestSha256,
     responseSha256: freePilot.responseSha256,
@@ -506,6 +512,11 @@ export function validatePersonalFreeCandidate(
     (runMode !== undefined && research.runMode !== runMode) ||
     research?.generatedAt !== candidate.publication?.generatedAt ||
     !inferenceIsValid ||
+    !PERSONAL_FREE_DRAFTING_MODES.includes(research?.draftingMode) ||
+    (stories.length === 0 && research?.draftingMode !== "quiet") ||
+    (stories.length > 0 && !["model", "trusted-authoritative-source-alert"].includes(
+      research?.draftingMode,
+    )) ||
     !RESPONSE_ID_PATTERN.test(research?.responseId ?? "") ||
     !SHA256_PATTERN.test(research?.feedSnapshotSha256 ?? "") ||
     !SHA256_PATTERN.test(research?.requestSha256 ?? "") ||
