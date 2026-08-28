@@ -4,6 +4,11 @@ import { readFile, stat } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { validateCanonicalEdition } from "../edition-content.mjs";
 import { buildPersonalFeedbackLinkMap } from "./personal-feedback.mjs";
+import {
+  TRUSTED_EVIDENCE_DIGEST_MODE,
+  TRUSTED_EVIDENCE_DIGEST_MODEL,
+  TRUSTED_EVIDENCE_DIGEST_PROVIDER,
+} from "./free/evidence-digest.mjs";
 import { PERSONAL_STORY_LEDGER_SCHEMA_VERSION } from "./personal-story-ledger.mjs";
 
 export const RESEND_EMAIL_ENDPOINT = "https://api.resend.com/emails";
@@ -16,19 +21,18 @@ export const MAX_RESEND_RESPONSE_BYTES = 64 * 1024;
 const MAX_CANDIDATE_FILE_BYTES = 1024 * 1024;
 const EXPECTED_PERSONAL_REPOSITORY = "itworksinprod/first-fold";
 const PERSONAL_RESEARCH_WORKFLOW = "personal-morning-paper";
-const PERSONAL_RESEARCH_PROVIDER = "cloudflare-workers-ai";
+const PERSONAL_RESEARCH_PROVIDER = TRUSTED_EVIDENCE_DIGEST_PROVIDER;
 const PERSONAL_RESEARCH_METHOD = "curated-live-feeds";
-const PERSONAL_RESEARCH_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+const PERSONAL_RESEARCH_MODEL = TRUSTED_EVIDENCE_DIGEST_MODEL;
 const PERSONAL_RESEARCH_EVIDENCE_POLICY = "authoritative-or-corroborated";
-const PERSONAL_RESEARCH_MAX_MODEL_REQUESTS = 2;
+const PERSONAL_RESEARCH_MAX_MODEL_REQUESTS = 0;
 const PERSONAL_RESEARCH_LOOKBACK_HOURS = 72;
 const PERSONAL_RESEARCH_MINIMUM_SCORE = 70;
 const PERSONAL_RESEARCH_MINIMUM_AUTHORITATIVE_SCORE = 70;
 const PERSONAL_RESEARCH_MAX_RESEARCH_ATTEMPTS = 2;
 const PERSONAL_RESEARCH_RETRY_BELOW_STORY_COUNT = 3;
 const PERSONAL_RESEARCH_DRAFTING_MODES = Object.freeze([
-  "model",
-  "trusted-authoritative-source-alert",
+  TRUSTED_EVIDENCE_DIGEST_MODE,
   "quiet",
 ]);
 const PERSONAL_REPEAT_LOOKBACK_DAYS = 30;
@@ -236,7 +240,10 @@ function sourceRelationshipLabel(relationship) {
 }
 
 function readerFacingSources(story) {
-  const sources = story.sources.filter((source) => source.relationship !== "context");
+  const citedSourceIds = new Set((Array.isArray(story.evidence) ? story.evidence : [])
+    .flatMap((claim) => Array.isArray(claim?.sourceIds) ? claim.sourceIds : []));
+  const sources = story.sources.filter((source) =>
+    source.relationship !== "context" && citedSourceIds.has(source.id));
   if (sources.length < 1) throw validationFailure();
   return sources;
 }
@@ -469,13 +476,12 @@ export function assertPersonalEmailCandidate(candidate) {
   const sourceCheck = candidate.provenance?.sourceCheck;
   const selectedStoryCount = DESKS.filter(([desk]) =>
     candidate.desks?.[desk]?.story !== null).length;
-  const authoritativeStoryCount = DESKS.filter(([desk]) =>
-    candidate.desks?.[desk]?.story?.selection?.validationReceipt?.evidenceTier ===
-      "authoritative-single").length;
   const inferenceIsValid = selectedStoryCount === 0
     ? research?.inference === "skipped-no-eligible-candidates" &&
       research?.responseId === "not-invoked"
-    : research?.inference === "workers-ai" && research?.responseId !== "not-invoked";
+    : research?.draftingMode === TRUSTED_EVIDENCE_DIGEST_MODE &&
+      research?.inference === TRUSTED_EVIDENCE_DIGEST_MODE &&
+      research?.responseId === "local-digest";
   const runId = typeof research?.runId === "string" ? research.runId : "";
   const expectedRunUrl =
     `https://github.com/${EXPECTED_PERSONAL_REPOSITORY}/actions/runs/${runId}`;
@@ -494,11 +500,8 @@ export function assertPersonalEmailCandidate(candidate) {
     !inferenceIsValid ||
     !PERSONAL_RESEARCH_DRAFTING_MODES.includes(research.draftingMode) ||
     (selectedStoryCount === 0 && research.draftingMode !== "quiet") ||
-    (selectedStoryCount > 0 && !["model", "trusted-authoritative-source-alert"].includes(
-      research.draftingMode,
-    )) ||
-    (research.draftingMode === "trusted-authoritative-source-alert" &&
-      authoritativeStoryCount < 1) ||
+    (selectedStoryCount > 0 &&
+      research.draftingMode !== TRUSTED_EVIDENCE_DIGEST_MODE) ||
     typeof research.responseId !== "string" ||
     !RESPONSE_ID_PATTERN.test(research.responseId) ||
     !/^[a-f0-9]{64}$/.test(research.feedSnapshotSha256 ?? "") ||
@@ -546,8 +549,8 @@ export function assertPersonalEmailCandidate(candidate) {
         ? research.priorLedgerEditionCount + 1
         : null
     ) ||
-    selectedStoryCount > DESKS.length ||
     research.maxModelRequests !== PERSONAL_RESEARCH_MAX_MODEL_REQUESTS ||
+    selectedStoryCount > DESKS.length ||
     !sourceCheck ||
     typeof sourceCheck !== "object" ||
     sourceCheck.status !== "passed" ||

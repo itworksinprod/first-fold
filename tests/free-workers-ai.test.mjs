@@ -650,6 +650,20 @@ test("bad envelopes, malformed JSON, and failed local validation never produce a
       expected: /failed local schema validation/,
     },
     {
+      name: "validator rejection preserves a bounded repair category",
+      fetchImpl: async () => cloudflareResponse(),
+      validatePayload: () => ({
+        valid: false,
+        issues: ["reader length rejected"],
+        repairKind: "length",
+      }),
+      expected: (error) => {
+        assert.equal(error.code, WORKERS_AI_EDITORIAL_FORMAT_INVALID);
+        assert.equal(error.repairKind, "length");
+        return true;
+      },
+    },
+    {
       name: "validator exception",
       fetchImpl: async () => cloudflareResponse(),
       validatePayload: () => {
@@ -664,7 +678,11 @@ test("bad envelopes, malformed JSON, and failed local validation never produce a
       await assert.rejects(
         requestWorkersAiEditorial(requestOptions(scenario)),
         (error) => {
-          assert.match(error.message, scenario.expected);
+          if (typeof scenario.expected === "function") {
+            assert.equal(scenario.expected(error), true);
+          } else {
+            assert.match(error.message, scenario.expected);
+          }
           assert.doesNotMatch(error.message, /cloudflare-test-token/);
           return true;
         },

@@ -568,6 +568,33 @@ test("ranking is deterministic, source-grounded, and keeps quiet desks honest", 
   ]));
   assert.equal(first[0].sources.find((item) => item.url.endsWith("feed.xml")).relationship, "context");
   assert.equal(first[0].sources.find((item) => item.url.endsWith("feed.xml")).publisherKey, "example-vendor");
+  assert.equal(first[0].feedEvidence.length, 2);
+  for (const evidence of first[0].feedEvidence) {
+    const sourceRecord = first[0].sources.find((item) => item.id === evidence.sourceId);
+    assert.ok(sourceRecord);
+    assert.notEqual(sourceRecord.relationship, "context");
+    assert.equal(evidence.publisher, sourceRecord.publisher);
+    assert.equal(evidence.title, sourceRecord.title);
+    assert.equal(evidence.publishedAt, sourceRecord.publishedAt);
+    assert.equal(typeof evidence.summary, "string");
+    assert.ok(Array.isArray(evidence.categories));
+  }
+  const withDuplicateArticle = rankFeedCandidates({
+    items: [
+      ...items,
+      {
+        ...items[0],
+        itemId: `${items[0].itemId}-duplicate-entry`,
+      },
+    ],
+    reportingWindow,
+  });
+  assert.equal(withDuplicateArticle.length, 1);
+  assert.equal(
+    new Set(withDuplicateArticle[0].feedEvidence.map((record) => record.sourceId)).size,
+    withDuplicateArticle[0].feedEvidence.length,
+    "duplicate feed entries cannot repeat a source-bound evidence record",
+  );
 
   const selection = selectFreeDeskCandidates(first);
   assert.equal(selection.selectedCandidates.length, 1);

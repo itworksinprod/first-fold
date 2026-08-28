@@ -3,6 +3,8 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { validateCanonicalEdition } from "../scripts/edition-content.mjs";
 import { buildPersonalFeedbackLinkMap } from "../scripts/automation/personal-feedback.mjs";
+import { TRUSTED_EVIDENCE_DIGEST_MODE } from
+  "../scripts/automation/free/evidence-digest.mjs";
 import {
   MAX_RESEND_REQUEST_BYTES,
   MAX_RESEND_RESPONSE_BYTES,
@@ -102,20 +104,20 @@ function personalCandidate() {
   }
   candidate.provenance.personalFreeResearch = {
     workflow: "personal-morning-paper",
-    provider: "cloudflare-workers-ai",
+    provider: "local-deterministic",
     researchMethod: "curated-live-feeds",
-    model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    model: "not-invoked",
     runId: "123456789",
     runUrl: "https://github.com/itworksinprod/first-fold/actions/runs/123456789",
     repository: "itworksinprod/first-fold",
     runMode: "on_time",
     generatedAt: candidate.publication.generatedAt,
-    inference: "workers-ai",
-    draftingMode: "model",
+    inference: TRUSTED_EVIDENCE_DIGEST_MODE,
+    draftingMode: TRUSTED_EVIDENCE_DIGEST_MODE,
     feedSnapshotSha256: "a".repeat(64),
     requestSha256: "b".repeat(64),
     responseSha256: "c".repeat(64),
-    responseId: "workers_ai_personal_test",
+    responseId: "local-digest",
     feedSourceCount: 17,
     successfulFeedSourceCount: 17,
     coveredDeskCount: 4,
@@ -138,7 +140,7 @@ function personalCandidate() {
     priorLedgerEditionCount: 0,
     priorLedgerStoryCount: 0,
     qualityPilotOrdinal: 1,
-    maxModelRequests: 2,
+    maxModelRequests: 0,
   };
   candidate.provenance.sourceCheck = {
     status: "passed",
@@ -147,6 +149,17 @@ function personalCandidate() {
     issues: [],
   };
   assert.equal(validateCanonicalEdition(candidate).valid, true);
+  return candidate;
+}
+
+function useWorkersAiProvenance(candidate, draftingMode = "model") {
+  const research = candidate.provenance.personalFreeResearch;
+  research.provider = "cloudflare-workers-ai";
+  research.model = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+  research.inference = "workers-ai";
+  research.draftingMode = draftingMode;
+  research.responseId = "workers_ai_personal_test";
+  research.maxModelRequests = 2;
   return candidate;
 }
 
@@ -177,11 +190,13 @@ function leaveDeskQuiet(candidate, desk) {
   research.researchRetryOutcome = selectedStoryCount < 2 ? "no-improvement" : "not-needed";
   research.inference = selectedStoryCount === 0
     ? "skipped-no-eligible-candidates"
-    : "workers-ai";
-  research.draftingMode = selectedStoryCount === 0 ? "quiet" : "model";
+    : TRUSTED_EVIDENCE_DIGEST_MODE;
+  research.draftingMode = selectedStoryCount === 0
+    ? "quiet"
+    : TRUSTED_EVIDENCE_DIGEST_MODE;
   research.responseId = selectedStoryCount === 0
     ? "not-invoked"
-    : "workers_ai_personal_test";
+    : "local-digest";
   candidate.provenance.sourceCheck.checkedSourceCount = selectedStoryCount * 2;
   assert.equal(validateCanonicalEdition(candidate).valid, true);
   return candidate;
@@ -476,129 +491,70 @@ test("a quiet edition shows its research receipt without story source receipts",
   assert.doesNotMatch(rendered.html, />Sources</);
 });
 
-test("trusted fallback editions render concise source briefs without internal errors or feed indexes", () => {
-  const candidate = candidateWithStoryCount(1);
-  const story = candidate.desks.ai.story;
-  const originating = story.sources.find((source) => source.relationship === "originating") ??
-    story.sources.find((source) => source.relationship !== "context");
-  assert.ok(originating);
-  const unsafeSourceTitle = "Source <img src=x onerror=alert(1)> title";
-  story.sources = [
-    { ...originating, title: unsafeSourceTitle, relationship: "originating" },
-    {
-      ...originating,
-      id: `${originating.id}-feed-context`,
-      title: `${originating.publisher} feed index`,
-      url: "https://example.com/reviewed-feed.xml",
-      relationship: "context",
-      publishedAt: null,
+test("trusted evidence digests render as normal readable stories", () => {
+  const candidate = personalCandidate();
+  const research = candidate.provenance.personalFreeResearch;
+  research.draftingMode = TRUSTED_EVIDENCE_DIGEST_MODE;
+  research.inference = TRUSTED_EVIDENCE_DIGEST_MODE;
+  research.responseId = "local-digest";
+
+  assert.equal(assertPersonalEmailCandidate(candidate).valid, true);
+  const rendered = renderPersonalEditionEmail(candidate);
+
+  assert.match(rendered.text, /THE MORNING BRIEF · REGULAR EDITION/);
+  assert.match(rendered.html, /The morning brief · Regular edition/);
+  assert.equal(rendered.text.match(/WHAT HAPPENED/g)?.length, 4);
+  assert.equal(rendered.text.match(/WHY IT MATTERS/g)?.length, 4);
+  assert.equal(rendered.text.match(/WHAT TO DO OR WATCH/g)?.length, 4);
+  assert.equal(rendered.text.match(/VALIDATION RECEIPT/g)?.length, 4);
+  assert.equal(rendered.text.match(/(?:^|\n)SOURCES(?:\n|$)/g)?.length, 4);
+  assert.doesNotMatch(rendered.text, /PRIMARY-SOURCE BRIEF/);
+  assert.doesNotMatch(rendered.text, /SOURCE BRIEF EDITION|MIXED-SOURCE EDITION/);
+  assert.doesNotMatch(rendered.html, /Primary-source brief/);
+  assert.match(rendered.text, new RegExp(
+    candidate.desks.ai.story.headline.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+  ));
+});
+
+test("trusted evidence digest email validation rejects mismatched inference markers", () => {
+  const mismatches = [
+    (research) => {
+      research.inference = "workers-ai";
     },
-    {
-      ...originating,
-      id: `${originating.id}-uncited-independent`,
-      publisher: "Independent Example",
-      title: "An uncited independent item",
-      url: "https://example.com/uncited-independent-item",
-      relationship: "independent",
+    (research) => {
+      research.draftingMode = "model";
+    },
+    (research) => {
+      research.responseId = "not-invoked";
     },
   ];
-  story.evidence = [{
-    id: "source-brief-claim",
-    statement: `${originating.publisher} reports the selected development in its originating source item`,
-    sourceIds: [originating.id],
-    verification: "preliminary",
-  }];
-  story.priority = "notable";
-  story.confidence.level = "developing";
-  story.whatHappened =
-    `Reader-safe <script>alert("brief")</script> update. ${story.whatHappened}`;
-  story.whyItMatters = `Source-brief importance marker. ${story.whyItMatters}`;
-  story.whatToDoOrWatch = `Source-brief action marker. ${story.whatToDoOrWatch}`;
-  addTrustedReceipt(story);
-  candidate.frontPage.note =
-    "The automated writer did not produce a safe bounded summary after two attempts.";
-  candidate.provenance.personalFreeResearch.draftingMode =
-    "trusted-authoritative-source-alert";
-  candidate.provenance.sourceCheck.checkedSourceCount = 2;
 
-  assert.equal(validateCanonicalEdition(candidate).valid, true);
-  const rendered = renderPersonalEditionEmail(candidate);
-
-  assert.match(rendered.text, /THE MORNING BRIEF · SOURCE BRIEF EDITION/);
-  assert.match(rendered.text, /PRIMARY-SOURCE BRIEF/);
-  assert.match(rendered.text, new RegExp(unsafeSourceTitle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-  assert.match(rendered.text, /WHAT HAPPENED\nReader-safe <script>alert\("brief"\)<\/script> update\./);
-  assert.match(rendered.text, /WHY IT MATTERS\nSource-brief importance marker\./);
-  assert.match(rendered.text, /WHAT TO DO OR WATCH\nSource-brief action marker\./);
-  assert.match(rendered.text, /1 primary-source brief made today’s paper/);
-  assert.match(rendered.text, /Primary links checked before delivery/);
-  assert.match(rendered.html, /The morning brief · Source brief edition/);
-  assert.match(rendered.html, /Reader-safe &lt;script&gt;alert\(&quot;brief&quot;\)&lt;\/script&gt; update\./);
-  assert.match(rendered.html, /Source &lt;img src=x onerror=alert\(1\)&gt; title/);
-  assert.doesNotMatch(rendered.html, /<script|<img/i);
-  assert.doesNotMatch(
-    rendered.text,
-    /automated writer|safe bounded summary|two attempts|model (?:response|draft|attempt)|retr(?:y|ies)|dossier|deterministic|scorecard|reviewed feed set|internal process/i,
-  );
-  assert.doesNotMatch(rendered.text, /reviewed development selected|feed index/i);
-  assert.doesNotMatch(rendered.text, /reviewed-feed\.xml/);
-  assert.doesNotMatch(rendered.html, /reviewed-feed\.xml/);
-  assert.doesNotMatch(rendered.text, /uncited independent item/i);
-  assert.doesNotMatch(rendered.html, /uncited-independent-item/);
-});
-
-test("mixed fallback editions keep corroborated articles and brief only single-source stories", () => {
-  const candidate = personalCandidate();
-  const corroboratedHeadline = candidate.desks.ai.story.headline;
-  candidate.frontPage.note =
-    "The model retry failed its format contract after two attempts.";
-  candidate.provenance.personalFreeResearch.draftingMode =
-    "trusted-authoritative-source-alert";
-
-  const rendered = renderPersonalEditionEmail(candidate);
-
-  assert.match(rendered.text, new RegExp(corroboratedHeadline.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-  assert.match(rendered.text, /WHAT HAPPENED/);
-  assert.equal(rendered.text.match(/PRIMARY-SOURCE BRIEF/g)?.length, 2);
-  assert.match(rendered.text, /THE MORNING BRIEF · MIXED-SOURCE EDITION/);
-  assert.match(
-    rendered.text,
-    /2 independently corroborated articles and 2 clearly labeled primary-source briefs made today’s paper/,
-  );
-  assert.match(rendered.html, /The morning brief · Mixed-source edition/);
-  assert.match(
-    rendered.html,
-    /2 independently corroborated articles and 2 clearly labeled primary-source briefs made today’s paper/,
-  );
-  assert.match(rendered.text, /Sources and primary links checked before delivery/);
-  assert.doesNotMatch(rendered.text, /4 official updates made/);
-  assert.doesNotMatch(rendered.html, /4 official updates made/);
-  assert.doesNotMatch(
-    rendered.text,
-    /automated writer|model retry|two attempts|format contract|dossier|feed set|trusted run/i,
-  );
-});
-
-test("trusted fallback mode fails closed when no authoritative source brief remains", () => {
-  const candidate = personalCandidate();
-  for (const [desk, page] of Object.entries(candidate.desks)) {
-    if (page.story.selection.validationReceipt.evidenceTier === "authoritative-single") {
-      leaveDeskQuiet(candidate, desk);
-    }
+  for (const mutate of mismatches) {
+    const candidate = personalCandidate();
+    mutate(candidate.provenance.personalFreeResearch);
+    assert.throws(
+      () => assertPersonalEmailCandidate(candidate),
+      /validated adaptive source-checked candidate/,
+    );
+    assert.throws(
+      () => renderPersonalEditionEmail(candidate),
+      /validated adaptive source-checked candidate/,
+    );
   }
-  assert.ok(Object.values(candidate.desks).some((page) => page.story !== null));
-  assert.ok(Object.values(candidate.desks).every((page) =>
-    page.story === null ||
-    page.story.selection.validationReceipt.evidenceTier === "corroborated"));
-  candidate.frontPage.note = "The automated writer failed its internal retry contract.";
-  candidate.provenance.personalFreeResearch.draftingMode =
-    "trusted-authoritative-source-alert";
+});
 
-  assert.equal(validateCanonicalEdition(candidate).valid, true);
-  assert.throws(
-    () => renderPersonalEditionEmail(candidate),
-    /validated adaptive source-checked candidate/,
-  );
+test("legacy Workers AI and source-brief provenance is rejected at the email boundary", () => {
+  for (const draftingMode of ["model", "trusted-authoritative-source-alert"]) {
+    const candidate = useWorkersAiProvenance(personalCandidate(), draftingMode);
+    assert.throws(
+      () => assertPersonalEmailCandidate(candidate),
+      /validated adaptive source-checked candidate/,
+    );
+    assert.throws(
+      () => renderPersonalEditionEmail(candidate),
+      /validated adaptive source-checked candidate/,
+    );
+  }
 });
 
 test("inference provenance is conditional on whether the adaptive edition has stories", () => {

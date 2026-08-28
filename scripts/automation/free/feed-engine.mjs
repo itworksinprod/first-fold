@@ -2838,6 +2838,23 @@ function groupToCandidate(group, reportingWindow) {
     const detail = item.summary ? ` ${item.summary}` : "";
     return `${item.publisher}'s feed reports: ${item.title}.${detail}`.slice(0, 900);
   });
+  const feedEvidence = [];
+  const seenEvidenceSourceIds = new Set();
+  for (const item of group.items) {
+    if (feedEvidence.length >= 4) break;
+    const source = sources.find((candidate) =>
+      candidate.relationship !== "context" && candidate.url === item.url);
+    if (!source || seenEvidenceSourceIds.has(source.id)) continue;
+    seenEvidenceSourceIds.add(source.id);
+    feedEvidence.push({
+      sourceId: source.id,
+      publisher: item.publisher,
+      title: item.title,
+      summary: item.summary,
+      categories: item.categories.slice(0, 12),
+      publishedAt: item.publishedAt,
+    });
+  }
   const aiScore = classification.scores.ai;
   return {
     candidateId: `candidate-${stableId(group.canonicalEventKey, primary.title)}`,
@@ -2851,6 +2868,7 @@ function groupToCandidate(group, reportingWindow) {
     firstPublishedAt,
     materiallyUpdatedAt: null,
     verifiedFacts: facts,
+    feedEvidence,
     unresolvedQuestions: [],
     sources,
     ranking: {

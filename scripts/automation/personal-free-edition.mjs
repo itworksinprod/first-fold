@@ -12,8 +12,12 @@ import {
 } from "./draft-free-edition.mjs";
 import { FREE_FEED_SOURCES } from "./free/feed-sources.mjs";
 import {
+  TRUSTED_EVIDENCE_DIGEST_MODE,
+  TRUSTED_EVIDENCE_DIGEST_MODEL,
+  TRUSTED_EVIDENCE_DIGEST_PROVIDER,
+} from "./free/evidence-digest.mjs";
+import {
   DEFAULT_CLOUDFLARE_AI_MODEL,
-  WORKERS_AI_PROVIDER,
 } from "./free/workers-ai.mjs";
 import {
   PERSONAL_STORY_LEDGER_MAX_BYTES,
@@ -38,11 +42,11 @@ const RESPONSE_ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
 const SOURCE_HEALTH_DIRECTORY_PATTERN = /^[^\0]{1,4096}$/;
 
 export const PERSONAL_FREE_WORKFLOW = "personal-morning-paper";
-export const PERSONAL_FREE_PROVIDER = WORKERS_AI_PROVIDER;
+export const PERSONAL_FREE_PROVIDER = TRUSTED_EVIDENCE_DIGEST_PROVIDER;
 export const PERSONAL_FREE_RESEARCH_METHOD = "curated-live-feeds";
-export const PERSONAL_FREE_MODEL = DEFAULT_CLOUDFLARE_AI_MODEL;
+export const PERSONAL_FREE_MODEL = TRUSTED_EVIDENCE_DIGEST_MODEL;
 export const PERSONAL_FREE_EVIDENCE_POLICY = "authoritative-or-corroborated";
-export const PERSONAL_FREE_MAX_MODEL_REQUESTS = 2;
+export const PERSONAL_FREE_MAX_MODEL_REQUESTS = 0;
 export const PERSONAL_FREE_MAX_TOKENS = 6_000;
 export const PERSONAL_FREE_MAX_REQUEST_BYTES = 100_000;
 export const PERSONAL_FREE_AI_TIMEOUT_MS = 240_000;
@@ -55,8 +59,7 @@ export const PERSONAL_FREE_RETRY_BELOW_STORY_COUNT = 3;
 export const PERSONAL_FREE_GITHUB_OUTCOME_FLAG = "--github-actions-outcome";
 export const PERSONAL_FREE_RUN_MODES = Object.freeze(["on_time", "same_day_backfill"]);
 export const PERSONAL_FREE_DRAFTING_MODES = Object.freeze([
-  "model",
-  "trusted-authoritative-source-alert",
+  TRUSTED_EVIDENCE_DIGEST_MODE,
   "quiet",
 ]);
 export const PERSONAL_FREE_DESKS = Object.freeze([
@@ -392,7 +395,9 @@ function buildPersonalCandidate(
   const inferenceIsValid = quietEdition
     ? freePilot?.inference === "skipped-no-eligible-candidates" &&
       freePilot?.responseId === "not-invoked"
-    : freePilot?.inference === "workers-ai" && freePilot?.responseId !== "not-invoked";
+    : freePilot?.draftingMode === TRUSTED_EVIDENCE_DIGEST_MODE &&
+      freePilot?.inference === TRUSTED_EVIDENCE_DIGEST_MODE &&
+      freePilot?.responseId === "local-digest";
   if (
     freePilot?.workflow !== FREE_AUTOMATION_WORKFLOW ||
     freePilot?.provider !== PERSONAL_FREE_PROVIDER ||
@@ -421,9 +426,9 @@ function buildPersonalCandidate(
   delete candidate.provenance.freePilot;
   candidate.provenance.personalFreeResearch = {
     workflow: PERSONAL_FREE_WORKFLOW,
-    provider: PERSONAL_FREE_PROVIDER,
+    provider: freePilot.provider,
     researchMethod: PERSONAL_FREE_RESEARCH_METHOD,
-    model: PERSONAL_FREE_MODEL,
+    model: freePilot.model,
     runId: automation.runId,
     runUrl: automation.runUrl,
     repository: automation.repository,
@@ -488,7 +493,9 @@ export function validatePersonalFreeCandidate(
   const inferenceIsValid = stories.length === 0
     ? research?.inference === "skipped-no-eligible-candidates" &&
       research?.responseId === "not-invoked"
-    : research?.inference === "workers-ai" && research?.responseId !== "not-invoked";
+    : research?.draftingMode === TRUSTED_EVIDENCE_DIGEST_MODE &&
+      research?.inference === TRUSTED_EVIDENCE_DIGEST_MODE &&
+      research?.responseId === "local-digest";
 
   if (
     !validation.valid ||
@@ -514,9 +521,7 @@ export function validatePersonalFreeCandidate(
     !inferenceIsValid ||
     !PERSONAL_FREE_DRAFTING_MODES.includes(research?.draftingMode) ||
     (stories.length === 0 && research?.draftingMode !== "quiet") ||
-    (stories.length > 0 && !["model", "trusted-authoritative-source-alert"].includes(
-      research?.draftingMode,
-    )) ||
+    (stories.length > 0 && research?.draftingMode !== TRUSTED_EVIDENCE_DIGEST_MODE) ||
     !RESPONSE_ID_PATTERN.test(research?.responseId ?? "") ||
     !SHA256_PATTERN.test(research?.feedSnapshotSha256 ?? "") ||
     !SHA256_PATTERN.test(research?.requestSha256 ?? "") ||
@@ -627,13 +632,14 @@ async function generatePersonalFreeEditionWithHealth({
     automation,
     accountId,
     apiToken,
-    model: PERSONAL_FREE_MODEL,
+    model: DEFAULT_CLOUDFLARE_AI_MODEL,
     now,
     runMode,
     evidencePolicy: PERSONAL_FREE_EVIDENCE_POLICY,
     requireComplete: false,
     minimumStoryCount: PERSONAL_FREE_MINIMUM_STORY_COUNT,
     draftSelectedSlate: true,
+    trustedEvidenceDigestOnly: true,
     maxResearchAttempts: PERSONAL_FREE_MAX_RESEARCH_ATTEMPTS,
     researchRetryBelowStoryCount: PERSONAL_FREE_RETRY_BELOW_STORY_COUNT,
     lookbackHours: PERSONAL_FREE_LOOKBACK_HOURS,

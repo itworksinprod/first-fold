@@ -28,6 +28,18 @@ import {
   resolveCloudflareAiModel,
 } from "./free/workers-ai.mjs";
 import {
+  FREE_SUMMARY_DRAFT_SCHEMA,
+  buildFreeSummaryDraftMessages,
+  composeFreeEditorialFromSummaries,
+  validateFreeSummaryDraftPayload,
+} from "./free/summary-draft.mjs";
+import {
+  TRUSTED_EVIDENCE_DIGEST_MODE,
+  TRUSTED_EVIDENCE_DIGEST_MODEL,
+  TRUSTED_EVIDENCE_DIGEST_PROVIDER,
+  buildTrustedEvidenceDigestPayload,
+} from "./free/evidence-digest.mjs";
+import {
   buildSourceHealthSnapshot,
   validateSourceHealthSnapshot,
 } from "./source-health.mjs";
@@ -54,6 +66,7 @@ const FREE_RESEARCH_RETRY_OUTCOMES = Object.freeze([
 const FREE_DRAFTING_MODES = Object.freeze([
   "model",
   "trusted-authoritative-source-alert",
+  TRUSTED_EVIDENCE_DIGEST_MODE,
   "quiet",
 ]);
 const WORKERS_AI_RESPONSE_ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
@@ -524,6 +537,37 @@ function compactCandidate(candidate, index) {
     publishedAt: source?.publishedAt ?? null,
     retrievedAt: source?.retrievedAt,
   })) : [];
+  const sourceById = new Map(sources.map((source) => [source.id, source]));
+  const seenEvidenceSourceIds = new Set();
+  const feedEvidence = (Array.isArray(candidate.feedEvidence) ? candidate.feedEvidence : [])
+    .slice(0, 4)
+    .map((evidence, evidenceIndex) => {
+      const label = `Free candidate ${index + 1} feed evidence ${evidenceIndex + 1}`;
+      const sourceId = boundedText(evidence?.sourceId, 160, `${label} sourceId`);
+      const source = sourceById.get(sourceId);
+      if (
+        !source ||
+        source.relationship === "context" ||
+        seenEvidenceSourceIds.has(sourceId) ||
+        evidence?.publisher !== source.publisher ||
+        evidence?.title !== source.title ||
+        evidence?.publishedAt !== source.publishedAt
+      ) {
+        throw new Error(`${label} is not bound to one exact factual source.`);
+      }
+      seenEvidenceSourceIds.add(sourceId);
+      return {
+        sourceId,
+        publisher: boundedText(evidence.publisher, 160, `${label} publisher`),
+        title: boundedText(evidence.title, 300, `${label} title`),
+        summary: boundedText(evidence.summary ?? "", 1_200, `${label} summary`),
+        categories: (Array.isArray(evidence.categories) ? evidence.categories : [])
+          .slice(0, 12)
+          .map((category, categoryIndex) =>
+            boundedText(category, 120, `${label} category ${categoryIndex + 1}`)),
+        publishedAt: evidence.publishedAt,
+      };
+    });
   return {
     candidateId: boundedText(candidate.candidateId, 200, `Free candidate ${index + 1} candidateId`),
     canonicalEventKey: boundedText(candidate.canonicalEventKey, 240, `Free candidate ${index + 1} canonicalEventKey`),
@@ -538,6 +582,7 @@ function compactCandidate(candidate, index) {
     verifiedFacts: (Array.isArray(candidate.verifiedFacts) ? candidate.verifiedFacts : [])
       .slice(0, 8)
       .map((fact, factIndex) => boundedText(fact, 900, `Free candidate ${index + 1} fact ${factIndex + 1}`)),
+    feedEvidence,
     unresolvedQuestions: (Array.isArray(candidate.unresolvedQuestions) ? candidate.unresolvedQuestions : [])
       .slice(0, 4)
       .map((question, questionIndex) => boundedText(question, 400, `Free candidate ${index + 1} question ${questionIndex + 1}`)),
@@ -916,6 +961,28 @@ function buildFreeWorkersAiCorrectiveRetryMessages(messages, repairKind) {
   return retryMessages;
 }
 
+function buildFreeSummaryCorrectiveRetryMessages(messages, repairKind) {
+  const retryMessages = structuredClone(messages);
+  const reasons = {
+    format:
+      "The prior response was not one complete JSON object matching the small summaries-only contract.",
+    length:
+      `At least one prior summary fell outside the ${MIN_READER_FACING_STORY_WORDS}-${MAX_READER_FACING_STORY_WORDS} combined reader-word range.`,
+    originality:
+      `At least one prior summary repeated ${FREE_COPY_OVERLAP_WORDS} or more contiguous source words.`,
+    "authoritative-structure":
+      "At least one single-publisher summary lacked a single-clause originating-publisher attribution.",
+  };
+  const reason = reasons[repairKind];
+  if (!reason) throw new Error("Free summary corrective retry kind is invalid.");
+  retryMessages[0].content += `\n\nCORRECTIVE RETRY: ${reason} ` +
+    "The rejected response is intentionally unavailable. Return a fresh complete summaries array for every " +
+    "candidate from the same bounded evidence. Preserve exact candidateId values, add no fields, use no markdown, " +
+    "add no URL, email address, or digit-bearing fact absent from the supplied evidence, and recheck attribution, " +
+    "originality, plain-prose formatting, and the combined word count before returning JSON.";
+  return retryMessages;
+}
+
 function equalSourceMetadata(left, right) {
   return left?.id === right?.id &&
     left?.title === right?.title &&
@@ -1213,6 +1280,15 @@ function trustedFormatErrorInference(error, modelId) {
 function isRecoverableWorkersAiEditorialError(error) {
   return error?.code === WORKERS_AI_EDITORIAL_FORMAT_INVALID ||
     error?.code === WORKERS_AI_EDITORIAL_UNAVAILABLE;
+}
+
+function isTrustedSummaryDigestFallbackError(error) {
+  if (isRecoverableWorkersAiEditorialError(error)) return true;
+  if (["WORKERS_AI_CLIENT_TIMEOUT", "WORKERS_AI_PROVIDER_TIMEOUT"].includes(error?.code)) {
+    return true;
+  }
+  const message = error instanceof Error ? error.message : "";
+  return /^(?:Cloudflare Workers AI )(?:(?:request failed after \d+ attempt\(s\)|request failed without a response|returned an invalid HTTP response|returned a non-JSON response|returned unreadable JSON|returned an unreadable response body|response exceeded the configured size limit|did not return a successful result envelope|returned errors in a successful result envelope)\.?|request failed with HTTP (?:408|409|425|429|5\d\d)\.)$/u.test(message);
 }
 
 class FreeEditorialRepairError extends Error {
@@ -2052,14 +2128,17 @@ export function validateFreePilotProvenance(
   if (
     !isObject(freePilot) ||
     freePilot.workflow !== FREE_AUTOMATION_WORKFLOW ||
-    freePilot.provider !== WORKERS_AI_PROVIDER ||
     !FREE_RUN_MODES.includes(freePilot.runMode) ||
     freePilot.runId !== expectedRun.runId ||
     freePilot.runUrl !== expectedRun.runUrl ||
     freePilot.repository !== expectedRun.repository ||
     freePilot.generatedAt !== candidate.publication.generatedAt ||
     !isInstant(freePilot.generatedAt) ||
-    !["workers-ai", "skipped-no-eligible-candidates"].includes(freePilot.inference) ||
+    ![
+      "workers-ai",
+      "skipped-no-eligible-candidates",
+      TRUSTED_EVIDENCE_DIGEST_MODE,
+    ].includes(freePilot.inference) ||
     !FREE_DRAFTING_MODES.includes(freePilot.draftingMode) ||
     !Number.isInteger(freePilot.feedSourceCount) ||
     freePilot.feedSourceCount < 1 ||
@@ -2101,7 +2180,25 @@ export function validateFreePilotProvenance(
   ) {
     throw new Error("Free candidate provenance is invalid or incomplete.");
   }
-  resolveCloudflareAiModel(freePilot.model);
+  const usesLocalDigestProvider =
+    freePilot.draftingMode === TRUSTED_EVIDENCE_DIGEST_MODE ||
+    (
+      freePilot.draftingMode === "quiet" &&
+      freePilot.provider === TRUSTED_EVIDENCE_DIGEST_PROVIDER
+    );
+  if (usesLocalDigestProvider) {
+    if (
+      freePilot.provider !== TRUSTED_EVIDENCE_DIGEST_PROVIDER ||
+      freePilot.model !== TRUSTED_EVIDENCE_DIGEST_MODEL
+    ) {
+      throw new Error("Free local digest provenance must identify the local deterministic writer.");
+    }
+  } else {
+    if (freePilot.provider !== WORKERS_AI_PROVIDER) {
+      throw new Error("Free model provenance must identify Cloudflare Workers AI.");
+    }
+    resolveCloudflareAiModel(freePilot.model);
+  }
   requireNonBlank(freePilot.responseId, "Free candidate responseId");
   requireSha256(freePilot.feedSnapshotSha256, "Free candidate feedSnapshotSha256");
   requireSha256(freePilot.requestSha256, "Free candidate requestSha256");
@@ -2113,9 +2210,21 @@ export function validateFreePilotProvenance(
       freePilot.draftingMode !== "quiet"
     )) ||
     (freePilot.candidateCount > 0 && (
-      freePilot.inference !== "workers-ai" ||
-      freePilot.responseId === "not-invoked" ||
-      !["model", "trusted-authoritative-source-alert"].includes(freePilot.draftingMode)
+      (
+        freePilot.draftingMode === TRUSTED_EVIDENCE_DIGEST_MODE &&
+        (
+          freePilot.inference !== TRUSTED_EVIDENCE_DIGEST_MODE ||
+          freePilot.responseId !== "local-digest"
+        )
+      ) ||
+      (
+        freePilot.draftingMode !== TRUSTED_EVIDENCE_DIGEST_MODE &&
+        (
+          freePilot.inference !== "workers-ai" ||
+          freePilot.responseId === "not-invoked" ||
+          !["model", "trusted-authoritative-source-alert"].includes(freePilot.draftingMode)
+        )
+      )
     ))
   ) {
     throw new Error("Free candidate inference provenance conflicts with its candidate count.");
@@ -2217,6 +2326,8 @@ async function draftFreeEditionCore({
   requireComplete = false,
   minimumStoryCount = 0,
   draftSelectedSlate = false,
+  summarizeSelectedSlate = false,
+  trustedEvidenceDigestOnly = false,
   maxResearchAttempts = 1,
   researchRetryBelowStoryCount = 0,
   lookbackHours = DEFAULT_FREE_LOOKBACK_HOURS,
@@ -2255,6 +2366,23 @@ async function draftFreeEditionCore({
   if (typeof draftSelectedSlate !== "boolean") {
     throw new Error("Free draftSelectedSlate must be a boolean.");
   }
+  if (typeof summarizeSelectedSlate !== "boolean") {
+    throw new Error("Free summarizeSelectedSlate must be a boolean.");
+  }
+  if (typeof trustedEvidenceDigestOnly !== "boolean") {
+    throw new Error("Free trustedEvidenceDigestOnly must be a boolean.");
+  }
+  if (summarizeSelectedSlate && !draftSelectedSlate) {
+    throw new Error("Free summarizeSelectedSlate requires deterministic selected-slate drafting.");
+  }
+  if (trustedEvidenceDigestOnly && !draftSelectedSlate) {
+    throw new Error("Free trustedEvidenceDigestOnly requires deterministic selected-slate drafting.");
+  }
+  if (trustedEvidenceDigestOnly && summarizeSelectedSlate) {
+    throw new Error(
+      "Free trustedEvidenceDigestOnly cannot be combined with Workers AI summary drafting.",
+    );
+  }
   if (
     !Number.isInteger(minimumStoryCount) ||
     minimumStoryCount < 0 ||
@@ -2270,8 +2398,14 @@ async function draftFreeEditionCore({
   ) {
     throw new Error("Free maxResearchAttempts must be 1 or 2.");
   }
-  if (!Number.isInteger(maxModelRequests) || maxModelRequests < 1 || maxModelRequests > 2) {
-    throw new Error("Free maxModelRequests must be 1 or 2.");
+  if (
+    !Number.isInteger(maxModelRequests) ||
+    maxModelRequests < (trustedEvidenceDigestOnly ? 0 : 1) ||
+    maxModelRequests > 2
+  ) {
+    throw new Error(trustedEvidenceDigestOnly
+      ? "Free maxModelRequests must be 0, 1, or 2 in trusted digest-only mode."
+      : "Free maxModelRequests must be 1 or 2.");
   }
   if (
     !Number.isInteger(researchRetryBelowStoryCount) ||
@@ -2423,7 +2557,9 @@ async function draftFreeEditionCore({
     requiredStoryCount,
     { selectedSlate: draftSelectedSlate },
   ));
-  const modelId = resolveCloudflareAiModel(model);
+  const modelId = trustedEvidenceDigestOnly
+    ? TRUSTED_EVIDENCE_DIGEST_MODEL
+    : resolveCloudflareAiModel(model);
   const feedSnapshot = {
     registry: feedSources,
     reportingWindow: research.reportingWindow,
@@ -2448,14 +2584,18 @@ async function draftFreeEditionCore({
   if (candidates.length === 0) {
     editorial = buildQuietEditorial(research, coverage);
     const skippedRequest = {
-      provider: WORKERS_AI_PROVIDER,
+      provider: trustedEvidenceDigestOnly
+        ? TRUSTED_EVIDENCE_DIGEST_PROVIDER
+        : WORKERS_AI_PROVIDER,
       model: modelId,
       schema: FREE_EDITORIAL_OUTPUT_SCHEMA,
       feedSnapshotSha256,
       candidates: [],
     };
     inference = {
-      provider: WORKERS_AI_PROVIDER,
+      provider: trustedEvidenceDigestOnly
+        ? TRUSTED_EVIDENCE_DIGEST_PROVIDER
+        : WORKERS_AI_PROVIDER,
       model: modelId,
       responseId: "not-invoked",
       requestSha256: sha256Json(skippedRequest),
@@ -2463,16 +2603,64 @@ async function draftFreeEditionCore({
       kind: "skipped-no-eligible-candidates",
     };
   } else {
-    const messages = buildFreeWorkersAiMessages({
-      policyText,
-      promptText,
-      scaffold,
-      priorEditions: archiveEditions,
-      candidates,
-      evidencePolicy: normalizedEvidencePolicy,
-      requireComplete,
-      minimumStoryCount: requiredStoryCount,
-    });
+    const summaryDraftMode = summarizeSelectedSlate;
+    const quietReasons = Object.fromEntries(FREE_DESKS.map((desk) => [
+      desk,
+      research.desks?.[desk]?.emptyReason ?? null,
+    ]));
+    if (trustedEvidenceDigestOnly) {
+      const localDigestRequest = {
+        kind: TRUSTED_EVIDENCE_DIGEST_MODE,
+        version: 1,
+        feedSnapshotSha256,
+        candidateIds: candidates.map((candidate) => candidate.candidateId),
+        quietReasons,
+      };
+      const digestPayload = buildTrustedEvidenceDigestPayload({
+        candidates,
+        quietReasons,
+      });
+      editorial = normalizeFreeEditorialAgainstCandidates(
+        digestPayload,
+        candidates,
+        generatedAt,
+        { evidencePolicy: normalizedEvidencePolicy, requiredEventKeys },
+      );
+      draftingMode = TRUSTED_EVIDENCE_DIGEST_MODE;
+      inference = {
+        provider: TRUSTED_EVIDENCE_DIGEST_PROVIDER,
+        model: TRUSTED_EVIDENCE_DIGEST_MODEL,
+        responseId: "local-digest",
+        requestSha256: sha256Json(localDigestRequest),
+        responseSha256: sha256Json(editorial),
+        kind: TRUSTED_EVIDENCE_DIGEST_MODE,
+      };
+    } else {
+    const messages = summaryDraftMode
+      ? buildFreeSummaryDraftMessages({ candidates })
+      : buildFreeWorkersAiMessages({
+          policyText,
+          promptText,
+          scaffold,
+          priorEditions: archiveEditions,
+          candidates,
+          evidencePolicy: normalizedEvidencePolicy,
+          requireComplete,
+          minimumStoryCount: requiredStoryCount,
+        });
+    const inferenceSchema = summaryDraftMode
+      ? FREE_SUMMARY_DRAFT_SCHEMA
+      : FREE_EDITORIAL_OUTPUT_SCHEMA;
+    const validateInferencePayload = summaryDraftMode
+      ? (payload) => validateFreeSummaryDraftPayload(payload, candidates)
+      : validateFreeEditorialPayload;
+    const composeInferencePayload = (payload) => summaryDraftMode
+      ? composeFreeEditorialFromSummaries({
+          summaryPayload: payload,
+          candidates,
+          quietReasons,
+        })
+      : payload;
     let remainingModelRequests = maxModelRequests;
     let rejectedEditorialInference = null;
     const requestInference = async (requestMessages, responseFormat = "json_schema") => {
@@ -2490,9 +2678,9 @@ async function draftFreeEditionCore({
           apiToken,
           model: modelId,
           messages: requestMessages,
-          schema: FREE_EDITORIAL_OUTPUT_SCHEMA,
+          schema: inferenceSchema,
           responseFormat,
-          validatePayload: validateFreeEditorialPayload,
+          validatePayload: validateInferencePayload,
           fetchImpl,
           timeoutMs,
           // Transport recovery and the optional local corrective rewrite share
@@ -2515,6 +2703,12 @@ async function draftFreeEditionCore({
           }
           remainingModelRequests -= error.attemptCount;
           rejectedEditorialInference = trustedFormatErrorInference(error, modelId);
+        } else if (summaryDraftMode && isTrustedSummaryDigestFallbackError(error)) {
+          // The adapter has already exhausted its bounded transport attempts,
+          // or the provider returned unusable bytes. Preserve hard failures
+          // for credentials and configuration, but let the source-bound local
+          // digest keep a private paper deliverable without another model call.
+          remainingModelRequests = 0;
         }
         throw error;
       }
@@ -2547,13 +2741,25 @@ async function draftFreeEditionCore({
     try {
       accepted = await requestInference(messages);
     } catch (error) {
-      if (!isRecoverableWorkersAiEditorialError(error)) throw error;
-      repairKind = "format";
+      if (
+        !isRecoverableWorkersAiEditorialError(error) &&
+        !(summaryDraftMode && isTrustedSummaryDigestFallbackError(error))
+      ) {
+        throw error;
+      }
+      repairKind = summaryDraftMode && [
+        "format",
+        "length",
+        "originality",
+        "authoritative-structure",
+      ].includes(error?.repairKind)
+        ? error.repairKind
+        : "format";
     }
     if (accepted) {
       try {
         editorial = normalizeFreeEditorialAgainstCandidates(
-          accepted.aiResult.editorialPayload,
+          composeInferencePayload(accepted.aiResult.editorialPayload),
           candidates,
           generatedAt,
           { evidencePolicy: normalizedEvidencePolicy, requiredEventKeys },
@@ -2564,8 +2770,39 @@ async function draftFreeEditionCore({
       }
     }
     if (repairKind !== null) {
-      let usedTrustedFormatFallback = false;
+      let usedTrustedFallback = false;
+      const useTrustedEvidenceDigest = () => {
+        const fallbackPayload = buildTrustedEvidenceDigestPayload({
+          candidates,
+          quietReasons,
+        });
+        editorial = normalizeFreeEditorialAgainstCandidates(
+          fallbackPayload,
+          candidates,
+          generatedAt,
+          { evidencePolicy: normalizedEvidencePolicy, requiredEventKeys },
+        );
+        draftingMode = TRUSTED_EVIDENCE_DIGEST_MODE;
+        accepted = {
+          inference: {
+            provider: TRUSTED_EVIDENCE_DIGEST_PROVIDER,
+            model: TRUSTED_EVIDENCE_DIGEST_MODEL,
+            responseId: "local-digest",
+            requestSha256: sha256Json({
+              kind: TRUSTED_EVIDENCE_DIGEST_MODE,
+              version: 1,
+              feedSnapshotSha256,
+              candidateIds: candidates.map((candidate) => candidate.candidateId),
+              quietReasons,
+            }),
+            responseSha256: sha256Json(editorial),
+            kind: TRUSTED_EVIDENCE_DIGEST_MODE,
+          },
+        };
+        usedTrustedFallback = true;
+      };
       const canUseTrustedFormatFallback = () => repairKind === "format" &&
+        !summaryDraftMode &&
         draftSelectedSlate &&
         normalizedEvidencePolicy === "authoritative-or-corroborated" &&
         rejectedEditorialInference !== null &&
@@ -2586,19 +2823,28 @@ async function draftFreeEditionCore({
         editorial.frontPage.note = AUTHORITATIVE_SOURCE_ALERT_NOTE;
         draftingMode = "trusted-authoritative-source-alert";
         accepted = { inference: rejectedEditorialInference };
-        usedTrustedFormatFallback = true;
+        usedTrustedFallback = true;
       };
-      if (remainingModelRequests === 0 && canUseTrustedFormatFallback()) {
+      if (remainingModelRequests === 0 && summaryDraftMode) {
+        useTrustedEvidenceDigest();
+      } else if (remainingModelRequests === 0 && canUseTrustedFormatFallback()) {
         useTrustedFormatFallback();
       } else {
         try {
           accepted = await requestInference(
-            buildFreeWorkersAiCorrectiveRetryMessages(messages, repairKind),
+            summaryDraftMode
+              ? buildFreeSummaryCorrectiveRetryMessages(messages, repairKind)
+              : buildFreeWorkersAiCorrectiveRetryMessages(messages, repairKind),
             repairKind === "format" ? "json_object" : "json_schema",
           );
         } catch (error) {
-          if (isRecoverableWorkersAiEditorialError(error)) {
-            if (canUseTrustedFormatFallback()) {
+          if (
+            isRecoverableWorkersAiEditorialError(error) ||
+            (summaryDraftMode && isTrustedSummaryDigestFallbackError(error))
+          ) {
+            if (summaryDraftMode) {
+              useTrustedEvidenceDigest();
+            } else if (canUseTrustedFormatFallback()) {
               useTrustedFormatFallback();
             } else {
               throw freeEditorialDiagnosticError(
@@ -2611,38 +2857,43 @@ async function draftFreeEditionCore({
           }
         }
       }
-      if (!usedTrustedFormatFallback) {
+      if (!usedTrustedFallback) {
         try {
           editorial = normalizeFreeEditorialAgainstCandidates(
-            accepted.aiResult.editorialPayload,
+            composeInferencePayload(accepted.aiResult.editorialPayload),
             candidates,
             generatedAt,
             { evidencePolicy: normalizedEvidencePolicy, requiredEventKeys },
           );
         } catch (error) {
-          if (
-            !(error instanceof FreeAuthoritativeStructureError) ||
-            !draftSelectedSlate ||
-            normalizedEvidencePolicy !== "authoritative-or-corroborated"
-          ) {
-            throw error;
+          if (summaryDraftMode && error instanceof FreeEditorialRepairError) {
+            useTrustedEvidenceDigest();
+          } else {
+            if (
+              !(error instanceof FreeAuthoritativeStructureError) ||
+              !draftSelectedSlate ||
+              normalizedEvidencePolicy !== "authoritative-or-corroborated"
+            ) {
+              throw error;
+            }
+            const fallbackPayload = buildTrustedAuthoritativeSourceAlertPayload(
+              accepted.aiResult.editorialPayload,
+              candidates,
+            );
+            editorial = normalizeFreeEditorialAgainstCandidates(
+              fallbackPayload,
+              candidates,
+              generatedAt,
+              { evidencePolicy: normalizedEvidencePolicy, requiredEventKeys },
+            );
+            editorial.frontPage.note = AUTHORITATIVE_SOURCE_ALERT_NOTE;
+            draftingMode = "trusted-authoritative-source-alert";
           }
-          const fallbackPayload = buildTrustedAuthoritativeSourceAlertPayload(
-            accepted.aiResult.editorialPayload,
-            candidates,
-          );
-          editorial = normalizeFreeEditorialAgainstCandidates(
-            fallbackPayload,
-            candidates,
-            generatedAt,
-            { evidencePolicy: normalizedEvidencePolicy, requiredEventKeys },
-          );
-          editorial.frontPage.note = AUTHORITATIVE_SOURCE_ALERT_NOTE;
-          draftingMode = "trusted-authoritative-source-alert";
         }
       }
     }
     inference = accepted.inference;
+    }
   }
 
   editorial = applyTrustedQuietReasons(editorial, research);
@@ -2650,7 +2901,7 @@ async function draftFreeEditionCore({
     isObject(editorial.desks?.[desk]?.story)).length;
   if (selectedStoryCount < requiredStoryCount) {
     throw new Error(
-      `Free generation requires at least ${requiredStoryCount} model-authored stories before delivery.`,
+      `Free generation requires at least ${requiredStoryCount} drafted stories before delivery.`,
     );
   }
   if (draftSelectedSlate && selectedStoryCount !== requiredStoryCount) {

@@ -18,6 +18,12 @@ export const WORKERS_AI_EDITORIAL_UNAVAILABLE = "WORKERS_AI_EDITORIAL_UNAVAILABL
 const CLOUDFLARE_API_ORIGIN = "https://api.cloudflare.com";
 const CLOUDFLARE_JSON_MODE_NOT_MET_PATTERN = /(?:^|:\s*)JSON Mode couldn't be met\.?$/;
 const WORKERS_AI_RESPONSE_FORMATS = Object.freeze(["json_schema", "json_object"]);
+const WORKERS_AI_EDITORIAL_REPAIR_KINDS = new Set([
+  "format",
+  "length",
+  "originality",
+  "authoritative-structure",
+]);
 const ACCOUNT_ID_PATTERN = /^[a-f0-9]{32}$/i;
 const CLOUDFLARE_MODEL_PATTERN = /^@cf\/[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*$/i;
 const MAX_WORKERS_AI_MESSAGES = 8;
@@ -173,9 +179,9 @@ function workersAiTimeoutError(message, code) {
   return error;
 }
 
-function workersAiEditorialFormatError(message, attemptCount, inference) {
+function workersAiEditorialFormatError(message, attemptCount, inference, repairKind = null) {
   const error = new Error(message);
-  Object.defineProperties(error, {
+  const properties = {
     code: {
       value: WORKERS_AI_EDITORIAL_FORMAT_INVALID,
       configurable: true,
@@ -191,7 +197,15 @@ function workersAiEditorialFormatError(message, attemptCount, inference) {
       configurable: true,
       enumerable: false,
     },
-  });
+  };
+  if (WORKERS_AI_EDITORIAL_REPAIR_KINDS.has(repairKind)) {
+    properties.repairKind = {
+      value: repairKind,
+      configurable: true,
+      enumerable: false,
+    };
+  }
+  Object.defineProperties(error, properties);
   return error;
 }
 
@@ -630,6 +644,7 @@ export async function requestWorkersAiEditorial({
       "Cloudflare Workers AI editorial payload failed local schema validation.",
       attemptCount,
       inference,
+      validation?.repairKind,
     );
   }
 

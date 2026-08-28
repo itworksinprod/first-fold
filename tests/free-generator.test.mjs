@@ -336,6 +336,17 @@ function completeAuthoritativeScenario() {
       firstPublishedAt: story.timing.firstPublishedAt,
       materiallyUpdatedAt: null,
       verifiedFacts: [`${labels[desk]} Publisher reports a new reader-facing development.`],
+      feedEvidence: [{
+        sourceId: originatingId,
+        publisher: `${labels[desk]} Publisher`,
+        title: `${labels[desk]} originating article`,
+        summary:
+          `The reviewed feed notice describes a newly released change for the ${labels[desk]} desk. ` +
+          "It identifies the affected workflow, preserves access to earlier material, and directs readers " +
+          "to the publisher's documentation for scope, timing, availability, limits, and next steps.",
+        categories: [labels[desk], "product update", "reader workflow"],
+        publishedAt: "2026-08-20T08:00:00.000Z",
+      }],
       unresolvedQuestions: [],
       sources: story.sources.map((source) => ({ ...source, publisherKey })),
       ranking: acceptedRanking(80 - index, {
@@ -424,7 +435,45 @@ function aiResult(editorialPayload = buildEditorialPayload()) {
   };
 }
 
-function workersAiFormatError(attemptCount = 1, inference = null) {
+function summaryFixtureBlock(prefix = "", count = 55) {
+  const prefixWords = prefix ? prefix.split(/\s+/u) : [];
+  const safeWords = [
+    "the", "selected", "development", "gives", "readers", "a", "bounded", "account",
+    "of", "available", "details", "while", "the", "summary", "stays", "within",
+    "supplied", "evidence", "with", "unresolved", "questions", "left", "open", "for",
+    "later", "independent", "coverage", "before", "any", "consequential", "decision",
+  ];
+  const generated = Array.from(
+    { length: Math.max(0, count - prefixWords.length) },
+    (_, index) => safeWords[index % safeWords.length],
+  );
+  return [...prefixWords, ...generated].join(" ");
+}
+
+function summaryPayloadForScenario(scenario) {
+  return {
+    summaries: scenario.selectedCandidates.map((candidate) => {
+      const story = scenario.payload.desks[candidate.suggestedDesk].story;
+      const originatingPublisher = candidate.sources.find((source) =>
+        source.relationship === "originating")?.publisher;
+      const authoritative = candidate.ranking.evidenceTier === "authoritative-single";
+      return {
+        candidateId: candidate.candidateId,
+        headline: authoritative
+          ? `${originatingPublisher} reports a new development`
+          : story.headline,
+        deck: authoritative
+          ? `${originatingPublisher} reports a bounded update for readers`
+          : story.deck,
+        whatHappened: summaryFixtureBlock(`${originatingPublisher} reports`),
+        whyItMatters: summaryFixtureBlock(),
+        whatToDoOrWatch: summaryFixtureBlock(),
+      };
+    }),
+  };
+}
+
+function workersAiFormatError(attemptCount = 1, inference = null, repairKind = null) {
   const error = new Error("Cloudflare Workers AI editorial payload failed local schema validation.");
   const properties = {
     code: {
@@ -439,6 +488,12 @@ function workersAiFormatError(attemptCount = 1, inference = null) {
   if (inference !== null) {
     properties.inference = {
       value: Object.freeze({ ...inference }),
+      enumerable: false,
+    };
+  }
+  if (repairKind !== null) {
+    properties.repairKind = {
+      value: repairKind,
       enumerable: false,
     };
   }
@@ -800,6 +855,298 @@ test("selected-slate drafting skips the research retry once two stories qualify"
   assert.doesNotMatch(modelMessages[1].content, /candidate-platformsandpower/);
   assert.equal(candidate.provenance.sourceCheck.checkedSourceCount, 4);
   assert.equal(validateCanonicalEdition(candidate).valid, true);
+});
+
+test("trusted-evidence-digest-only selected-slate drafting makes zero model calls with local provenance", async () => {
+  const scenario = selectedSlateScenario(["security-and-privacy", "platforms-and-power"]);
+  let aiCalls = 0;
+  const options = draftOptions({
+    evidencePolicy: "authoritative-or-corroborated",
+    draftSelectedSlate: true,
+    trustedEvidenceDigestOnly: true,
+    researchImpl: async () => structuredClone(scenario.research),
+    aiRequestImpl: async () => {
+      aiCalls += 1;
+      throw new Error("Workers AI must not be called in trusted digest-only mode.");
+    },
+  });
+
+  const candidate = await draftFreeEdition(options);
+  const repeatedCandidate = await draftFreeEdition(options);
+  const changedResearch = structuredClone(scenario.research);
+  changedResearch.desks.ai.emptyReason =
+    "No separately verified AI development cleared the unchanged editorial threshold.";
+  const changedQuietReasonCandidate = await draftFreeEdition({
+    ...options,
+    researchImpl: async () => changedResearch,
+  });
+
+  assert.equal(aiCalls, 0);
+  assert.equal(candidate.provenance.freePilot.draftingMode, "trusted-evidence-digest");
+  assert.equal(candidate.provenance.freePilot.inference, "trusted-evidence-digest");
+  assert.equal(candidate.provenance.freePilot.responseId, "local-digest");
+  assert.match(candidate.provenance.freePilot.requestSha256, /^[a-f0-9]{64}$/);
+  assert.match(candidate.provenance.freePilot.responseSha256, /^[a-f0-9]{64}$/);
+  assert.equal(
+    candidate.provenance.freePilot.requestSha256,
+    repeatedCandidate.provenance.freePilot.requestSha256,
+  );
+  assert.equal(
+    candidate.provenance.freePilot.responseSha256,
+    repeatedCandidate.provenance.freePilot.responseSha256,
+  );
+  assert.notEqual(
+    candidate.provenance.freePilot.requestSha256,
+    changedQuietReasonCandidate.provenance.freePilot.requestSha256,
+  );
+  assert.equal(candidate.provenance.freePilot.selectedStoryCount, 2);
+  assert.equal(validateCanonicalEdition(candidate).valid, true);
+  assert.equal(validateCanonicalEdition(repeatedCandidate).valid, true);
+});
+
+test("trusted-evidence-digest-only mode requires selected-slate drafting and excludes model summaries", async () => {
+  await assert.rejects(
+    () => draftFreeEdition(draftOptions({ trustedEvidenceDigestOnly: true })),
+    /requires deterministic selected-slate drafting/,
+  );
+  await assert.rejects(
+    () => draftFreeEdition(draftOptions({
+      draftSelectedSlate: true,
+      summarizeSelectedSlate: true,
+      trustedEvidenceDigestOnly: true,
+    })),
+    /cannot be combined with Workers AI summary drafting/,
+  );
+});
+
+test("summaries-only selected-slate drafting composes complete source-checked stories from a small prompt", async () => {
+  const scenario = selectedSlateScenario(["security-and-privacy", "platforms-and-power"]);
+  const summaryPayload = summaryPayloadForScenario(scenario);
+  const calls = [];
+  let sourceRequests = 0;
+
+  const candidate = await draftFreeEdition(draftOptions({
+    evidencePolicy: "authoritative-or-corroborated",
+    draftSelectedSlate: true,
+    summarizeSelectedSlate: true,
+    researchImpl: async () => scenario.research,
+    aiRequestImpl: async (options) => {
+      calls.push(options);
+      const validation = await options.validatePayload(summaryPayload);
+      assert.equal(validation.valid, true, validation.issues?.join(" "));
+      return {
+        ...aiResult(summaryPayload),
+        responseId: "workers-ai-summary-only-response",
+      };
+    },
+    sourceRequestImpl: async () => {
+      sourceRequests += 1;
+      return { status: 200, headers: {} };
+    },
+  }));
+
+  assert.equal(calls.length, 1);
+  assert.equal(sourceRequests, 4);
+  assert.equal(calls[0].responseFormat, "json_schema");
+  assert.equal(calls[0].maxAttempts, 2);
+  assert.deepEqual(Object.keys(calls[0].schema.properties), ["summaries"]);
+  assert.equal(Object.hasOwn(calls[0].schema.properties, "desks"), false);
+  const serializedMessages = JSON.stringify(calls[0].messages);
+  assert.doesNotMatch(serializedMessages, /POLICY_MARKER|PROMPT_MARKER/);
+  assert.doesNotMatch(serializedMessages, /publisherKey/);
+  assert.doesNotMatch(serializedMessages, /https:\/\//);
+  for (const selected of scenario.selectedCandidates) {
+    assert.match(serializedMessages, new RegExp(selected.candidateId));
+    for (const source of selected.sources) {
+      assert.doesNotMatch(serializedMessages, new RegExp(source.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    }
+    const summary = summaryPayload.summaries.find((item) => item.candidateId === selected.candidateId);
+    const story = candidate.desks[selected.suggestedDesk].story;
+    assert.ok(story);
+    assert.notEqual(story.headline, summary.headline);
+    assert.notEqual(story.whatHappened, summary.whatHappened);
+    assert.match(story.id, /^trusted-evidence-digest-/);
+    assert.equal(story.canonicalEventKey, selected.canonicalEventKey);
+    assert.deepEqual(
+      story.sources.map((source) => source.url),
+      selected.sources.map((source) => source.url),
+    );
+    assert.deepEqual(
+      story.evidence[0].sourceIds,
+      selected.sources.filter((source) => source.relationship !== "context")
+        .map((source) => source.id),
+    );
+  }
+  assert.equal(candidate.provenance.freePilot.draftingMode, "model");
+  assert.equal(candidate.provenance.freePilot.inference, "workers-ai");
+  assert.equal(candidate.provenance.freePilot.responseId, "workers-ai-summary-only-response");
+  assert.equal(validateCanonicalEdition(candidate).valid, true);
+});
+
+test("two malformed summaries exhaust the fixed model budget and use a local trusted evidence digest", async () => {
+  const scenario = selectedSlateScenario(["security-and-privacy", "platforms-and-power"]);
+  const calls = [];
+  let sourceRequests = 0;
+
+  const candidate = await draftFreeEdition(draftOptions({
+    evidencePolicy: "authoritative-or-corroborated",
+    draftSelectedSlate: true,
+    summarizeSelectedSlate: true,
+    researchImpl: async () => scenario.research,
+    aiRequestImpl: async (options) => {
+      calls.push(options);
+      assert.equal((await options.validatePayload({ summaries: [] })).valid, false);
+      throw workersAiFormatError(1, {
+        provider: "cloudflare-workers-ai",
+        model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+        responseId: `workers-ai-invalid-summary-${calls.length}`,
+        requestSha256: calls.length === 1 ? "1".repeat(64) : "3".repeat(64),
+        responseSha256: calls.length === 1 ? "2".repeat(64) : "4".repeat(64),
+      });
+    },
+    sourceRequestImpl: async () => {
+      sourceRequests += 1;
+      return { status: 200, headers: {} };
+    },
+  }));
+
+  assert.equal(calls.length, 2);
+  assert.equal(sourceRequests, 4);
+  assert.deepEqual(calls.map((options) => options.maxAttempts), [2, 1]);
+  assert.deepEqual(calls.map((options) => options.responseFormat), ["json_schema", "json_object"]);
+  assert.match(calls[1].messages[0].content, /CORRECTIVE RETRY/);
+  assert.equal(candidate.provenance.freePilot.draftingMode, "trusted-evidence-digest");
+  assert.equal(candidate.provenance.freePilot.inference, "trusted-evidence-digest");
+  assert.equal(candidate.provenance.freePilot.responseId, "local-digest");
+  assert.match(candidate.provenance.freePilot.requestSha256, /^[a-f0-9]{64}$/);
+  assert.match(candidate.provenance.freePilot.responseSha256, /^[a-f0-9]{64}$/);
+  for (const selected of scenario.selectedCandidates) {
+    const story = candidate.desks[selected.suggestedDesk].story;
+    assert.ok(story);
+    assert.notEqual(story.headline, "Nothing cleared the bar today.");
+    assert.ok(countReaderFacingStoryWords(story) >= MIN_READER_FACING_STORY_WORDS);
+    assert.ok(countReaderFacingStoryWords(story) <= MAX_READER_FACING_STORY_WORDS);
+    assert.deepEqual(
+      story.sources.map((source) => source.url),
+      selected.sources.map((source) => source.url),
+    );
+  }
+  assert.equal(validateCanonicalEdition(candidate).valid, true);
+});
+
+test("provider unavailability without response provenance still yields a local digest without extra model calls", async () => {
+  const scenario = selectedSlateScenario(["security-and-privacy", "platforms-and-power"]);
+  const calls = [];
+  let sourceRequests = 0;
+
+  const candidate = await draftFreeEdition(draftOptions({
+    evidencePolicy: "authoritative-or-corroborated",
+    draftSelectedSlate: true,
+    summarizeSelectedSlate: true,
+    researchImpl: async () => scenario.research,
+    aiRequestImpl: async (options) => {
+      calls.push(options);
+      throw workersAiUnavailableError(2);
+    },
+    sourceRequestImpl: async () => {
+      sourceRequests += 1;
+      return { status: 200, headers: {} };
+    },
+  }));
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].maxAttempts, 2);
+  assert.equal(sourceRequests, 4);
+  assert.equal(candidate.provenance.freePilot.draftingMode, "trusted-evidence-digest");
+  assert.equal(candidate.provenance.freePilot.inference, "trusted-evidence-digest");
+  assert.equal(candidate.provenance.freePilot.responseId, "local-digest");
+  assert.match(candidate.provenance.freePilot.requestSha256, /^[a-f0-9]{64}$/);
+  assert.match(candidate.provenance.freePilot.responseSha256, /^[a-f0-9]{64}$/);
+  assert.equal(validateCanonicalEdition(candidate).valid, true);
+});
+
+test("summary drafting uses the local digest for bounded transient provider failures only", async (t) => {
+  const transientErrors = [
+    Object.assign(new Error("Cloudflare Workers AI request timed out after 2 attempt(s)."), {
+      code: "WORKERS_AI_CLIENT_TIMEOUT",
+    }),
+    new Error("Cloudflare Workers AI request failed after 2 attempt(s)."),
+    new Error("Cloudflare Workers AI request failed with HTTP 429."),
+    new Error("Cloudflare Workers AI returned a non-JSON response."),
+  ];
+  for (const error of transientErrors) {
+    await t.test(error.code ?? error.message, async () => {
+      const scenario = selectedSlateScenario(["security-and-privacy"]);
+      let modelCalls = 0;
+      const candidate = await draftFreeEdition(draftOptions({
+        evidencePolicy: "authoritative-or-corroborated",
+        draftSelectedSlate: true,
+        summarizeSelectedSlate: true,
+        researchImpl: async () => scenario.research,
+        aiRequestImpl: async () => {
+          modelCalls += 1;
+          throw error;
+        },
+      }));
+      assert.equal(modelCalls, 1);
+      assert.equal(candidate.provenance.freePilot.draftingMode, "trusted-evidence-digest");
+      assert.equal(candidate.provenance.freePilot.inference, "trusted-evidence-digest");
+      assert.equal(candidate.provenance.freePilot.responseId, "local-digest");
+    });
+  }
+
+  await t.test("HTTP 401 remains a hard credential failure", async () => {
+    const scenario = selectedSlateScenario(["security-and-privacy"]);
+    await assert.rejects(
+      () => draftFreeEdition(draftOptions({
+        evidencePolicy: "authoritative-or-corroborated",
+        draftSelectedSlate: true,
+        summarizeSelectedSlate: true,
+        researchImpl: async () => scenario.research,
+        aiRequestImpl: async () => {
+          throw new Error("Cloudflare Workers AI request failed with HTTP 401.");
+        },
+      })),
+      /HTTP 401/,
+    );
+  });
+});
+
+test("summary corrective retries retain bounded semantic repair guidance", async (t) => {
+  const cases = [
+    ["length", /reader-word range/],
+    ["originality", /contiguous source words/],
+    ["authoritative-structure", /single-publisher summary/],
+  ];
+  for (const [repairKind, expectedGuidance] of cases) {
+    await t.test(repairKind, async () => {
+      const scenario = selectedSlateScenario(["security-and-privacy"]);
+      const calls = [];
+      const candidate = await draftFreeEdition(draftOptions({
+        evidencePolicy: "authoritative-or-corroborated",
+        draftSelectedSlate: true,
+        summarizeSelectedSlate: true,
+        researchImpl: async () => scenario.research,
+        aiRequestImpl: async (options) => {
+          calls.push(options);
+          if (calls.length === 1) {
+            throw workersAiFormatError(1, {
+              provider: "cloudflare-workers-ai",
+              model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+              responseId: `repair-${repairKind}`,
+              requestSha256: "7".repeat(64),
+              responseSha256: "8".repeat(64),
+            }, repairKind);
+          }
+          throw workersAiUnavailableError(1);
+        },
+      }));
+      assert.equal(calls.length, 2);
+      assert.equal(calls[1].responseFormat, "json_schema");
+      assert.match(calls[1].messages[0].content, expectedGuidance);
+      assert.equal(candidate.provenance.freePilot.draftingMode, "trusted-evidence-digest");
+    });
+  }
 });
 
 test("one bounded pre-AI retry adopts a strictly improved selected slate", async () => {
