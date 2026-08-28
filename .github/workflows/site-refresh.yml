@@ -1,0 +1,115 @@
+name: Refresh public reader
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: public-reader-refresh-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: Build the current published archive
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      safe_to_refresh: ${{ steps.guard.outputs.safe_to_refresh }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Build and test
+        run: npm test
+
+      - name: Protect the timed publication boundary
+        id: guard
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFile, readFile } from "node:fs/promises";
+
+          const manifest = JSON.parse(
+            await readFile("dist/client/editions/index.json", "utf8"),
+          );
+          const parts = Object.fromEntries(
+            new Intl.DateTimeFormat("en-US", {
+              timeZone: "America/New_York",
+              year: "numeric",
+              month: "2-digit",
+              day: "2-digit",
+            })
+              .formatToParts(new Date())
+              .filter(({ type }) => type !== "literal")
+              .map(({ type, value }) => [type, value]),
+          );
+          const today = `${parts.year}-${parts.month}-${parts.day}`;
+          const latest = manifest.latest;
+          const safeToRefresh =
+            latest === null ||
+            (typeof latest === "string" &&
+              /^\d{4}-\d{2}-\d{2}$/.test(latest) &&
+              latest < today);
+
+          await appendFile(
+            process.env.GITHUB_OUTPUT,
+            `safe_to_refresh=${safeToRefresh}\n`,
+          );
+          await appendFile(
+            process.env.GITHUB_STEP_SUMMARY,
+            safeToRefresh
+              ? `### Public reader refresh\n\nRefreshing the tested site shell around historical published edition ${latest ?? "none"}.\n`
+              : `### Public reader refresh skipped\n\nEdition ${latest ?? "missing"} is current or future-dated; the 6:00 AM delivery workflow remains the only publication path.\n`,
+          );
+          NODE
+
+      - name: Configure GitHub Pages
+        if: steps.guard.outputs.safe_to_refresh == 'true'
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
+
+      - name: Upload the tested reader
+        if: steps.guard.outputs.safe_to_refresh == 'true'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
+        with:
+          path: dist/client
+
+  deploy:
+    name: Publish the current reader
+    needs: package
+    if: needs.package.result == 'success' && needs.package.outputs.safe_to_refresh == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: github-pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Publish the tested Pages artifact
+        id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5

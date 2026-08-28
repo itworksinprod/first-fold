@@ -1,17 +1,75 @@
 # First Fold
 
-**A six-minute morning paper for people who work with technology.**
+[![CI](https://github.com/itworksinprod/first-fold/actions/workflows/ci.yml/badge.svg)](https://github.com/itworksinprod/first-fold/actions/workflows/ci.yml)
 
-First Fold is a small, newspaper-inspired daily briefing for technology professionals, managers, builders, defenders, and serious technology users who want to understand what matters without opening an endless feed. Every morning, it presents **at most one consequential story from each of four permanent desks**:
+**A finite, six-minute technology newspaper built as a secure AI and cloud-automation pilot.**
 
-- AI & Models
-- Work & Tools
-- Security & Privacy
-- Platforms & Power
+[Read the live edition](https://itworksinprod.github.io/first-fold/) ·
+[Open the review desk](https://itworksinprod.github.io/first-fold/editor/) ·
+[See the architecture](#architecture) ·
+[Run it locally](#run-the-mvp)
 
-The interface borrows the ritual and pacing of a folded newspaper—masthead, sections, columns, and page turns—while keeping the reading experience accessible on phones, keyboards, touchscreens, and reduced-motion displays.
+![First Fold's newspaper-inspired morning edition](docs/images/first-fold-cover.png)
 
-This repository contains the **First Fold MVP and Morning Press pilot**: the finite reader, installable app, editorial contract, deterministic edition scaffolder, zero-cost private daily research lane, optional manual paid public draft, human-review workflow, dated archive, and fail-closed 6:00 AM delivery gate. One canonical JSON document is the source of truth for each public issue; the reader build validates every issue and derives the browser-facing edition and archive artifacts without runtime feeds or client-side AI credentials.
+First Fold publishes at most one consequential story from each of four desks:
+**AI & Models, Work & Tools, Security & Privacy, and Platforms & Power**. A weak
+story leaves a desk intentionally quiet instead of becoming filler. The result
+is an accessible, installable PWA with a dated archive and a clear stopping
+point—not another infinite feed.
+
+Behind the reader is a security-conscious delivery system: canonical JSON
+editions, deterministic builds, schema and provenance validation, bounded
+research, exact-revision human approval, least-privilege automation, and a
+fail-closed 6:00 AM publication gate. Public pages contain no runtime feeds,
+model credentials, or client-side AI calls.
+
+## What this demonstrates
+
+- **Secure CI/CD:** locked installs, automated tests, least-privilege workflow
+  permissions, exact-revision approval, and deployment of the tested artifact.
+- **Human-governed AI:** models may research and draft, but deterministic gates
+  and an authorized reviewer control public publication.
+- **Defense in depth:** allowlisted sources, bounded requests and retries,
+  schema validation, evidence checks, repeat suppression, and fail-closed output.
+- **Privacy-preserving separation:** private candidates remain ephemeral and
+  never enter public branches, Pages deployments, or reusable content artifacts.
+- **End-to-end product engineering:** responsive reading, keyboard and touch
+  navigation, reduced-motion support, offline labeling, archives, and PWA install.
+
+## Human review desk
+
+![First Fold review desk with validation status](docs/images/first-fold-press-desk.png)
+
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph PUBLIC[Public release lane]
+    PR[Human or bot edition PR] --> REVIEW{{Authorized review<br/>bound to exact SHA}}
+    REVIEW --> MAIN[Canonical edition on main]
+    MAIN --> BUILD{{Deterministic build<br/>schema, evidence, date<br/>and publication gates}}
+    BUILD --> PAGES[GitHub Pages]
+    PAGES --> READER[Finite reader<br/>archive and PWA]
+  end
+
+  subgraph PRIVATE[Private owner-only lane]
+    FEEDS[Curated feeds] --> GATES{{Coverage, freshness,<br/>score and repeat gates}}
+    GATES --> AI[Allowlisted Workers AI model]
+    AI --> VALIDATE{{Local schema, source<br/>and rendering validation}}
+    VALIDATE --> EMAIL[Escaped HTML and<br/>plain-text email]
+  end
+
+  SCHEDULER[Cloudflare scheduler] -->|5:05 AM daily| GATES
+  SCHEDULER -->|6:00 AM weekdays| RELEASE{{Main-only release gate}}
+  RELEASE --> PAGES
+  EMAIL -->|Expiring signed link| FEEDBACK[Isolated feedback Worker]
+  FEEDBACK --> D1[(Minimized D1 rows)]
+  D1 --> HUMAN[Human review only<br/>never auto-publishes]
+```
+
+The [review desk](https://itworksinprod.github.io/first-fold/editor/) exposes
+the same revision-bound reader projection used by the public edition. It is a
+portfolio prototype, not a production administration surface.
 
 ## Why this exists
 
