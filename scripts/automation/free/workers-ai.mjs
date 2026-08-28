@@ -15,6 +15,7 @@ export const DEFAULT_WORKERS_AI_MAX_RESPONSE_BYTES = 1_000_000;
 export const WORKERS_AI_EDITORIAL_FORMAT_INVALID = "WORKERS_AI_EDITORIAL_FORMAT_INVALID";
 
 const CLOUDFLARE_API_ORIGIN = "https://api.cloudflare.com";
+const CLOUDFLARE_JSON_MODE_NOT_MET = "JSON Mode couldn't be met";
 const ACCOUNT_ID_PATTERN = /^[a-f0-9]{32}$/i;
 const CLOUDFLARE_MODEL_PATTERN = /^@cf\/[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*$/i;
 const MAX_WORKERS_AI_MESSAGES = 8;
@@ -183,6 +184,31 @@ function workersAiEditorialFormatError(message, attemptCount, inference) {
   return error;
 }
 
+function isDocumentedJsonModeFailure(envelope, status) {
+  if (
+    !isObject(envelope) ||
+    envelope.success !== false ||
+    (Object.hasOwn(envelope, "result") && envelope.result !== null) ||
+    status === 401 ||
+    status === 403 ||
+    status === 408 ||
+    status === 409 ||
+    status === 425 ||
+    status === 429 ||
+    (status >= 300 && status < 400) ||
+    !Array.isArray(envelope.errors) ||
+    envelope.errors.length !== 1
+  ) {
+    return false;
+  }
+  const [entry] = envelope.errors;
+  return (
+    isObject(entry) &&
+    typeof entry.message === "string" &&
+    entry.message.trim() === CLOUDFLARE_JSON_MODE_NOT_MET
+  );
+}
+
 async function cancelResponseBody(response) {
   try {
     await response?.body?.cancel();
@@ -261,18 +287,30 @@ async function performAttempt({ url, apiToken, requestText, fetchImpl, timeoutMs
     if (!response || typeof response.ok !== "boolean" || !Number.isInteger(response.status)) {
       throw new Error("Cloudflare Workers AI returned an invalid HTTP response.");
     }
-    if (!response.ok) {
-      await cancelResponseBody(response);
-      return { response, status: response.status, text: null };
-    }
-
     const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+    if (!response.ok) {
+      if (
+        !contentType.includes("application/json") ||
+        !response.body ||
+        typeof response.body.getReader !== "function"
+      ) {
+        await cancelResponseBody(response);
+        return { ok: false, response, status: response.status, text: null };
+      }
+      try {
+        const text = await readBoundedResponseText(response, maxResponseBytes);
+        return { ok: false, response, status: response.status, text };
+      } catch {
+        // Error-body inspection is best-effort; the HTTP status remains authoritative.
+        return { ok: false, response, status: response.status, text: null };
+      }
+    }
     if (!contentType.includes("application/json")) {
       await cancelResponseBody(response);
       throw new Error("Cloudflare Workers AI returned a non-JSON response.");
     }
     const text = await readBoundedResponseText(response, maxResponseBytes);
-    return { response, status: response.status, text };
+    return { ok: response.ok, response, status: response.status, text };
   })();
 
   try {
@@ -330,7 +368,24 @@ async function requestEnvelope({
       throw new Error(`Cloudflare Workers AI request failed after ${attempt} attempt(s).`);
     }
 
-    if (result.text === null) {
+    if (!result.ok) {
+      let errorEnvelope;
+      if (result.text !== null) {
+        try {
+          errorEnvelope = JSON.parse(result.text);
+        } catch {
+          // Provider error bodies are never surfaced; status handling remains authoritative.
+        }
+      }
+      if (isDocumentedJsonModeFailure(errorEnvelope, result.status)) {
+        return {
+          documentedJsonModeFailure: true,
+          envelope: errorEnvelope,
+          response: result.response,
+          responseText: result.text,
+          attemptCount: attempt,
+        };
+      }
       if (attempt < maxAttempts && shouldRetryStatus(result.status)) {
         await sleepImpl(250 * (2 ** (attempt - 1)));
         continue;
@@ -351,6 +406,7 @@ async function requestEnvelope({
       throw new Error("Cloudflare Workers AI returned unreadable JSON.");
     }
     return {
+      documentedJsonModeFailure: isDocumentedJsonModeFailure(envelope, result.status),
       envelope,
       response: result.response,
       responseText: result.text,
@@ -449,7 +505,13 @@ export async function requestWorkersAiEditorial({
   if (utf8Encoder.encode(requestText).byteLength > maxRequestBytes) {
     throw new Error("Cloudflare Workers AI request exceeded the configured size limit.");
   }
-  const { envelope, response, responseText, attemptCount } = await requestEnvelope({
+  const {
+    documentedJsonModeFailure,
+    envelope,
+    response,
+    responseText,
+    attemptCount,
+  } = await requestEnvelope({
     url,
     apiToken: token,
     requestText,
@@ -473,6 +535,13 @@ export async function requestWorkersAiEditorial({
     })).digest("hex"),
     responseSha256: createHash("sha256").update(responseText).digest("hex"),
   };
+  if (documentedJsonModeFailure) {
+    throw workersAiEditorialFormatError(
+      "Cloudflare Workers AI could not satisfy the requested editorial JSON schema.",
+      attemptCount,
+      inference,
+    );
+  }
   let editorialPayload;
   try {
     editorialPayload = extractEditorialPayload(envelope);

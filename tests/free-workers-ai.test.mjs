@@ -232,6 +232,121 @@ test("editorial format failures expose only fixed code and bounded attempt prove
   assert.equal(calls, 2);
 });
 
+test("Cloudflare's documented JSON Mode failure uses the safe editorial fallback signal", async (t) => {
+  const documentedFailure = () => new Response(JSON.stringify({
+    success: false,
+    result: null,
+    errors: [{ code: 7000, message: "JSON Mode couldn't be met" }],
+    messages: [],
+  }), {
+    status: 500,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cf-ray": "json-mode-failure-ray",
+    },
+  });
+
+  await t.test("HTTP error envelope is classified without a transport retry", async () => {
+    let calls = 0;
+    const sleeps = [];
+    await assert.rejects(
+      requestWorkersAiEditorial(requestOptions({
+        fetchImpl: async () => {
+          calls += 1;
+          return documentedFailure();
+        },
+        sleepImpl: async (milliseconds) => sleeps.push(milliseconds),
+      })),
+      (error) => {
+        assert.equal(error.code, WORKERS_AI_EDITORIAL_FORMAT_INVALID);
+        assert.equal(error.attemptCount, 1);
+        assert.equal(error.inference.responseId, "json-mode-failure-ray");
+        assert.match(error.inference.responseSha256, /^[a-f0-9]{64}$/);
+        assert.equal(
+          error.message,
+          "Cloudflare Workers AI could not satisfy the requested editorial JSON schema.",
+        );
+        assert.doesNotMatch(error.message, /JSON Mode couldn't be met|cloudflare-test-token/);
+        return true;
+      },
+    );
+    assert.equal(calls, 1);
+    assert.deepEqual(sleeps, []);
+  });
+
+  await t.test("HTTP 200 unsuccessful envelope is classified the same way", async () => {
+    const response = documentedFailure();
+    const body = await response.text();
+    await assert.rejects(
+      requestWorkersAiEditorial(requestOptions({
+        fetchImpl: async () => new Response(body, {
+          status: 200,
+          headers: { "content-type": "application/json", "cf-ray": "json-mode-200-ray" },
+        }),
+      })),
+      (error) => {
+        assert.equal(error.code, WORKERS_AI_EDITORIAL_FORMAT_INVALID);
+        assert.equal(error.inference.responseId, "json-mode-200-ray");
+        return true;
+      },
+    );
+  });
+
+  await t.test("authentication failures cannot masquerade as editorial format failures", async () => {
+    const body = JSON.stringify({
+      success: false,
+      result: null,
+      errors: [{ message: "JSON Mode couldn't be met" }],
+    });
+    await assert.rejects(
+      requestWorkersAiEditorial(requestOptions({
+        fetchImpl: async () => new Response(body, {
+          status: 401,
+          headers: { "content-type": "application/json" },
+        }),
+      })),
+      (error) => {
+        assert.equal(error.code, undefined);
+        assert.equal(error.message, "Cloudflare Workers AI request failed with HTTP 401.");
+        return true;
+      },
+    );
+  });
+
+  await t.test("near-matches and multi-error envelopes stay on the HTTP retry path", async () => {
+    for (const errors of [
+      [{ message: "JSON Mode couldn't be met." }],
+      [
+        { message: "JSON Mode couldn't be met" },
+        { message: `provider detail ${apiToken}` },
+      ],
+    ]) {
+      let calls = 0;
+      const sleeps = [];
+      await assert.rejects(
+        requestWorkersAiEditorial(requestOptions({
+          fetchImpl: async () => {
+            calls += 1;
+            return new Response(JSON.stringify({ success: false, result: null, errors }), {
+              status: 500,
+              headers: { "content-type": "application/json" },
+            });
+          },
+          sleepImpl: async (milliseconds) => sleeps.push(milliseconds),
+        })),
+        (error) => {
+          assert.equal(error.code, undefined);
+          assert.equal(error.message, "Cloudflare Workers AI request failed with HTTP 500.");
+          assert.doesNotMatch(error.message, /JSON Mode|cloudflare-test-token/);
+          return true;
+        },
+      );
+      assert.equal(calls, 2);
+      assert.deepEqual(sleeps, [250]);
+    }
+  });
+});
+
 test("the documented Chat Completions result is parsed and locally validated", async () => {
   let validated;
   const result = await requestWorkersAiEditorial(requestOptions({
