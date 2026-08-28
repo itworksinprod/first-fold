@@ -33,6 +33,7 @@ const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const TRACKING_PARAMETER =
   /^(?:utm_.+|fbclid|gclid|msclkid|mc_cid|mc_eid|at_campaign|at_medium)$/i;
 const SOURCE_RELATIONSHIPS = new Set(["originating", "independent", "context"]);
+const ITEM_PATH_POLICIES = new Set(["append-trailing-slash"]);
 const FREE_EVIDENCE_POLICIES = new Set([
   DEFAULT_FREE_EVIDENCE_POLICY,
   AUTHORITATIVE_FREE_EVIDENCE_POLICY,
@@ -443,6 +444,17 @@ function normalizeItemUrl(value, source) {
     return null;
   }
   resolved.hash = "";
+  if (
+    source.itemPathPolicy === "append-trailing-slash" &&
+    resolved.pathname !== "/" &&
+    !resolved.pathname.endsWith("/")
+  ) {
+    // Some reviewed feeds publish a redirecting form of their own canonical
+    // article path. Apply only the source-owned, checked-in path policy before
+    // fingerprinting and source binding so final newsroom QA can keep its
+    // strict zero-redirect contract.
+    resolved.pathname = `${resolved.pathname}/`;
+  }
   for (const key of [...resolved.searchParams.keys()]) {
     if (TRACKING_PARAMETER.test(key)) resolved.searchParams.delete(key);
   }
@@ -463,6 +475,12 @@ function validateSource(source) {
   }
   if (!new Set(["xml", "json"]).has(source.format)) {
     throw new Error(`Feed source ${source.id} has an unsupported format.`);
+  }
+  if (
+    source.itemPathPolicy !== undefined &&
+    !ITEM_PATH_POLICIES.has(source.itemPathPolicy)
+  ) {
+    throw new Error(`Feed source ${source.id} has an unsupported item path policy.`);
   }
   validateAllowedUrl(source.url, source.feedHosts, `Feed source ${source.id} URL`);
   if (!Array.isArray(source.itemHosts) || source.itemHosts.length === 0) {

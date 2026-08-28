@@ -227,6 +227,7 @@ export const FREE_FEED_SOURCES = Object.freeze([
     url: "https://aws.amazon.com/about-aws/whats-new/recent/feed/",
     feedHosts: ["aws.amazon.com"],
     itemHosts: ["aws.amazon.com"],
+    itemPathPolicy: "append-trailing-slash",
     coverageDesks: ["platforms-and-power"],
     deskPriors: { "platforms-and-power": 22, "work-and-tools": 5 },
   },

@@ -411,6 +411,34 @@ test("legacy HTTP item links upgrade only on the exact reviewed host and default
   assert.deepEqual(items.map((item) => item.url), ["https://news.example/safe"]);
 });
 
+test("a reviewed feed may canonicalize its own article paths before strict link QA", () => {
+  const body = `<?xml version="1.0"?><rss><channel>
+    <item><guid>canonical-path</guid><title>Reviewed canonical path</title>
+      <link>https://news.example/reviewed-update?utm_source=feed</link>
+      <pubDate>Fri, 21 Aug 2026 12:00:00 GMT</pubDate></item>
+  </channel></rss>`;
+  const items = parseFeedPayload({
+    source: source({ itemPathPolicy: "append-trailing-slash" }),
+    body,
+    retrievedAt,
+  });
+  assert.deepEqual(items.map((item) => item.url), [
+    "https://news.example/reviewed-update/",
+  ]);
+  assert.throws(
+    () => parseFeedPayload({
+      source: source({ itemPathPolicy: "follow-redirects" }),
+      body,
+      retrievedAt,
+    }),
+    /unsupported item path policy/,
+  );
+  assert.equal(
+    FREE_FEED_SOURCES.find((item) => item.id === "aws-whats-new")?.itemPathPolicy,
+    "append-trailing-slash",
+  );
+});
+
 test("the production feed user agent is browser-compatible and identifies the pilot", () => {
   assert.match(FREE_FEED_USER_AGENT, /^Mozilla\/5\.0 \(compatible;/);
   assert.match(FREE_FEED_USER_AGENT, /First-Fold-Free-Pilot\/1\.0/);
