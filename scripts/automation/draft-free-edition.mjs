@@ -22,6 +22,7 @@ import {
 import { FREE_FEED_SOURCES } from "./free/feed-sources.mjs";
 import {
   WORKERS_AI_EDITORIAL_FORMAT_INVALID,
+  WORKERS_AI_EDITORIAL_UNAVAILABLE,
   WORKERS_AI_PROVIDER,
   requestWorkersAiEditorial,
   resolveCloudflareAiModel,
@@ -1207,6 +1208,11 @@ function trustedFormatErrorInference(error, modelId) {
     responseSha256: rejected.responseSha256,
     kind: "workers-ai",
   };
+}
+
+function isRecoverableWorkersAiEditorialError(error) {
+  return error?.code === WORKERS_AI_EDITORIAL_FORMAT_INVALID ||
+    error?.code === WORKERS_AI_EDITORIAL_UNAVAILABLE;
 }
 
 class FreeEditorialRepairError extends Error {
@@ -2437,7 +2443,7 @@ async function draftFreeEditionCore({
       minimumStoryCount: requiredStoryCount,
     });
     let remainingModelRequests = maxModelRequests;
-    let rejectedFormatInference = null;
+    let rejectedEditorialInference = null;
     const requestInference = async (requestMessages) => {
       if (remainingModelRequests < 1) {
         throw freeEditorialDiagnosticError(
@@ -2467,16 +2473,16 @@ async function draftFreeEditionCore({
           sleepImpl,
         });
       } catch (error) {
-        if (error?.code === WORKERS_AI_EDITORIAL_FORMAT_INVALID) {
+        if (isRecoverableWorkersAiEditorialError(error)) {
           if (
             !Number.isInteger(error.attemptCount) ||
             error.attemptCount < 1 ||
             error.attemptCount > attemptAllowance
           ) {
-            throw new Error("Workers AI returned invalid format-error attempt provenance.");
+            throw new Error("Workers AI returned invalid editorial-error attempt provenance.");
           }
           remainingModelRequests -= error.attemptCount;
-          rejectedFormatInference = trustedFormatErrorInference(error, modelId);
+          rejectedEditorialInference = trustedFormatErrorInference(error, modelId);
         }
         throw error;
       }
@@ -2509,7 +2515,7 @@ async function draftFreeEditionCore({
     try {
       accepted = await requestInference(messages);
     } catch (error) {
-      if (error?.code !== WORKERS_AI_EDITORIAL_FORMAT_INVALID) throw error;
+      if (!isRecoverableWorkersAiEditorialError(error)) throw error;
       repairKind = "format";
     }
     if (accepted) {
@@ -2527,41 +2533,49 @@ async function draftFreeEditionCore({
     }
     if (repairKind !== null) {
       let usedTrustedFormatFallback = false;
-      try {
-        accepted = await requestInference(
-          buildFreeWorkersAiCorrectiveRetryMessages(messages, repairKind),
+      const canUseTrustedFormatFallback = () => repairKind === "format" &&
+        draftSelectedSlate &&
+        normalizedEvidencePolicy === "authoritative-or-corroborated" &&
+        rejectedEditorialInference !== null &&
+        candidates.length > 0 &&
+        candidates.every((candidate) => candidate.ranking?.evidenceTier === "authoritative-single");
+      const useTrustedFormatFallback = () => {
+        const fallbackPayload = buildTrustedAuthoritativeSourceAlertPayloadFromCandidates(
+          research,
+          coverage,
+          candidates,
         );
-      } catch (error) {
-        if (error?.code === WORKERS_AI_EDITORIAL_FORMAT_INVALID) {
-          if (
-            repairKind === "format" &&
-            draftSelectedSlate &&
-            normalizedEvidencePolicy === "authoritative-or-corroborated" &&
-            rejectedFormatInference !== null
-          ) {
-            const fallbackPayload = buildTrustedAuthoritativeSourceAlertPayloadFromCandidates(
-              research,
-              coverage,
-              candidates,
-            );
-            editorial = normalizeFreeEditorialAgainstCandidates(
-              fallbackPayload,
-              candidates,
-              generatedAt,
-              { evidencePolicy: normalizedEvidencePolicy, requiredEventKeys },
-            );
-            editorial.frontPage.note = AUTHORITATIVE_SOURCE_ALERT_NOTE;
-            draftingMode = "trusted-authoritative-source-alert";
-            accepted = { inference: rejectedFormatInference };
-            usedTrustedFormatFallback = true;
+        editorial = normalizeFreeEditorialAgainstCandidates(
+          fallbackPayload,
+          candidates,
+          generatedAt,
+          { evidencePolicy: normalizedEvidencePolicy, requiredEventKeys },
+        );
+        editorial.frontPage.note = AUTHORITATIVE_SOURCE_ALERT_NOTE;
+        draftingMode = "trusted-authoritative-source-alert";
+        accepted = { inference: rejectedEditorialInference };
+        usedTrustedFormatFallback = true;
+      };
+      if (remainingModelRequests === 0 && canUseTrustedFormatFallback()) {
+        useTrustedFormatFallback();
+      } else {
+        try {
+          accepted = await requestInference(
+            buildFreeWorkersAiCorrectiveRetryMessages(messages, repairKind),
+          );
+        } catch (error) {
+          if (isRecoverableWorkersAiEditorialError(error)) {
+            if (canUseTrustedFormatFallback()) {
+              useTrustedFormatFallback();
+            } else {
+              throw freeEditorialDiagnosticError(
+                "Workers AI corrective draft did not satisfy the required format contract.",
+                "EDITORIAL_FORMAT_RETRY_EXHAUSTED",
+              );
+            }
           } else {
-            throw freeEditorialDiagnosticError(
-              "Workers AI corrective draft did not satisfy the required format contract.",
-              "EDITORIAL_FORMAT_RETRY_EXHAUSTED",
-            );
+            throw error;
           }
-        } else {
-          throw error;
         }
       }
       if (!usedTrustedFormatFallback) {

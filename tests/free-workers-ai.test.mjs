@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   DEFAULT_CLOUDFLARE_AI_MODEL,
   WORKERS_AI_EDITORIAL_FORMAT_INVALID,
+  WORKERS_AI_EDITORIAL_UNAVAILABLE,
   WORKERS_AI_PROVIDER,
   buildWorkersAiRequest,
   requestWorkersAiEditorial,
@@ -233,10 +234,10 @@ test("editorial format failures expose only fixed code and bounded attempt prove
 });
 
 test("Cloudflare's documented JSON Mode failure uses the safe editorial fallback signal", async (t) => {
-  const documentedFailure = () => new Response(JSON.stringify({
+  const documentedFailure = (message = "JSON Mode couldn't be met") => new Response(JSON.stringify({
     success: false,
     result: null,
-    errors: [{ code: 7000, message: "JSON Mode couldn't be met" }],
+    errors: [{ code: 7000, message }],
     messages: [],
   }), {
     status: 500,
@@ -253,7 +254,7 @@ test("Cloudflare's documented JSON Mode failure uses the safe editorial fallback
       requestWorkersAiEditorial(requestOptions({
         fetchImpl: async () => {
           calls += 1;
-          return documentedFailure();
+          return documentedFailure("InferenceUpstreamError: JSON Mode couldn't be met");
         },
         sleepImpl: async (milliseconds) => sleeps.push(milliseconds),
       })),
@@ -313,9 +314,9 @@ test("Cloudflare's documented JSON Mode failure uses the safe editorial fallback
     );
   });
 
-  await t.test("near-matches and multi-error envelopes stay on the HTTP retry path", async () => {
+  await t.test("near-matches and multi-error envelopes become unavailable only after HTTP retry", async () => {
     for (const errors of [
-      [{ message: "JSON Mode couldn't be met." }],
+      [{ message: "JSON Mode could not be met" }],
       [
         { message: "JSON Mode couldn't be met" },
         { message: `provider detail ${apiToken}` },
@@ -335,8 +336,9 @@ test("Cloudflare's documented JSON Mode failure uses the safe editorial fallback
           sleepImpl: async (milliseconds) => sleeps.push(milliseconds),
         })),
         (error) => {
-          assert.equal(error.code, undefined);
-          assert.equal(error.message, "Cloudflare Workers AI request failed with HTTP 500.");
+          assert.equal(error.code, WORKERS_AI_EDITORIAL_UNAVAILABLE);
+          assert.equal(error.attemptCount, 2);
+          assert.equal(error.message, "Cloudflare Workers AI did not provide a usable editorial response.");
           assert.doesNotMatch(error.message, /JSON Mode|cloudflare-test-token/);
           return true;
         },
@@ -344,6 +346,28 @@ test("Cloudflare's documented JSON Mode failure uses the safe editorial fallback
       assert.equal(calls, 2);
       assert.deepEqual(sleeps, [250]);
     }
+  });
+
+  await t.test("an unsuccessful non-schema envelope is a bounded unavailable result", async () => {
+    await assert.rejects(
+      requestWorkersAiEditorial(requestOptions({
+        fetchImpl: async () => new Response(JSON.stringify({
+          success: false,
+          result: null,
+          errors: [{ message: "provider could not complete inference" }],
+        }), {
+          status: 200,
+          headers: { "content-type": "application/json", "cf-ray": "unavailable-ray" },
+        }),
+      })),
+      (error) => {
+        assert.equal(error.code, WORKERS_AI_EDITORIAL_UNAVAILABLE);
+        assert.equal(error.attemptCount, 1);
+        assert.equal(error.inference.responseId, "unavailable-ray");
+        assert.doesNotMatch(error.message, /provider could not complete inference/);
+        return true;
+      },
+    );
   });
 });
 
@@ -580,7 +604,7 @@ test("bad envelopes, malformed JSON, and failed local validation never produce a
         headers: { "content-type": "application/json" },
       }),
       validatePayload: () => true,
-      expected: /successful result envelope/,
+      expected: /did not provide a usable editorial response/,
     },
     {
       name: "validator rejection",

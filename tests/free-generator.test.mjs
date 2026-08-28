@@ -446,6 +446,28 @@ function workersAiFormatError(attemptCount = 1, inference = null) {
   return error;
 }
 
+function workersAiUnavailableError(attemptCount = 1, inference = null) {
+  const error = new Error("Cloudflare Workers AI did not provide a usable editorial response.");
+  const properties = {
+    code: {
+      value: "WORKERS_AI_EDITORIAL_UNAVAILABLE",
+      enumerable: false,
+    },
+    attemptCount: {
+      value: attemptCount,
+      enumerable: false,
+    },
+  };
+  if (inference !== null) {
+    properties.inference = {
+      value: Object.freeze({ ...inference }),
+      enumerable: false,
+    };
+  }
+  Object.defineProperties(error, properties);
+  return error;
+}
+
 function draftOptions(overrides = {}) {
   return {
     editionDate: "2026-08-20",
@@ -2326,6 +2348,44 @@ test("two invalid formats become a candidate-only trusted source-alert edition",
   assert.equal(candidate.provenance.freePilot.responseId, "workers-ai-invalid-format-2");
   assert.equal(candidate.provenance.freePilot.requestSha256, "c".repeat(64));
   assert.equal(candidate.provenance.freePilot.responseSha256, "d".repeat(64));
+  assert.match(candidate.frontPage.note, /primary-source briefs/i);
+  assert.equal(validateCanonicalEdition(candidate).valid, true);
+});
+
+test("exhausted provider retries still produce trusted briefs for an all-authoritative slate", async () => {
+  const scenario = selectedSlateScenario(["security-and-privacy", "platforms-and-power"]);
+  const calls = [];
+  let sourceRequests = 0;
+  const inference = {
+    provider: "cloudflare-workers-ai",
+    model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    responseId: "workers-ai-provider-unavailable",
+    requestSha256: "e".repeat(64),
+    responseSha256: "f".repeat(64),
+  };
+
+  const candidate = await draftFreeEdition(draftOptions({
+    evidencePolicy: "authoritative-or-corroborated",
+    draftSelectedSlate: true,
+    researchImpl: async () => scenario.research,
+    aiRequestImpl: async (options) => {
+      calls.push(options);
+      throw workersAiUnavailableError(2, inference);
+    },
+    sourceRequestImpl: async () => {
+      sourceRequests += 1;
+      return { status: 200, headers: {} };
+    },
+  }));
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].maxAttempts, 2);
+  assert.equal(sourceRequests, 4);
+  assert.equal(
+    candidate.provenance.freePilot.draftingMode,
+    "trusted-authoritative-source-alert",
+  );
+  assert.equal(candidate.provenance.freePilot.responseId, inference.responseId);
   assert.match(candidate.frontPage.note, /primary-source briefs/i);
   assert.equal(validateCanonicalEdition(candidate).valid, true);
 });

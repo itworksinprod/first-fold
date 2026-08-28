@@ -13,9 +13,10 @@ export const DEFAULT_WORKERS_AI_MAX_ATTEMPTS = 2;
 export const DEFAULT_WORKERS_AI_MAX_REQUEST_BYTES = 500_000;
 export const DEFAULT_WORKERS_AI_MAX_RESPONSE_BYTES = 1_000_000;
 export const WORKERS_AI_EDITORIAL_FORMAT_INVALID = "WORKERS_AI_EDITORIAL_FORMAT_INVALID";
+export const WORKERS_AI_EDITORIAL_UNAVAILABLE = "WORKERS_AI_EDITORIAL_UNAVAILABLE";
 
 const CLOUDFLARE_API_ORIGIN = "https://api.cloudflare.com";
-const CLOUDFLARE_JSON_MODE_NOT_MET = "JSON Mode couldn't be met";
+const CLOUDFLARE_JSON_MODE_NOT_MET_PATTERN = /(?:^|:\s*)JSON Mode couldn't be met\.?$/;
 const ACCOUNT_ID_PATTERN = /^[a-f0-9]{32}$/i;
 const CLOUDFLARE_MODEL_PATTERN = /^@cf\/[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*$/i;
 const MAX_WORKERS_AI_MESSAGES = 8;
@@ -184,6 +185,28 @@ function workersAiEditorialFormatError(message, attemptCount, inference) {
   return error;
 }
 
+function workersAiEditorialUnavailableError(message, attemptCount, inference) {
+  const error = new Error(message);
+  Object.defineProperties(error, {
+    code: {
+      value: WORKERS_AI_EDITORIAL_UNAVAILABLE,
+      configurable: true,
+      enumerable: false,
+    },
+    attemptCount: {
+      value: attemptCount,
+      configurable: true,
+      enumerable: false,
+    },
+    inference: {
+      value: Object.freeze({ ...inference }),
+      configurable: true,
+      enumerable: false,
+    },
+  });
+  return error;
+}
+
 function isDocumentedJsonModeFailure(envelope, status) {
   if (
     !isObject(envelope) ||
@@ -201,12 +224,11 @@ function isDocumentedJsonModeFailure(envelope, status) {
   ) {
     return false;
   }
-  const [entry] = envelope.errors;
-  return (
+  return envelope.errors.some((entry) => (
     isObject(entry) &&
     typeof entry.message === "string" &&
-    entry.message.trim() === CLOUDFLARE_JSON_MODE_NOT_MET
-  );
+    CLOUDFLARE_JSON_MODE_NOT_MET_PATTERN.test(entry.message.trim())
+  ));
 }
 
 async function cancelResponseBody(response) {
@@ -396,6 +418,16 @@ async function requestEnvelope({
           "WORKERS_AI_PROVIDER_TIMEOUT",
         );
       }
+      if (shouldRetryStatus(result.status) && result.text !== null) {
+        return {
+          documentedJsonModeFailure: false,
+          editorialUnavailable: true,
+          envelope: errorEnvelope ?? null,
+          response: result.response,
+          responseText: result.text,
+          attemptCount: attempt,
+        };
+      }
       throw new Error(`Cloudflare Workers AI request failed with HTTP ${result.status}.`);
     }
 
@@ -405,8 +437,10 @@ async function requestEnvelope({
     } catch {
       throw new Error("Cloudflare Workers AI returned unreadable JSON.");
     }
+    const documentedJsonModeFailure = isDocumentedJsonModeFailure(envelope, result.status);
     return {
-      documentedJsonModeFailure: isDocumentedJsonModeFailure(envelope, result.status),
+      documentedJsonModeFailure,
+      editorialUnavailable: !documentedJsonModeFailure && envelope?.success === false,
       envelope,
       response: result.response,
       responseText: result.text,
@@ -507,6 +541,7 @@ export async function requestWorkersAiEditorial({
   }
   const {
     documentedJsonModeFailure,
+    editorialUnavailable,
     envelope,
     response,
     responseText,
@@ -538,6 +573,13 @@ export async function requestWorkersAiEditorial({
   if (documentedJsonModeFailure) {
     throw workersAiEditorialFormatError(
       "Cloudflare Workers AI could not satisfy the requested editorial JSON schema.",
+      attemptCount,
+      inference,
+    );
+  }
+  if (editorialUnavailable) {
+    throw workersAiEditorialUnavailableError(
+      "Cloudflare Workers AI did not provide a usable editorial response.",
       attemptCount,
       inference,
     );
