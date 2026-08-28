@@ -2023,6 +2023,41 @@ test("two unsafe authoritative drafts become a validated trusted source-alert ed
   }
 });
 
+test("an authoritative second draft uses the trusted source-alert fallback after another repair kind", async () => {
+  const scenario = selectedSlateScenario(["security-and-privacy", "platforms-and-power"]);
+  const shortPayload = structuredClone(scenario.payload);
+  setReaderFacingWordCount(shortPayload.desks["security-and-privacy"].story, 100);
+  const rejectedPayload = structuredClone(scenario.payload);
+  rejectedPayload.desks["security-and-privacy"].story.deck =
+    "Two independent sources confirmed the reported development.";
+  const calls = [];
+  let sourceRequests = 0;
+
+  const candidate = await draftFreeEdition(draftOptions({
+    evidencePolicy: "authoritative-or-corroborated",
+    draftSelectedSlate: true,
+    researchImpl: async () => scenario.research,
+    aiRequestImpl: async (options) => {
+      calls.push(options);
+      return aiResult(calls.length === 1 ? shortPayload : rejectedPayload);
+    },
+    sourceRequestImpl: async () => {
+      sourceRequests += 1;
+      return { status: 200, headers: {} };
+    },
+  }));
+
+  assert.equal(calls.length, 2);
+  assert.equal(sourceRequests, 4);
+  assert.match(calls[1].messages[0].content, /<free-length-retry>/);
+  assert.equal(
+    candidate.provenance.freePilot.draftingMode,
+    "trusted-authoritative-source-alert",
+  );
+  assert.match(candidate.frontPage.note, /trusted source alerts/i);
+  assert.equal(validateCanonicalEdition(candidate).valid, true);
+});
+
 test("a transient transport retry consumes the authoritative correction budget", async () => {
   const scenario = selectedSlateScenario(["security-and-privacy", "platforms-and-power"]);
   const rejectedPayload = structuredClone(scenario.payload);

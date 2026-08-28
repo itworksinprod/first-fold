@@ -2496,7 +2496,6 @@ async function draftFreeEditionCore({
         );
       } catch (error) {
         if (
-          repairKind !== "authoritative-structure" ||
           !(error instanceof FreeAuthoritativeStructureError) ||
           !draftSelectedSlate ||
           normalizedEvidencePolicy !== "authoritative-or-corroborated"
