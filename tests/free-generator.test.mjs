@@ -580,6 +580,7 @@ test("draftFreeEdition creates a validated, unpublished, QA-passed comparison ca
   assert.equal(aiOptions.accountId, "a".repeat(32));
   assert.equal(aiOptions.apiToken, "cloudflare-test-token-do-not-log");
   assert.equal(aiOptions.model, "@cf/meta/llama-3.3-70b-instruct-fp8-fast");
+  assert.equal(aiOptions.responseFormat, "json_schema");
   assert.equal(aiOptions.maxAttempts, 2);
   assert.equal(aiOptions.maxTokens, undefined);
   assert.equal(aiOptions.schema.type, "object");
@@ -1883,6 +1884,7 @@ test("authoritative-single structure failures receive one bounded corrective rew
   assert.equal(calls.length, 2);
   assert.equal(sourceRequests, 4);
   assert.deepEqual(calls.map((options) => options.maxAttempts), [2, 1]);
+  assert.deepEqual(calls.map((options) => options.responseFormat), ["json_schema", "json_schema"]);
   assert.deepEqual(calls.map((options) => options.messages.length), [2, 2]);
   assert.deepEqual(calls[1].messages[1], calls[0].messages[1]);
   assert.doesNotMatch(calls[0].messages[0].content, /<free-authoritative-structure-retry>/);
@@ -2049,7 +2051,43 @@ test("two unsafe authoritative drafts become a validated trusted source-alert ed
     );
     assert.deepEqual(story.evidence[0].sourceIds, [selectedCandidate.sources[0].id]);
     assert.equal(story.evidence[0].verification, "preliminary");
+    assert.match(story.deck, /primary-source link is provided for direct review/i);
+    assert.match(
+      story.whyItMatters,
+      /URL responded at press time\. It did not inspect the article body or verify the publisher’s claims/i,
+    );
+    assert.doesNotMatch(
+      `${story.deck} ${story.whatHappened}`,
+      /(?:page|link) (?:provides?|contains?) exact scope|exact scope and caveats available/i,
+    );
+    const readerCopy = [
+      story.headline,
+      story.deck,
+      story.whatHappened,
+      story.whyItMatters,
+      story.whatToDoOrWatch,
+      story.editorial.deskFit,
+      story.selection.selectedBecause,
+      story.selection.materialDelta ?? "",
+      story.confidence.rationale,
+    ].join(" ");
+    assert.doesNotMatch(
+      readerCopy,
+      /automated writer|model (?:response|draft|attempt)|retr(?:y|ies)|dossier|scorecard|deterministic|feed classifier|internal process/i,
+    );
   }
+  assert.match(
+    candidate.desks["security-and-privacy"].story.whatToDoOrWatch,
+    /affected products and versions.*exploitation status.*available fixes/i,
+  );
+  assert.match(
+    candidate.desks["platforms-and-power"].story.whatToDoOrWatch,
+    /service and region availability.*pricing, quotas.*technical documentation/i,
+  );
+  assert.notEqual(
+    candidate.desks["security-and-privacy"].story.whatToDoOrWatch,
+    candidate.desks["platforms-and-power"].story.whatToDoOrWatch,
+  );
 });
 
 test("an authoritative second draft uses the trusted source-alert fallback after another repair kind", async () => {
@@ -2305,6 +2343,7 @@ test("one invalid model format receives one bounded fixed corrective request", a
 
   assert.equal(calls.length, 2);
   assert.deepEqual(calls.map((options) => options.maxAttempts), [2, 1]);
+  assert.deepEqual(calls.map((options) => options.responseFormat), ["json_schema", "json_object"]);
   assert.doesNotMatch(calls[0].messages[0].content, /<free-format-retry>/);
   assert.match(calls[1].messages[0].content, /<free-format-retry>/);
   assert.match(calls[1].messages[0].content, /did not satisfy the supplied JSON schema/);
@@ -2340,6 +2379,7 @@ test("two invalid formats become a candidate-only trusted source-alert edition",
 
   assert.equal(calls.length, 2);
   assert.deepEqual(calls.map((options) => options.maxAttempts), [2, 1]);
+  assert.deepEqual(calls.map((options) => options.responseFormat), ["json_schema", "json_object"]);
   assert.equal(sourceRequests, 4);
   assert.equal(
     candidate.provenance.freePilot.draftingMode,
@@ -2430,6 +2470,7 @@ test("one reader-word-count rejection gets the same bounded corrective rewrite",
 
   assert.equal(calls.length, 2);
   assert.deepEqual(calls.map((options) => options.maxAttempts), [2, 1]);
+  assert.deepEqual(calls.map((options) => options.responseFormat), ["json_schema", "json_schema"]);
   assert.doesNotMatch(calls[0].messages[0].content, /<free-length-retry>/);
   assert.match(calls[1].messages[0].content, /<free-length-retry>/);
   assert.match(calls[1].messages[0].content, /150–225 words in whatHappened, whyItMatters, and whatToDoOrWatch combined/);
@@ -2589,6 +2630,7 @@ test("one copy-overlap rejection gets one bounded corrective rewrite", async () 
   assert.equal(sourceRequests, 2);
   assert.equal(calls.length, 2);
   assert.deepEqual(calls.map((options) => options.maxAttempts), [2, 1]);
+  assert.deepEqual(calls.map((options) => options.responseFormat), ["json_schema", "json_schema"]);
   assert.deepEqual(calls.map((options) => options.messages.length), [2, 2]);
   assert.deepEqual(calls[1].messages[1], calls[0].messages[1]);
   assert.doesNotMatch(calls[0].messages[0].content, /<free-copy-retry>/);

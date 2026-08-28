@@ -647,7 +647,7 @@ function authoritativeSourceBrief(story) {
   };
 }
 
-function renderSourceBriefHtml(story, deskLabel, feedbackUrl) {
+function renderSourceBriefHtml(story, feedbackUrl) {
   const { receipt, source, publishedLabel } = authoritativeSourceBrief(story);
   const href = escapeHtml(requireSourceUrl(source.url));
   const dateSuffix = publishedLabel === null ? "" : ` · ${escapeHtml(publishedLabel)}`;
@@ -655,8 +655,12 @@ function renderSourceBriefHtml(story, deskLabel, feedbackUrl) {
     <p style="margin:10px 0 8px;color:#712b27;font:700 11px/1.2 Arial,Helvetica,sans-serif;letter-spacing:1.1px;text-transform:uppercase;">Primary-source brief</p>
     <h2 style="margin:0 0 8px;color:#171512;font:700 30px/1.04 Georgia,Times New Roman,serif;letter-spacing:-0.5px;">${escapeHtml(source.title)}</h2>
     <p style="margin:0 0 20px;color:#504a41;font:italic 16px/1.45 Georgia,Times New Roman,serif;">${escapeHtml(source.publisher)}${dateSuffix}</p>
-    <p style="margin:0 0 16px;color:#24211d;font:16px/1.62 Georgia,Times New Roman,serif;">This official update from ${escapeHtml(source.publisher)} was timely and relevant to ${escapeHtml(deskLabel)}, so it made today’s paper. No independent report was available in the reviewed sources before press time, so First Fold is showing the publisher’s own headline and linking directly to the original.</p>
-    <p style="margin:0 0 20px;color:#24211d;font:16px/1.62 Georgia,Times New Roman,serif;">Read the original report for its exact claims, scope, dates, affected products, and caveats. Treat those details as the publisher’s account unless independent reporting confirms them.</p>
+    <p style="margin:0 0 6px;color:#712b27;font:700 11px/1.2 Arial,Helvetica,sans-serif;letter-spacing:1.1px;text-transform:uppercase;">What happened</p>
+    <p style="margin:0 0 16px;color:#24211d;font:16px/1.62 Georgia,Times New Roman,serif;">${escapeHtml(story.whatHappened)}</p>
+    <p style="margin:0 0 6px;color:#712b27;font:700 11px/1.2 Arial,Helvetica,sans-serif;letter-spacing:1.1px;text-transform:uppercase;">Why it matters</p>
+    <p style="margin:0 0 16px;color:#24211d;font:16px/1.62 Georgia,Times New Roman,serif;">${escapeHtml(story.whyItMatters)}</p>
+    <p style="margin:0 0 6px;color:#712b27;font:700 11px/1.2 Arial,Helvetica,sans-serif;letter-spacing:1.1px;text-transform:uppercase;">What to do or watch</p>
+    <p style="margin:0 0 20px;color:#24211d;font:16px/1.62 Georgia,Times New Roman,serif;">${escapeHtml(story.whatToDoOrWatch)}</p>
     <p style="margin:0 0 22px;"><a href="${href}" style="display:inline-block;padding:10px 14px;background:#712b27;color:#ffffff;font:700 13px/1.2 Arial,Helvetica,sans-serif;text-decoration:none;">Read the original report</a></p>
     <div style="margin:0 0 6px;padding:12px 14px;background:#e9e2d5;border-left:3px solid #712b27;">
       <p style="margin:0 0 5px;color:#712b27;font:700 11px/1.2 Arial,Helvetica,sans-serif;letter-spacing:1.1px;text-transform:uppercase;">Why it made the paper</p>
@@ -665,7 +669,7 @@ function renderSourceBriefHtml(story, deskLabel, feedbackUrl) {
     <p style="margin:22px 0 0;"><a href="${escapeHtml(feedbackUrl)}" style="display:inline-block;padding:9px 13px;border:1px solid #712b27;color:#712b27;font:700 12px/1.2 Arial,Helvetica,sans-serif;text-decoration:none;">Review this story</a></p>`}`;
 }
 
-function renderSourceBriefText(story, deskLabel, feedbackUrl) {
+function renderSourceBriefText(story, feedbackUrl) {
   const { receipt, source, publishedLabel } = authoritativeSourceBrief(story);
   const sourceUrl = requireSourceUrl(source.url);
   return [
@@ -673,9 +677,14 @@ function renderSourceBriefText(story, deskLabel, feedbackUrl) {
     compactText(source.title),
     `${compactText(source.publisher)}${publishedLabel === null ? "" : ` · ${publishedLabel}`}`,
     "",
-    `This official update from ${compactText(source.publisher)} was timely and relevant to ${deskLabel}, so it made today’s paper. No independent report was available in the reviewed sources before press time, so First Fold is showing the publisher’s own headline and linking directly to the original.`,
+    "WHAT HAPPENED",
+    compactText(story.whatHappened),
     "",
-    "Read the original report for its exact claims, scope, dates, affected products, and caveats. Treat those details as the publisher’s account unless independent reporting confirms them.",
+    "WHY IT MATTERS",
+    compactText(story.whyItMatters),
+    "",
+    "WHAT TO DO OR WATCH",
+    compactText(story.whatToDoOrWatch),
     "",
     `READ THE ORIGINAL REPORT\n${sourceUrl}`,
     "",
@@ -697,7 +706,7 @@ function renderDeskHtml(candidate, deskKey, deskLabel, feedbackLinks, sourceBrie
       <p style="margin:10px 0 7px;color:#171512;font:700 24px/1.1 Georgia,Times New Roman,serif;">Nothing cleared the bar today.</p>
       <p style="margin:0;color:#5b554c;font:15px/1.55 Georgia,Times New Roman,serif;">${escapeHtml(page.emptyReason)}</p>`
     : isSourceBriefStory
-      ? renderSourceBriefHtml(page.story, deskLabel, feedbackLinks?.stories[page.story.id])
+      ? renderSourceBriefHtml(page.story, feedbackLinks?.stories[page.story.id])
       : renderStoryHtml(page.story, feedbackLinks?.stories[page.story.id]);
   return `
   <tr>
@@ -713,7 +722,7 @@ function renderDeskText(candidate, deskKey, deskLabel, feedbackLinks, sourceBrie
   return page.story === null
     ? `${deskLabel.toUpperCase()} — QUIET DESK\nNothing cleared the bar today.\n${compactText(page.emptyReason)}`
     : `${deskLabel.toUpperCase()}\n${isSourceBriefStory
-      ? renderSourceBriefText(page.story, deskLabel, feedbackLinks?.stories[page.story.id])
+      ? renderSourceBriefText(page.story, feedbackLinks?.stories[page.story.id])
       : renderStoryText(page.story, feedbackLinks?.stories[page.story.id])}`;
 }
 
@@ -748,7 +757,7 @@ export function renderPersonalEditionEmail(candidate, { feedbackLinks } = {}) {
           : "Quiet edition";
   const storyCountLabel = `${selectedStoryCount} ${selectedStoryCount === 1 ? "story" : "stories"}`;
   const readerFrontPageNote = allSourceBriefs
-    ? `${selectedStoryCount} ${selectedStoryCount === 1 ? "official update made" : "official updates made"} today’s paper. ` +
+    ? `${selectedStoryCount} primary-source ${selectedStoryCount === 1 ? "brief" : "briefs"} made today’s paper. ` +
       "Each primary-source brief links to the publisher and is clearly marked when independent reporting was not available before press time."
     : mixedSourceEdition
       ? `${corroboratedStoryCount} independently corroborated ${corroboratedStoryCount === 1 ? "article" : "articles"} and ` +

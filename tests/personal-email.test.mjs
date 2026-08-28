@@ -482,8 +482,9 @@ test("trusted fallback editions render concise source briefs without internal er
   const originating = story.sources.find((source) => source.relationship === "originating") ??
     story.sources.find((source) => source.relationship !== "context");
   assert.ok(originating);
+  const unsafeSourceTitle = "Source <img src=x onerror=alert(1)> title";
   story.sources = [
-    { ...originating, relationship: "originating" },
+    { ...originating, title: unsafeSourceTitle, relationship: "originating" },
     {
       ...originating,
       id: `${originating.id}-feed-context`,
@@ -509,6 +510,10 @@ test("trusted fallback editions render concise source briefs without internal er
   }];
   story.priority = "notable";
   story.confidence.level = "developing";
+  story.whatHappened =
+    `Reader-safe <script>alert("brief")</script> update. ${story.whatHappened}`;
+  story.whyItMatters = `Source-brief importance marker. ${story.whyItMatters}`;
+  story.whatToDoOrWatch = `Source-brief action marker. ${story.whatToDoOrWatch}`;
   addTrustedReceipt(story);
   candidate.frontPage.note =
     "The automated writer did not produce a safe bounded summary after two attempts.";
@@ -521,14 +526,19 @@ test("trusted fallback editions render concise source briefs without internal er
 
   assert.match(rendered.text, /THE MORNING BRIEF · SOURCE BRIEF EDITION/);
   assert.match(rendered.text, /PRIMARY-SOURCE BRIEF/);
-  assert.match(rendered.text, new RegExp(originating.title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-  assert.match(rendered.text, /Read the original report for its exact claims/);
-  assert.match(rendered.text, /1 official update made today’s paper/);
+  assert.match(rendered.text, new RegExp(unsafeSourceTitle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(rendered.text, /WHAT HAPPENED\nReader-safe <script>alert\("brief"\)<\/script> update\./);
+  assert.match(rendered.text, /WHY IT MATTERS\nSource-brief importance marker\./);
+  assert.match(rendered.text, /WHAT TO DO OR WATCH\nSource-brief action marker\./);
+  assert.match(rendered.text, /1 primary-source brief made today’s paper/);
   assert.match(rendered.text, /Primary links checked before delivery/);
   assert.match(rendered.html, /The morning brief · Source brief edition/);
+  assert.match(rendered.html, /Reader-safe &lt;script&gt;alert\(&quot;brief&quot;\)&lt;\/script&gt; update\./);
+  assert.match(rendered.html, /Source &lt;img src=x onerror=alert\(1\)&gt; title/);
+  assert.doesNotMatch(rendered.html, /<script|<img/i);
   assert.doesNotMatch(
     rendered.text,
-    /automated writer|safe bounded summary|two attempts|deterministic|scorecard|reviewed feed set/i,
+    /automated writer|safe bounded summary|two attempts|model (?:response|draft|attempt)|retr(?:y|ies)|dossier|deterministic|scorecard|reviewed feed set|internal process/i,
   );
   assert.doesNotMatch(rendered.text, /reviewed development selected|feed index/i);
   assert.doesNotMatch(rendered.text, /reviewed-feed\.xml/);

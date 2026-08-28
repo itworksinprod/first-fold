@@ -17,6 +17,7 @@ export const WORKERS_AI_EDITORIAL_UNAVAILABLE = "WORKERS_AI_EDITORIAL_UNAVAILABL
 
 const CLOUDFLARE_API_ORIGIN = "https://api.cloudflare.com";
 const CLOUDFLARE_JSON_MODE_NOT_MET_PATTERN = /(?:^|:\s*)JSON Mode couldn't be met\.?$/;
+const WORKERS_AI_RESPONSE_FORMATS = Object.freeze(["json_schema", "json_object"]);
 const ACCOUNT_ID_PATTERN = /^[a-f0-9]{32}$/i;
 const CLOUDFLARE_MODEL_PATTERN = /^@cf\/[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*$/i;
 const MAX_WORKERS_AI_MESSAGES = 8;
@@ -118,6 +119,13 @@ function normalizeSchema(schema) {
   return normalized;
 }
 
+function normalizeResponseFormat(responseFormat) {
+  if (!WORKERS_AI_RESPONSE_FORMATS.includes(responseFormat)) {
+    throw new Error("Workers AI responseFormat must be json_schema or json_object.");
+  }
+  return responseFormat;
+}
+
 /**
  * Build the model-specific request accepted by Cloudflare's Workers AI
  * Execute Model endpoint. The caller supplies bounded, normalized evidence;
@@ -127,17 +135,19 @@ export function buildWorkersAiRequest({
   model,
   messages,
   schema,
+  responseFormat = "json_schema",
   maxTokens = DEFAULT_WORKERS_AI_MAX_TOKENS,
   temperature = DEFAULT_WORKERS_AI_TEMPERATURE,
 } = {}) {
+  const normalizedSchema = normalizeSchema(schema);
+  const normalizedResponseFormat = normalizeResponseFormat(responseFormat);
   return {
     model: resolveCloudflareAiModel(model),
     body: {
       messages: normalizeMessages(messages),
-      response_format: {
-        type: "json_schema",
-        json_schema: normalizeSchema(schema),
-      },
+      response_format: normalizedResponseFormat === "json_schema"
+        ? { type: "json_schema", json_schema: normalizedSchema }
+        : { type: "json_object" },
       max_tokens: requireIntegerInRange(maxTokens, "Workers AI maxTokens", 1, 16_000),
       temperature: requireFiniteInRange(temperature, "Workers AI temperature", 0, 5),
       stream: false,
@@ -512,6 +522,7 @@ export async function requestWorkersAiEditorial({
   model = process.env.CLOUDFLARE_AI_MODEL,
   messages,
   schema,
+  responseFormat = "json_schema",
   validatePayload,
   maxTokens = DEFAULT_WORKERS_AI_MAX_TOKENS,
   temperature = DEFAULT_WORKERS_AI_TEMPERATURE,
@@ -533,7 +544,14 @@ export async function requestWorkersAiEditorial({
   requireIntegerInRange(maxRequestBytes, "Workers AI maxRequestBytes", 64, 2_000_000);
   requireIntegerInRange(maxResponseBytes, "Workers AI maxResponseBytes", 64, 5_000_000);
 
-  const request = buildWorkersAiRequest({ model, messages, schema, maxTokens, temperature });
+  const request = buildWorkersAiRequest({
+    model,
+    messages,
+    schema,
+    responseFormat,
+    maxTokens,
+    temperature,
+  });
   const url = workersAiRunUrl(accountId, request.model);
   const requestText = JSON.stringify(request.body);
   if (utf8Encoder.encode(requestText).byteLength > maxRequestBytes) {

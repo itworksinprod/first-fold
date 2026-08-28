@@ -165,6 +165,7 @@ const EVENT_ENTITY_ALIASES = Object.freeze([
   ["postman", ["Postman"]],
   ["hashicorp", ["HashiCorp"]],
   ["netlify", ["Netlify"]],
+  ["papercut", ["PaperCut"]],
   ["rust", ["Rust"]],
   ["ieee", ["IEEE"]],
 ]);
@@ -248,6 +249,17 @@ const ROUTINE_OR_MINOR_TITLE_PATTERNS = [
   /\b(?:minor|routine|maintenance)\b[^.!?]{0,35}\b(?:update|release|change|fix)\b/i,
   /\b(?:release notes|changelog|bug[- ]fix release)\b/i,
   /\b(?:adds?|introduces?|ships?)\b[^.!?]{0,45}\b(?:emoji|icon|wallpaper|theme|sticker|reaction)\b/i,
+];
+const ROUTINE_CLOUD_NOTICE_PATTERNS = [
+  /\bnow supports?\b.{0,100}\b(?:amazon\s+)?(?:ec2\s+)?instance types?\b/i,
+  /\b(?:is\s+)?now available\b.{0,100}\b(?:cloud\s+)?regions?\b/i,
+  /\b(?:availability|service)\b.{0,80}\b(?:expands?|expanded|expansion)\b.{0,60}\b(?:cloud\s+)?regions?\b/i,
+  /\b(?:expands?|expanded|expansion)\b.{0,80}\b(?:availability|service)\b.{0,60}\b(?:cloud\s+)?regions?\b/i,
+];
+const BROAD_IMPACT_TITLE_PATTERNS = [
+  /\b(?:actively exploited|zero-day|0-day|breach|ransomware|critical vulnerability|emergency patch)\b/i,
+  /\b(?:major outage|shutdown|recall|antitrust ruling|court ruling|new law|new regulation|regulatory mandate)\b/i,
+  /\b(?:all customers|all users|worldwide|global rollout|globally available)\b/i,
 ];
 
 export const EDITORIAL_SCORECARD_MAXIMUMS = Object.freeze({
@@ -1010,6 +1022,7 @@ function productIdentifiers(item) {
     [/\bnode(?:\.js|js)\b/g, "nodejs"],
     [/\bios\b/g, "ios"],
     [/\bchatgpt\b/g, "chatgpt"],
+    [/\bpapercut\b/g, "papercut"],
   ];
   for (const [pattern, identifier] of namedProducts) {
     if (pattern.test(title)) products.add(`named:${identifier}`);
@@ -1066,6 +1079,8 @@ function productIdentifiers(item) {
     [/\bkernel\b/g, "kernel"],
     [/\bframework\b/g, "framework"],
     [/\bbrowsers?\b/g, "browser"],
+    [/\bpapercut\s+(?:ng\s*\/\s*mf|ng\s+and\s+mf|ng|mf)\b/g, "papercut-ng-mf"],
+    [/\bpapercut\s+mobility\s+print\b/g, "papercut-mobility-print"],
   ];
   for (const [pattern, identifier] of componentProducts) {
     if (pattern.test(title)) products.add(`component:${identifier}`);
@@ -2116,6 +2131,70 @@ function entitySetsCompatible(left, right, sharedProducts) {
   return githubMicrosoft && githubProduct;
 }
 
+function hasActiveZeroDayExploitationSignal(item) {
+  const title = normalizeEventText(item.title, 240);
+  return /\b(?:zero|0)[- ]day\b/i.test(title) &&
+    /\b(?:attack(?:ed|s|ing)?|exploit(?:ed|s|ing)?|in\s+the\s+wild|under\s+attack)\b/i.test(title);
+}
+
+const PAPERCUT_ZERO_DAY_GENERIC_TOKENS = new Set([
+  "0", "0-day", "attack", "blood", "customer", "day", "drawing", "emergency",
+  "exploit", "exploited", "exploiting", "flaw", "management", "mf", "ng", "outfit",
+  "papercut", "print", "warn", "warning", "zero", "zero-day",
+]);
+
+function paperCutZeroDayDetailTokens(item) {
+  return new Set([...meaningfulTitleTokenSet(item)]
+    .filter((token) => !PAPERCUT_ZERO_DAY_GENERIC_TOKENS.has(token)));
+}
+
+function reviewedPaperCutZeroDayPair(left, right, sharedProducts) {
+  if (!(left.publisherKey !== right.publisherKey &&
+    sharedProducts.has("named:papercut") &&
+    hasActiveZeroDayExploitationSignal(left) &&
+    hasActiveZeroDayExploitationSignal(right))) return false;
+  const leftDetails = paperCutZeroDayDetailTokens(left);
+  const rightDetails = paperCutZeroDayDetailTokens(right);
+  return leftDetails.size === 0 && rightDetails.size === 0 ||
+    leftDetails.size > 0 && rightDetails.size > 0 && setsEqual(leftDetails, rightDetails);
+}
+
+function hasAnthropicBlacklistRulingSignal(item) {
+  const title = normalizeEventText(item.title, 240);
+  return /\banthropic\b/i.test(title) &&
+    /\bblacklist(?:ed|ing|s)?\b/i.test(title) &&
+    /\b(?:court|judge|judicial|rul(?:e|ed|es|ing))\b/i.test(title) &&
+    /\b(?:illegal(?:ly)?|unlawful|unconstitutional|not\s+lawful)\b/i.test(title);
+}
+
+function hasAnthropicDefenseBlacklistAuthoritySignal(item) {
+  const title = normalizeEventText(item.title, 240);
+  return /\b(?:pentagon|(?:department\s+of\s+)?defen[cs]e\s+department|department\s+of\s+defen[cs]e|trump\s+administration)\b/i.test(title);
+}
+
+const ANTHROPIC_DEFENSE_BLACKLIST_GENERIC_TOKENS = new Set([
+  "administration", "anthropic", "blacklist", "blacklisted", "blacklisting",
+  "court", "defence", "defense", "department", "illegal", "illegally", "judge",
+  "pentagon", "trump", "unconstitutional", "unlawful", "us",
+]);
+
+function anthropicDefenseBlacklistDetailTokens(item) {
+  return new Set([...meaningfulTitleTokenSet(item)]
+    .filter((token) => !ANTHROPIC_DEFENSE_BLACKLIST_GENERIC_TOKENS.has(token)));
+}
+
+function reviewedAnthropicBlacklistRulingPair(left, right) {
+  if (!(left.publisherKey !== right.publisherKey &&
+    hasAnthropicBlacklistRulingSignal(left) &&
+    hasAnthropicBlacklistRulingSignal(right) &&
+    hasAnthropicDefenseBlacklistAuthoritySignal(left) &&
+    hasAnthropicDefenseBlacklistAuthoritySignal(right))) return false;
+  const leftDetails = anthropicDefenseBlacklistDetailTokens(left);
+  const rightDetails = anthropicDefenseBlacklistDetailTokens(right);
+  return leftDetails.size === 0 && rightDetails.size === 0 ||
+    leftDetails.size > 0 && rightDetails.size > 0 && setsEqual(leftDetails, rightDetails);
+}
+
 function titleFingerprint(item) {
   return [...meaningfulTitleTokenSet(item)].sort().slice(0, 12).join("-") || item.itemId;
 }
@@ -2152,6 +2231,8 @@ function itemsMatch(left, right) {
   const leftEntities = titleEntityKeys(left);
   const rightEntities = titleEntityKeys(right);
   if (!entitySetsCompatible(leftEntities, rightEntities, sharedProducts)) return false;
+  const paperCutZeroDayPair = reviewedPaperCutZeroDayPair(left, right, sharedProducts);
+  const anthropicBlacklistRulingPair = reviewedAnthropicBlacklistRulingPair(left, right);
   const leftActions = eventActionFamilies(left);
   const rightActions = eventActionFamilies(right);
   const leftAcquisitionRole = acquisitionRoleAnchor(left);
@@ -2209,7 +2290,10 @@ function itemsMatch(left, right) {
   if (leftLegalIssues.size > 0 && rightLegalIssues.size > 0) {
     const leftContained = [...leftLegalIssues].every((token) => rightLegalIssues.has(token));
     const rightContained = [...rightLegalIssues].every((token) => leftLegalIssues.has(token));
-    if (sharedLegalIssues.size === 0 || (!leftContained && !rightContained)) return false;
+    if (
+      !anthropicBlacklistRulingPair &&
+      (sharedLegalIssues.size === 0 || (!leftContained && !rightContained))
+    ) return false;
   }
   if (hasDenialPolarity(left) !== hasDenialPolarity(right)) return false;
   if (hasCancellationPolarity(left) !== hasCancellationPolarity(right)) return false;
@@ -2274,7 +2358,9 @@ function itemsMatch(left, right) {
     !outageServiceWordingOnly &&
     !exactSecurityIdentifier &&
     !optionalVersionedModelNoun &&
-    !optionalNamedFeatureUpdateNoun
+    !optionalNamedFeatureUpdateNoun &&
+    !paperCutZeroDayPair &&
+    !anthropicBlacklistRulingPair
   ) return false;
   const leftFacets = eventFacetFamilies(left);
   const rightFacets = eventFacetFamilies(right);
@@ -2288,6 +2374,12 @@ function itemsMatch(left, right) {
   if (eventNumericRolesConflict(eventNumericRoleAnchors(left), eventNumericRoleAnchors(right))) {
     return false;
   }
+  // These two reviewed, product-specific paraphrase families are accepted
+  // only after all identifier, entity, action, lifecycle, object, polarity,
+  // and numeric conflict checks above have completed. Grouping remains
+  // complete-link, so every additional report must independently satisfy the
+  // same narrow rule.
+  if (paperCutZeroDayPair || anthropicBlacklistRulingPair) return true;
   const leftEventTokens = eventTitleTokenSet(left);
   const rightEventTokens = eventTitleTokenSet(right);
   const sharedEventCount = setIntersection(leftEventTokens, rightEventTokens).size;
@@ -2502,6 +2594,22 @@ function isOpinionItem(item) {
     item.categories.some((category) => OPINION_CATEGORY_PATTERN.test(category));
 }
 
+function hasBroadScaleQuantitySignal(value) {
+  const text = normalizeEventText(value, 4_000);
+  return /(?:[$€£]\s*\d[\d,.]*(?:\s*(?:thousand|million|billion|trillion|k|m|bn|b|tn|t))?\b|\b\d[\d,.]*(?:\s*(?:thousand|million|billion|trillion|k|m|bn|b|tn|t))?\s*(?:dollars?|euros?|pounds?)\b)/i.test(text) ||
+    /\b\d[\d,.]*\s*(?:%|pct\.?\b|percent\b|per\s+cent\b)/i.test(text) ||
+    /\b(?:\d[\d,.]*(?:\s*(?:thousand|million|billion|trillion|k|m|bn|b|tn|t))?|hundreds?|thousands?|millions?|billions?)\s+(?:accounts?|customers?|devices?|employees?|jobs?|people|records?|roles?|staff|systems?|users?|workers?)\b/i.test(text);
+}
+
+function hasReviewedBroadImpactSignal(items) {
+  const reviewedText = items
+    .map((item) => `${item.title} ${item.summary} ${item.categories.join(" ")}`)
+    .join(" ");
+  return BROAD_IMPACT_TITLE_PATTERNS.some((pattern) => pattern.test(reviewedText)) ||
+    strongIdentifiersForText(reviewedText).size > 0 ||
+    hasBroadScaleQuantitySignal(reviewedText);
+}
+
 function contentVetoReasons(items) {
   const titleCategoryText = items
     .map((item) => `${item.title} ${item.categories.join(" ")}`)
@@ -2557,6 +2665,15 @@ function contentVetoReasons(items) {
       "Routine recaps, how-to content, maintenance notes, and cosmetic updates are not material news.",
     ));
   }
+  if (
+    ROUTINE_CLOUD_NOTICE_PATTERNS.some((pattern) => pattern.test(titleCategoryText)) &&
+    !hasReviewedBroadImpactSignal(items)
+  ) {
+    reasons.push(rejectionReason(
+      "ROUTINE_CLOUD_CAPACITY_NOTICE",
+      "A routine cloud instance or regional-availability notice needs a reviewed broad-impact signal to enter the paper.",
+    ));
+  }
   return reasons;
 }
 
@@ -2608,13 +2725,13 @@ function freshnessScore(group, reportingWindow) {
 function scoreGroup(group, classification, evidence, reportingWindow) {
   const text = group.items.map((item) => `${item.title} ${item.summary}`.toLowerCase()).join(" ");
   const deskSignals = classification.signals[classification.desk];
-  const hasSpecificNumber = /\b\d+(?:\.\d+)?(?:m|bn|b|million|billion|%)?\b/i.test(text);
+  const hasBroadScaleQuantity = hasBroadScaleQuantitySignal(text);
   const hasStrongIdentifier = strongIdentifiers(group.items[0]).size > 0;
   const materialityNewsworthiness = Math.min(
     EDITORIAL_SCORECARD_MAXIMUMS.materialityNewsworthiness,
     8 + Math.min(16, countTerms(text, IMPACT_TERMS) * 4) +
       Math.min(4, countTerms(text, NOVELTY_TERMS) * 2) +
-      (hasStrongIdentifier ? 3 : 0) + (hasSpecificNumber ? 2 : 0),
+      (hasStrongIdentifier ? 3 : 0) + (hasBroadScaleQuantity ? 2 : 0),
   );
   const deskRelevance = Math.min(
     EDITORIAL_SCORECARD_MAXIMUMS.deskRelevance,
@@ -2630,7 +2747,7 @@ function scoreGroup(group, classification, evidence, reportingWindow) {
   const readerUsefulnessActionability = Math.min(
     EDITORIAL_SCORECARD_MAXIMUMS.readerUsefulnessActionability,
     4 + Math.min(7, countTerms(text, ACTION_TERMS) * 2) +
-      (hasStrongIdentifier ? 2 : 0) + (hasSpecificNumber ? 2 : 0),
+      (hasStrongIdentifier ? 2 : 0) + (hasBroadScaleQuantity ? 2 : 0),
   );
   const freshness = freshnessScore(group, reportingWindow);
   const components = {
@@ -2817,6 +2934,16 @@ export function assessFeedCandidates({
           "BELOW_EDITORIAL_THRESHOLD",
           `The editorial score ${candidate.ranking.score} is below the required ${threshold}.`,
         ));
+      }
+      if (candidate.ranking.evidenceTier === "authoritative-single") {
+        const materiality = candidate.ranking.components.materialityNewsworthiness;
+        const usefulness = candidate.ranking.components.readerUsefulnessActionability;
+        if (materiality < 20 || (materiality < 24 && usefulness < 8)) {
+          reasons.push(rejectionReason(
+            "AUTHORITATIVE_SINGLE_COMPONENT_FLOOR",
+            `A single originating source needs materiality of at least 20 and usefulness of at least 8, unless materiality reaches 24; this candidate scored ${materiality} and ${usefulness}.`,
+          ));
+        }
       }
       if (recentKeys.has(candidate.canonicalEventKey) ||
           recentStories.some((story) => candidateMatchesRecentStory(candidate, story)) ||

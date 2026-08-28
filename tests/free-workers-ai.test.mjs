@@ -121,6 +121,43 @@ test("the free adapter builds Cloudflare's bounded JSON-schema Execute Model con
   );
 });
 
+test("the free adapter supports JSON-object correction while retaining local schema validation", async () => {
+  const request = buildWorkersAiRequest({
+    messages,
+    schema,
+    responseFormat: "json_object",
+  });
+  assert.deepEqual(request.body.response_format, { type: "json_object" });
+  assert.equal(Object.hasOwn(request.body.response_format, "json_schema"), false);
+  assert.throws(
+    () => buildWorkersAiRequest({ messages, responseFormat: "json_object" }),
+    /response schema must be an object/,
+  );
+  assert.throws(
+    () => buildWorkersAiRequest({ messages, schema, responseFormat: "text" }),
+    /responseFormat must be json_schema or json_object/,
+  );
+
+  let sentBody;
+  let validatedPayload;
+  const result = await requestWorkersAiEditorial(requestOptions({
+    responseFormat: "json_object",
+    validatePayload: (value) => {
+      validatedPayload = value;
+      return { valid: value?.headline === payload.headline, issues: [] };
+    },
+    fetchImpl: async (_url, init) => {
+      sentBody = JSON.parse(init.body);
+      return cloudflareResponse();
+    },
+  }));
+
+  assert.deepEqual(sentBody.response_format, { type: "json_object" });
+  assert.equal(Object.hasOwn(sentBody.response_format, "json_schema"), false);
+  assert.deepEqual(validatedPayload, payload);
+  assert.deepEqual(result.editorialPayload, payload);
+});
+
 test("the free adapter returns only a locally validated result with safe provenance", async () => {
   let sent;
   let validated;

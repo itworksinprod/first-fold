@@ -1765,6 +1765,42 @@ function buildTrustedAuthoritativeSourceAlertStory(candidate) {
   const originatingSource = originatingSources[0];
   const publisher = originatingSource.publisher;
   const deskLabel = DESK_LABELS[candidate.suggestedDesk];
+  const deskCopy = {
+    ai: {
+      why:
+        "AI announcements can affect product choices, budgets, data handling, and expectations about capability.",
+      watch:
+        "Confirm the named model or product, release status, who can access it, pricing or limits, evaluation " +
+        "methodology, data-handling terms, and whether any cited benchmark compares like with like. If the " +
+        "update would change a purchase or deployment, wait for technical documentation or an independent test " +
+        "and keep the decision reversible.",
+    },
+    "work-and-tools": {
+      why:
+        "Work-tool changes can alter team routines, administrative controls, compatibility, or access to existing material.",
+      watch:
+        "Confirm affected plans and users, rollout date, administrative controls, compatibility, export or migration " +
+        "paths, and whether the change is optional. Test it in a noncritical workspace before changing a team " +
+        "workflow, and preserve a rollback path until documentation and user reports agree.",
+    },
+    "security-and-privacy": {
+      why:
+        "Security notices can change exposure, remediation priorities, and operational risk for affected organizations.",
+      watch:
+        "Confirm affected products and versions, severity, exploitation status, available fixes, mitigations, and the " +
+        "dates attached to each recommendation. Use the publisher’s advisory as the action source, compare it with " +
+        "the relevant vendor or government notice, and prioritize only measures that match your environment.",
+    },
+    "platforms-and-power": {
+      why:
+        "Platform updates can affect architecture, regional availability, capacity planning, and operating cost.",
+      watch:
+        "Confirm service and region availability, account or tier requirements, pricing, quotas, compatibility, and " +
+        "whether the capability is generally available or still limited. Check the provider’s technical documentation " +
+        "before changing architecture, capacity, or procurement, and test the smallest reversible change first.",
+    },
+  }[candidate.suggestedDesk];
+  if (!deskCopy) throw new Error("Trusted authoritative source-alert desk is invalid.");
   const isMaterialUpdate =
     candidate.ranking?.eligibility === "material-update" ||
     Boolean(candidate.materiallyUpdatedAt);
@@ -1772,8 +1808,8 @@ function buildTrustedAuthoritativeSourceAlertStory(candidate) {
     id: `trusted-source-alert-${candidate.candidateId}`,
     canonicalEventKey: candidate.canonicalEventKey,
     desk: candidate.suggestedDesk,
-    headline: `${publisher} reports a reviewed ${deskLabel} development`,
-    deck: `${publisher} reports a source item selected by First Fold's deterministic editorial scorecard`,
+    headline: `${publisher} publishes a ${deskLabel} update`,
+    deck: `${publisher} is the only cited publisher, and its primary-source link is provided for direct review`,
     status: isMaterialUpdate ? "material-update" : "new-development",
     priority: "notable",
     timing: {
@@ -1782,34 +1818,29 @@ function buildTrustedAuthoritativeSourceAlertStory(candidate) {
       materiallyUpdatedAt: isMaterialUpdate ? candidate.materiallyUpdatedAt : null,
     },
     whatHappened:
-      `${publisher} reports a reviewed development selected for the ${deskLabel} desk through its ` +
-      "originating source item",
+      `${publisher} reports a primary-source ${deskLabel} update during today’s reporting period and is the only ` +
+      "cited publisher supporting the substantive account in this edition.",
     whyItMatters:
-      "This source alert appears because the selected dossier cleared First Fold's deterministic checks for " +
-      "newsworthiness, desk relevance, source strength, reader usefulness, and freshness, while the automated " +
-      "writer did not produce a safe bounded summary after two attempts. The recorded score indicates editorial " +
-      "priority, not wider factual agreement. Only the named publisher supports the substantive account in this " +
-      "edition. The source title and link below preserve the useful trail without adding details that the bounded " +
-      "feed evidence cannot safely support.",
-    whatToDoOrWatch:
-      "Open the primary-source link and read the publisher's wording before relying on the report. Check its " +
-      "scope, dates, affected products or services, eligibility, and stated caveats. Do not infer any detail that " +
-      "is absent from that page. The context link shows the item through the same reviewed publishing channel and " +
-      "is not separate reporting. Watch for later coverage from a different organization, changes to the " +
-      "originating page, or added documentation. Until then, treat the substantive account as preliminary and " +
-      "keep decisions reversible.",
+      `${deskCopy.why} First Fold checked only that the cited primary-source URL responded at press time. It did ` +
+      "not inspect the article body or verify the publisher’s claims. That distinction matters: a first-party " +
+      "notice can be timely and useful, yet its scope, " +
+      "impact, or availability may be narrower than a headline suggests. The link is worth reviewing, but the " +
+      "account remains developing until separate reporting or documentation confirms the material details. Until " +
+      "then, use it as a prompt to investigate, not as a conclusion. For now, the source establishes that a notice " +
+      "exists, not that every possible consequence applies.",
+    whatToDoOrWatch: deskCopy.watch,
     editorial: {
       primaryEntity: candidate.primaryEntity,
       aiAdjacent: candidate.aiAdjacent,
       maturity: "verified-development",
-      deskFit: `The deterministic scorecard selected this source item for the ${deskLabel} desk.`,
+      deskFit: `The originating article concerns ${deskLabel}.`,
     },
     selection: {
       score: candidate.ranking.score,
       selectedBecause:
-        "The dossier cleared the trusted scorecard before the automated drafting attempts began.",
+        "The primary-source update was timely and relevant enough to merit a cautious reader brief.",
       materialDelta: isMaterialUpdate
-        ? "The deterministic feed classifier marked this dossier as a material update."
+        ? "The originating publisher materially updated the item during the reporting period."
         : null,
     },
     confidence: {
@@ -1819,7 +1850,7 @@ function buildTrustedAuthoritativeSourceAlertStory(candidate) {
     sources: candidate.sources.map(sourceWithoutPublisherKey),
     evidence: [{
       id: `trusted-source-alert-claim-${candidate.candidateId}`,
-      statement: `${publisher} reports the selected development in its originating source item`,
+      statement: `${publisher} reports the update in the cited primary-source article`,
       sourceIds: [originatingSource.id],
       verification: "preliminary",
     }],
@@ -2444,7 +2475,7 @@ async function draftFreeEditionCore({
     });
     let remainingModelRequests = maxModelRequests;
     let rejectedEditorialInference = null;
-    const requestInference = async (requestMessages) => {
+    const requestInference = async (requestMessages, responseFormat = "json_schema") => {
       if (remainingModelRequests < 1) {
         throw freeEditorialDiagnosticError(
           "Workers AI model-request budget was exhausted before the corrective draft.",
@@ -2460,6 +2491,7 @@ async function draftFreeEditionCore({
           model: modelId,
           messages: requestMessages,
           schema: FREE_EDITORIAL_OUTPUT_SCHEMA,
+          responseFormat,
           validatePayload: validateFreeEditorialPayload,
           fetchImpl,
           timeoutMs,
@@ -2562,6 +2594,7 @@ async function draftFreeEditionCore({
         try {
           accepted = await requestInference(
             buildFreeWorkersAiCorrectiveRetryMessages(messages, repairKind),
+            repairKind === "format" ? "json_object" : "json_schema",
           );
         } catch (error) {
           if (isRecoverableWorkersAiEditorialError(error)) {

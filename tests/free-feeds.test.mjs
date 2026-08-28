@@ -629,7 +629,7 @@ test("the private 30-day ledger vetoes event, source, identifier, and fuzzy-titl
   const item = editorialItem({
     suffix: "repeat-ledger",
     title: "AWS patches critical CVE-2026-4242 in cloud infrastructure",
-    summary: "Administrators should update affected compute services before the deadline.",
+    summary: "Administrators should update services affected by the vulnerability before the deadline.",
     publisherKey: "amazon",
     primaryEntity: "AWS",
     categories: ["Security", "Cloud infrastructure", "CVE"],
@@ -806,11 +806,173 @@ test("editorial hard vetoes return stable, reader-clear rejection reasons", () =
   );
 });
 
+test("routine cloud capacity notices need a reviewed broad-impact signal", () => {
+  const assessOne = (item) => assessFeedCandidates({
+    items: [item],
+    reportingWindow,
+    minimumScore: 0,
+    minimumAuthoritativeScore: 0,
+    evidencePolicy: AUTHORITATIVE_FREE_EVIDENCE_POLICY,
+  })[0];
+  const routine = [
+    editorialItem({
+      suffix: "routine-instance-type",
+      title: "Amazon EVS now supports i7i.metal-48xl Amazon EC2 instance type",
+      summary: "The compute option is available to cloud customers.",
+      primaryEntity: "Amazon",
+      categories: ["Cloud infrastructure", "Amazon EC2"],
+      deskPriors: { "platforms-and-power": 24 },
+    }),
+    editorialItem({
+      suffix: "routine-region",
+      title: "AWS Glue 5.1 is now available in AWS European Sovereign Cloud Region",
+      summary: "The service is available to customers in the named region.",
+      primaryEntity: "Amazon",
+      categories: ["Cloud infrastructure"],
+      deskPriors: { "platforms-and-power": 24 },
+    }),
+  ];
+  for (const item of routine) {
+    const assessment = assessOne(item);
+    assert.equal(assessment.decision, "rejected");
+    assert.match(
+      assessment.rejectionReasons.find(({ code }) => code === "ROUTINE_CLOUD_CAPACITY_NOTICE")?.message ?? "",
+      /broad-impact signal/,
+    );
+  }
+
+  const broadImpact = assessOne(editorialItem({
+    suffix: "regional-critical-fix",
+    title: "Security service is now available in the European cloud region",
+    summary: "The emergency patch addresses a critical vulnerability affecting 5 million systems.",
+    primaryEntity: "Example Cloud",
+    categories: ["Cloud infrastructure", "Security"],
+    deskPriors: { "platforms-and-power": 24, "security-and-privacy": 18 },
+  }));
+  assert.equal(
+    broadImpact.rejectionReasons.some(({ code }) => code === "ROUTINE_CLOUD_CAPACITY_NOTICE"),
+    false,
+    "reviewed critical and broad-scale evidence preserves a consequential regional notice",
+  );
+
+  const majorLaunch = assessOne(editorialItem({
+    suffix: "major-cloud-launch",
+    title: "AWS launches a major sovereign cloud platform across Europe",
+    summary: "The regulation affects millions of customers and requires administrators to update controls.",
+    primaryEntity: "Amazon",
+    categories: ["Cloud infrastructure"],
+    deskPriors: { "platforms-and-power": 24 },
+  }));
+  assert.equal(
+    majorLaunch.rejectionReasons.some(({ code }) => code === "ROUTINE_CLOUD_CAPACITY_NOTICE"),
+    false,
+    "the narrow routine-notice patterns do not veto a broader product launch",
+  );
+});
+
+test("authoritative singletons must clear component floors even when the total threshold is lowered", () => {
+  const assessOne = (item) => assessFeedCandidates({
+    items: [item],
+    reportingWindow,
+    minimumScore: 0,
+    minimumAuthoritativeScore: 0,
+    evidencePolicy: AUTHORITATIVE_FREE_EVIDENCE_POLICY,
+  })[0];
+  const lowMateriality = assessOne(editorialItem({
+    suffix: "low-materiality-floor",
+    title: "Example project updates its AI model",
+    summary: "Administrators should patch and update the developer workflow before the deadline.",
+    categories: ["AI", "Developer tools"],
+    deskPriors: { ai: 24 },
+  }));
+  assert.equal(lowMateriality.decision, "rejected");
+  assert.equal(
+    lowMateriality.rejectionReasons.some(({ code }) => code === "AUTHORITATIVE_SINGLE_COMPONENT_FLOOR"),
+    true,
+  );
+  assert.ok(lowMateriality.candidate.ranking.components.readerUsefulnessActionability >= 8);
+  assert.ok(lowMateriality.candidate.ranking.components.materialityNewsworthiness < 20);
+
+  const lowUsefulness = assessOne(editorialItem({
+    suffix: "low-usefulness-floor",
+    title: "Example vendor publishes a critical AI model release affecting 10 records",
+    categories: ["AI", "Foundation model"],
+    deskPriors: { ai: 24 },
+  }));
+  assert.equal(lowUsefulness.decision, "rejected");
+  assert.equal(
+    lowUsefulness.rejectionReasons.some(({ code }) => code === "AUTHORITATIVE_SINGLE_COMPONENT_FLOOR"),
+    true,
+  );
+  assert.ok(lowUsefulness.candidate.ranking.components.materialityNewsworthiness >= 20);
+  assert.ok(lowUsefulness.candidate.ranking.components.materialityNewsworthiness < 24);
+  assert.ok(lowUsefulness.candidate.ranking.components.readerUsefulnessActionability < 8);
+
+  const exceptionalMateriality = assessOne(editorialItem({
+    suffix: "exceptional-materiality-floor",
+    title: "Court ruling covers a critical Anthropic AI model release",
+    categories: ["AI", "Foundation model"],
+    deskPriors: { ai: 24 },
+  }));
+  assert.ok(exceptionalMateriality.candidate.ranking.components.materialityNewsworthiness >= 24);
+  assert.ok(exceptionalMateriality.candidate.ranking.components.readerUsefulnessActionability < 8);
+  assert.equal(
+    exceptionalMateriality.rejectionReasons.some(({ code }) => code === "AUTHORITATIVE_SINGLE_COMPONENT_FLOOR"),
+    false,
+    "exceptional materiality may compensate for a low direct-action score",
+  );
+});
+
+test("versions, dates, CVSS values, and instance identifiers do not earn a broad-scale quantity bonus", () => {
+  const componentsFor = (suffix, title, summary = "") => assessFeedCandidates({
+    items: [editorialItem({
+      suffix,
+      title,
+      summary,
+      categories: ["Developer tools", "Browser engine"],
+      deskPriors: { "work-and-tools": 24 },
+    })],
+    reportingWindow,
+    minimumScore: 0,
+    minimumAuthoritativeScore: 0,
+    evidencePolicy: AUTHORITATIVE_FREE_EVIDENCE_POLICY,
+  })[0].candidate.ranking.components;
+  const baseline = componentsFor(
+    "quantity-baseline",
+    "Example project launches a critical browser engine release",
+  );
+  for (const [suffix, detail] of [
+    ["version-number", "version 5.1"],
+    ["calendar-date", "on 2026-08-28"],
+    ["cvss-number", "with CVSS 9.8"],
+    ["instance-identifier", "for i7i.metal-48xl"],
+  ]) {
+    assert.deepEqual(
+      componentsFor(suffix, `Example project launches a critical browser engine release ${detail}`),
+      baseline,
+      `${detail} is not treated as audience or impact scale`,
+    );
+  }
+  const broadScale = componentsFor(
+    "broad-scale-records",
+    "Example project launches a critical browser engine release",
+    "A total of 5 million records are affected.",
+  );
+  assert.equal(
+    broadScale.materialityNewsworthiness,
+    baseline.materialityNewsworthiness + 2,
+  );
+  assert.equal(
+    broadScale.readerUsefulnessActionability,
+    baseline.readerUsefulnessActionability + 2,
+  );
+});
+
 test("a configurable score gate records the exact score and threshold", () => {
   const item = editorialItem({
     suffix: "threshold",
-    title: "Example project updates its browser engine",
-    summary: "The developer workflow changes code review automation.",
+    title: "Example project launches a major browser engine release for millions of developers",
+    summary: "Developers must update code review automation before the required deadline.",
     categories: ["Developer tools"],
     deskPriors: { "work-and-tools": 20 },
   });
@@ -1023,19 +1185,23 @@ test("desk classification requires topical evidence and rejects consumer/lifesty
 
   const topicalCases = [
     ["ai", {
-      title: "Senate advances an AI safety bill for foundation models",
+      title: "Senate passes a critical AI safety law for foundation models",
+      summary: "The regulation affects 5 million records and requires developers to update controls.",
       deskPriors: { ai: 20, "platforms-and-power": 30 },
     }],
     ["work-and-tools", {
-      title: "Mozilla ships a browser engine with a new code review workflow",
+      title: "Mozilla launches a critical browser engine release affecting 5 million records",
+      summary: "Developers must update the code review workflow before the required deadline.",
       deskPriors: { "work-and-tools": 12 },
     }],
     ["security-and-privacy", {
       title: "Vendor adds memory isolation after a malware exploit",
+      summary: "The critical vulnerability affects 5 million users and administrators must update now.",
       deskPriors: { "security-and-privacy": 12 },
     }],
     ["platforms-and-power", {
-      title: "AWS changes cloud infrastructure pricing for data centers",
+      title: "Court ruling changes AWS cloud infrastructure pricing for data centers",
+      summary: "The regulation affects 5 million customers and requires administrators to update billing controls.",
       deskPriors: { "platforms-and-power": 12 },
     }],
   ];
@@ -1047,7 +1213,7 @@ test("desk classification requires topical evidence and rejects consumer/lifesty
 
   const summaryQualified = rankSingleton({
     title: "Vendor announces its August update",
-    summary: "The developer workflow adds code review automation for teams.",
+    summary: "The critical developer workflow release affects 5 million records and requires teams to update code review automation.",
     deskPriors: { "work-and-tools": 24 },
   }, "summary-qualified");
   assert.equal(summaryQualified[0].suggestedDesk, "work-and-tools");
@@ -1099,7 +1265,7 @@ test("authoritative singletons can use a separate bounded score floor", () => {
     }),
     body: rssFixture.replace(
       "ExampleAI releases a new language model for developers",
-      "Example project updates its browser engine",
+      "Example project launches a critical browser engine release affecting 5 million records; required developer update",
     ),
     retrievedAt,
   });
@@ -1241,6 +1407,120 @@ test("cross-publisher matching joins specific event headlines but rejects generi
     deduplicateFeedItems(unrelatedPatchRoundups).length,
     2,
     "a shared calendar year and patch boilerplate must not anchor unrelated events",
+  );
+
+  const paperCutZeroDay = [
+    item("PaperCut fixes flaw exploited in zero-day attacks", "securityweek", "papercut-zero-day-one"),
+    item("PaperCut NG/MF flaw exploited in 0-day attacks", "bleepingcomputer", "papercut-zero-day-two"),
+    item("PaperCut under 0-day attack", "the-register", "papercut-zero-day-three"),
+  ];
+  assert.equal(
+    deduplicateFeedItems(paperCutZeroDay).length,
+    1,
+    "reviewed PaperCut zero-day paraphrases form one complete-link event",
+  );
+  const rankedPaperCut = rankFeedCandidates({
+    items: paperCutZeroDay,
+    reportingWindow,
+    minimumScore: 0,
+  });
+  assert.equal(rankedPaperCut.length, 1);
+  assert.equal(rankedPaperCut[0].ranking.evidenceTier, "corroborated");
+
+  assert.equal(
+    deduplicateFeedItems([
+      item("PaperCut NG/MF flaw CVE-2026-1111 exploited in zero-day attacks", "publisher-one", "papercut-cve-one"),
+      item("PaperCut NG/MF flaw CVE-2026-2222 exploited in zero-day attacks", "publisher-two", "papercut-cve-two"),
+    ]).length,
+    2,
+    "conflicting strong identifiers still split PaperCut zero-day reports",
+  );
+  assert.equal(
+    deduplicateFeedItems([
+      item("PaperCut NG/MF flaw exploited in zero-day attacks", "publisher-one", "papercut-product-one"),
+      item("PaperCut Mobility Print flaw exploited in zero-day attacks", "publisher-two", "papercut-product-two"),
+    ]).length,
+    2,
+    "different PaperCut product families remain distinct",
+  );
+  assert.equal(
+    deduplicateFeedItems([
+      item(
+        "PaperCut NG/MF authentication service flaw exploited in zero-day attacks",
+        "publisher-one",
+        "papercut-subject-one",
+      ),
+      item(
+        "PaperCut NG/MF print spooler flaw exploited in zero-day attacks",
+        "publisher-two",
+        "papercut-subject-two",
+      ),
+    ]).length,
+    2,
+    "different same-family PaperCut vulnerabilities require a shared event subject",
+  );
+
+  const anthropicBlacklistRuling = [
+    item(
+      "Pentagon blacklisting of Anthropic was illegal, US judge rules",
+      "publisher-one",
+      "anthropic-blacklist-one",
+    ),
+    item(
+      "Pentagon blacklisting of Anthropic was unlawful, US judge rules",
+      "publisher-two",
+      "anthropic-blacklist-two",
+    ),
+  ];
+  assert.equal(
+    deduplicateFeedItems(anthropicBlacklistRuling).length,
+    1,
+    "reviewed illegal and unlawful wording identifies the same Anthropic blacklist ruling",
+  );
+  const productionAnthropicBlacklistRuling = [
+    item(
+      "Anthropic was illegally blacklisted by the Trump administration, court rules",
+      "the-verge",
+      "anthropic-blacklist-verge",
+    ),
+    item(
+      "Pentagon’s blacklisting of Anthropic was unlawful, US judge rules",
+      "guardian-technology",
+      "anthropic-blacklist-guardian",
+    ),
+  ];
+  assert.equal(
+    deduplicateFeedItems(productionAnthropicBlacklistRuling).length,
+    1,
+    "the reviewed Verge and Guardian blacklist-ruling headlines identify the same court event",
+  );
+  assert.equal(
+    deduplicateFeedItems([
+      anthropicBlacklistRuling[0],
+      item(
+        "Judge rules Anthropic AI training in copyright case was unlawful",
+        "publisher-two",
+        "anthropic-copyright-ruling",
+      ),
+    ]).length,
+    2,
+    "the narrow blacklist rule cannot merge a different Anthropic legal event",
+  );
+  assert.equal(
+    deduplicateFeedItems([
+      item(
+        "Pentagon cloud-procurement blacklisting of Anthropic was illegal, court rules",
+        "publisher-one",
+        "anthropic-procurement-ruling",
+      ),
+      item(
+        "Pentagon defense-contract blacklisting of Anthropic was unlawful, judge rules",
+        "publisher-two",
+        "anthropic-defense-ruling",
+      ),
+    ]).length,
+    2,
+    "different Anthropic blacklist decisions under the same authority require a shared event subject",
   );
 
   const sameEntityNearCollisions = [
