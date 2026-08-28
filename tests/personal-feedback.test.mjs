@@ -279,7 +279,7 @@ test("decoded token payload contains only opaque editorial coordinates and no pr
     "A private headline",
     "https://source.example/article",
     "cloudflare-workers-ai",
-    "@cf/openai/gpt-oss-120b",
+    "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
   ]) {
     assert.equal(serialized.includes(privateValue), false);
   }

@@ -104,7 +104,7 @@ function personalCandidate() {
     workflow: "personal-morning-paper",
     provider: "cloudflare-workers-ai",
     researchMethod: "curated-live-feeds",
-    model: "@cf/openai/gpt-oss-120b",
+    model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
     runId: "123456789",
     runUrl: "https://github.com/itworksinprod/first-fold/actions/runs/123456789",
     repository: "itworksinprod/first-fold",
@@ -249,9 +249,13 @@ test("the renderer produces a complete static newspaper with sources and text fa
   for (const page of Object.values(candidate.desks)) {
     if (page.story) {
       assert.match(rendered.text, new RegExp(page.story.headline.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-      for (const source of page.story.sources) {
+      for (const source of page.story.sources.filter(({ relationship }) => relationship !== "context")) {
         assert.match(rendered.html, new RegExp(source.publisher.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
         assert.match(rendered.text, new RegExp(source.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+      }
+      for (const source of page.story.sources.filter(({ relationship }) => relationship === "context")) {
+        assert.doesNotMatch(rendered.text, new RegExp(source.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+        assert.doesNotMatch(rendered.html, new RegExp(source.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
       }
     }
   }
@@ -271,7 +275,9 @@ test("the renderer produces a complete static newspaper with sources and text fa
   assert.match(rendered.html, /Quality pilot · Edition 1 of 5/);
   assert.match(rendered.text, /THE MORNING BRIEF · REGULAR EDITION/);
   assert.match(rendered.text, /4 stories · Source checked before delivery/);
-  assert.match(rendered.text, /Research receipt: 17 of 17 reviewed feeds completed · 1 research pass · Story threshold 70\/100/);
+  assert.doesNotMatch(rendered.text, /PRIMARY-SOURCE BRIEF/);
+  assert.match(rendered.text, /Newsroom check: 17 of 17 reviewed sources available/);
+  assert.doesNotMatch(rendered.text, /actions\/runs\/123456789/);
 });
 
 test("optional private feedback links cover each story and the whole edition", () => {
@@ -463,11 +469,126 @@ test("a quiet edition shows its research receipt without story source receipts",
 
   assert.match(rendered.text, /THE MORNING BRIEF · QUIET EDITION/);
   assert.match(rendered.text, /0 stories · Curated-feed research completed · Quality threshold unchanged/);
-  assert.match(rendered.text, /Research receipt: 17 of 17 reviewed feeds completed · 2 research passes · Story threshold 70\/100/);
+  assert.match(rendered.text, /Newsroom check: 17 of 17 reviewed sources available/);
   assert.doesNotMatch(rendered.text, /VALIDATION RECEIPT/);
   assert.doesNotMatch(rendered.text, /(?:^|\n)SOURCES(?:\n|$)/);
   assert.doesNotMatch(rendered.html, /Validation receipt/);
   assert.doesNotMatch(rendered.html, />Sources</);
+});
+
+test("trusted fallback editions render concise source briefs without internal errors or feed indexes", () => {
+  const candidate = candidateWithStoryCount(1);
+  const story = candidate.desks.ai.story;
+  const originating = story.sources.find((source) => source.relationship === "originating") ??
+    story.sources.find((source) => source.relationship !== "context");
+  assert.ok(originating);
+  story.sources = [
+    { ...originating, relationship: "originating" },
+    {
+      ...originating,
+      id: `${originating.id}-feed-context`,
+      title: `${originating.publisher} feed index`,
+      url: "https://example.com/reviewed-feed.xml",
+      relationship: "context",
+      publishedAt: null,
+    },
+    {
+      ...originating,
+      id: `${originating.id}-uncited-independent`,
+      publisher: "Independent Example",
+      title: "An uncited independent item",
+      url: "https://example.com/uncited-independent-item",
+      relationship: "independent",
+    },
+  ];
+  story.evidence = [{
+    id: "source-brief-claim",
+    statement: `${originating.publisher} reports the selected development in its originating source item`,
+    sourceIds: [originating.id],
+    verification: "preliminary",
+  }];
+  story.priority = "notable";
+  story.confidence.level = "developing";
+  addTrustedReceipt(story);
+  candidate.frontPage.note =
+    "The automated writer did not produce a safe bounded summary after two attempts.";
+  candidate.provenance.personalFreeResearch.draftingMode =
+    "trusted-authoritative-source-alert";
+  candidate.provenance.sourceCheck.checkedSourceCount = 2;
+
+  assert.equal(validateCanonicalEdition(candidate).valid, true);
+  const rendered = renderPersonalEditionEmail(candidate);
+
+  assert.match(rendered.text, /THE MORNING BRIEF · SOURCE BRIEF EDITION/);
+  assert.match(rendered.text, /PRIMARY-SOURCE BRIEF/);
+  assert.match(rendered.text, new RegExp(originating.title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(rendered.text, /Read the original report for its exact claims/);
+  assert.match(rendered.text, /1 official update made today’s paper/);
+  assert.match(rendered.text, /Primary links checked before delivery/);
+  assert.match(rendered.html, /The morning brief · Source brief edition/);
+  assert.doesNotMatch(
+    rendered.text,
+    /automated writer|safe bounded summary|two attempts|deterministic|scorecard|reviewed feed set/i,
+  );
+  assert.doesNotMatch(rendered.text, /reviewed development selected|feed index/i);
+  assert.doesNotMatch(rendered.text, /reviewed-feed\.xml/);
+  assert.doesNotMatch(rendered.html, /reviewed-feed\.xml/);
+  assert.doesNotMatch(rendered.text, /uncited independent item/i);
+  assert.doesNotMatch(rendered.html, /uncited-independent-item/);
+});
+
+test("mixed fallback editions keep corroborated articles and brief only single-source stories", () => {
+  const candidate = personalCandidate();
+  const corroboratedHeadline = candidate.desks.ai.story.headline;
+  candidate.frontPage.note =
+    "The model retry failed its format contract after two attempts.";
+  candidate.provenance.personalFreeResearch.draftingMode =
+    "trusted-authoritative-source-alert";
+
+  const rendered = renderPersonalEditionEmail(candidate);
+
+  assert.match(rendered.text, new RegExp(corroboratedHeadline.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(rendered.text, /WHAT HAPPENED/);
+  assert.equal(rendered.text.match(/PRIMARY-SOURCE BRIEF/g)?.length, 2);
+  assert.match(rendered.text, /THE MORNING BRIEF · MIXED-SOURCE EDITION/);
+  assert.match(
+    rendered.text,
+    /2 independently corroborated articles and 2 clearly labeled primary-source briefs made today’s paper/,
+  );
+  assert.match(rendered.html, /The morning brief · Mixed-source edition/);
+  assert.match(
+    rendered.html,
+    /2 independently corroborated articles and 2 clearly labeled primary-source briefs made today’s paper/,
+  );
+  assert.match(rendered.text, /Sources and primary links checked before delivery/);
+  assert.doesNotMatch(rendered.text, /4 official updates made/);
+  assert.doesNotMatch(rendered.html, /4 official updates made/);
+  assert.doesNotMatch(
+    rendered.text,
+    /automated writer|model retry|two attempts|format contract|dossier|feed set|trusted run/i,
+  );
+});
+
+test("trusted fallback mode fails closed when no authoritative source brief remains", () => {
+  const candidate = personalCandidate();
+  for (const [desk, page] of Object.entries(candidate.desks)) {
+    if (page.story.selection.validationReceipt.evidenceTier === "authoritative-single") {
+      leaveDeskQuiet(candidate, desk);
+    }
+  }
+  assert.ok(Object.values(candidate.desks).some((page) => page.story !== null));
+  assert.ok(Object.values(candidate.desks).every((page) =>
+    page.story === null ||
+    page.story.selection.validationReceipt.evidenceTier === "corroborated"));
+  candidate.frontPage.note = "The automated writer failed its internal retry contract.";
+  candidate.provenance.personalFreeResearch.draftingMode =
+    "trusted-authoritative-source-alert";
+
+  assert.equal(validateCanonicalEdition(candidate).valid, true);
+  assert.throws(
+    () => renderPersonalEditionEmail(candidate),
+    /validated adaptive source-checked candidate/,
+  );
 });
 
 test("inference provenance is conditional on whether the adaptive edition has stories", () => {
@@ -523,6 +644,7 @@ test("the sender posts one bounded Resend request with fixed identity and date i
   assert.deepEqual(body.to, [RECIPIENT]);
   assert.equal(body.html, rendered.html);
   assert.equal(body.text, rendered.text);
+  assert.doesNotMatch(request.body, /awstrack\.me/);
   assert.match(body.html, /^<!doctype html>\n<html/);
   assert.doesNotMatch(body.html, /\\</);
   assert.doesNotMatch(body.html, /^&lt;!doctype/);
@@ -668,9 +790,9 @@ test("redirects, provider errors, oversized responses, malformed success, and ti
 test("oversized request bodies are rejected before fetch", async () => {
   const candidate = personalCandidate();
   for (const page of Object.values(candidate.desks)) {
-    page.story.whatHappened = `${page.story.whatHappened} ${"x".repeat(9_000)}`;
-    page.story.whyItMatters = `${page.story.whyItMatters} ${"y".repeat(9_000)}`;
-    page.story.whatToDoOrWatch = `${page.story.whatToDoOrWatch} ${"z".repeat(9_000)}`;
+    page.story.whatHappened = `${"word ".repeat(50)}${"x".repeat(9_700)}`;
+    page.story.whyItMatters = `${"word ".repeat(50)}${"y".repeat(9_700)}`;
+    page.story.whatToDoOrWatch = `${"word ".repeat(50)}${"z".repeat(9_700)}`;
     const source = page.story.sources[0];
     page.story.sources = Array.from({ length: 20 }, (_, index) => ({
       ...source,

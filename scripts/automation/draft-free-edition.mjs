@@ -58,8 +58,8 @@ const FREE_DRAFTING_MODES = Object.freeze([
 const WORKERS_AI_RESPONSE_ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
 
 const AUTHORITATIVE_SOURCE_ALERT_NOTE =
-  "The automated writer did not produce a safe bounded summary after two attempts, so this edition uses " +
-  "trusted source alerts with primary links and no added factual synthesis.";
+  "Today’s edition includes clearly labeled primary-source briefs. " +
+  "Use the original publisher links for the exact scope and details.";
 
 export class InsufficientFreeCandidatesError extends Error {
   constructor({ availableCount, requiredCount }) {

@@ -97,7 +97,7 @@ function requestOptions(overrides = {}) {
 
 test("the free adapter builds Cloudflare's bounded JSON-schema Execute Model contract", () => {
   const request = buildWorkersAiRequest({ messages, schema });
-  assert.equal(request.model, "@cf/openai/gpt-oss-120b");
+  assert.equal(request.model, "@cf/meta/llama-3.3-70b-instruct-fp8-fast");
   assert.deepEqual(request.body, {
     messages,
     response_format: { type: "json_schema", json_schema: schema },
@@ -107,7 +107,7 @@ test("the free adapter builds Cloudflare's bounded JSON-schema Execute Model con
   });
   assert.equal(
     workersAiRunUrl(accountId, request.model),
-    "https://api.cloudflare.com/client/v4/accounts/6fd0b70bbeb0769801ddb19c8f1b4b10/ai/run/@cf/openai/gpt-oss-120b",
+    "https://api.cloudflare.com/client/v4/accounts/6fd0b70bbeb0769801ddb19c8f1b4b10/ai/run/@cf/meta/llama-3.3-70b-instruct-fp8-fast",
   );
   assert.equal(resolveCloudflareAiModel(undefined), DEFAULT_CLOUDFLARE_AI_MODEL);
   assert.throws(
@@ -149,7 +149,7 @@ test("the free adapter returns only a locally validated result with safe provena
 
   assert.equal(
     sent.url,
-    "https://api.cloudflare.com/client/v4/accounts/6fd0b70bbeb0769801ddb19c8f1b4b10/ai/run/@cf/openai/gpt-oss-120b",
+    "https://api.cloudflare.com/client/v4/accounts/6fd0b70bbeb0769801ddb19c8f1b4b10/ai/run/@cf/meta/llama-3.3-70b-instruct-fp8-fast",
   );
   assert.equal(sent.init.method, "POST");
   assert.equal(sent.init.headers.authorization, `Bearer ${apiToken}`);
@@ -232,7 +232,7 @@ test("editorial format failures expose only fixed code and bounded attempt prove
   assert.equal(calls, 2);
 });
 
-test("the documented gpt-oss Chat Completions result is parsed and locally validated", async () => {
+test("the documented Chat Completions result is parsed and locally validated", async () => {
   let validated;
   const result = await requestWorkersAiEditorial(requestOptions({
     validatePayload: (value) => {

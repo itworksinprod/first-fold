@@ -18,7 +18,7 @@ const EXPECTED_PERSONAL_REPOSITORY = "itworksinprod/first-fold";
 const PERSONAL_RESEARCH_WORKFLOW = "personal-morning-paper";
 const PERSONAL_RESEARCH_PROVIDER = "cloudflare-workers-ai";
 const PERSONAL_RESEARCH_METHOD = "curated-live-feeds";
-const PERSONAL_RESEARCH_MODEL = "@cf/openai/gpt-oss-120b";
+const PERSONAL_RESEARCH_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 const PERSONAL_RESEARCH_EVIDENCE_POLICY = "authoritative-or-corroborated";
 const PERSONAL_RESEARCH_MAX_MODEL_REQUESTS = 2;
 const PERSONAL_RESEARCH_LOOKBACK_HOURS = 72;
@@ -235,6 +235,22 @@ function sourceRelationshipLabel(relationship) {
   return "Context";
 }
 
+function readerFacingSources(story) {
+  const sources = story.sources.filter((source) => source.relationship !== "context");
+  if (sources.length < 1) throw validationFailure();
+  return sources;
+}
+
+function formatSourceDate(value) {
+  if (typeof value !== "string" || !Number.isFinite(Date.parse(value))) return null;
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(value));
+}
+
 function validationFailure() {
   return new Error("Personal email requires a validated adaptive source-checked candidate.");
 }
@@ -292,6 +308,31 @@ function hasSafeDisplayFields(candidate) {
   return true;
 }
 
+function citedFactualSources(story) {
+  const sourceById = new Map();
+  for (const source of story?.sources ?? []) {
+    if (typeof source?.id !== "string" || sourceById.has(source.id)) {
+      throw validationFailure();
+    }
+    sourceById.set(source.id, source);
+  }
+  const citedSourceIds = new Set(
+    (story?.evidence ?? []).flatMap((claim) =>
+      Array.isArray(claim?.sourceIds) ? claim.sourceIds : []),
+  );
+  const factualSources = [];
+  const seenUrls = new Set();
+  for (const sourceId of citedSourceIds) {
+    const source = sourceById.get(sourceId);
+    if (!source || source.relationship === "context") continue;
+    const url = requireSourceUrl(source.url);
+    if (seenUrls.has(url)) continue;
+    seenUrls.add(url);
+    factualSources.push(source);
+  }
+  return factualSources;
+}
+
 function buildStoryValidationReceipt(story) {
   const score = story?.selection?.score;
   const trustedReceipt = story?.selection?.validationReceipt;
@@ -336,27 +377,7 @@ function buildStoryValidationReceipt(story) {
   ) {
     throw validationFailure();
   }
-  const sourceById = new Map();
-  for (const source of story?.sources ?? []) {
-    if (typeof source?.id !== "string" || sourceById.has(source.id)) {
-      throw validationFailure();
-    }
-    sourceById.set(source.id, source);
-  }
-  const citedSourceIds = new Set(
-    (story?.evidence ?? []).flatMap((claim) =>
-      Array.isArray(claim?.sourceIds) ? claim.sourceIds : []),
-  );
-  const factualSources = [];
-  const seenUrls = new Set();
-  for (const sourceId of citedSourceIds) {
-    const source = sourceById.get(sourceId);
-    if (!source || source.relationship === "context") continue;
-    const url = requireSourceUrl(source.url);
-    if (seenUrls.has(url)) continue;
-    seenUrls.add(url);
-    factualSources.push(source);
-  }
+  const factualSources = citedFactualSources(story);
   if (
     trustedReceipt.factualSourceCount !== factualSources.length ||
     !Number.isInteger(trustedReceipt.publisherCount) ||
@@ -448,6 +469,9 @@ export function assertPersonalEmailCandidate(candidate) {
   const sourceCheck = candidate.provenance?.sourceCheck;
   const selectedStoryCount = DESKS.filter(([desk]) =>
     candidate.desks?.[desk]?.story !== null).length;
+  const authoritativeStoryCount = DESKS.filter(([desk]) =>
+    candidate.desks?.[desk]?.story?.selection?.validationReceipt?.evidenceTier ===
+      "authoritative-single").length;
   const inferenceIsValid = selectedStoryCount === 0
     ? research?.inference === "skipped-no-eligible-candidates" &&
       research?.responseId === "not-invoked"
@@ -473,6 +497,8 @@ export function assertPersonalEmailCandidate(candidate) {
     (selectedStoryCount > 0 && !["model", "trusted-authoritative-source-alert"].includes(
       research.draftingMode,
     )) ||
+    (research.draftingMode === "trusted-authoritative-source-alert" &&
+      authoritativeStoryCount < 1) ||
     typeof research.responseId !== "string" ||
     !RESPONSE_ID_PATTERN.test(research.responseId) ||
     !/^[a-f0-9]{64}$/.test(research.feedSnapshotSha256 ?? "") ||
@@ -545,7 +571,7 @@ export function assertPersonalEmailCandidate(candidate) {
 
 function renderStoryHtml(story, feedbackUrl) {
   const receipt = buildStoryValidationReceipt(story);
-  const sources = story.sources.map((source) => {
+  const sources = readerFacingSources(story).map((source) => {
     const href = escapeHtml(requireSourceUrl(source.url));
     return `
       <li style="margin:0 0 8px 18px;padding:0;color:#37332d;font:14px/1.45 Georgia,Times New Roman,serif;">
@@ -576,7 +602,7 @@ function renderStoryHtml(story, feedbackUrl) {
 
 function renderStoryText(story, feedbackUrl) {
   const receipt = buildStoryValidationReceipt(story);
-  const sources = story.sources.map((source) => {
+  const sources = readerFacingSources(story).map((source) => {
     const url = requireSourceUrl(source.url);
     return `- ${compactText(source.publisher)} — ${compactText(source.title)} [${sourceRelationshipLabel(source.relationship)}]\n  ${url}`;
   }).join("\n");
@@ -603,13 +629,76 @@ function renderStoryText(story, feedbackUrl) {
   ].join("\n");
 }
 
-function renderDeskHtml(candidate, deskKey, deskLabel, feedbackLinks) {
+function authoritativeSourceBrief(story) {
+  const receipt = buildStoryValidationReceipt(story);
+  const sources = citedFactualSources(story);
+  if (
+    receipt.evidenceTier !== "Reviewed originating source" ||
+    sources.length !== 1 ||
+    sources[0].relationship !== "originating"
+  ) {
+    throw validationFailure();
+  }
+  const source = sources[0];
+  return {
+    receipt,
+    source,
+    publishedLabel: formatSourceDate(source.publishedAt),
+  };
+}
+
+function renderSourceBriefHtml(story, deskLabel, feedbackUrl) {
+  const { receipt, source, publishedLabel } = authoritativeSourceBrief(story);
+  const href = escapeHtml(requireSourceUrl(source.url));
+  const dateSuffix = publishedLabel === null ? "" : ` · ${escapeHtml(publishedLabel)}`;
+  return `
+    <p style="margin:10px 0 8px;color:#712b27;font:700 11px/1.2 Arial,Helvetica,sans-serif;letter-spacing:1.1px;text-transform:uppercase;">Primary-source brief</p>
+    <h2 style="margin:0 0 8px;color:#171512;font:700 30px/1.04 Georgia,Times New Roman,serif;letter-spacing:-0.5px;">${escapeHtml(source.title)}</h2>
+    <p style="margin:0 0 20px;color:#504a41;font:italic 16px/1.45 Georgia,Times New Roman,serif;">${escapeHtml(source.publisher)}${dateSuffix}</p>
+    <p style="margin:0 0 16px;color:#24211d;font:16px/1.62 Georgia,Times New Roman,serif;">This official update from ${escapeHtml(source.publisher)} was timely and relevant to ${escapeHtml(deskLabel)}, so it made today’s paper. No independent report was available in the reviewed sources before press time, so First Fold is showing the publisher’s own headline and linking directly to the original.</p>
+    <p style="margin:0 0 20px;color:#24211d;font:16px/1.62 Georgia,Times New Roman,serif;">Read the original report for its exact claims, scope, dates, affected products, and caveats. Treat those details as the publisher’s account unless independent reporting confirms them.</p>
+    <p style="margin:0 0 22px;"><a href="${href}" style="display:inline-block;padding:10px 14px;background:#712b27;color:#ffffff;font:700 13px/1.2 Arial,Helvetica,sans-serif;text-decoration:none;">Read the original report</a></p>
+    <div style="margin:0 0 6px;padding:12px 14px;background:#e9e2d5;border-left:3px solid #712b27;">
+      <p style="margin:0 0 5px;color:#712b27;font:700 11px/1.2 Arial,Helvetica,sans-serif;letter-spacing:1.1px;text-transform:uppercase;">Why it made the paper</p>
+      <p style="margin:0;color:#4f493f;font:13px/1.45 Arial,Helvetica,sans-serif;">Editorial score: ${escapeHtml(receipt.score)}/100 · ${escapeHtml(receipt.componentSummary)}</p>
+    </div>${feedbackUrl === undefined ? "" : `
+    <p style="margin:22px 0 0;"><a href="${escapeHtml(feedbackUrl)}" style="display:inline-block;padding:9px 13px;border:1px solid #712b27;color:#712b27;font:700 12px/1.2 Arial,Helvetica,sans-serif;text-decoration:none;">Review this story</a></p>`}`;
+}
+
+function renderSourceBriefText(story, deskLabel, feedbackUrl) {
+  const { receipt, source, publishedLabel } = authoritativeSourceBrief(story);
+  const sourceUrl = requireSourceUrl(source.url);
+  return [
+    "PRIMARY-SOURCE BRIEF",
+    compactText(source.title),
+    `${compactText(source.publisher)}${publishedLabel === null ? "" : ` · ${publishedLabel}`}`,
+    "",
+    `This official update from ${compactText(source.publisher)} was timely and relevant to ${deskLabel}, so it made today’s paper. No independent report was available in the reviewed sources before press time, so First Fold is showing the publisher’s own headline and linking directly to the original.`,
+    "",
+    "Read the original report for its exact claims, scope, dates, affected products, and caveats. Treat those details as the publisher’s account unless independent reporting confirms them.",
+    "",
+    `READ THE ORIGINAL REPORT\n${sourceUrl}`,
+    "",
+    `WHY IT MADE THE PAPER\nEditorial score: ${receipt.score}/100 · ${receipt.componentSummary}`,
+    ...(feedbackUrl === undefined ? [] : ["", "REVIEW THIS STORY", feedbackUrl]),
+  ].join("\n");
+}
+
+function shouldRenderSourceBrief(story, sourceBriefMode) {
+  return sourceBriefMode &&
+    story?.selection?.validationReceipt?.evidenceTier === "authoritative-single";
+}
+
+function renderDeskHtml(candidate, deskKey, deskLabel, feedbackLinks, sourceBriefMode) {
   const page = candidate.desks[deskKey];
+  const isSourceBriefStory = shouldRenderSourceBrief(page.story, sourceBriefMode);
   const content = page.story === null
     ? `
       <p style="margin:10px 0 7px;color:#171512;font:700 24px/1.1 Georgia,Times New Roman,serif;">Nothing cleared the bar today.</p>
       <p style="margin:0;color:#5b554c;font:15px/1.55 Georgia,Times New Roman,serif;">${escapeHtml(page.emptyReason)}</p>`
-    : renderStoryHtml(page.story, feedbackLinks?.stories[page.story.id]);
+    : isSourceBriefStory
+      ? renderSourceBriefHtml(page.story, deskLabel, feedbackLinks?.stories[page.story.id])
+      : renderStoryHtml(page.story, feedbackLinks?.stories[page.story.id]);
   return `
   <tr>
     <td style="padding:30px 34px;border-top:2px solid #24211d;">
@@ -618,11 +707,14 @@ function renderDeskHtml(candidate, deskKey, deskLabel, feedbackLinks) {
   </tr>`;
 }
 
-function renderDeskText(candidate, deskKey, deskLabel, feedbackLinks) {
+function renderDeskText(candidate, deskKey, deskLabel, feedbackLinks, sourceBriefMode) {
   const page = candidate.desks[deskKey];
+  const isSourceBriefStory = shouldRenderSourceBrief(page.story, sourceBriefMode);
   return page.story === null
     ? `${deskLabel.toUpperCase()} — QUIET DESK\nNothing cleared the bar today.\n${compactText(page.emptyReason)}`
-    : `${deskLabel.toUpperCase()}\n${renderStoryText(page.story, feedbackLinks?.stories[page.story.id])}`;
+    : `${deskLabel.toUpperCase()}\n${isSourceBriefStory
+      ? renderSourceBriefText(page.story, deskLabel, feedbackLinks?.stories[page.story.id])
+      : renderStoryText(page.story, feedbackLinks?.stories[page.story.id])}`;
 }
 
 /**
@@ -636,16 +728,42 @@ export function renderPersonalEditionEmail(candidate, { feedbackLinks } = {}) {
   const subject = `First Fold — ${displayDate}`;
   const research = candidate.provenance.personalFreeResearch;
   const selectedStoryCount = research.selectedStoryCount;
-  const editionLabel = selectedStoryCount >= 2
-    ? "Regular edition"
-    : selectedStoryCount === 1
-      ? "Slim edition"
-      : "Quiet edition";
+  const sourceBriefMode = research.draftingMode === "trusted-authoritative-source-alert";
+  const selectedStories = DESKS
+    .map(([deskKey]) => candidate.desks[deskKey].story)
+    .filter((story) => story !== null);
+  const sourceBriefStoryCount = selectedStories
+    .filter((story) => shouldRenderSourceBrief(story, sourceBriefMode)).length;
+  const corroboratedStoryCount = selectedStoryCount - sourceBriefStoryCount;
+  const allSourceBriefs = selectedStoryCount > 0 && sourceBriefStoryCount === selectedStoryCount;
+  const mixedSourceEdition = sourceBriefStoryCount > 0 && corroboratedStoryCount > 0;
+  const editionLabel = allSourceBriefs
+    ? "Source brief edition"
+    : mixedSourceEdition
+      ? "Mixed-source edition"
+      : selectedStoryCount >= 2
+        ? "Regular edition"
+        : selectedStoryCount === 1
+          ? "Slim edition"
+          : "Quiet edition";
   const storyCountLabel = `${selectedStoryCount} ${selectedStoryCount === 1 ? "story" : "stories"}`;
-  const researchPassLabel = `${research.researchAttemptCount} research ${research.researchAttemptCount === 1 ? "pass" : "passes"}`;
+  const readerFrontPageNote = allSourceBriefs
+    ? `${selectedStoryCount} ${selectedStoryCount === 1 ? "official update made" : "official updates made"} today’s paper. ` +
+      "Each primary-source brief links to the publisher and is clearly marked when independent reporting was not available before press time."
+    : mixedSourceEdition
+      ? `${corroboratedStoryCount} independently corroborated ${corroboratedStoryCount === 1 ? "article" : "articles"} and ` +
+        `${sourceBriefStoryCount} clearly labeled primary-source ${sourceBriefStoryCount === 1 ? "brief" : "briefs"} made today’s paper. ` +
+        "Each primary-source brief links to the publisher and is clearly marked when independent reporting was not available before press time."
+    : candidate.frontPage.note;
+  const newsroomCheckLabel =
+    `Newsroom check: ${research.successfulFeedSourceCount} of ${research.feedSourceCount} reviewed sources available`;
   const deliveryCheckLabel = selectedStoryCount === 0
     ? "Curated-feed research completed · Quality threshold unchanged"
-    : "Source checked before delivery";
+    : allSourceBriefs
+      ? "Primary links checked before delivery"
+      : mixedSourceEdition
+        ? "Sources and primary links checked before delivery"
+        : "Source checked before delivery";
   const pilotOrdinal = research.qualityPilotOrdinal;
   const pilotHtml = pilotOrdinal === null
     ? ""
@@ -653,7 +771,7 @@ export function renderPersonalEditionEmail(candidate, { feedbackLinks } = {}) {
         <tr>
           <td style="padding:14px 34px;background:#e9e2d5;border-top:1px solid #b9b09f;border-bottom:1px solid #b9b09f;">
             <p style="margin:0;color:#712b27;font:700 11px/1.2 Arial,Helvetica,sans-serif;letter-spacing:1.2px;text-transform:uppercase;">Quality pilot · Edition ${pilotOrdinal} of 5</p>
-            <p style="margin:6px 0 0;color:#4f493f;font:13px/1.45 Arial,Helvetica,sans-serif;">Please review relevance, importance, source quality, freshness, and usefulness. <a href="${escapeHtml(research.runUrl)}" style="color:#712b27;text-decoration:underline;">View the trusted run</a>.</p>
+            <p style="margin:6px 0 0;color:#4f493f;font:13px/1.45 Arial,Helvetica,sans-serif;">Please review relevance, importance, source quality, freshness, and usefulness.</p>
           </td>
         </tr>`;
   const pilotText = pilotOrdinal === null
@@ -661,13 +779,12 @@ export function renderPersonalEditionEmail(candidate, { feedbackLinks } = {}) {
     : [
       `QUALITY PILOT · EDITION ${pilotOrdinal} OF 5`,
       "Please review relevance, importance, source quality, freshness, and usefulness.",
-      research.runUrl,
       "",
     ];
   const deskHtml = DESKS.map(([key, label]) =>
-    renderDeskHtml(candidate, key, label, normalizedFeedbackLinks)).join("");
+    renderDeskHtml(candidate, key, label, normalizedFeedbackLinks, sourceBriefMode)).join("");
   const deskText = DESKS.map(([key, label]) =>
-    renderDeskText(candidate, key, label, normalizedFeedbackLinks))
+    renderDeskText(candidate, key, label, normalizedFeedbackLinks, sourceBriefMode))
     .join("\n\n----------------------------------------\n\n");
   const feedbackCategories = FEEDBACK_CATEGORIES.join(" · ");
   const feedbackHtml = normalizedFeedbackLinks === null
@@ -695,7 +812,7 @@ export function renderPersonalEditionEmail(candidate, { feedbackLinks } = {}) {
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(subject)}</title></head>
 <body style="margin:0;padding:0;background:#ded8cc;color:#171512;">
-  <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">${escapeHtml(candidate.frontPage.note)}</div>
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">${escapeHtml(readerFrontPageNote)}</div>
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;border-collapse:collapse;background:#ded8cc;">
     <tr><td align="center" style="padding:24px 10px;">
       <table role="presentation" width="680" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:680px;border-collapse:collapse;background:#f5f0e6;border:1px solid #b9b09f;box-shadow:0 4px 18px rgba(39,32,23,.12);">
@@ -709,9 +826,9 @@ export function renderPersonalEditionEmail(candidate, { feedbackLinks } = {}) {
         <tr>
           <td style="padding:24px 34px 28px;border-top:1px solid #8f8779;">
             <p style="margin:0 0 8px;color:#712b27;font:700 12px/1.2 Arial,Helvetica,sans-serif;letter-spacing:1.5px;text-transform:uppercase;">The morning brief · ${escapeHtml(editionLabel)}</p>
-            <p style="margin:0;color:#24211d;font:22px/1.35 Georgia,Times New Roman,serif;">${escapeHtml(candidate.frontPage.note)}</p>
+            <p style="margin:0;color:#24211d;font:22px/1.35 Georgia,Times New Roman,serif;">${escapeHtml(readerFrontPageNote)}</p>
             <p style="margin:14px 0 0;color:#6d665c;font:13px/1.4 Arial,Helvetica,sans-serif;">${escapeHtml(String(candidate.frontPage.estimatedMinutes))} minute read · ${escapeHtml(storyCountLabel)} · ${escapeHtml(deliveryCheckLabel)}</p>
-            <p style="margin:8px 0 0;color:#6d665c;font:12px/1.4 Arial,Helvetica,sans-serif;">Research receipt: ${escapeHtml(String(research.successfulFeedSourceCount))} of ${escapeHtml(String(research.feedSourceCount))} reviewed feeds completed · ${escapeHtml(researchPassLabel)} · Story threshold ${PERSONAL_RESEARCH_MINIMUM_SCORE}/100</p>
+            <p style="margin:8px 0 0;color:#6d665c;font:12px/1.4 Arial,Helvetica,sans-serif;">${escapeHtml(newsroomCheckLabel)}</p>
           </td>
         </tr>${pilotHtml}${deskHtml}${feedbackHtml}
         <tr>
@@ -732,9 +849,9 @@ export function renderPersonalEditionEmail(candidate, { feedbackLinks } = {}) {
     `WASHINGTON, D.C. · ${displayDate.toUpperCase()} · ISSUE NO. ${candidate.issueNumber}`,
     "",
     `THE MORNING BRIEF · ${editionLabel.toUpperCase()}`,
-    compactText(candidate.frontPage.note),
+    compactText(readerFrontPageNote),
     `${candidate.frontPage.estimatedMinutes} minute read · ${storyCountLabel} · ${deliveryCheckLabel}`,
-    `Research receipt: ${research.successfulFeedSourceCount} of ${research.feedSourceCount} reviewed feeds completed · ${researchPassLabel} · Story threshold ${PERSONAL_RESEARCH_MINIMUM_SCORE}/100`,
+    newsroomCheckLabel,
     "",
     ...pilotText,
     "========================================",

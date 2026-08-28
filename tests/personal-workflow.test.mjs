@@ -190,7 +190,7 @@ test("email setup no-ops only when wholly absent and secrets stay step-scoped", 
 
   assert.match(generation, /CLOUDFLARE_ACCOUNT_ID: \$\{\{ vars\.CLOUDFLARE_ACCOUNT_ID \}\}/);
   assert.match(generation, /CLOUDFLARE_AI_API_TOKEN: \$\{\{ secrets\.CLOUDFLARE_AI_API_TOKEN \}\}/);
-  assert.match(generation, /CLOUDFLARE_AI_MODEL: '@cf\/openai\/gpt-oss-120b'/);
+  assert.match(generation, /CLOUDFLARE_AI_MODEL: '@cf\/meta\/llama-3\.3-70b-instruct-fp8-fast'/);
   assert.match(generation, /^        id: candidate$/m);
   assert.match(generation, /--github-actions-outcome/);
   assert.doesNotMatch(generation, />\/dev\/null/);

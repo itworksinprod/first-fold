@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
 
-export const DEFAULT_CLOUDFLARE_AI_MODEL = "@cf/openai/gpt-oss-120b";
+// This model is explicitly listed by Cloudflare as supporting Workers AI JSON
+// Mode. Keep the allowlist narrow so the hard-$0 lane cannot drift to a model
+// that ignores the editorial schema or requires a paid plan.
+export const DEFAULT_CLOUDFLARE_AI_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 export const WORKERS_AI_PROVIDER = "cloudflare-workers-ai";
 export const FREE_CLOUDFLARE_AI_MODELS = Object.freeze([DEFAULT_CLOUDFLARE_AI_MODEL]);
 export const DEFAULT_WORKERS_AI_MAX_TOKENS = 16_000;

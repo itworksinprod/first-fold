@@ -416,7 +416,7 @@ function aiResult(editorialPayload = buildEditorialPayload()) {
     editorialPayload,
     responseId: "workers-ai-test-response",
     provider: "cloudflare-workers-ai",
-    model: "@cf/openai/gpt-oss-120b",
+    model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
     usage: null,
     requestSha256: "a".repeat(64),
     responseSha256: "b".repeat(64),
@@ -522,7 +522,7 @@ test("draftFreeEdition creates a validated, unpublished, QA-passed comparison ca
   assert.equal(candidate.provenance.freePilot.workflow, FREE_AUTOMATION_WORKFLOW);
   assert.equal(candidate.provenance.freePilot.runMode, "on_time");
   assert.equal(candidate.provenance.freePilot.provider, "cloudflare-workers-ai");
-  assert.equal(candidate.provenance.freePilot.model, "@cf/openai/gpt-oss-120b");
+  assert.equal(candidate.provenance.freePilot.model, "@cf/meta/llama-3.3-70b-instruct-fp8-fast");
   assert.equal(candidate.provenance.freePilot.inference, "workers-ai");
   assert.equal(candidate.provenance.freePilot.runUrl, automation.runUrl);
   assert.equal(candidate.provenance.freePilot.feedSourceCount, feedSources.length);
@@ -557,7 +557,7 @@ test("draftFreeEdition creates a validated, unpublished, QA-passed comparison ca
   assert.equal(researchOptions.minimumAuthoritativeScore, 70);
   assert.equal(aiOptions.accountId, "a".repeat(32));
   assert.equal(aiOptions.apiToken, "cloudflare-test-token-do-not-log");
-  assert.equal(aiOptions.model, "@cf/openai/gpt-oss-120b");
+  assert.equal(aiOptions.model, "@cf/meta/llama-3.3-70b-instruct-fp8-fast");
   assert.equal(aiOptions.maxAttempts, 2);
   assert.equal(aiOptions.maxTokens, undefined);
   assert.equal(aiOptions.schema.type, "object");
@@ -2006,7 +2006,7 @@ test("two unsafe authoritative drafts become a validated trusted source-alert ed
     candidate.provenance.freePilot.draftingMode,
     "trusted-authoritative-source-alert",
   );
-  assert.match(candidate.frontPage.note, /trusted source alerts/i);
+  assert.match(candidate.frontPage.note, /primary-source briefs/i);
   assert.equal(candidate.frontPage.stopThePressesStoryId, null);
   assert.equal(validateCanonicalEdition(candidate).valid, true);
   const stories = [
@@ -2061,7 +2061,7 @@ test("an authoritative second draft uses the trusted source-alert fallback after
     candidate.provenance.freePilot.draftingMode,
     "trusted-authoritative-source-alert",
   );
-  assert.match(candidate.frontPage.note, /trusted source alerts/i);
+  assert.match(candidate.frontPage.note, /primary-source briefs/i);
   assert.equal(validateCanonicalEdition(candidate).valid, true);
 });
 
@@ -2304,7 +2304,7 @@ test("two invalid formats become a candidate-only trusted source-alert edition",
       calls.push(options);
       throw workersAiFormatError(1, {
         provider: "cloudflare-workers-ai",
-        model: "@cf/openai/gpt-oss-120b",
+        model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
         responseId: `workers-ai-invalid-format-${calls.length}`,
         requestSha256: calls.length === 1 ? "a".repeat(64) : "c".repeat(64),
         responseSha256: calls.length === 1 ? "b".repeat(64) : "d".repeat(64),
@@ -2326,7 +2326,7 @@ test("two invalid formats become a candidate-only trusted source-alert edition",
   assert.equal(candidate.provenance.freePilot.responseId, "workers-ai-invalid-format-2");
   assert.equal(candidate.provenance.freePilot.requestSha256, "c".repeat(64));
   assert.equal(candidate.provenance.freePilot.responseSha256, "d".repeat(64));
-  assert.match(candidate.frontPage.note, /trusted source alerts/i);
+  assert.match(candidate.frontPage.note, /primary-source briefs/i);
   assert.equal(validateCanonicalEdition(candidate).valid, true);
 });
 

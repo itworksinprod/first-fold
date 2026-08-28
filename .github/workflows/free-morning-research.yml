@@ -31,7 +31,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  CLOUDFLARE_AI_MODEL: "@cf/openai/gpt-oss-120b"
+  CLOUDFLARE_AI_MODEL: "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
   DEFAULT_BRANCH: main
   FREE_BRANCH_PREFIX: experiment/free-morning-press-
   FREE_LABEL: free-morning-press-pilot

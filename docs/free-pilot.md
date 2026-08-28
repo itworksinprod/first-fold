@@ -8,7 +8,7 @@ paid provider.
 
 | Path | Automatic personal paper | Manual free comparison | Manual paid pilot |
 | --- | --- | --- | --- |
-| Model | Fixed Workers AI `@cf/openai/gpt-oss-120b` | Fixed Workers AI `@cf/openai/gpt-oss-120b` | OpenAI Responses model configured by the paid workflow |
+| Model | Fixed Workers AI `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | Fixed Workers AI `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | OpenAI Responses model configured by the paid workflow |
 | Discovery | Curated RSS, Atom, and JSON feeds | Same bounded feed catalog | Model-assisted open-web research |
 | Start | Cloudflare at 5:05 AM New York every day | Manual GitHub Actions run only | Manual GitHub Actions run only |
 | Evidence policy | Score of at least 70 plus hard vetoes; corroborated events or explicitly attributed authoritative originating reports; unchanged evidence, freshness, repeat, source, and QA gates across regular (2–4 stories), slim (1), and quiet (0) editions | Strict two-publisher corroboration for every non-quiet story | Paid workflow's direct-source policy |
@@ -67,7 +67,7 @@ The GitHub workflow calls Workers AI through Cloudflare's REST API. It needs an 
 6. Under **Secrets**, create `CLOUDFLARE_AI_API_TOKEN` and paste the token as its value.
 7. Under **Variables**, create `CLOUDFLARE_ACCOUNT_ID` and paste the account ID as its value.
 
-The free workflow fixes the model to `@cf/openai/gpt-oss-120b`; there is no model override to configure. This prevents an accidental switch to a paid-only model from weakening the zero-dollar guardrail.
+The free workflow fixes the model to Cloudflare's JSON-capable `@cf/meta/llama-3.3-70b-instruct-fp8-fast`; there is no model override to configure. This prevents an accidental switch to a paid-only or schema-incompatible model from weakening the zero-dollar guardrail.
 
 Cloudflare's official [Workers AI REST API setup](https://developers.cloudflare.com/workers-ai/get-started/rest-api/) describes the same credentials. The token is stored only as an encrypted GitHub Actions secret and must never be committed to this repository.
 
@@ -89,7 +89,7 @@ For a trusted local or test invocation, the generator entry point is:
 npm run edition:free -- YYYY-MM-DD
 ```
 
-The script requires `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_AI_API_TOKEN` in its environment and accepts only the fixed `@cf/openai/gpt-oss-120b` model. By default it enforces trusted GitHub run metadata and the 5:00–6:00 AM New York generation window. The workflow's guarded backfill path invokes the same script with `--same-day-backfill` only after its date, reason, confirmation, actor, repository, and branch checks pass. The GitHub workflow is the supported way to run a real comparison; direct invocation is primarily for controlled testing. Do not put credentials in a `.env` file that could be committed. A local output is still a non-publishing experiment candidate.
+The script requires `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_AI_API_TOKEN` in its environment and accepts only the fixed `@cf/meta/llama-3.3-70b-instruct-fp8-fast` model. By default it enforces trusted GitHub run metadata and the 5:00–6:00 AM New York generation window. The workflow's guarded backfill path invokes the same script with `--same-day-backfill` only after its date, reason, confirmation, actor, repository, and branch checks pass. The GitHub workflow is the supported way to run a real comparison; direct invocation is primarily for controlled testing. Do not put credentials in a `.env` file that could be committed. A local output is still a non-publishing experiment candidate.
 
 ## Cost guardrail
 

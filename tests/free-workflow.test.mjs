@@ -103,7 +103,7 @@ test("AI credentials stay in the read-only job and never reach the write-capable
   assert.match(researchJob, /CLOUDFLARE_AI_API_TOKEN: \$\{\{ secrets\.CLOUDFLARE_AI_API_TOKEN \}\}/);
   assert.match(researchJob, /CLOUDFLARE_ACCOUNT_ID: \$\{\{ vars\.CLOUDFLARE_ACCOUNT_ID \}\}/);
   assert.doesNotMatch(stageJob, /secrets\.CLOUDFLARE_AI_API_TOKEN|vars\.CLOUDFLARE_ACCOUNT_ID/);
-  assert.match(freeResearch, /^  CLOUDFLARE_AI_MODEL: "@cf\/openai\/gpt-oss-120b"$/m);
+  assert.match(freeResearch, /^  CLOUDFLARE_AI_MODEL: "@cf\/meta\/llama-3\.3-70b-instruct-fp8-fast"$/m);
   assert.doesNotMatch(freeResearch, /vars\.CLOUDFLARE_AI_MODEL/);
   assert.match(freeResearch, /\^\[A-Fa-f0-9\]\{32\}\$/);
   assert.match(freeResearch, /CLOUDFLARE_ACCOUNT_ID must be configured as a repository variable/);

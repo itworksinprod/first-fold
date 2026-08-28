@@ -5,7 +5,7 @@ edition. At **5:05 AM `America/New_York` every calendar day, including
 weekends**, Cloudflare dispatches one owner-only GitHub Actions job. That job
 reads current items from the curated feed catalog, deterministically selects the
 qualifying slate, asks the fixed Cloudflare Workers AI model
-`@cf/openai/gpt-oss-120b` to draft any selected stories, validates the result,
+`@cf/meta/llama-3.3-70b-instruct-fp8-fast` to draft any selected stories, validates the result,
 and sends it to one email address through Resend. The delivered paper adapts to
 the number of stories that clear the unchanged editorial gates: regular with
 two to four stories, slim with one, or quiet with zero.
@@ -27,7 +27,7 @@ succeeded end to end.
 | Schedule | 5:05 AM `America/New_York` every day, including weekends |
 | Reporting window | The 72 elapsed hours ending at 5:00 AM New York time on the edition date; start inclusive and end exclusive |
 | Discovery | Live entries from the repository's curated, allowlisted feeds; no general web search |
-| Drafting | Fixed Cloudflare Workers AI model `@cf/openai/gpt-oss-120b` |
+| Drafting | Fixed JSON-capable Cloudflare Workers AI model `@cf/meta/llama-3.3-70b-instruct-fp8-fast` |
 | Completion rule | Deliver a regular edition with two to four validated stories, a slim edition with one, or a healthy quiet edition with zero; every edition keeps all four desks and no desk receives more than one story |
 | Recipient | Exactly the one address stored in `PERSONAL_PAPER_EMAIL` |
 | Sender | `First Fold <onboarding@resend.dev>`, Resend's self-only testing sender |
@@ -452,7 +452,7 @@ job consumes it first. Check Cloudflare's current
 [Workers AI pricing and free allocation](https://developers.cloudflare.com/workers-ai/platform/pricing/)
 before changing plans or models.
 
-The automatic workflow fixes the model to `@cf/openai/gpt-oss-120b`; there is no
+The automatic workflow fixes the model to `@cf/meta/llama-3.3-70b-instruct-fp8-fast`; there is no
 model override. The model name includes `openai`, but it runs inside Cloudflare
 Workers AI and does not use an OpenAI API key or OpenAI API billing account.
 One edition permits at most two semantic model requests, caps each model output
