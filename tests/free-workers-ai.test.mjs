@@ -201,6 +201,11 @@ test("editorial format failures expose only fixed code and bounded attempt prove
     (error) => {
       assert.equal(error.code, WORKERS_AI_EDITORIAL_FORMAT_INVALID);
       assert.equal(error.attemptCount, 1);
+      assert.equal(error.inference.provider, WORKERS_AI_PROVIDER);
+      assert.equal(error.inference.model, DEFAULT_CLOUDFLARE_AI_MODEL);
+      assert.equal(error.inference.responseId, "test-ray-id");
+      assert.match(error.inference.requestSha256, /^[a-f0-9]{64}$/);
+      assert.match(error.inference.responseSha256, /^[a-f0-9]{64}$/);
       assert.deepEqual(Object.keys(error), []);
       assert.doesNotMatch(error.message, /cloudflare-test-token/);
       assert.doesNotMatch(JSON.stringify(error), /cloudflare-test-token/);

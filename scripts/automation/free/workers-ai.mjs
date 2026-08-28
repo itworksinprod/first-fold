@@ -158,7 +158,7 @@ function workersAiTimeoutError(message, code) {
   return error;
 }
 
-function workersAiEditorialFormatError(message, attemptCount) {
+function workersAiEditorialFormatError(message, attemptCount, inference) {
   const error = new Error(message);
   Object.defineProperties(error, {
     code: {
@@ -168,6 +168,11 @@ function workersAiEditorialFormatError(message, attemptCount) {
     },
     attemptCount: {
       value: attemptCount,
+      configurable: true,
+      enumerable: false,
+    },
+    inference: {
+      value: Object.freeze({ ...inference }),
       configurable: true,
       enumerable: false,
     },
@@ -451,6 +456,20 @@ export async function requestWorkersAiEditorial({
     maxResponseBytes,
     sleepImpl,
   });
+  const result = isObject(envelope?.result) ? envelope.result : {};
+  const headerRequestId = response.headers.get("cf-ray")?.trim();
+  const resultRequestId = typeof result.id === "string" ? result.id.trim() : "";
+  const inference = {
+    provider: WORKERS_AI_PROVIDER,
+    model: request.model,
+    responseId: resultRequestId || headerRequestId || null,
+    requestSha256: createHash("sha256").update(JSON.stringify({
+      provider: WORKERS_AI_PROVIDER,
+      model: request.model,
+      body: request.body,
+    })).digest("hex"),
+    responseSha256: createHash("sha256").update(responseText).digest("hex"),
+  };
   let editorialPayload;
   try {
     editorialPayload = extractEditorialPayload(envelope);
@@ -459,7 +478,7 @@ export async function requestWorkersAiEditorial({
       error?.message === "Cloudflare Workers AI result did not contain an editorial payload." ||
       error?.message === "Cloudflare Workers AI editorial payload was not valid JSON."
     ) {
-      throw workersAiEditorialFormatError(error.message, attemptCount);
+      throw workersAiEditorialFormatError(error.message, attemptCount, inference);
     }
     throw error;
   }
@@ -471,30 +490,25 @@ export async function requestWorkersAiEditorial({
     throw workersAiEditorialFormatError(
       "Cloudflare Workers AI editorial payload failed local schema validation.",
       attemptCount,
+      inference,
     );
   }
   if (!validationPassed(validation)) {
     throw workersAiEditorialFormatError(
       "Cloudflare Workers AI editorial payload failed local schema validation.",
       attemptCount,
+      inference,
     );
   }
 
-  const result = envelope.result;
-  const headerRequestId = response.headers.get("cf-ray")?.trim();
-  const resultRequestId = typeof result.id === "string" ? result.id.trim() : "";
   return {
     editorialPayload,
-    responseId: resultRequestId || headerRequestId || null,
-    provider: WORKERS_AI_PROVIDER,
-    model: request.model,
+    responseId: inference.responseId,
+    provider: inference.provider,
+    model: inference.model,
     usage: isObject(result.usage) ? cloneJson(result.usage, "Workers AI usage") : null,
     attemptCount,
-    requestSha256: createHash("sha256").update(JSON.stringify({
-      provider: WORKERS_AI_PROVIDER,
-      model: request.model,
-      body: request.body,
-    })).digest("hex"),
-    responseSha256: createHash("sha256").update(responseText).digest("hex"),
+    requestSha256: inference.requestSha256,
+    responseSha256: inference.responseSha256,
   };
 }

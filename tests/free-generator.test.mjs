@@ -424,9 +424,9 @@ function aiResult(editorialPayload = buildEditorialPayload()) {
   };
 }
 
-function workersAiFormatError(attemptCount = 1) {
+function workersAiFormatError(attemptCount = 1, inference = null) {
   const error = new Error("Cloudflare Workers AI editorial payload failed local schema validation.");
-  Object.defineProperties(error, {
+  const properties = {
     code: {
       value: "WORKERS_AI_EDITORIAL_FORMAT_INVALID",
       enumerable: false,
@@ -435,7 +435,14 @@ function workersAiFormatError(attemptCount = 1) {
       value: attemptCount,
       enumerable: false,
     },
-  });
+  };
+  if (inference !== null) {
+    properties.inference = {
+      value: Object.freeze({ ...inference }),
+      enumerable: false,
+    };
+  }
+  Object.defineProperties(error, properties);
   return error;
 }
 
@@ -2281,6 +2288,45 @@ test("one invalid model format receives one bounded fixed corrective request", a
   assert.match(calls[1].messages[0].content, /did not satisfy the supplied JSON schema/);
   assert.equal(calls[1].messages.some((message) => message.role === "assistant"), false);
   assert.equal(candidate.provenance.freePilot.responseId, acceptedResult.responseId);
+  assert.equal(validateCanonicalEdition(candidate).valid, true);
+});
+
+test("two invalid formats become a candidate-only trusted source-alert edition", async () => {
+  const scenario = selectedSlateScenario(["security-and-privacy", "platforms-and-power"]);
+  const calls = [];
+  let sourceRequests = 0;
+
+  const candidate = await draftFreeEdition(draftOptions({
+    evidencePolicy: "authoritative-or-corroborated",
+    draftSelectedSlate: true,
+    researchImpl: async () => scenario.research,
+    aiRequestImpl: async (options) => {
+      calls.push(options);
+      throw workersAiFormatError(1, {
+        provider: "cloudflare-workers-ai",
+        model: "@cf/openai/gpt-oss-120b",
+        responseId: `workers-ai-invalid-format-${calls.length}`,
+        requestSha256: calls.length === 1 ? "a".repeat(64) : "c".repeat(64),
+        responseSha256: calls.length === 1 ? "b".repeat(64) : "d".repeat(64),
+      });
+    },
+    sourceRequestImpl: async () => {
+      sourceRequests += 1;
+      return { status: 200, headers: {} };
+    },
+  }));
+
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls.map((options) => options.maxAttempts), [2, 1]);
+  assert.equal(sourceRequests, 4);
+  assert.equal(
+    candidate.provenance.freePilot.draftingMode,
+    "trusted-authoritative-source-alert",
+  );
+  assert.equal(candidate.provenance.freePilot.responseId, "workers-ai-invalid-format-2");
+  assert.equal(candidate.provenance.freePilot.requestSha256, "c".repeat(64));
+  assert.equal(candidate.provenance.freePilot.responseSha256, "d".repeat(64));
+  assert.match(candidate.frontPage.note, /trusted source alerts/i);
   assert.equal(validateCanonicalEdition(candidate).valid, true);
 });
 

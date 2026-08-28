@@ -55,6 +55,7 @@ const FREE_DRAFTING_MODES = Object.freeze([
   "trusted-authoritative-source-alert",
   "quiet",
 ]);
+const WORKERS_AI_RESPONSE_ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
 
 const AUTHORITATIVE_SOURCE_ALERT_NOTE =
   "The automated writer did not produce a safe bounded summary after two attempts, so this edition uses " +
@@ -1186,6 +1187,28 @@ function freeEditorialDiagnosticError(message, diagnosticCode) {
   return error;
 }
 
+function trustedFormatErrorInference(error, modelId) {
+  const rejected = error?.inference;
+  if (
+    !isObject(rejected) ||
+    rejected.provider !== WORKERS_AI_PROVIDER ||
+    rejected.model !== modelId ||
+    !WORKERS_AI_RESPONSE_ID_PATTERN.test(rejected.responseId ?? "") ||
+    !/^[a-f0-9]{64}$/.test(rejected.requestSha256 ?? "") ||
+    !/^[a-f0-9]{64}$/.test(rejected.responseSha256 ?? "")
+  ) {
+    return null;
+  }
+  return {
+    provider: rejected.provider,
+    model: rejected.model,
+    responseId: rejected.responseId,
+    requestSha256: rejected.requestSha256,
+    responseSha256: rejected.responseSha256,
+    kind: "workers-ai",
+  };
+}
+
 class FreeEditorialRepairError extends Error {
   constructor(message, repairKind) {
     super(message);
@@ -1856,6 +1879,33 @@ function buildTrustedAuthoritativeSourceAlertPayload(payload, candidates) {
   return rebuilt;
 }
 
+function buildTrustedAuthoritativeSourceAlertPayloadFromCandidates(
+  research,
+  coverage,
+  candidates,
+) {
+  const payload = buildQuietEditorial(research, coverage);
+  const usedDesks = new Set();
+  for (const candidate of candidates) {
+    if (
+      candidate.ranking?.evidenceTier !== "authoritative-single" ||
+      !FREE_DESKS.includes(candidate.suggestedDesk) ||
+      usedDesks.has(candidate.suggestedDesk)
+    ) {
+      throw new Error(
+        "Trusted format fallback requires one authoritative-single candidate per selected desk.",
+      );
+    }
+    usedDesks.add(candidate.suggestedDesk);
+    payload.desks[candidate.suggestedDesk] = {
+      desk: candidate.suggestedDesk,
+      story: { canonicalEventKey: candidate.canonicalEventKey },
+      emptyReason: null,
+    };
+  }
+  return buildTrustedAuthoritativeSourceAlertPayload(payload, candidates);
+}
+
 function applyTrustedQuietReasons(editorial, research) {
   for (const desk of FREE_DESKS) {
     const page = editorial.desks?.[desk];
@@ -2387,6 +2437,7 @@ async function draftFreeEditionCore({
       minimumStoryCount: requiredStoryCount,
     });
     let remainingModelRequests = maxModelRequests;
+    let rejectedFormatInference = null;
     const requestInference = async (requestMessages) => {
       if (remainingModelRequests < 1) {
         throw freeEditorialDiagnosticError(
@@ -2425,6 +2476,7 @@ async function draftFreeEditionCore({
             throw new Error("Workers AI returned invalid format-error attempt provenance.");
           }
           remainingModelRequests -= error.attemptCount;
+          rejectedFormatInference = trustedFormatErrorInference(error, modelId);
         }
         throw error;
       }
@@ -2474,46 +2526,73 @@ async function draftFreeEditionCore({
       }
     }
     if (repairKind !== null) {
+      let usedTrustedFormatFallback = false;
       try {
         accepted = await requestInference(
           buildFreeWorkersAiCorrectiveRetryMessages(messages, repairKind),
         );
       } catch (error) {
         if (error?.code === WORKERS_AI_EDITORIAL_FORMAT_INVALID) {
-          throw freeEditorialDiagnosticError(
-            "Workers AI corrective draft did not satisfy the required format contract.",
-            "EDITORIAL_FORMAT_RETRY_EXHAUSTED",
-          );
-        }
-        throw error;
-      }
-      try {
-        editorial = normalizeFreeEditorialAgainstCandidates(
-          accepted.aiResult.editorialPayload,
-          candidates,
-          generatedAt,
-          { evidencePolicy: normalizedEvidencePolicy, requiredEventKeys },
-        );
-      } catch (error) {
-        if (
-          !(error instanceof FreeAuthoritativeStructureError) ||
-          !draftSelectedSlate ||
-          normalizedEvidencePolicy !== "authoritative-or-corroborated"
-        ) {
+          if (
+            repairKind === "format" &&
+            draftSelectedSlate &&
+            normalizedEvidencePolicy === "authoritative-or-corroborated" &&
+            rejectedFormatInference !== null
+          ) {
+            const fallbackPayload = buildTrustedAuthoritativeSourceAlertPayloadFromCandidates(
+              research,
+              coverage,
+              candidates,
+            );
+            editorial = normalizeFreeEditorialAgainstCandidates(
+              fallbackPayload,
+              candidates,
+              generatedAt,
+              { evidencePolicy: normalizedEvidencePolicy, requiredEventKeys },
+            );
+            editorial.frontPage.note = AUTHORITATIVE_SOURCE_ALERT_NOTE;
+            draftingMode = "trusted-authoritative-source-alert";
+            accepted = { inference: rejectedFormatInference };
+            usedTrustedFormatFallback = true;
+          } else {
+            throw freeEditorialDiagnosticError(
+              "Workers AI corrective draft did not satisfy the required format contract.",
+              "EDITORIAL_FORMAT_RETRY_EXHAUSTED",
+            );
+          }
+        } else {
           throw error;
         }
-        const fallbackPayload = buildTrustedAuthoritativeSourceAlertPayload(
-          accepted.aiResult.editorialPayload,
-          candidates,
-        );
-        editorial = normalizeFreeEditorialAgainstCandidates(
-          fallbackPayload,
-          candidates,
-          generatedAt,
-          { evidencePolicy: normalizedEvidencePolicy, requiredEventKeys },
-        );
-        editorial.frontPage.note = AUTHORITATIVE_SOURCE_ALERT_NOTE;
-        draftingMode = "trusted-authoritative-source-alert";
+      }
+      if (!usedTrustedFormatFallback) {
+        try {
+          editorial = normalizeFreeEditorialAgainstCandidates(
+            accepted.aiResult.editorialPayload,
+            candidates,
+            generatedAt,
+            { evidencePolicy: normalizedEvidencePolicy, requiredEventKeys },
+          );
+        } catch (error) {
+          if (
+            !(error instanceof FreeAuthoritativeStructureError) ||
+            !draftSelectedSlate ||
+            normalizedEvidencePolicy !== "authoritative-or-corroborated"
+          ) {
+            throw error;
+          }
+          const fallbackPayload = buildTrustedAuthoritativeSourceAlertPayload(
+            accepted.aiResult.editorialPayload,
+            candidates,
+          );
+          editorial = normalizeFreeEditorialAgainstCandidates(
+            fallbackPayload,
+            candidates,
+            generatedAt,
+            { evidencePolicy: normalizedEvidencePolicy, requiredEventKeys },
+          );
+          editorial.frontPage.note = AUTHORITATIVE_SOURCE_ALERT_NOTE;
+          draftingMode = "trusted-authoritative-source-alert";
+        }
       }
     }
     inference = accepted.inference;
