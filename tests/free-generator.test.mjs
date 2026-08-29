@@ -2000,6 +2000,20 @@ test("opt-in authoritative evidence accepts only an originating article plus its
   );
 });
 
+test("the official-source disclosure uses plain singular reader copy", () => {
+  const { selectedCandidates, payload } = selectedSlateScenario(["platforms-and-power"]);
+  const normalized = normalizeFreeEditorialAgainstCandidates(
+    payload,
+    selectedCandidates,
+    generatedAt,
+    { evidencePolicy: "authoritative-or-corroborated" },
+  );
+  assert.equal(
+    normalized.frontPage.note,
+    "One story comes directly from an official source, with the original report linked.",
+  );
+});
+
 test("authoritative-single metadata and prose stay repairable without laundering claims", () => {
   const { candidates, payload } = completeAuthoritativeScenario();
   const metadataHeavy = structuredClone(payload);
@@ -2045,7 +2059,10 @@ test("authoritative-single metadata and prose stay repairable without laundering
   );
   assert.equal(normalized.desks.ai.story.evidence[0].verification, "company-claimed");
   assert.equal(normalized.frontPage.stopThePressesStoryId, null);
-  assert.match(normalized.frontPage.note, /conservative confidence labels/);
+  assert.equal(
+    normalized.frontPage.note,
+    "4 stories come directly from official sources, with each original report linked.",
+  );
 
   for (const productName of ["Next.js", "Node.js"]) {
     const dottedProduct = structuredClone(payload);

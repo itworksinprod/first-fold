@@ -1866,8 +1866,10 @@ export function normalizeFreeEditorialAgainstCandidates(
     desks[desk] = { desk, story };
   }
   if (authoritativeStoryIds.size > 0) {
-    frontPage.note =
-      "Single-publisher stories carry conservative confidence labels and preliminary evidence markings.";
+    frontPage.note = authoritativeStoryIds.size === 1
+      ? "One story comes directly from an official source, with the original report linked."
+      : `${authoritativeStoryIds.size} stories come directly from official sources, ` +
+        "with each original report linked.";
   }
   assertFreeEditorialRelationalIntegrity({ ...payload, frontPage }, desks, authoritativeStoryIds);
   if (requiredEventKeySet !== null && (
