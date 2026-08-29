@@ -1170,16 +1170,19 @@ test("provider unavailability without response provenance still yields a local d
   assert.equal(validateCanonicalEdition(candidate).valid, true);
 });
 
-test("summary drafting uses the local digest for bounded transient provider failures only", async (t) => {
-  const transientErrors = [
+test("summary drafting never lets a bounded provider failure block the local digest", async (t) => {
+  const providerErrors = [
     Object.assign(new Error("Cloudflare Workers AI request timed out after 2 attempt(s)."), {
       code: "WORKERS_AI_CLIENT_TIMEOUT",
     }),
     new Error("Cloudflare Workers AI request failed after 2 attempt(s)."),
+    new Error("Cloudflare Workers AI request failed with HTTP 400."),
+    new Error("Cloudflare Workers AI request failed with HTTP 401."),
+    new Error("Cloudflare Workers AI request failed with HTTP 403."),
     new Error("Cloudflare Workers AI request failed with HTTP 429."),
     new Error("Cloudflare Workers AI returned a non-JSON response."),
   ];
-  for (const error of transientErrors) {
+  for (const error of providerErrors) {
     await t.test(error.code ?? error.message, async () => {
       const scenario = selectedSlateScenario(["security-and-privacy"]);
       let modelCalls = 0;
@@ -1200,7 +1203,7 @@ test("summary drafting uses the local digest for bounded transient provider fail
     });
   }
 
-  await t.test("HTTP 401 remains a hard credential failure", async () => {
+  await t.test("non-provider configuration errors remain hard", async () => {
     const scenario = selectedSlateScenario(["security-and-privacy"]);
     await assert.rejects(
       () => draftFreeEdition(draftOptions({
@@ -1209,10 +1212,10 @@ test("summary drafting uses the local digest for bounded transient provider fail
         summarizeSelectedSlate: true,
         researchImpl: async () => scenario.research,
         aiRequestImpl: async () => {
-          throw new Error("Cloudflare Workers AI request failed with HTTP 401.");
+          throw new Error("CLOUDFLARE_AI_MODEL is not approved for the hard-$0 pilot.");
         },
       })),
-      /HTTP 401/,
+      /not approved for the hard-\$0 pilot/,
     );
   });
 });

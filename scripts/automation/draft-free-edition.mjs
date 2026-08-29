@@ -1293,7 +1293,7 @@ function isTrustedSummaryDigestFallbackError(error) {
     return true;
   }
   const message = error instanceof Error ? error.message : "";
-  return /^(?:Cloudflare Workers AI )(?:(?:request failed after \d+ attempt\(s\)|request failed without a response|returned an invalid HTTP response|returned a non-JSON response|returned unreadable JSON|returned an unreadable response body|response exceeded the configured size limit|did not return a successful result envelope|returned errors in a successful result envelope)\.?|request failed with HTTP (?:408|409|425|429|5\d\d)\.)$/u.test(message);
+  return /^(?:Cloudflare Workers AI )(?:(?:request failed after \d+ attempt\(s\)|request failed without a response|returned an invalid HTTP response|returned a non-JSON response|returned unreadable JSON|returned an unreadable response body|response exceeded the configured size limit|did not return a successful result envelope|returned errors in a successful result envelope)\.?|request failed with HTTP \d{3}\.)$/u.test(message);
 }
 
 class FreeEditorialRepairError extends Error {
@@ -2714,10 +2714,10 @@ async function draftFreeEditionCore({
           remainingModelRequests -= error.attemptCount;
           rejectedEditorialInference = trustedFormatErrorInference(error, modelId);
         } else if (summaryDraftMode && isTrustedSummaryDigestFallbackError(error)) {
-          // The adapter has already exhausted its bounded transport attempts,
-          // or the provider returned unusable bytes. Preserve hard failures
-          // for credentials and configuration, but let the source-bound local
-          // digest keep a private paper deliverable without another model call.
+          // AI prose is optional polish. Any bounded provider HTTP/transport
+          // failure uses the source-bound local digest without another model
+          // call. Local configuration and contract errors remain hard because
+          // they do not match this adapter-owned, fixed error vocabulary.
           remainingModelRequests = 0;
         }
         throw error;
