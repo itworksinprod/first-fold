@@ -9,11 +9,6 @@ import {
   TRUSTED_EVIDENCE_DIGEST_MODEL,
   TRUSTED_EVIDENCE_DIGEST_PROVIDER,
 } from "./free/evidence-digest.mjs";
-import { MODEL_ASSISTED_DIGEST_MODE } from "./free/summary-draft.mjs";
-import {
-  DEFAULT_CLOUDFLARE_AI_MODEL,
-  WORKERS_AI_PROVIDER,
-} from "./free/workers-ai.mjs";
 import { PERSONAL_STORY_LEDGER_SCHEMA_VERSION } from "./personal-story-ledger.mjs";
 
 export const RESEND_EMAIL_ENDPOINT = "https://api.resend.com/emails";
@@ -28,14 +23,13 @@ const EXPECTED_PERSONAL_REPOSITORY = "itworksinprod/first-fold";
 const PERSONAL_RESEARCH_WORKFLOW = "personal-morning-paper";
 const PERSONAL_RESEARCH_METHOD = "curated-live-feeds";
 const PERSONAL_RESEARCH_EVIDENCE_POLICY = "authoritative-or-corroborated";
-const PERSONAL_RESEARCH_MAX_MODEL_REQUESTS = 1;
+const PERSONAL_RESEARCH_MAX_MODEL_REQUESTS = 0;
 const PERSONAL_RESEARCH_LOOKBACK_HOURS = 72;
 const PERSONAL_RESEARCH_MINIMUM_SCORE = 70;
 const PERSONAL_RESEARCH_MINIMUM_AUTHORITATIVE_SCORE = 70;
 const PERSONAL_RESEARCH_MAX_RESEARCH_ATTEMPTS = 2;
 const PERSONAL_RESEARCH_RETRY_BELOW_STORY_COUNT = 3;
 const PERSONAL_RESEARCH_DRAFTING_MODES = Object.freeze([
-  MODEL_ASSISTED_DIGEST_MODE,
   TRUSTED_EVIDENCE_DIGEST_MODE,
   "quiet",
 ]);
@@ -275,13 +269,6 @@ function hasPersonalResearchInferenceTuple(research, storyCount) {
       research.inference === "skipped-no-eligible-candidates" &&
       research.responseId === "not-invoked";
   }
-  if (research.draftingMode === MODEL_ASSISTED_DIGEST_MODE) {
-    return research.provider === WORKERS_AI_PROVIDER &&
-      research.model === DEFAULT_CLOUDFLARE_AI_MODEL &&
-      research.inference === "workers-ai" &&
-      research.responseId !== "not-invoked" &&
-      research.responseId !== "local-digest";
-  }
   return research.provider === TRUSTED_EVIDENCE_DIGEST_PROVIDER &&
     research.model === TRUSTED_EVIDENCE_DIGEST_MODEL &&
     research.draftingMode === TRUSTED_EVIDENCE_DIGEST_MODE &&
@@ -520,10 +507,7 @@ export function assertPersonalEmailCandidate(candidate) {
     !inferenceIsValid ||
     !PERSONAL_RESEARCH_DRAFTING_MODES.includes(research.draftingMode) ||
     (selectedStoryCount === 0 && research.draftingMode !== "quiet") ||
-    (selectedStoryCount > 0 && ![
-      MODEL_ASSISTED_DIGEST_MODE,
-      TRUSTED_EVIDENCE_DIGEST_MODE,
-    ].includes(research.draftingMode)) ||
+    (selectedStoryCount > 0 && research.draftingMode !== TRUSTED_EVIDENCE_DIGEST_MODE) ||
     typeof research.responseId !== "string" ||
     !RESPONSE_ID_PATTERN.test(research.responseId) ||
     !/^[a-f0-9]{64}$/.test(research.feedSnapshotSha256 ?? "") ||
@@ -762,7 +746,6 @@ export function renderPersonalEditionEmail(candidate, { feedbackLinks } = {}) {
   const subject = `First Fold — ${displayDate}`;
   const research = candidate.provenance.personalFreeResearch;
   const selectedStoryCount = research.selectedStoryCount;
-  const modelAssisted = research.draftingMode === MODEL_ASSISTED_DIGEST_MODE;
   const sourceBriefMode = research.draftingMode === "trusted-authoritative-source-alert";
   const selectedStories = DESKS
     .map(([deskKey]) => candidate.desks[deskKey].story)
@@ -772,9 +755,7 @@ export function renderPersonalEditionEmail(candidate, { feedbackLinks } = {}) {
   const corroboratedStoryCount = selectedStoryCount - sourceBriefStoryCount;
   const allSourceBriefs = selectedStoryCount > 0 && sourceBriefStoryCount === selectedStoryCount;
   const mixedSourceEdition = sourceBriefStoryCount > 0 && corroboratedStoryCount > 0;
-  const editionLabel = modelAssisted
-    ? "Source-checked edition"
-    : allSourceBriefs
+  const editionLabel = allSourceBriefs
     ? "Source brief edition"
     : mixedSourceEdition
       ? "Mixed-source edition"
@@ -796,8 +777,6 @@ export function renderPersonalEditionEmail(candidate, { feedbackLinks } = {}) {
     `Newsroom check: ${research.successfulFeedSourceCount} of ${research.feedSourceCount} reviewed sources available`;
   const deliveryCheckLabel = selectedStoryCount === 0
     ? "Curated-feed research completed · Quality threshold unchanged"
-    : modelAssisted
-      ? "Facts source checked · Analysis polished before delivery"
     : allSourceBriefs
       ? "Primary links checked before delivery"
       : mixedSourceEdition

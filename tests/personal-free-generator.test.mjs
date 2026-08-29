@@ -19,7 +19,7 @@ import {
 } from "../scripts/automation/source-health.mjs";
 import { TRUSTED_EVIDENCE_DIGEST_MODE } from
   "../scripts/automation/free/evidence-digest.mjs";
-import { FREE_SUMMARY_SUBJECT_TOKEN, MODEL_ASSISTED_DIGEST_MODE } from
+import { MODEL_ASSISTED_DIGEST_MODE } from
   "../scripts/automation/free/summary-draft.mjs";
 import {
   PERSONAL_FREE_EVIDENCE_POLICY,
@@ -479,36 +479,7 @@ function boundedSummaryWords(prefix = "", count = 55) {
   ].join(" ");
 }
 
-function summaryPayloadForResearch(research) {
-  return {
-    summaries: research.selectedCandidates.map((candidate) => ({
-      candidateId: candidate.candidateId,
-      whyItMatters:
-        `For teams evaluating ${FREE_SUMMARY_SUBJECT_TOKEN}, the practical consequence is whether this development changes workflow control, cost, or available options. ` +
-        "A cautious comparison can separate an immediately useful choice for the people who rely on it from a change that matters only after its real operating effects become clearer. " +
-        "The value depends on evidence that links the decision context to measurable everyday outcomes.",
-      whatToDoOrWatch:
-        "Watch for clearer scope, rollout details, explicit defaults, independent results, and support terms that would strengthen or weaken the case. " +
-        "Teams should compare those signals with current needs, test any change in a reversible setting, and preserve existing safeguards until the practical effect in day-to-day use is clear. " +
-        "Keep the first response narrow enough to reverse if those signals remain mixed.",
-    })),
-  };
-}
-
-function workersAiSummaryResult(editorialPayload) {
-  return {
-    editorialPayload,
-    responseId: "workers-ai-personal-summary",
-    provider: PERSONAL_FREE_PROVIDER,
-    model: PERSONAL_FREE_MODEL,
-    usage: null,
-    requestSha256: "e".repeat(64),
-    responseSha256: "f".repeat(64),
-    attemptCount: 1,
-  };
-}
-
-test("private free generation fixes the bounded model-assisted lane and deterministic evidence contract", async (t) => {
+test("private free generation fixes the zero-model deterministic evidence contract", async (t) => {
   const projectRoot = await createProject(t);
   let draftOptions;
   const candidate = await generatePersonalFreeEdition({
@@ -522,7 +493,7 @@ test("private free generation fixes the bounded model-assisted lane and determin
     }),
     draftFreeEditionImpl: async (options) => {
       draftOptions = options;
-      return freeCandidate();
+      return freeCandidate({ draftingMode: TRUSTED_EVIDENCE_DIGEST_MODE });
     },
   });
 
@@ -534,16 +505,16 @@ test("private free generation fixes the bounded model-assisted lane and determin
   assert.equal(assertPersonalEmailCandidate(candidate).valid, true);
   assert.equal(Object.hasOwn(candidate.provenance, "freePilot"), false);
   assert.equal(Object.hasOwn(candidate.provenance, "personalResearch"), false);
-  assert.equal(candidate.provenance.personalFreeResearch.provider, PERSONAL_FREE_PROVIDER);
+  assert.equal(candidate.provenance.personalFreeResearch.provider, PERSONAL_FREE_FALLBACK_PROVIDER);
   assert.equal(candidate.provenance.personalFreeResearch.researchMethod, "curated-live-feeds");
-  assert.equal(candidate.provenance.personalFreeResearch.model, PERSONAL_FREE_MODEL);
+  assert.equal(candidate.provenance.personalFreeResearch.model, PERSONAL_FREE_FALLBACK_MODEL);
   assert.equal(
     candidate.provenance.personalFreeResearch.inference,
-    "workers-ai",
+    TRUSTED_EVIDENCE_DIGEST_MODE,
   );
   assert.equal(
     candidate.provenance.personalFreeResearch.draftingMode,
-    MODEL_ASSISTED_DIGEST_MODE,
+    TRUSTED_EVIDENCE_DIGEST_MODE,
   );
   assert.equal(candidate.provenance.personalFreeResearch.selectedStoryCount, 4);
   assert.equal(candidate.provenance.personalFreeResearch.requiredStoryCount, 4);
@@ -580,8 +551,8 @@ test("private free generation fixes the bounded model-assisted lane and determin
   assert.equal(draftOptions.requireComplete, false);
   assert.equal(draftOptions.minimumStoryCount, PERSONAL_FREE_MINIMUM_STORY_COUNT);
   assert.equal(draftOptions.draftSelectedSlate, true);
-  assert.equal(draftOptions.summarizeSelectedSlate, true);
-  assert.equal(draftOptions.trustedEvidenceDigestOnly, false);
+  assert.equal(draftOptions.summarizeSelectedSlate, false);
+  assert.equal(draftOptions.trustedEvidenceDigestOnly, true);
   assert.equal(draftOptions.maxResearchAttempts, PERSONAL_FREE_MAX_RESEARCH_ATTEMPTS);
   assert.equal(
     draftOptions.researchRetryBelowStoryCount,
@@ -604,7 +575,7 @@ test("private free generation fixes the bounded model-assisted lane and determin
   );
 });
 
-test("personal production accepts one bounded AI-assisted summary pass", async (t) => {
+test("personal production creates a complete trusted digest without invoking AI", async (t) => {
   const projectRoot = await createProject(t);
   const research = localDigestResearchFixture();
   let aiCalls = 0;
@@ -618,71 +589,17 @@ test("personal production accepts one bounded AI-assisted summary pass", async (
       fingerprintKey: automationEnv.CLOUDFLARE_AI_API_TOKEN,
     }),
     researchImpl: async () => research,
-    aiRequestImpl: async (options) => {
+    aiRequestImpl: async () => {
       aiCalls += 1;
-      assert.equal(options.maxAttempts, 1);
-      assert.equal(options.maxTokens, PERSONAL_FREE_MAX_TOKENS);
-      const payload = summaryPayloadForResearch(research);
-      const validation = options.validatePayload(payload);
-      assert.equal(validation.valid, true, validation.issues?.join(" "));
-      return workersAiSummaryResult(payload);
+      throw new Error("Deterministic personal production must not invoke Workers AI.");
     },
     sourceLookupImpl: async () => [{ address: "93.184.216.34" }],
     sourceRequestImpl: async () => ({ status: 200, headers: {} }),
     draftFreeEditionImpl: async (options) => draftFreeEdition(options),
   });
 
-  assert.equal(aiCalls, 1);
-  assert.equal(candidate.provenance.personalFreeResearch.provider, PERSONAL_FREE_PROVIDER);
-  assert.equal(candidate.provenance.personalFreeResearch.model, PERSONAL_FREE_MODEL);
-  assert.equal(candidate.provenance.personalFreeResearch.inference, "workers-ai");
-  assert.equal(
-    candidate.provenance.personalFreeResearch.draftingMode,
-    MODEL_ASSISTED_DIGEST_MODE,
-  );
-  assert.equal(
-    candidate.provenance.personalFreeResearch.responseId,
-    "workers-ai-personal-summary",
-  );
-  assert.equal(candidate.provenance.personalFreeResearch.maxModelRequests, 1);
-  assert.match(candidate.provenance.personalFreeResearch.requestSha256, /^[a-f0-9]{64}$/);
-  assert.match(candidate.provenance.personalFreeResearch.responseSha256, /^[a-f0-9]{64}$/);
-  assert.equal(validatePersonalFreeCandidate(candidate, {
-    runMode: "on_time",
-    automation,
-    expectedFeedSourceCount: FREE_FEED_SOURCES.length,
-  }), true);
-  assert.equal(assertPersonalEmailCandidate(candidate).valid, true);
-});
-
-test("personal production falls back deterministically after a bounded provider failure", async (t) => {
-  const projectRoot = await createProject(t);
-  let aiCalls = 0;
-  const candidate = await generatePersonalFreeEdition({
-    editionDate: "2026-08-20",
-    projectRoot,
-    env: automationEnv,
-    now: GENERATED_AT,
-    feedSources: FREE_FEED_SOURCES,
-    personalStoryLedger: createEmptyPersonalStoryLedger({
-      fingerprintKey: automationEnv.CLOUDFLARE_AI_API_TOKEN,
-    }),
-    researchImpl: async () => localDigestResearchFixture(),
-    aiRequestImpl: async (options) => {
-      aiCalls += 1;
-      assert.equal(options.maxAttempts, 1);
-      throw new Error("Cloudflare Workers AI request failed with HTTP 429.");
-    },
-    sourceLookupImpl: async () => [{ address: "93.184.216.34" }],
-    sourceRequestImpl: async () => ({ status: 200, headers: {} }),
-    draftFreeEditionImpl: async (options) => draftFreeEdition(options),
-  });
-
-  assert.equal(aiCalls, 1);
-  assert.equal(
-    candidate.provenance.personalFreeResearch.provider,
-    PERSONAL_FREE_FALLBACK_PROVIDER,
-  );
+  assert.equal(aiCalls, 0);
+  assert.equal(candidate.provenance.personalFreeResearch.provider, PERSONAL_FREE_FALLBACK_PROVIDER);
   assert.equal(candidate.provenance.personalFreeResearch.model, PERSONAL_FREE_FALLBACK_MODEL);
   assert.equal(
     candidate.provenance.personalFreeResearch.inference,
@@ -692,9 +609,18 @@ test("personal production falls back deterministically after a bounded provider 
     candidate.provenance.personalFreeResearch.draftingMode,
     TRUSTED_EVIDENCE_DIGEST_MODE,
   );
-  assert.equal(candidate.provenance.personalFreeResearch.responseId, "local-digest");
-  assert.equal(candidate.provenance.personalFreeResearch.maxModelRequests, 1);
-  assert.equal(validatePersonalFreeCandidate(candidate), true);
+  assert.equal(
+    candidate.provenance.personalFreeResearch.responseId,
+    "local-digest",
+  );
+  assert.equal(candidate.provenance.personalFreeResearch.maxModelRequests, 0);
+  assert.match(candidate.provenance.personalFreeResearch.requestSha256, /^[a-f0-9]{64}$/);
+  assert.match(candidate.provenance.personalFreeResearch.responseSha256, /^[a-f0-9]{64}$/);
+  assert.equal(validatePersonalFreeCandidate(candidate, {
+    runMode: "on_time",
+    automation,
+    expectedFeedSourceCount: FREE_FEED_SOURCES.length,
+  }), true);
   assert.equal(assertPersonalEmailCandidate(candidate).valid, true);
 });
 
@@ -852,7 +778,10 @@ test("adaptive personal generation creates validated 4, 3, 2, 1, and 0 story edi
         personalStoryLedger: createEmptyPersonalStoryLedger({
           fingerprintKey: automationEnv.CLOUDFLARE_AI_API_TOKEN,
         }),
-        draftFreeEditionImpl: async () => freeCandidate({ quietDesks }),
+        draftFreeEditionImpl: async () => freeCandidate({
+          quietDesks,
+          draftingMode: TRUSTED_EVIDENCE_DIGEST_MODE,
+        }),
       });
 
       assert.equal(outcome.status, "created");
@@ -864,11 +793,11 @@ test("adaptive personal generation creates validated 4, 3, 2, 1, and 0 story edi
         outcome.result.candidate.provenance.personalFreeResearch.inference,
         storyCount === 0
           ? "skipped-no-eligible-candidates"
-          : "workers-ai",
+          : TRUSTED_EVIDENCE_DIGEST_MODE,
       );
       assert.equal(
         outcome.result.candidate.provenance.personalFreeResearch.draftingMode,
-        storyCount === 0 ? "quiet" : MODEL_ASSISTED_DIGEST_MODE,
+        storyCount === 0 ? "quiet" : TRUSTED_EVIDENCE_DIGEST_MODE,
       );
       assert.equal(
         outcome.result.candidate.provenance.personalFreeResearch.researchAttemptCount,
@@ -1092,7 +1021,9 @@ test("the private writer is exclusive and never writes a public or comparison ar
     personalStoryLedger: createEmptyPersonalStoryLedger({
       fingerprintKey: automationEnv.CLOUDFLARE_AI_API_TOKEN,
     }),
-    draftFreeEditionImpl: async () => freeCandidate(),
+    draftFreeEditionImpl: async () => freeCandidate({
+      draftingMode: TRUSTED_EVIDENCE_DIGEST_MODE,
+    }),
   };
   const result = await generatePersonalFreeEditionFile(options);
   assert.equal(result.relativePath, "content/personal-candidates/2026-08-20.json");
@@ -1137,7 +1068,7 @@ test("source health is written as a safe exclusive bundle outside the private ca
       fingerprintKey: automationEnv.CLOUDFLARE_AI_API_TOKEN,
     }),
     draftFreeEditionWithHealthImpl: async () => ({
-      candidate: freeCandidate(),
+      candidate: freeCandidate({ draftingMode: TRUSTED_EVIDENCE_DIGEST_MODE }),
       sourceHealth,
     }),
   };

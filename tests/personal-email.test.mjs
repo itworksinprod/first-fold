@@ -142,7 +142,7 @@ function personalCandidate() {
     priorLedgerEditionCount: 0,
     priorLedgerStoryCount: 0,
     qualityPilotOrdinal: 1,
-    maxModelRequests: 1,
+    maxModelRequests: 0,
   };
   candidate.provenance.sourceCheck = {
     status: "passed",
@@ -518,21 +518,17 @@ test("trusted evidence digests render as normal readable stories", () => {
   ));
 });
 
-test("model-assisted digest provenance is accepted and disclosed in the email", () => {
+test("model-assisted digest provenance is rejected by zero-model personal delivery", () => {
   const candidate = useWorkersAiProvenance(personalCandidate());
 
-  assert.equal(assertPersonalEmailCandidate(candidate).valid, true);
-  const rendered = renderPersonalEditionEmail(candidate);
-
-  assert.match(rendered.text, /THE MORNING BRIEF · SOURCE-CHECKED EDITION/);
-  assert.match(rendered.html, /The morning brief · Source-checked edition/);
-  assert.match(
-    rendered.text,
-    /Facts source checked · Analysis polished before delivery/,
+  assert.throws(
+    () => assertPersonalEmailCandidate(candidate),
+    /validated adaptive source-checked candidate/,
   );
-  assert.equal(rendered.text.match(/WHAT HAPPENED/g)?.length, 4);
-  assert.equal(rendered.text.match(/WHY IT MATTERS/g)?.length, 4);
-  assert.equal(rendered.text.match(/WHAT TO DO OR WATCH/g)?.length, 4);
+  assert.throws(
+    () => renderPersonalEditionEmail(candidate),
+    /validated adaptive source-checked candidate/,
+  );
 });
 
 test("trusted evidence digest email validation rejects mismatched inference markers", () => {

@@ -20,7 +20,6 @@ import {
   DEFAULT_CLOUDFLARE_AI_MODEL,
   WORKERS_AI_PROVIDER,
 } from "./free/workers-ai.mjs";
-import { MODEL_ASSISTED_DIGEST_MODE } from "./free/summary-draft.mjs";
 import {
   PERSONAL_STORY_LEDGER_MAX_BYTES,
   PERSONAL_STORY_LEDGER_RETENTION_DAYS,
@@ -50,7 +49,7 @@ export const PERSONAL_FREE_MODEL = DEFAULT_CLOUDFLARE_AI_MODEL;
 export const PERSONAL_FREE_FALLBACK_PROVIDER = TRUSTED_EVIDENCE_DIGEST_PROVIDER;
 export const PERSONAL_FREE_FALLBACK_MODEL = TRUSTED_EVIDENCE_DIGEST_MODEL;
 export const PERSONAL_FREE_EVIDENCE_POLICY = "authoritative-or-corroborated";
-export const PERSONAL_FREE_MAX_MODEL_REQUESTS = 1;
+export const PERSONAL_FREE_MAX_MODEL_REQUESTS = 0;
 export const PERSONAL_FREE_MAX_TOKENS = 3_000;
 export const PERSONAL_FREE_MAX_REQUEST_BYTES = 100_000;
 export const PERSONAL_FREE_AI_TIMEOUT_MS = 240_000;
@@ -63,7 +62,6 @@ export const PERSONAL_FREE_RETRY_BELOW_STORY_COUNT = 3;
 export const PERSONAL_FREE_GITHUB_OUTCOME_FLAG = "--github-actions-outcome";
 export const PERSONAL_FREE_RUN_MODES = Object.freeze(["on_time", "same_day_backfill"]);
 export const PERSONAL_FREE_DRAFTING_MODES = Object.freeze([
-  MODEL_ASSISTED_DIGEST_MODE,
   TRUSTED_EVIDENCE_DIGEST_MODE,
   "quiet",
 ]);
@@ -391,13 +389,6 @@ function hasPersonalFreeInferenceTuple(provenance, storyCount) {
       provenance.inference === "skipped-no-eligible-candidates" &&
       provenance.responseId === "not-invoked";
   }
-  if (provenance.draftingMode === MODEL_ASSISTED_DIGEST_MODE) {
-    return provenance.provider === WORKERS_AI_PROVIDER &&
-      provenance.model === DEFAULT_CLOUDFLARE_AI_MODEL &&
-      provenance.inference === "workers-ai" &&
-      provenance.responseId !== "not-invoked" &&
-      provenance.responseId !== "local-digest";
-  }
   return provenance.provider === TRUSTED_EVIDENCE_DIGEST_PROVIDER &&
     provenance.model === TRUSTED_EVIDENCE_DIGEST_MODEL &&
     provenance.draftingMode === TRUSTED_EVIDENCE_DIGEST_MODE &&
@@ -534,10 +525,7 @@ export function validatePersonalFreeCandidate(
     !inferenceIsValid ||
     !PERSONAL_FREE_DRAFTING_MODES.includes(research?.draftingMode) ||
     (stories.length === 0 && research?.draftingMode !== "quiet") ||
-    (stories.length > 0 && ![
-      MODEL_ASSISTED_DIGEST_MODE,
-      TRUSTED_EVIDENCE_DIGEST_MODE,
-    ].includes(research?.draftingMode)) ||
+    (stories.length > 0 && research?.draftingMode !== TRUSTED_EVIDENCE_DIGEST_MODE) ||
     !RESPONSE_ID_PATTERN.test(research?.responseId ?? "") ||
     !SHA256_PATTERN.test(research?.feedSnapshotSha256 ?? "") ||
     !SHA256_PATTERN.test(research?.requestSha256 ?? "") ||
@@ -597,10 +585,10 @@ export function validatePersonalFreeCandidate(
 }
 
 /**
- * Generate a complete private candidate from live curated feeds. One bounded
- * Workers AI request may refine non-factual reader guidance; trusted local
- * prose remains the complete fallback. This function does not write, publish,
- * email, or deploy.
+ * Generate a complete private candidate from live curated feeds. Production
+ * uses only the trusted local evidence digest, so optional model availability
+ * cannot block the daily paper. This function does not write, publish, email,
+ * or deploy.
  */
 async function generatePersonalFreeEditionWithHealth({
   editionDate,
@@ -657,8 +645,8 @@ async function generatePersonalFreeEditionWithHealth({
     requireComplete: false,
     minimumStoryCount: PERSONAL_FREE_MINIMUM_STORY_COUNT,
     draftSelectedSlate: true,
-    summarizeSelectedSlate: true,
-    trustedEvidenceDigestOnly: false,
+    summarizeSelectedSlate: false,
+    trustedEvidenceDigestOnly: true,
     maxResearchAttempts: PERSONAL_FREE_MAX_RESEARCH_ATTEMPTS,
     researchRetryBelowStoryCount: PERSONAL_FREE_RETRY_BELOW_STORY_COUNT,
     lookbackHours: PERSONAL_FREE_LOOKBACK_HOURS,
