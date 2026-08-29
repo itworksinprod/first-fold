@@ -263,12 +263,16 @@ function hasUnsafeQuotationDelimiter(value) {
 
 function declarativeSourceSegments(value) {
   return String(value)
-    .split(/(?<=\p{Terminal_Punctuation})\s+/u)
+    // Split only at unambiguous sentence endings. Unicode's
+    // Terminal_Punctuation property also contains comma-, colon-, and
+    // semicolon-like separators; splitting at those characters can detach a
+    // limiting continuation from the clause it qualifies.
+    .split(/(?<=\p{Sentence_Terminal})\s+/u)
     .map((segment) => segment.trim())
     .filter((segment) =>
       segment &&
       !SOURCE_FORMAT_CONTROL_PATTERN.test(segment) &&
-      !segment.includes("?") &&
+      !sourceSafetyShadow(segment).includes("?") &&
       !containsFeedBoilerplate(segment) &&
       !UNSAFE_SOURCE_INSTRUCTION_PATTERN.test(segment));
 }
@@ -363,10 +367,15 @@ function completeEvidenceExcerpt(sourceText, {
   for (const segment of declarativeSourceSegments(sourceText)) {
     if (hasUnsafeLink(segment)) continue;
     if (looksLikeInstruction(segment)) continue;
-    // Unicode Terminal_Punctuation includes comma-like separators. Reject a
-    // fragment that stops at one of those separators instead of presenting it
-    // as a complete event claim with its qualifying continuation removed.
-    if (/[,;:\u060C\u061B\uFF0C\uFF1B\uFF1A]\s*$/u.test(segment)) continue;
+    // Reject every terminal separator except a true full stop or exclamation
+    // mark. Check both the original and an NFKC shadow: some characters (for
+    // example GREEK ANO TELEIA) are Terminal_Punctuation before normalization
+    // but normalize to a non-terminal middle dot. The accepted excerpt itself
+    // remains byte-for-byte source text.
+    const separatorSafetyShadow = segment.normalize("NFKC");
+    const endsWithTerminalPunctuation = /\p{Terminal_Punctuation}\s*$/u.test(segment) ||
+      /\p{Terminal_Punctuation}\s*$/u.test(separatorSafetyShadow);
+    if (endsWithTerminalPunctuation && !/[.!]\s*$/u.test(sourceSafetyShadow(segment))) continue;
     const words = sourceWords(segment);
     if (words.length === 0 || words.length > MAX_TRUSTED_EVIDENCE_EXCERPT_WORDS) continue;
     if (requireMeaningfulSignal && !hasMeaningfulEventSignal(segment, candidate, evidence)) continue;

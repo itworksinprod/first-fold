@@ -32,6 +32,11 @@ const MODEL_LINE_BREAK_PATTERN = /[\t\n\r\u0085\u2028\u2029]/u;
 const MODEL_MARKDOWN_PATTERN =
   /(?:```|~~~|`|\*\*|__|~~|!\[|\[[^\]\r\n]{1,200}\]\(|(?:^|\s)#{1,6}\s|(?:^|\s)>\s|(?:^|\s)(?:[-+*]|\d+[.)])\s)/u;
 const MODEL_PLACEHOLDER_PATTERN = /\[\[[^\]\r\n]{1,80}\]\]/gu;
+const SUBJECT_TOKEN_SAFE_PRECEDING_BOUNDARY_PATTERN =
+  /[\p{White_Space}\p{Ps}\p{Pi}]/u;
+const SUBJECT_TOKEN_SAFE_FOLLOWING_BOUNDARY_PATTERN =
+  /[\p{White_Space}\p{Pe}\p{Pf}]/u;
+const SUBJECT_TOKEN_SAFE_TRAILING_PUNCTUATION_PATTERN = /[.!?:,;]/u;
 const MODEL_NEWSROOM_META_PATTERN =
   /\b(?:bounded|candidate|digest|editorial|feed|publisher|source record|validation receipt)\b/iu;
 const WHY_IMPACT_PATTERN =
@@ -1018,7 +1023,11 @@ function disallowedAdvisoryActions(summary) {
 function containsModelDestination(value) {
   const normalized = String(value ?? "")
     .normalize("NFKC")
-    .replace(/[。．｡]/gu, ".");
+    .replace(/[。．｡]/gu, ".")
+    // WHATWG URL parsing and user agents can treat slash lookalikes as scheme
+    // separators. Canonicalize the reviewed solidus family before applying
+    // the fixed destination patterns.
+    .replace(/[\\\u2044\u2215\u29F5\u29F8]/gu, "/");
   if (MODEL_EXPLICIT_DESTINATION_PATTERN.test(normalized)) return true;
   for (const match of normalized.matchAll(MODEL_BARE_DOMAIN_PATTERN)) {
     const hostname = match[0].split(/[/:]/u, 1)[0];
@@ -1046,6 +1055,40 @@ function literalOccurrences(value, needle) {
 
 function modelPlaceholderTokens(value) {
   return String(value ?? "").match(MODEL_PLACEHOLDER_PATTERN) ?? [];
+}
+
+function hasStandaloneSubjectToken(value) {
+  // Inspect only an NFKC boundary shadow so compatibility forms of identifier
+  // and destination glue cannot hide adjacency to the trusted token. The
+  // reader-facing prose remains unchanged.
+  const prose = String(value ?? "").normalize("NFKC");
+  let offset = prose.indexOf(FREE_SUMMARY_SUBJECT_TOKEN);
+  while (offset !== -1) {
+    const preceding = [...prose.slice(0, offset)].at(-1) ?? "";
+    const remainder = prose.slice(offset + FREE_SUMMARY_SUBJECT_TOKEN.length);
+    const followingCharacters = [...remainder];
+    const following = followingCharacters[0] ?? "";
+    const afterFollowing = followingCharacters[1] ?? "";
+    const safePreceding = !preceding ||
+      SUBJECT_TOKEN_SAFE_PRECEDING_BOUNDARY_PATTERN.test(preceding);
+    const safeFollowing = !following ||
+      SUBJECT_TOKEN_SAFE_FOLLOWING_BOUNDARY_PATTERN.test(following) ||
+      (
+        SUBJECT_TOKEN_SAFE_TRAILING_PUNCTUATION_PATTERN.test(following) &&
+        (
+          !afterFollowing ||
+          SUBJECT_TOKEN_SAFE_FOLLOWING_BOUNDARY_PATTERN.test(afterFollowing)
+        )
+      );
+    if (!safePreceding || !safeFollowing) {
+      return false;
+    }
+    offset = prose.indexOf(
+      FREE_SUMMARY_SUBJECT_TOKEN,
+      offset + FREE_SUMMARY_SUBJECT_TOKEN.length,
+    );
+  }
+  return true;
 }
 
 function sentenceCount(value) {
@@ -1240,10 +1283,11 @@ export function validateFreeSummaryDraftPayload(payload, candidates) {
     if (
       whySubjectCount !== 1 ||
       watchSubjectCount !== 0 ||
-      placeholderTokens.some((token) => token !== FREE_SUMMARY_SUBJECT_TOKEN)
+      placeholderTokens.some((token) => token !== FREE_SUMMARY_SUBJECT_TOKEN) ||
+      !hasStandaloneSubjectToken(summary.whyItMatters)
     ) {
       issues.push(
-        `${label} must use the exact subject token once in whyItMatters, never in whatToDoOrWatch, and use no other subject token.`,
+        `${label} must use the exact subject token as a standalone value once in whyItMatters, never in whatToDoOrWatch, and use no other subject token.`,
       );
     }
     const analysisRange = analysisWordRange(candidate);
@@ -1408,16 +1452,64 @@ export function composeFreeEditorialFromSummaries({
       whyItMatters: story.whyItMatters,
       whatToDoOrWatch: story.whatToDoOrWatch,
     };
+    const materializedDestinationSafetyGuidance = {
+      whyItMatters: summary.whyItMatters.replaceAll(
+        FREE_SUMMARY_SUBJECT_TOKEN,
+        "firstfoldsubject",
+      ),
+      whatToDoOrWatch: summary.whatToDoOrWatch.replaceAll(
+        FREE_SUMMARY_SUBJECT_TOKEN,
+        "firstfoldsubject",
+      ),
+    };
+    const unsafeMaterializedShape = MODEL_ANALYSIS_FIELDS.flatMap((field) => {
+      const issues = [];
+      if (hasDisallowedControl(materializedGuidance[field])) issues.push(`${field}:control`);
+      if (containsModelFormatting(materializedGuidance[field])) issues.push(`${field}:formatting`);
+      if (containsModelDestination(materializedDestinationSafetyGuidance[field])) {
+        issues.push(`${field}:destination`);
+      }
+      return issues;
+    });
+    // The exact subject is trusted local data, not model-authored semantics.
+    // Restore only that byte sequence to the neutral validation token while
+    // rechecking the surrounding materialized prose. Shape, destination, and
+    // action checks above/below still inspect the exact published bytes.
+    const materializedLexicalGuidance = Object.fromEntries(
+      MODEL_ANALYSIS_FIELDS.map((field) => [
+        field,
+        materializedGuidance[field].replaceAll(candidate.primaryEntity, "the selected subject"),
+      ]),
+    );
+    const unsafeMaterializedSemantics = [
+      ...unsupportedHardTokens(materializedLexicalGuidance, candidate),
+      ...unsupportedSemanticTerms(materializedLexicalGuidance, candidate),
+      ...analysisHighRiskTerms(materializedLexicalGuidance),
+      ...analysisAttributionTerms(materializedLexicalGuidance),
+    ];
+    if (candidate.ranking.evidenceTier === "authoritative-single") {
+      for (const field of MODEL_ANALYSIS_FIELDS) {
+        if (assertsUnsupportedCertainty(materializedLexicalGuidance[field], {
+          allowVerificationAdvice: field === "whatToDoOrWatch",
+        })) {
+          unsafeMaterializedSemantics.push(`${field}:unsupported-certainty`);
+        }
+      }
+    }
     const unsafeMaterializedActions = [
       ...dangerousAnalysisActions(materializedGuidance),
       ...disallowedAdvisoryActions(materializedGuidance),
     ];
-    if (unsafeMaterializedActions.length > 0) {
+    if (
+      unsafeMaterializedShape.length > 0 ||
+      unsafeMaterializedSemantics.length > 0 ||
+      unsafeMaterializedActions.length > 0
+    ) {
       const error = new Error(
-        `Free model-assisted digest materialized unsafe guidance: ${unsafeMaterializedActions.join(", ")}.`,
+        "Free model-assisted digest materialized unsafe guidance.",
       );
       error.code = FREE_SUMMARY_COMPOSITION_INVALID;
-      error.repairKind = "originality";
+      error.repairKind = unsafeMaterializedShape.length > 0 ? "format" : "originality";
       throw error;
     }
     let readerWords = countReaderFacingStoryWords(story);

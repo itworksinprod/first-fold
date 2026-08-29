@@ -614,6 +614,38 @@ test("complete extraction preserves likely, expected, trailing, and conditional 
   }
 });
 
+test("compatibility separators cannot detach a limiting qualifier from an excerpt", () => {
+  for (const [slug, separator] of [
+    ["small-comma", "﹐"],
+    ["small-ideographic-comma", "﹑"],
+    ["small-semicolon", "﹔"],
+    ["small-colon", "﹕"],
+    ["fullwidth-comma", "，"],
+    ["halfwidth-ideographic-comma", "､"],
+    ["fullwidth-semicolon", "；"],
+    ["fullwidth-colon", "："],
+    ["ideographic-comma", "、"],
+    ["greek-ano-teleia", "·"],
+  ]) {
+    const candidate = authoritativeCandidate();
+    candidate.candidateId = `candidate-compatibility-separator-${slug}`;
+    candidate.canonicalEventKey = `free-compatibility-separator-${slug}`;
+    candidate.feedEvidence[0].summary =
+      `Critical actively exploited CVE-2026-4242 affects all production systems${separator} ` +
+      "but only inactive test systems are in scope.";
+    const payload = buildTrustedEvidenceDigestPayload({
+      candidates: [candidate],
+      quietReasons: quietReasons(),
+    });
+    const story = payload.desks["work-and-tools"].story;
+    assert.doesNotMatch(
+      JSON.stringify(story),
+      /affects all production systems/i,
+      `${slug} allowed the qualifier to be detached`,
+    );
+  }
+});
+
 test("accepted excerpts preserve safe internal punctuation from the source", () => {
   const candidate = authoritativeCandidate();
   const summary = "C++ C# support costs 25% with 100+ €5 AT&T.";

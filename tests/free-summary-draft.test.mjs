@@ -484,6 +484,11 @@ test("both model prose fields reject destinations, formatting, line breaks, and 
   const proseFields = ["whyItMatters", "whatToDoOrWatch"];
   const destinations = [
     "https://evil.example/path",
+    "https:\\evil.example/path",
+    "https:＼＼evil.example/path",
+    "https:⁄⁄evil.example/path",
+    "https:∕∕evil.example/path",
+    "https:⧵⧵evil.example/path",
     "www.evil.example/path",
     "attacker@evil.example",
     "evil.example",
@@ -543,6 +548,98 @@ test("destination checks normalize Unicode dots without mistaking common filenam
   assert.equal(result.valid, false);
   assert.equal(result.repairKind, "format");
   assert.match(result.issues.join(" "), /unreviewed destination/);
+});
+
+test("the subject token cannot be embedded inside a destination or identifier", () => {
+  const unsafeUses = [
+    `alerts@notice-${FREE_SUMMARY_SUBJECT_TOKEN}.com`,
+    `https://${FREE_SUMMARY_SUBJECT_TOKEN}.example`,
+    `notice-${FREE_SUMMARY_SUBJECT_TOKEN}`,
+    `${FREE_SUMMARY_SUBJECT_TOKEN}.com`,
+    `notice﹣${FREE_SUMMARY_SUBJECT_TOKEN}`,
+    `notice＿${FREE_SUMMARY_SUBJECT_TOKEN}`,
+    `tag＝${FREE_SUMMARY_SUBJECT_TOKEN}`,
+    `path／${FREE_SUMMARY_SUBJECT_TOKEN}`,
+    `https:\\${FREE_SUMMARY_SUBJECT_TOKEN}`,
+    `https:＼${FREE_SUMMARY_SUBJECT_TOKEN}`,
+    `https:⁄⁄${FREE_SUMMARY_SUBJECT_TOKEN}`,
+    `https:∕∕${FREE_SUMMARY_SUBJECT_TOKEN}`,
+    `https:⧵⧵${FREE_SUMMARY_SUBJECT_TOKEN}`,
+  ];
+  for (const unsafeUse of unsafeUses) {
+    const candidate = corroboratedCandidate();
+    const payload = payloadFor([candidate]);
+    payload.summaries[0].whyItMatters = payload.summaries[0].whyItMatters.replace(
+      FREE_SUMMARY_SUBJECT_TOKEN,
+      unsafeUse,
+    );
+    const result = validateFreeSummaryDraftPayload(payload, [candidate]);
+    assert.equal(result.valid, false, unsafeUse);
+    assert.equal(result.repairKind, "format", unsafeUse);
+    assert.match(result.issues.join(" "), /subject token as a standalone value/, unsafeUse);
+  }
+});
+
+test("compatibility destination glue is rejected before subject materialization", () => {
+  const candidate = corroboratedCandidate();
+  const payload = payloadFor([candidate]);
+  payload.summaries[0].whyItMatters = payload.summaries[0].whyItMatters.replace(
+    FREE_SUMMARY_SUBJECT_TOKEN,
+    `alerts＠notice﹣${FREE_SUMMARY_SUBJECT_TOKEN}．com`,
+  );
+  const result = validateFreeSummaryDraftPayload(payload, [candidate]);
+  assert.equal(result.valid, false);
+  assert.equal(result.repairKind, "format");
+  assert.match(result.issues.join(" "), /subject token as a standalone value/);
+  assert.throws(
+    () => composeFreeEditorialFromSummaries({ summaryPayload: payload, candidates: [candidate] }),
+    /Free summary draft failed local validation/,
+  );
+});
+
+test("trusted dotted product subjects remain valid after materialization", () => {
+  for (const product of ["Next.js", "Node.js", "ASP.NET"]) {
+    const candidate = corroboratedCandidate();
+    candidate.primaryEntity = product;
+    candidate.title = `${product} workflow update`;
+    candidate.sources[0].title = candidate.title;
+    candidate.feedEvidence[0].title = candidate.title;
+    candidate.feedEvidence[0].summary =
+      `${product} workflow update changes a documented administrative option.`;
+    const payload = payloadFor([candidate]);
+    assert.deepEqual(
+      validateFreeSummaryDraftPayload(payload, [candidate]),
+      { valid: true, issues: [], repairKind: null },
+      product,
+    );
+    const editorial = composeFreeEditorialFromSummaries({
+      summaryPayload: payload,
+      candidates: [candidate],
+    });
+    assert.match(
+      editorial.desks["work-and-tools"].story.whyItMatters,
+      new RegExp(product.replace(".", "\\."), "u"),
+      product,
+    );
+  }
+});
+
+test("standalone subject tokens accept ordinary sentence punctuation", () => {
+  const candidate = corroboratedCandidate();
+  const variants = [
+    `For teams deciding whether current workflow controls remain sufficient, the practical question centers on ${FREE_SUMMARY_SUBJECT_TOKEN}. A cautious comparison can separate an immediately useful choice for the people who rely on it from a change that matters only after its real operating effects become clearer. The value depends on evidence that links the possible shift to measurable everyday outcomes.`,
+    `For teams weighing a workflow decision around ${FREE_SUMMARY_SUBJECT_TOKEN}: the practical consequence concerns a change in control, cost, or available options. A cautious comparison can separate an immediately useful choice for the people who rely on it from a change that matters only after its real operating effects become clearer. The value depends on evidence that links the possible shift to measurable everyday outcomes.`,
+    `Could ${FREE_SUMMARY_SUBJECT_TOKEN} change workflow control, cost, or available options for teams evaluating the development? A cautious comparison can separate an immediately useful choice for the people who rely on it from a change that matters only after its real operating effects become clearer. The value depends on evidence that links the possible shift to measurable everyday outcomes.`,
+  ];
+  for (const whyItMatters of variants) {
+    const payload = payloadFor([candidate]);
+    payload.summaries[0].whyItMatters = whyItMatters;
+    assert.deepEqual(
+      validateFreeSummaryDraftPayload(payload, [candidate]),
+      { valid: true, issues: [], repairKind: null },
+      whyItMatters,
+    );
+  }
 });
 
 test("analysis guard rejects candidate entities, factual attribution, and high-risk event terms", async (t) => {
