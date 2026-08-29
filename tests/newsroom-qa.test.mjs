@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  NEWSROOM_QA_USER_AGENT,
   buildSourceUrlAllowlist,
   isPublicNetworkAddress,
   normalizeSourceUrl,
@@ -520,6 +521,30 @@ test("link reachability falls back from HEAD to GET", async () => {
   assert.deepEqual(calls.map(([, init]) => init.method), ["HEAD", "GET", "HEAD", "GET"]);
   assert.deepEqual(calls[0][1].addresses, ["93.184.216.34"]);
   assert.equal(calls[0][1].hostname, "openai.com");
+});
+
+test("link reachability sends a stable identity and prefers vetted IPv4 addresses", async () => {
+  const calls = [];
+  const result = await runNewsroomQa(editionFixture(), {
+    checkLinks: true,
+    lookupImpl: async () => [
+      { address: "2606:4700:4700::1111", family: 6 },
+      { address: "93.184.216.34", family: 4 },
+    ],
+    requestImpl: async (url, options) => {
+      calls.push([url, options]);
+      return new Response(null, { status: 200 });
+    },
+  });
+
+  assert.equal(result.sourceCheck.status, "passed");
+  assert.ok(calls.length > 0);
+  assert.deepEqual(calls[0][1].addresses, [
+    "93.184.216.34",
+    "2606:4700:4700::1111",
+  ]);
+  assert.equal(calls[0][1].headers["user-agent"], NEWSROOM_QA_USER_AGENT);
+  assert.equal(calls[0][1].headers["accept-encoding"], "identity");
 });
 
 test("reachability rejects an unpinned fetch implementation", async () => {

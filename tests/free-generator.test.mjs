@@ -3162,15 +3162,105 @@ test("model copy cannot reuse twelve contiguous words after the sole corrective 
 });
 
 test("free link QA rejects every redirect, including to another public host", async () => {
+  let sourceRequests = 0;
   await assert.rejects(
     () => draftFreeEdition(draftOptions({
-      sourceRequestImpl: async () => ({
-        status: 302,
-        headers: { location: "https://redirected.example/elsewhere" },
-      }),
+      sourceRequestImpl: async () => {
+        sourceRequests += 1;
+        return {
+          status: 302,
+          headers: { location: "https://redirected.example/elsewhere" },
+        };
+      },
     })),
-    /failed mandatory newsroom source QA/,
+    (error) => {
+      assert.equal(error?.diagnosticCode, "FREE_SOURCE_QA_FAILED");
+      assert.match(error?.message ?? "", /failed mandatory newsroom source QA/);
+      return true;
+    },
   );
+  assert.equal(sourceRequests, 2);
+});
+
+test("free link QA retries one complete pass after transient HTTP failures", async () => {
+  let sourceRequests = 0;
+  const candidate = await draftFreeEdition(draftOptions({
+    sourceRequestImpl: async () => {
+      sourceRequests += 1;
+      return {
+        status: sourceRequests <= 4 ? 503 : 200,
+        headers: {},
+      };
+    },
+  }));
+
+  assert.equal(sourceRequests, 6);
+  assert.deepEqual(candidate.provenance.sourceCheck, {
+    status: "passed",
+    checkedAt: generatedAt,
+    checkedSourceCount: 2,
+    issues: [],
+  });
+  assert.equal(validateCanonicalEdition(candidate).valid, true);
+});
+
+test("free link QA bounds persistent transient failures to two complete passes", async () => {
+  let sourceRequests = 0;
+  await assert.rejects(
+    () => draftFreeEdition(draftOptions({
+      sourceRequestImpl: async () => {
+        sourceRequests += 1;
+        return { status: 503, headers: {} };
+      },
+    })),
+    (error) => {
+      assert.equal(
+        error?.diagnosticCode,
+        "FREE_SOURCE_QA_TRANSIENT_RETRY_EXHAUSTED",
+      );
+      return true;
+    },
+  );
+  assert.equal(sourceRequests, 8);
+});
+
+test("free link QA does not retry access restrictions or mixed hard failures", async (context) => {
+  await context.test("access restriction", async () => {
+    let sourceRequests = 0;
+    await assert.rejects(
+      () => draftFreeEdition(draftOptions({
+        sourceRequestImpl: async () => {
+          sourceRequests += 1;
+          return { status: 403, headers: {} };
+        },
+      })),
+      (error) => {
+        assert.equal(error?.diagnosticCode, "FREE_SOURCE_QA_ACCESS_RESTRICTED");
+        return true;
+      },
+    );
+    assert.equal(sourceRequests, 4);
+  });
+
+  await context.test("mixed transient and missing page", async () => {
+    let sourceRequests = 0;
+    await assert.rejects(
+      () => draftFreeEdition(draftOptions({
+        sourceRequestImpl: async () => {
+          sourceRequests += 1;
+          return {
+            status: sourceRequests <= 2 ? 503 : 404,
+            headers: {},
+          };
+        },
+      })),
+      (error) => {
+        assert.equal(error?.diagnosticCode, "FREE_SOURCE_QA_FAILED");
+        return true;
+      },
+    );
+    assert.equal(sourceRequests, 4);
+  });
 });
 
 test("free editorial schema validation requires two sources and rejects malformed payloads", () => {

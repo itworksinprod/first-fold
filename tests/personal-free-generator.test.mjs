@@ -38,6 +38,7 @@ import {
   PERSONAL_FREE_MODEL,
   PERSONAL_FREE_PROVIDER,
   PERSONAL_FREE_RETRY_BELOW_STORY_COUNT,
+  PERSONAL_FREE_SOURCE_CHECK_TIMEOUT_MS,
   generatePersonalFreeEdition,
   generatePersonalFreeEditionFile,
   generatePersonalFreeEditionOutcome,
@@ -568,6 +569,10 @@ test("private free generation fixes the zero-model deterministic evidence contra
   assert.equal(draftOptions.maxModelRequests, PERSONAL_FREE_MAX_MODEL_REQUESTS);
   assert.equal(draftOptions.maxRequestBytes, PERSONAL_FREE_MAX_REQUEST_BYTES);
   assert.equal(draftOptions.timeoutMs, PERSONAL_FREE_AI_TIMEOUT_MS);
+  assert.equal(
+    draftOptions.sourceCheckTimeoutMs,
+    PERSONAL_FREE_SOURCE_CHECK_TIMEOUT_MS,
+  );
   assert.deepEqual(draftOptions.recentRepeatHistory, []);
   assert.equal(
     draftOptions.repeatFingerprintKey,
@@ -911,6 +916,13 @@ test("the GitHub CLI exposes only allowlisted editorial diagnostics", async (t) 
     "EDITORIAL_FORMAT_RETRY_EXHAUSTED",
     "EDITORIAL_LENGTH_RETRY_EXHAUSTED",
     "EDITORIAL_ORIGINALITY_RETRY_EXHAUSTED",
+    "FREE_CANONICAL_VALIDATION_FAILED",
+    "FREE_PROVENANCE_VALIDATION_FAILED",
+    "FREE_SOURCE_QA_ACCESS_RESTRICTED",
+    "FREE_SOURCE_QA_FAILED",
+    "FREE_SOURCE_QA_TRANSIENT_RETRY_EXHAUSTED",
+    "FREE_TRUSTED_DIGEST_FAILED",
+    "PERSONAL_FREE_ADAPTATION_FAILED",
   ];
 
   for (const code of codes) {

@@ -53,6 +53,7 @@ export const PERSONAL_FREE_MAX_MODEL_REQUESTS = 0;
 export const PERSONAL_FREE_MAX_TOKENS = 3_000;
 export const PERSONAL_FREE_MAX_REQUEST_BYTES = 100_000;
 export const PERSONAL_FREE_AI_TIMEOUT_MS = 240_000;
+export const PERSONAL_FREE_SOURCE_CHECK_TIMEOUT_MS = 8_000;
 export const PERSONAL_FREE_LOOKBACK_HOURS = 72;
 export const PERSONAL_FREE_MINIMUM_SCORE = 70;
 export const PERSONAL_FREE_MINIMUM_AUTHORITATIVE_SCORE = 70;
@@ -78,6 +79,13 @@ const PERSONAL_GENERATION_FAILURE_CODES = new Set([
   "EDITORIAL_FORMAT_RETRY_EXHAUSTED",
   "EDITORIAL_LENGTH_RETRY_EXHAUSTED",
   "EDITORIAL_ORIGINALITY_RETRY_EXHAUSTED",
+  "FREE_CANONICAL_VALIDATION_FAILED",
+  "FREE_PROVENANCE_VALIDATION_FAILED",
+  "FREE_SOURCE_QA_ACCESS_RESTRICTED",
+  "FREE_SOURCE_QA_FAILED",
+  "FREE_SOURCE_QA_TRANSIENT_RETRY_EXHAUSTED",
+  "FREE_TRUSTED_DIGEST_FAILED",
+  "PERSONAL_FREE_ADAPTATION_FAILED",
   "WORKERS_AI_CLIENT_TIMEOUT",
   "WORKERS_AI_PROVIDER_TIMEOUT",
 ]);
@@ -234,6 +242,16 @@ function attachSourceHealthBundle(error, sourceHealthBundle) {
       // Observability must never replace the original generation failure.
     }
   }
+  return error;
+}
+
+function personalFreeDiagnosticError(message, diagnosticCode) {
+  const error = new Error(message);
+  Object.defineProperty(error, "diagnosticCode", {
+    value: diagnosticCode,
+    configurable: true,
+    enumerable: false,
+  });
   return error;
 }
 
@@ -658,6 +676,7 @@ async function generatePersonalFreeEditionWithHealth({
     maxTokens: PERSONAL_FREE_MAX_TOKENS,
     maxRequestBytes: PERSONAL_FREE_MAX_REQUEST_BYTES,
     timeoutMs: PERSONAL_FREE_AI_TIMEOUT_MS,
+    sourceCheckTimeoutMs: PERSONAL_FREE_SOURCE_CHECK_TIMEOUT_MS,
     researchImpl,
     feedSources: effectiveFeedSources,
     feedRequestImpl,
@@ -686,14 +705,22 @@ async function generatePersonalFreeEditionWithHealth({
       throw new Error("Personal free detailed drafting returned an invalid result.");
     }
     sourceHealth = detailedDraft.sourceHealth ?? null;
-    const candidate = buildPersonalCandidate(detailedDraft.candidate, {
-      automation,
-      runMode,
-      expectedFeedSourceCount: effectiveFeedSources.length,
-      repeatHistory,
-    });
-    if (containsSourceHealthKey(candidate)) {
-      throw new Error("Personal free candidate must not contain source-health diagnostics.");
+    let candidate;
+    try {
+      candidate = buildPersonalCandidate(detailedDraft.candidate, {
+        automation,
+        runMode,
+        expectedFeedSourceCount: effectiveFeedSources.length,
+        repeatHistory,
+      });
+      if (containsSourceHealthKey(candidate)) {
+        throw new Error("Personal free candidate must not contain source-health diagnostics.");
+      }
+    } catch {
+      throw personalFreeDiagnosticError(
+        "Personal free candidate adaptation failed.",
+        "PERSONAL_FREE_ADAPTATION_FAILED",
+      );
     }
     return { candidate, sourceHealth };
   } catch (error) {

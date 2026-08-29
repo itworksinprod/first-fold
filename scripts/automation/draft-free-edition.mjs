@@ -1249,6 +1249,11 @@ const FREE_EDITORIAL_DIAGNOSTIC_BY_REPAIR_KIND = Object.freeze({
   originality: "EDITORIAL_ORIGINALITY_RETRY_EXHAUSTED",
   "authoritative-structure": "EDITORIAL_AUTHORITATIVE_STRUCTURE_RETRY_EXHAUSTED",
 });
+const TRANSIENT_FREE_SOURCE_QA_CODES = new Set([
+  "LINK_DNS_FAILED",
+  "LINK_REQUEST_FAILED",
+  "LINK_TIMEOUT",
+]);
 
 function freeEditorialDiagnosticError(message, diagnosticCode) {
   const error = new Error(message);
@@ -1258,6 +1263,80 @@ function freeEditorialDiagnosticError(message, diagnosticCode) {
     enumerable: false,
   });
   return error;
+}
+
+function isTransientFreeSourceQaIssue(issue) {
+  if (!isObject(issue) || issue.severity !== "error") return false;
+  if (TRANSIENT_FREE_SOURCE_QA_CODES.has(issue.code)) return true;
+  return issue.code === "LINK_HTTP_STATUS" &&
+    Number.isInteger(issue.httpStatus) &&
+    issue.httpStatus >= 500 &&
+    issue.httpStatus <= 599;
+}
+
+function freeSourceQaIssues(qaResult) {
+  return Array.isArray(qaResult?.sourceCheck?.issues)
+    ? qaResult.sourceCheck.issues
+    : [];
+}
+
+function shouldRetryFreeSourceQa(qaResult) {
+  const issues = freeSourceQaIssues(qaResult);
+  return qaResult?.sourceCheck?.status !== "passed" &&
+    issues.length > 0 &&
+    issues.every(isTransientFreeSourceQaIssue);
+}
+
+function freeSourceQaDiagnosticCode(qaResult, retried) {
+  const issues = freeSourceQaIssues(qaResult);
+  if (
+    issues.length > 0 &&
+    issues.every((issue) => issue?.code === "LINK_ACCESS_RESTRICTED")
+  ) {
+    return "FREE_SOURCE_QA_ACCESS_RESTRICTED";
+  }
+  if (retried && issues.length > 0 && issues.every(isTransientFreeSourceQaIssue)) {
+    return "FREE_SOURCE_QA_TRANSIENT_RETRY_EXHAUSTED";
+  }
+  return "FREE_SOURCE_QA_FAILED";
+}
+
+async function runMandatoryFreeSourceQa(candidate, options) {
+  let qaResult;
+  try {
+    qaResult = await runNewsroomQa(candidate, options);
+  } catch {
+    throw freeEditorialDiagnosticError(
+      "Free candidate source QA could not complete.",
+      "FREE_SOURCE_QA_FAILED",
+    );
+  }
+
+  let retried = false;
+  if (shouldRetryFreeSourceQa(qaResult)) {
+    retried = true;
+    try {
+      // Re-run the complete immutable candidate and exact allowlist once. No
+      // partial first-pass result is merged into the trusted source receipt.
+      qaResult = await runNewsroomQa(candidate, options);
+    } catch {
+      throw freeEditorialDiagnosticError(
+        "Free candidate source QA could not complete after its bounded retry.",
+        "FREE_SOURCE_QA_TRANSIENT_RETRY_EXHAUSTED",
+      );
+    }
+  }
+
+  if (
+    qaResult?.sourceCheck?.status !== "passed" ||
+    freeSourceQaIssues(qaResult).length !== 0
+  ) {
+    throw freeEditorialDiagnosticError(
+      "Free candidate failed mandatory newsroom source QA.",
+      freeSourceQaDiagnosticCode(qaResult, retried),
+    );
+  }
+  return qaResult.sourceCheck;
 }
 
 function trustedFormatErrorInference(error, modelId) {
@@ -2634,16 +2713,23 @@ async function draftFreeEditionCore({
         candidateIds: candidates.map((candidate) => candidate.candidateId),
         quietReasons,
       };
-      const digestPayload = buildTrustedEvidenceDigestPayload({
-        candidates,
-        quietReasons,
-      });
-      editorial = normalizeFreeEditorialAgainstCandidates(
-        digestPayload,
-        candidates,
-        generatedAt,
-        { evidencePolicy: normalizedEvidencePolicy, requiredEventKeys },
-      );
+      try {
+        const digestPayload = buildTrustedEvidenceDigestPayload({
+          candidates,
+          quietReasons,
+        });
+        editorial = normalizeFreeEditorialAgainstCandidates(
+          digestPayload,
+          candidates,
+          generatedAt,
+          { evidencePolicy: normalizedEvidencePolicy, requiredEventKeys },
+        );
+      } catch {
+        throw freeEditorialDiagnosticError(
+          "Trusted evidence digest construction failed.",
+          "FREE_TRUSTED_DIGEST_FAILED",
+        );
+      }
       draftingMode = TRUSTED_EVIDENCE_DIGEST_MODE;
       inference = {
         provider: TRUSTED_EVIDENCE_DIGEST_PROVIDER,
@@ -2997,7 +3083,7 @@ async function draftFreeEditionCore({
   };
 
   const allowedSourceUrls = buildSourceUrlAllowlist(sourceUrlsFromCandidates(candidates));
-  const qaResult = await runNewsroomQa(candidate, {
+  const sourceCheck = await runMandatoryFreeSourceQa(candidate, {
     allowedSourceUrls,
     priorEditions: archiveEditions,
     checkedAt,
@@ -3010,23 +3096,30 @@ async function draftFreeEditionCore({
       ? { temporalMode: "free-same-day-backfill" }
       : {}),
   });
-  if (qaResult?.sourceCheck?.status !== "passed") {
-    throw new Error("Free candidate failed mandatory newsroom source QA.");
-  }
-  candidate.provenance.sourceCheck = qaResult.sourceCheck;
+  candidate.provenance.sourceCheck = sourceCheck;
 
   const validation = validateCanonicalEdition(candidate);
   if (!validation.valid) {
-    throw new Error(`Free candidate failed canonical validation: ${validation.issues.join(" ")}`);
+    throw freeEditorialDiagnosticError(
+      "Free candidate failed canonical validation.",
+      "FREE_CANONICAL_VALIDATION_FAILED",
+    );
   }
-  validateFreePilotProvenance(candidate, githubRun, {
-    expectedFeedSourceCount: feedSources.length,
-    expectedEvidencePolicy: normalizedEvidencePolicy,
-    expectedRequiredStoryCount: requiredStoryCount,
-    expectedLookbackHours: normalizedLookbackHours,
-    expectedMinimumScore: normalizedMinimumScore,
-    expectedMinimumAuthoritativeScore: normalizedMinimumAuthoritativeScore,
-  });
+  try {
+    validateFreePilotProvenance(candidate, githubRun, {
+      expectedFeedSourceCount: feedSources.length,
+      expectedEvidencePolicy: normalizedEvidencePolicy,
+      expectedRequiredStoryCount: requiredStoryCount,
+      expectedLookbackHours: normalizedLookbackHours,
+      expectedMinimumScore: normalizedMinimumScore,
+      expectedMinimumAuthoritativeScore: normalizedMinimumAuthoritativeScore,
+    });
+  } catch {
+    throw freeEditorialDiagnosticError(
+      "Free candidate failed provenance validation.",
+      "FREE_PROVENANCE_VALIDATION_FAILED",
+    );
+  }
   return candidate;
 }
 

@@ -50,6 +50,14 @@ const PRIVATE_HOSTS = new Set([
 const TRACKING_PARAMETER = /^(?:utm_.+|fbclid|gclid|msclkid|mc_cid|mc_eid)$/i;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const INSTANT_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?Z$/;
+export const NEWSROOM_QA_USER_AGENT =
+  "Mozilla/5.0 (compatible; First-Fold-Source-Check/1.0; +https://github.com/itworksinprod/first-fold)";
+const NEWSROOM_QA_REQUEST_HEADERS = Object.freeze({
+  accept: "text/html,application/json,application/pdf,*/*;q=0.8",
+  "accept-encoding": "identity",
+  "user-agent": NEWSROOM_QA_USER_AGENT,
+  connection: "close",
+});
 
 function isObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -1287,29 +1295,39 @@ async function resolvePublicHost(hostname, { lookupImpl, timeoutMs }) {
       message: `Hostname ${hostname} resolves to non-public address ${unsafeAddress}.`,
     };
   }
-  return { ok: true, addresses };
+  // GitHub-hosted runners do not consistently have usable IPv6 egress. Every
+  // address has already passed the public-network check, so preferring IPv4
+  // changes availability only and does not reopen DNS rebinding or SSRF.
+  const orderedAddresses = [...addresses].sort((left, right) => {
+    const leftOrder = isIP(left) === 4 ? 0 : 1;
+    const rightOrder = isIP(right) === 4 ? 0 : 1;
+    return leftOrder - rightOrder;
+  });
+  return { ok: true, addresses: orderedAddresses };
 }
 
 function pinnedHttpsRequest(url, options) {
   return new Promise((resolve, reject) => {
-    const address = options.addresses[0];
-    const family = isIP(address);
+    const vettedAddresses = options.addresses.map((address) => ({
+      address,
+      family: isIP(address),
+    }));
+    const [{ address, family }] = vettedAddresses;
     let settled = false;
     const request = httpsRequest(url, {
       method: options.method,
       agent: false,
+      autoSelectFamily: vettedAddresses.length > 1,
+      autoSelectFamilyAttemptTimeout: 500,
       signal: options.signal,
       servername: isIP(options.hostname) ? undefined : options.hostname,
-      headers: {
-        accept: "text/html,application/json,application/pdf,*/*;q=0.8",
-        connection: "close",
-      },
+      headers: options.headers ?? NEWSROOM_QA_REQUEST_HEADERS,
       // Pin the connection to an address that was already classified. This is
       // intentionally not global fetch: a second resolver call would reopen a
       // DNS-rebinding gap between validation and the TCP connection.
       lookup(_hostname, lookupOptions, callback) {
         if (lookupOptions?.all) {
-          callback(null, [{ address, family }]);
+          callback(null, vettedAddresses);
         } else {
           callback(null, address, family);
         }
@@ -1372,6 +1390,7 @@ async function requestFollowingRedirects(startUrl, method, options) {
           timeoutMs: options.timeoutMs,
           addresses: resolved.addresses,
           hostname: inspected.hostname,
+          headers: NEWSROOM_QA_REQUEST_HEADERS,
           signal: requestController.signal,
         }),
         options.timeoutMs,
