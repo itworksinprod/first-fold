@@ -28,7 +28,9 @@ import {
   resolveCloudflareAiModel,
 } from "./free/workers-ai.mjs";
 import {
+  FREE_SUMMARY_COMPOSITION_INVALID,
   FREE_SUMMARY_DRAFT_SCHEMA,
+  MODEL_ASSISTED_DIGEST_MODE,
   buildFreeSummaryDraftMessages,
   composeFreeEditorialFromSummaries,
   validateFreeSummaryDraftPayload,
@@ -65,6 +67,7 @@ const FREE_RESEARCH_RETRY_OUTCOMES = Object.freeze([
 
 const FREE_DRAFTING_MODES = Object.freeze([
   "model",
+  MODEL_ASSISTED_DIGEST_MODE,
   "trusted-authoritative-source-alert",
   TRUSTED_EVIDENCE_DIGEST_MODE,
   "quiet",
@@ -2222,7 +2225,11 @@ export function validateFreePilotProvenance(
         (
           freePilot.inference !== "workers-ai" ||
           freePilot.responseId === "not-invoked" ||
-          !["model", "trusted-authoritative-source-alert"].includes(freePilot.draftingMode)
+          ![
+            "model",
+            MODEL_ASSISTED_DIGEST_MODE,
+            "trusted-authoritative-source-alert",
+          ].includes(freePilot.draftingMode)
         )
       )
     ))
@@ -2583,20 +2590,21 @@ async function draftFreeEditionCore({
   let draftingMode = candidates.length === 0 ? "quiet" : "model";
   if (candidates.length === 0) {
     editorial = buildQuietEditorial(research, coverage);
+    const quietUsesLocalWriter = trustedEvidenceDigestOnly || summarizeSelectedSlate;
     const skippedRequest = {
-      provider: trustedEvidenceDigestOnly
+      provider: quietUsesLocalWriter
         ? TRUSTED_EVIDENCE_DIGEST_PROVIDER
         : WORKERS_AI_PROVIDER,
-      model: modelId,
+      model: quietUsesLocalWriter ? TRUSTED_EVIDENCE_DIGEST_MODEL : modelId,
       schema: FREE_EDITORIAL_OUTPUT_SCHEMA,
       feedSnapshotSha256,
       candidates: [],
     };
     inference = {
-      provider: trustedEvidenceDigestOnly
+      provider: quietUsesLocalWriter
         ? TRUSTED_EVIDENCE_DIGEST_PROVIDER
         : WORKERS_AI_PROVIDER,
-      model: modelId,
+      model: quietUsesLocalWriter ? TRUSTED_EVIDENCE_DIGEST_MODEL : modelId,
       responseId: "not-invoked",
       requestSha256: sha256Json(skippedRequest),
       responseSha256: sha256Json(editorial),
@@ -2764,9 +2772,14 @@ async function draftFreeEditionCore({
           generatedAt,
           { evidencePolicy: normalizedEvidencePolicy, requiredEventKeys },
         );
+        if (summaryDraftMode) draftingMode = MODEL_ASSISTED_DIGEST_MODE;
       } catch (error) {
-        if (!(error instanceof FreeEditorialRepairError)) throw error;
-        repairKind = error.repairKind;
+        if (summaryDraftMode && error?.code === FREE_SUMMARY_COMPOSITION_INVALID) {
+          repairKind = error.repairKind ?? "format";
+        } else {
+          if (!(error instanceof FreeEditorialRepairError)) throw error;
+          repairKind = error.repairKind;
+        }
       }
     }
     if (repairKind !== null) {
@@ -2865,8 +2878,13 @@ async function draftFreeEditionCore({
             generatedAt,
             { evidencePolicy: normalizedEvidencePolicy, requiredEventKeys },
           );
+          if (summaryDraftMode) draftingMode = MODEL_ASSISTED_DIGEST_MODE;
         } catch (error) {
-          if (summaryDraftMode && error instanceof FreeEditorialRepairError) {
+          if (
+            summaryDraftMode &&
+            (error instanceof FreeEditorialRepairError ||
+              error?.code === FREE_SUMMARY_COMPOSITION_INVALID)
+          ) {
             useTrustedEvidenceDigest();
           } else {
             if (

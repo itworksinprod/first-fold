@@ -8,7 +8,7 @@ paid provider.
 
 | Path | Automatic personal paper | Manual free comparison | Manual paid pilot |
 | --- | --- | --- | --- |
-| Model | Fixed Workers AI `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | Fixed Workers AI `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | OpenAI Responses model configured by the paid workflow |
+| Model | Trusted local factual brief plus one optional Workers AI guidance pass using `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | Fixed Workers AI `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | OpenAI Responses model configured by the paid workflow |
 | Discovery | Curated RSS, Atom, and JSON feeds | Same bounded feed catalog | Model-assisted open-web research |
 | Start | Cloudflare at 5:05 AM New York every day | Manual GitHub Actions run only | Manual GitHub Actions run only |
 | Evidence policy | Score of at least 70 plus hard vetoes; corroborated events or explicitly attributed authoritative originating reports; unchanged evidence, freshness, repeat, source, and QA gates across regular (2–4 stories), slim (1), and quiet (0) editions | Strict two-publisher corroboration for every non-quiet story | Paid workflow's direct-source policy |
@@ -99,9 +99,11 @@ This guarantee depends on the account remaining on Workers Free and on using a m
 
 The allocation is shared across the Cloudflare account. A manual comparison
 uses some of the same daily pool needed by the next automatic personal paper.
-If there is not enough free capacity, the affected run fails and produces no
-email or candidate rather than charging a paid fallback. Avoid unnecessary
-manual comparisons when preserving capacity for the daily personal run matters.
+If there is not enough free capacity, the manual comparison fails and produces
+no candidate. The automatic personal paper instead retains its complete local
+source-bound edition and sends without model-refined guidance. Neither path
+charges a paid fallback. Avoid unnecessary manual comparisons when preserving
+capacity for the daily personal run matters.
 
 A failed run is safe:
 

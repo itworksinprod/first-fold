@@ -9,6 +9,13 @@ export const TRUSTED_EVIDENCE_DIGEST_DRAFTING_MODE = TRUSTED_EVIDENCE_DIGEST_MOD
 export const TRUSTED_EVIDENCE_DIGEST_PROVIDER = "local-deterministic";
 export const TRUSTED_EVIDENCE_DIGEST_MODEL = "not-invoked";
 export const MAX_TRUSTED_EVIDENCE_EXCERPT_WORDS = 10;
+const MAX_TRUSTED_EVIDENCE_PUBLISHER_CHARACTERS = 160;
+const MAX_TRUSTED_EVIDENCE_HEADLINE_CHARACTERS = 500;
+const AUTHORITATIVE_HEADLINE_WRAPPER_CHARACTERS = " reports “”".length;
+export const MAX_TRUSTED_EVIDENCE_EXCERPT_CHARACTERS =
+  MAX_TRUSTED_EVIDENCE_HEADLINE_CHARACTERS -
+  MAX_TRUSTED_EVIDENCE_PUBLISHER_CHARACTERS -
+  AUTHORITATIVE_HEADLINE_WRAPPER_CHARACTERS;
 
 const DESKS = Object.freeze([
   "ai",
@@ -36,6 +43,9 @@ const SOURCE_LINKLIKE_PATTERN =
 const SAFE_DOTTED_PRODUCT_PATTERN =
   /(^|[\s("'“‘[{])(?:next\.js|node\.js)(?![\p{L}\p{N}./:@?#_-])/giu;
 const SOURCE_FORMAT_CONTROL_PATTERN = /\p{Cf}/u;
+const SOURCE_QUOTATION_MARK_PATTERN = /\p{Quotation_Mark}/u;
+const SOURCE_WORD_CHARACTER_PATTERN = /[\p{L}\p{N}]/u;
+const INTRAWORD_APOSTROPHES = new Set(["'", "’"]);
 const UNICODE_DOT_PATTERN = /[\u2024\u3002\uFE52\uFF0E\uFF61]/gu;
 const IMPERATIVE_ACTION_WORDS = new Set([
   "activate", "add", "allow", "apply", "approve", "authorize", "change",
@@ -209,6 +219,48 @@ function sourceSafetyShadow(value) {
   return String(value).normalize("NFKC").replace(UNICODE_DOT_PATTERN, ".");
 }
 
+function isSafeIntrawordApostrophe(characters, index) {
+  if (
+    !INTRAWORD_APOSTROPHES.has(characters[index]) ||
+    !SOURCE_WORD_CHARACTER_PATTERN.test(characters[index - 1] ?? "") ||
+    !SOURCE_WORD_CHARACTER_PATTERN.test(characters[index + 1] ?? "")
+  ) {
+    return false;
+  }
+  let start = index;
+  while (
+    start > 0 &&
+    (
+      SOURCE_WORD_CHARACTER_PATTERN.test(characters[start - 1]) ||
+      INTRAWORD_APOSTROPHES.has(characters[start - 1])
+    )
+  ) {
+    start -= 1;
+  }
+  let end = index + 1;
+  while (
+    end < characters.length &&
+    (
+      SOURCE_WORD_CHARACTER_PATTERN.test(characters[end]) ||
+      INTRAWORD_APOSTROPHES.has(characters[end])
+    )
+  ) {
+    end += 1;
+  }
+  return characters
+    .slice(start, end)
+    .filter((character) => INTRAWORD_APOSTROPHES.has(character))
+    .length === 1;
+}
+
+function hasUnsafeQuotationDelimiter(value) {
+  const characters = [...sourceSafetyShadow(value)];
+  return characters.some((character, index) => {
+    if (!SOURCE_QUOTATION_MARK_PATTERN.test(character)) return false;
+    return !isSafeIntrawordApostrophe(characters, index);
+  });
+}
+
 function declarativeSourceSegments(value) {
   return String(value)
     .split(/(?<=\p{Terminal_Punctuation})\s+/u)
@@ -314,6 +366,13 @@ function completeEvidenceExcerpt(sourceText, {
     const words = sourceWords(segment);
     if (words.length === 0 || words.length > MAX_TRUSTED_EVIDENCE_EXCERPT_WORDS) continue;
     if (requireMeaningfulSignal && !hasMeaningfulEventSignal(segment, candidate, evidence)) continue;
+    const excerpt = originalExcerptText(segment);
+    if (
+      excerpt.length > MAX_TRUSTED_EVIDENCE_EXCERPT_CHARACTERS ||
+      hasUnsafeQuotationDelimiter(excerpt)
+    ) {
+      continue;
+    }
     if (
       authoritative &&
       (
@@ -326,7 +385,7 @@ function completeEvidenceExcerpt(sourceText, {
     // Preserve source punctuation inside the complete accepted segment. Only
     // terminal punctuation is removed so the surrounding attributed template
     // owns its sentence boundary.
-    return originalExcerptText(segment);
+    return excerpt;
   }
   return null;
 }
@@ -350,7 +409,11 @@ function trustedSource(source, index) {
   if (!isObject(source)) throw new Error(`Candidate source ${index + 1} must be an object.`);
   const id = cleanInline(source.id, 160, `Candidate source ${index + 1} id`);
   const title = cleanInline(source.title, 300, `Candidate source ${index + 1} title`);
-  const publisher = cleanInline(source.publisher, 160, `Candidate source ${index + 1} publisher`);
+  const publisher = cleanInline(
+    source.publisher,
+    MAX_TRUSTED_EVIDENCE_PUBLISHER_CHARACTERS,
+    `Candidate source ${index + 1} publisher`,
+  );
   const publisherKey = cleanInline(
     source.publisherKey,
     120,
@@ -388,7 +451,11 @@ function trustedFeedEvidence(record, index, sourceById) {
   if (!source || source.relationship === "context") {
     throw new Error(`feedEvidence ${index + 1} must bind to a non-context candidate source.`);
   }
-  const publisher = cleanInline(record.publisher, 160, `feedEvidence ${index + 1} publisher`);
+  const publisher = cleanInline(
+    record.publisher,
+    MAX_TRUSTED_EVIDENCE_PUBLISHER_CHARACTERS,
+    `feedEvidence ${index + 1} publisher`,
+  );
   const title = cleanInline(record.title, 300, `feedEvidence ${index + 1} title`);
   const summary = cleanInline(
     record.summary,
@@ -593,7 +660,9 @@ function buildStory(candidate) {
     ? "material-update"
     : "new-development";
   const headline = authoritative
-    ? `${publishers[0]} reports ${neutralDevelopmentLabel}`
+    ? excerptRecords[0].excerpt === null
+      ? `${publishers[0]} reports ${neutralDevelopmentLabel}`
+      : `${publishers[0]} reports “${excerptRecords[0].excerpt}”`
     : `${candidate.primaryEntity} receives reviewed ${deskLabel} coverage`;
   const deck = authoritative
     ? `${publishers[0]} reports the development through one reviewed originating feed record`

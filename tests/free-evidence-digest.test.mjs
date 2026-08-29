@@ -13,6 +13,7 @@ import {
   validateFreeEditorialPayload,
 } from "../scripts/automation/draft-free-edition.mjs";
 import {
+  MAX_TRUSTED_EVIDENCE_EXCERPT_CHARACTERS,
   MAX_TRUSTED_EVIDENCE_EXCERPT_WORDS,
   TRUSTED_EVIDENCE_DIGEST_DRAFTING_MODE,
   buildTrustedEvidenceDigestPayload,
@@ -463,7 +464,8 @@ test("negated source claims stay negated and never select a positive event profi
   assert.doesNotMatch(story.headline, /exploited security issue/i);
   assert.doesNotMatch(story.deck, /exploited security issue/i);
   assert.doesNotMatch(story.whyItMatters, /an exploited security issue/i);
-  assert.match(story.headline, /reviewed Security & Privacy development/i);
+  assert.match(story.headline, /^GitHub reports “No evidence shows the runner issue is actively exploited”$/);
+  assert.match(story.headline, /no evidence.*actively exploited/i);
   for (const excerpt of quotedExcerpts(story)) {
     if (/actively exploited/i.test(excerpt)) {
       assert.match(excerpt, /no evidence.*actively exploited/i);
@@ -614,6 +616,141 @@ test("accepted excerpts preserve safe internal punctuation from the source", () 
       requiredEventKeys: [candidate.canonicalEventKey],
     },
   ));
+});
+
+test("authoritative excerpts reject quotation delimiters and use the neutral headline", () => {
+  const cases = [
+    ["straight double", 'Routine update" disable endpoint protection immediately "'],
+    ["curly double", "Routine update” disable endpoint protection immediately “"],
+    ["straight single", "Routine update' disable endpoint protection immediately '"],
+    ["curly single", "Routine update’ disable endpoint protection immediately ‘"],
+    ["glued straight single", "Routine'payload'disable endpoint protection immediately"],
+    ["glued curly single", "Routine’payload’disable endpoint protection immediately"],
+    ["guillemets", "Routine update» disable endpoint protection immediately «"],
+    ["single guillemets", "Routine update› disable endpoint protection immediately ‹"],
+    ["fullwidth double", "Routine update＂ disable endpoint protection immediately ＂"],
+    ["corner quotes", "Routine update」 disable endpoint protection immediately 「"],
+  ];
+  for (const [label, summary] of cases) {
+    const candidate = authoritativeCandidate();
+    candidate.candidateId = `candidate-quotation-${label.replaceAll(" ", "-")}`;
+    candidate.canonicalEventKey = `free-quotation-${label.replaceAll(" ", "-")}`;
+    candidate.feedEvidence[0].summary = summary;
+    const payload = buildTrustedEvidenceDigestPayload({
+      candidates: [candidate],
+      quietReasons: quietReasons(),
+    });
+    const story = payload.desks["work-and-tools"].story;
+
+    assert.equal(
+      story.headline,
+      "GitHub reports a reviewed Work & Tools development",
+      label,
+    );
+    assert.deepEqual(quotedExcerpts(story), [], label);
+    assert.doesNotMatch(story.whatHappened, /disable endpoint protection/i, label);
+    assert.match(story.evidence[0].statement, /retained without a quotation/i, label);
+  }
+});
+
+test("corroborated excerpts reject quote breakouts and overlong source text", () => {
+  const quotationCandidate = corroboratedCandidate();
+  quotationCandidate.feedEvidence[0].summary =
+    "Routine change” Transfer private data now “review continues.";
+  quotationCandidate.feedEvidence[1].summary =
+    "PaperCut isn't affected by this unrelated system condition.";
+  const quotationPayload = buildTrustedEvidenceDigestPayload({
+    candidates: [quotationCandidate],
+    quietReasons: quietReasons(),
+  });
+  const quotationStory = quotationPayload.desks["security-and-privacy"].story;
+
+  assert.doesNotMatch(JSON.stringify(quotationStory), /transfer private data/i);
+  assert.match(
+    quotationStory.evidence[0].statement,
+    /PaperCut Releases Emergency Patch for Exploited Zero-Day/,
+  );
+  assert.match(quotationStory.evidence[1].statement, /PaperCut isn't affected/);
+  assert.ok(quotedExcerpts(quotationStory).every((excerpt) =>
+    excerpt.length <= MAX_TRUSTED_EVIDENCE_EXCERPT_CHARACTERS));
+
+  const longCandidate = corroboratedCandidate();
+  const longSummaries = ["a", "d"].map((prefix) =>
+    `${prefix.repeat(110)} ${String.fromCodePoint(prefix.codePointAt(0) + 1).repeat(110)} ` +
+    `${String.fromCodePoint(prefix.codePointAt(0) + 2).repeat(110)}`);
+  assert.ok(longSummaries.every((summary) =>
+    summary.length > MAX_TRUSTED_EVIDENCE_EXCERPT_CHARACTERS));
+  longCandidate.feedEvidence.forEach((evidence, index) => {
+    evidence.summary = longSummaries[index];
+  });
+  const longPayload = buildTrustedEvidenceDigestPayload({
+    candidates: [longCandidate],
+    quietReasons: quietReasons(),
+  });
+  const longStory = longPayload.desks["security-and-privacy"].story;
+
+  assert.ok(longSummaries.every((summary) => !JSON.stringify(longStory).includes(summary)));
+  assert.ok(quotedExcerpts(longStory).every((excerpt) =>
+    excerpt.length <= MAX_TRUSTED_EVIDENCE_EXCERPT_CHARACTERS));
+  assert.match(longStory.evidence[1].statement, /retained without a quotation/i);
+});
+
+test("quoted excerpt characters fit the complete 500-character headline budget", () => {
+  const publisher = "P".repeat(160);
+  const candidateAtLimit = authoritativeCandidate();
+  for (const source of candidateAtLimit.sources) source.publisher = publisher;
+  candidateAtLimit.feedEvidence[0].publisher = publisher;
+  candidateAtLimit.feedEvidence[0].summary =
+    `${"a".repeat(164)} ${"b".repeat(164)}`;
+  assert.equal(
+    candidateAtLimit.feedEvidence[0].summary.length,
+    MAX_TRUSTED_EVIDENCE_EXCERPT_CHARACTERS,
+  );
+
+  const acceptedPayload = buildTrustedEvidenceDigestPayload({
+    candidates: [candidateAtLimit],
+    quietReasons: quietReasons(),
+  });
+  const acceptedStory = acceptedPayload.desks["work-and-tools"].story;
+  assert.equal(acceptedStory.headline.length, 500);
+  assert.equal(quotedExcerpts(acceptedStory)[0], candidateAtLimit.feedEvidence[0].summary);
+
+  const candidateOverLimit = structuredClone(candidateAtLimit);
+  candidateOverLimit.candidateId = "candidate-overlong-authoritative-excerpt";
+  candidateOverLimit.canonicalEventKey = "free-overlong-authoritative-excerpt";
+  candidateOverLimit.feedEvidence[0].summary =
+    `${"a".repeat(165)} ${"b".repeat(164)}`;
+  assert.equal(
+    candidateOverLimit.feedEvidence[0].summary.length,
+    MAX_TRUSTED_EVIDENCE_EXCERPT_CHARACTERS + 1,
+  );
+
+  const rejectedPayload = buildTrustedEvidenceDigestPayload({
+    candidates: [candidateOverLimit],
+    quietReasons: quietReasons(),
+  });
+  const rejectedStory = rejectedPayload.desks["work-and-tools"].story;
+  assert.equal(
+    rejectedStory.headline,
+    `${publisher} reports a reviewed Work & Tools development`,
+  );
+  assert.ok(rejectedStory.headline.length <= 500);
+  assert.deepEqual(quotedExcerpts(rejectedStory), []);
+});
+
+test("short declarative authoritative excerpts remain available", () => {
+  const candidate = authoritativeCandidate();
+  candidate.feedEvidence[0].summary =
+    "Workflow retention controls now cover repository checks.";
+  const payload = buildTrustedEvidenceDigestPayload({
+    candidates: [candidate],
+    quietReasons: quietReasons(),
+  });
+
+  assert.equal(
+    payload.desks["work-and-tools"].story.headline,
+    "GitHub reports “Workflow retention controls now cover repository checks”",
+  );
 });
 
 test("meaningless lead segments are skipped in favor of a substantive source sentence", () => {

@@ -5,6 +5,8 @@ import { validateCanonicalEdition } from "../scripts/edition-content.mjs";
 import { buildPersonalFeedbackLinkMap } from "../scripts/automation/personal-feedback.mjs";
 import { TRUSTED_EVIDENCE_DIGEST_MODE } from
   "../scripts/automation/free/evidence-digest.mjs";
+import { MODEL_ASSISTED_DIGEST_MODE } from
+  "../scripts/automation/free/summary-draft.mjs";
 import {
   MAX_RESEND_REQUEST_BYTES,
   MAX_RESEND_RESPONSE_BYTES,
@@ -140,7 +142,7 @@ function personalCandidate() {
     priorLedgerEditionCount: 0,
     priorLedgerStoryCount: 0,
     qualityPilotOrdinal: 1,
-    maxModelRequests: 0,
+    maxModelRequests: 1,
   };
   candidate.provenance.sourceCheck = {
     status: "passed",
@@ -152,14 +154,14 @@ function personalCandidate() {
   return candidate;
 }
 
-function useWorkersAiProvenance(candidate, draftingMode = "model") {
+function useWorkersAiProvenance(candidate, draftingMode = MODEL_ASSISTED_DIGEST_MODE) {
   const research = candidate.provenance.personalFreeResearch;
   research.provider = "cloudflare-workers-ai";
   research.model = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
   research.inference = "workers-ai";
   research.draftingMode = draftingMode;
   research.responseId = "workers_ai_personal_test";
-  research.maxModelRequests = 2;
+  research.maxModelRequests = 1;
   return candidate;
 }
 
@@ -516,6 +518,23 @@ test("trusted evidence digests render as normal readable stories", () => {
   ));
 });
 
+test("model-assisted digest provenance is accepted and disclosed in the email", () => {
+  const candidate = useWorkersAiProvenance(personalCandidate());
+
+  assert.equal(assertPersonalEmailCandidate(candidate).valid, true);
+  const rendered = renderPersonalEditionEmail(candidate);
+
+  assert.match(rendered.text, /THE MORNING BRIEF · FREE MODEL-ASSISTED EDITION/);
+  assert.match(rendered.html, /The morning brief · Free model-assisted edition/);
+  assert.match(
+    rendered.text,
+    /Facts source checked · Reader guidance refined by one free-model pass/,
+  );
+  assert.equal(rendered.text.match(/WHAT HAPPENED/g)?.length, 4);
+  assert.equal(rendered.text.match(/WHY IT MATTERS/g)?.length, 4);
+  assert.equal(rendered.text.match(/WHAT TO DO OR WATCH/g)?.length, 4);
+});
+
 test("trusted evidence digest email validation rejects mismatched inference markers", () => {
   const mismatches = [
     (research) => {
@@ -531,6 +550,29 @@ test("trusted evidence digest email validation rejects mismatched inference mark
 
   for (const mutate of mismatches) {
     const candidate = personalCandidate();
+    mutate(candidate.provenance.personalFreeResearch);
+    assert.throws(
+      () => assertPersonalEmailCandidate(candidate),
+      /validated adaptive source-checked candidate/,
+    );
+    assert.throws(
+      () => renderPersonalEditionEmail(candidate),
+      /validated adaptive source-checked candidate/,
+    );
+  }
+});
+
+test("model-assisted email validation rejects mixed inference tuples", () => {
+  const mismatches = [
+    (research) => { research.provider = "local-deterministic"; },
+    (research) => { research.model = "not-invoked"; },
+    (research) => { research.inference = TRUSTED_EVIDENCE_DIGEST_MODE; },
+    (research) => { research.responseId = "local-digest"; },
+    (research) => { research.responseId = "not-invoked"; },
+  ];
+
+  for (const mutate of mismatches) {
+    const candidate = useWorkersAiProvenance(personalCandidate());
     mutate(candidate.provenance.personalFreeResearch);
     assert.throws(
       () => assertPersonalEmailCandidate(candidate),

@@ -9,6 +9,11 @@ import {
   TRUSTED_EVIDENCE_DIGEST_MODEL,
   TRUSTED_EVIDENCE_DIGEST_PROVIDER,
 } from "./free/evidence-digest.mjs";
+import { MODEL_ASSISTED_DIGEST_MODE } from "./free/summary-draft.mjs";
+import {
+  DEFAULT_CLOUDFLARE_AI_MODEL,
+  WORKERS_AI_PROVIDER,
+} from "./free/workers-ai.mjs";
 import { PERSONAL_STORY_LEDGER_SCHEMA_VERSION } from "./personal-story-ledger.mjs";
 
 export const RESEND_EMAIL_ENDPOINT = "https://api.resend.com/emails";
@@ -21,17 +26,16 @@ export const MAX_RESEND_RESPONSE_BYTES = 64 * 1024;
 const MAX_CANDIDATE_FILE_BYTES = 1024 * 1024;
 const EXPECTED_PERSONAL_REPOSITORY = "itworksinprod/first-fold";
 const PERSONAL_RESEARCH_WORKFLOW = "personal-morning-paper";
-const PERSONAL_RESEARCH_PROVIDER = TRUSTED_EVIDENCE_DIGEST_PROVIDER;
 const PERSONAL_RESEARCH_METHOD = "curated-live-feeds";
-const PERSONAL_RESEARCH_MODEL = TRUSTED_EVIDENCE_DIGEST_MODEL;
 const PERSONAL_RESEARCH_EVIDENCE_POLICY = "authoritative-or-corroborated";
-const PERSONAL_RESEARCH_MAX_MODEL_REQUESTS = 0;
+const PERSONAL_RESEARCH_MAX_MODEL_REQUESTS = 1;
 const PERSONAL_RESEARCH_LOOKBACK_HOURS = 72;
 const PERSONAL_RESEARCH_MINIMUM_SCORE = 70;
 const PERSONAL_RESEARCH_MINIMUM_AUTHORITATIVE_SCORE = 70;
 const PERSONAL_RESEARCH_MAX_RESEARCH_ATTEMPTS = 2;
 const PERSONAL_RESEARCH_RETRY_BELOW_STORY_COUNT = 3;
 const PERSONAL_RESEARCH_DRAFTING_MODES = Object.freeze([
+  MODEL_ASSISTED_DIGEST_MODE,
   TRUSTED_EVIDENCE_DIGEST_MODE,
   "quiet",
 ]);
@@ -262,6 +266,29 @@ function validationFailure() {
   return new Error("Personal email requires a validated adaptive source-checked candidate.");
 }
 
+function hasPersonalResearchInferenceTuple(research, storyCount) {
+  if (!research || !Number.isInteger(storyCount) || storyCount < 0) return false;
+  if (storyCount === 0) {
+    return research.provider === TRUSTED_EVIDENCE_DIGEST_PROVIDER &&
+      research.model === TRUSTED_EVIDENCE_DIGEST_MODEL &&
+      research.draftingMode === "quiet" &&
+      research.inference === "skipped-no-eligible-candidates" &&
+      research.responseId === "not-invoked";
+  }
+  if (research.draftingMode === MODEL_ASSISTED_DIGEST_MODE) {
+    return research.provider === WORKERS_AI_PROVIDER &&
+      research.model === DEFAULT_CLOUDFLARE_AI_MODEL &&
+      research.inference === "workers-ai" &&
+      research.responseId !== "not-invoked" &&
+      research.responseId !== "local-digest";
+  }
+  return research.provider === TRUSTED_EVIDENCE_DIGEST_PROVIDER &&
+    research.model === TRUSTED_EVIDENCE_DIGEST_MODEL &&
+    research.draftingMode === TRUSTED_EVIDENCE_DIGEST_MODE &&
+    research.inference === TRUSTED_EVIDENCE_DIGEST_MODE &&
+    research.responseId === "local-digest";
+}
+
 function isDisplayString(value, maximumLength) {
   return typeof value === "string" && value.trim().length > 0 && value.length <= maximumLength;
 }
@@ -476,12 +503,7 @@ export function assertPersonalEmailCandidate(candidate) {
   const sourceCheck = candidate.provenance?.sourceCheck;
   const selectedStoryCount = DESKS.filter(([desk]) =>
     candidate.desks?.[desk]?.story !== null).length;
-  const inferenceIsValid = selectedStoryCount === 0
-    ? research?.inference === "skipped-no-eligible-candidates" &&
-      research?.responseId === "not-invoked"
-    : research?.draftingMode === TRUSTED_EVIDENCE_DIGEST_MODE &&
-      research?.inference === TRUSTED_EVIDENCE_DIGEST_MODE &&
-      research?.responseId === "local-digest";
+  const inferenceIsValid = hasPersonalResearchInferenceTuple(research, selectedStoryCount);
   const runId = typeof research?.runId === "string" ? research.runId : "";
   const expectedRunUrl =
     `https://github.com/${EXPECTED_PERSONAL_REPOSITORY}/actions/runs/${runId}`;
@@ -489,9 +511,7 @@ export function assertPersonalEmailCandidate(candidate) {
     !research ||
     typeof research !== "object" ||
     research.workflow !== PERSONAL_RESEARCH_WORKFLOW ||
-    research.provider !== PERSONAL_RESEARCH_PROVIDER ||
     research.researchMethod !== PERSONAL_RESEARCH_METHOD ||
-    research.model !== PERSONAL_RESEARCH_MODEL ||
     research.repository !== EXPECTED_PERSONAL_REPOSITORY ||
     research.runUrl !== expectedRunUrl ||
     !/^[1-9]\d*$/.test(runId) ||
@@ -500,8 +520,10 @@ export function assertPersonalEmailCandidate(candidate) {
     !inferenceIsValid ||
     !PERSONAL_RESEARCH_DRAFTING_MODES.includes(research.draftingMode) ||
     (selectedStoryCount === 0 && research.draftingMode !== "quiet") ||
-    (selectedStoryCount > 0 &&
-      research.draftingMode !== TRUSTED_EVIDENCE_DIGEST_MODE) ||
+    (selectedStoryCount > 0 && ![
+      MODEL_ASSISTED_DIGEST_MODE,
+      TRUSTED_EVIDENCE_DIGEST_MODE,
+    ].includes(research.draftingMode)) ||
     typeof research.responseId !== "string" ||
     !RESPONSE_ID_PATTERN.test(research.responseId) ||
     !/^[a-f0-9]{64}$/.test(research.feedSnapshotSha256 ?? "") ||
@@ -740,6 +762,7 @@ export function renderPersonalEditionEmail(candidate, { feedbackLinks } = {}) {
   const subject = `First Fold — ${displayDate}`;
   const research = candidate.provenance.personalFreeResearch;
   const selectedStoryCount = research.selectedStoryCount;
+  const modelAssisted = research.draftingMode === MODEL_ASSISTED_DIGEST_MODE;
   const sourceBriefMode = research.draftingMode === "trusted-authoritative-source-alert";
   const selectedStories = DESKS
     .map(([deskKey]) => candidate.desks[deskKey].story)
@@ -749,7 +772,9 @@ export function renderPersonalEditionEmail(candidate, { feedbackLinks } = {}) {
   const corroboratedStoryCount = selectedStoryCount - sourceBriefStoryCount;
   const allSourceBriefs = selectedStoryCount > 0 && sourceBriefStoryCount === selectedStoryCount;
   const mixedSourceEdition = sourceBriefStoryCount > 0 && corroboratedStoryCount > 0;
-  const editionLabel = allSourceBriefs
+  const editionLabel = modelAssisted
+    ? "Free model-assisted edition"
+    : allSourceBriefs
     ? "Source brief edition"
     : mixedSourceEdition
       ? "Mixed-source edition"
@@ -771,6 +796,8 @@ export function renderPersonalEditionEmail(candidate, { feedbackLinks } = {}) {
     `Newsroom check: ${research.successfulFeedSourceCount} of ${research.feedSourceCount} reviewed sources available`;
   const deliveryCheckLabel = selectedStoryCount === 0
     ? "Curated-feed research completed · Quality threshold unchanged"
+    : modelAssisted
+      ? "Facts source checked · Reader guidance refined by one free-model pass"
     : allSourceBriefs
       ? "Primary links checked before delivery"
       : mixedSourceEdition

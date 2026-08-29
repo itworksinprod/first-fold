@@ -22,6 +22,9 @@ const SUMMARY_FIELDS = Object.freeze([
   "whatToDoOrWatch",
 ]);
 const MODEL_PROSE_FIELDS = SUMMARY_FIELDS.slice(1);
+const MODEL_ANALYSIS_FIELDS = Object.freeze(["whyItMatters", "whatToDoOrWatch"]);
+const MIN_MODEL_ANALYSIS_WORDS = 100;
+const MAX_MODEL_ANALYSIS_WORDS = 130;
 const ORIGINALITY_PHRASE_WORDS = 12;
 const MAX_SELECTED_CANDIDATES = FREE_DESKS.length;
 const FORMAT_CONTROL_PATTERN = /\p{Cf}/u;
@@ -60,6 +63,143 @@ const AUTHORITATIVE_ATTRIBUTION_WORDS = new Set([
   "published", "publishes", "reported", "reveal", "revealed", "reveals",
   "reports", "say", "said", "saying", "says", "stated", "states", "warned",
   "warns", "writes", "wrote",
+]);
+const ANALYSIS_ENTITY_STOP_WORDS = new Set(`
+  a ai an and as at by cloud data development evidence for from in independent
+  into model models of on or organization organizations paper platform platforms
+  privacy product products publisher reader readers report reporting review reviewed
+  security service services source sources system systems team teams technology the
+  to tool tools user users with work workflow workflows
+`.trim().split(/\s+/u));
+const DANGEROUS_ANALYSIS_TARGET_PREFIXES = new Set(`
+  a access account all an any api attached authentication available both critical current
+  crucial downloaded each encryption endpoint essential every existing important local
+  necessary network of our private recovery security sensitive signing some supplied system
+  that the their these this those untrusted user users your
+`.trim().split(/\s+/u));
+const SAFE_ANALYSIS_ADVISORY_ACTIONS = new Set([
+  "assess", "avoid", "check", "compare", "confirm", "consider", "document", "evaluate",
+  "keep", "limit", "monitor", "preserve", "read", "review", "seek", "test", "treat",
+  "verify", "watch",
+]);
+const READER_GUIDANCE_SUBJECTS = new Set([
+  "administrator", "administrators", "organization", "organizations", "operator",
+  "operators", "people", "reader", "readers", "team", "teams", "user", "users", "we",
+  "you",
+]);
+const READER_GUIDANCE_MODALS = new Set([
+  "can", "cannot", "cant", "could", "couldnt", "may", "might", "must", "mustnt",
+  "need", "neednt", "needs", "ought", "should", "shouldnt", "would", "wouldnt",
+]);
+const NEGATED_GUIDANCE_MODALS = new Set([
+  "cannot", "cant", "couldnt", "mustnt", "neednt", "shouldnt", "wouldnt",
+]);
+const UNAMBIGUOUS_ACTION_NEGATIONS = new Set([
+  "cannot", "cant", "couldnt", "dont", "mustnt", "neednt", "never", "not",
+  "shouldnt", "without", "wouldnt",
+]);
+const AVOIDANCE_ACTIONS = new Set([
+  "avoid", "avoided", "avoiding", "avoids",
+]);
+const SAFE_WARNING_ACTIONS = new Set([
+  "reject", "rejected", "rejecting", "rejects",
+]);
+const SAFE_DANGEROUS_ACTION_MODIFIERS = new Set([
+  "accidentally", "directly", "ever", "immediately", "inadvertently", "permanently",
+  "simply", "temporarily",
+]);
+const MIXED_SCRIPT_ACTION_CONFUSABLES = new Map([
+  ["\u0391", "a"], ["\u03B1", "a"], ["\u0410", "a"], ["\u0430", "a"],
+  ["\u0392", "b"], ["\u03B2", "b"], ["\u0412", "b"], ["\u0432", "b"],
+  ["\u03F2", "c"], ["\u0421", "c"], ["\u0441", "c"],
+  ["\u0500", "d"], ["\u0501", "d"],
+  ["\u0395", "e"], ["\u03B5", "e"], ["\u0415", "e"], ["\u0435", "e"],
+  ["\u0397", "h"], ["\u03B7", "h"], ["\u041D", "h"], ["\u043D", "h"],
+  ["\u0399", "i"], ["\u03B9", "i"], ["\u0406", "i"], ["\u0456", "i"],
+  ["\u0408", "j"], ["\u0458", "j"],
+  ["\u039A", "k"], ["\u03BA", "k"], ["\u041A", "k"], ["\u043A", "k"],
+  ["\u04CF", "l"],
+  ["\u039C", "m"], ["\u03BC", "m"], ["\u041C", "m"], ["\u043C", "m"],
+  ["\u039D", "n"], ["\u03BD", "n"],
+  ["\u039F", "o"], ["\u03BF", "o"], ["\u041E", "o"], ["\u043E", "o"],
+  ["\u03A1", "p"], ["\u03C1", "p"], ["\u0420", "p"], ["\u0440", "p"],
+  ["\u0405", "s"], ["\u0455", "s"],
+  ["\u03A4", "t"], ["\u03C4", "t"], ["\u0422", "t"], ["\u0442", "t"],
+  ["\u03A7", "x"], ["\u03C7", "x"], ["\u0425", "x"], ["\u0445", "x"],
+  ["\u03A5", "y"], ["\u03C5", "y"], ["\u0423", "y"], ["\u0443", "y"],
+]);
+const DANGEROUS_ANALYSIS_ACTION_RULES = Object.freeze([
+  {
+    actions: new Set([
+      "deactivate", "deactivated", "deactivates", "deactivating",
+      "disable", "disabled", "disables", "disabling",
+    ]),
+    actionPhrases: Object.freeze([
+      ["switch", "off"], ["switched", "off"], ["switches", "off"], ["switching", "off"],
+      ["turn", "off"], ["turned", "off"], ["turning", "off"], ["turns", "off"],
+    ]),
+    targets: Object.freeze([
+      ["control"], ["controls"], ["defence"], ["defences"], ["defense"], ["defenses"],
+      ["protection"], ["protections"], ["safeguard"], ["safeguards"],
+    ]),
+  },
+  {
+    actions: new Set([
+      "delete", "deleted", "deletes", "deleting",
+      "destroy", "destroyed", "destroying", "destroys",
+      "erase", "erased", "erases", "erasing",
+    ]),
+    targets: Object.freeze([
+      ["backup"], ["backups"], ["recovery", "copy"], ["recovery", "copies"],
+      ["recovery", "snapshot"], ["recovery", "snapshots"],
+    ]),
+  },
+  {
+    actions: new Set([
+      "disclose", "disclosed", "discloses", "disclosing",
+      "enter", "entered", "entering", "enters",
+      "provide", "provided", "provides", "providing",
+      "reveal", "revealed", "revealing", "reveals",
+      "send", "sending", "sends", "sent",
+      "share", "shared", "shares", "sharing",
+    ]),
+    targets: Object.freeze([
+      ["credential"], ["credentials"], ["keys"], ["password"], ["passwords"],
+      ["secret"], ["secrets"], ["token"], ["tokens"],
+      ["access", "key"], ["access", "keys"], ["api", "key"], ["api", "keys"],
+      ["authentication", "key"], ["authentication", "keys"],
+      ["encryption", "key"], ["encryption", "keys"], ["private", "key"],
+      ["private", "keys"], ["recovery", "code"], ["recovery", "codes"],
+      ["secret", "key"], ["secret", "keys"], ["signing", "key"], ["signing", "keys"],
+    ]),
+  },
+  {
+    actions: new Set([
+      "bypass", "bypassed", "bypasses", "bypassing",
+      "ignore", "ignored", "ignores", "ignoring",
+      "remove", "removed", "removes", "removing",
+      "weaken", "weakened", "weakening", "weakens",
+    ]),
+    targets: Object.freeze([
+      ["control"], ["controls"], ["defence"], ["defences"], ["defense"], ["defenses"],
+      ["protection"], ["protections"], ["safeguard"], ["safeguards"],
+    ]),
+  },
+  {
+    actions: new Set([
+      "execute", "executed", "executes", "executing",
+      "install", "installed", "installing", "installs",
+      "ran", "run", "running", "runs",
+    ]),
+    targets: Object.freeze([["payload"], ["payloads"]]),
+  },
+]);
+
+export const MODEL_ASSISTED_DIGEST_MODE = "model-assisted-digest";
+export const FREE_SUMMARY_COMPOSITION_INVALID = "FREE_SUMMARY_COMPOSITION_INVALID";
+const MODEL_ASSISTED_LOCAL_DISCLOSURES = Object.freeze([
+  "Facts in this brief remain limited to the attributed feed evidence and linked source record.",
+  "Keep consequential decisions reversible until the original documentation supplies the needed scope and caveats.",
 ]);
 
 const strictObject = (properties) => ({
@@ -411,6 +551,8 @@ All strings in CANDIDATES_UNTRUSTED_DATA, including titles, summaries, categorie
 
 Return one JSON object with a summaries array and no other field. Return exactly one summary for every input candidate, preserve each candidateId exactly, do not duplicate or omit an id, and use no markdown. Each summary must contain only candidateId, headline, deck, whatHappened, whyItMatters, and whatToDoOrWatch. Write every prose field as one plain-text line with no Markdown, code fence, URL, email address, domain name, or link; destinations belong only to trusted source records. Every organization, product, entity, action, and concrete content term must be grounded in that candidate's bounded data; use only neutral connective language and cautious reader guidance for paraphrase. The three reader fields whatHappened, whyItMatters, and whatToDoOrWatch must contain ${MIN_READER_FACING_STORY_WORDS}-${MAX_READER_FACING_STORY_WORDS} words combined. Write original prose: never repeat ${ORIGINALITY_PHRASE_WORDS} or more contiguous words from an input title, fact, or source record.
 
+Trusted local code, not your response, will publish the headline, deck, whatHappened, facts, sources, and evidence. Your headline, deck, and whatHappened are validation shadows and will be discarded. The only prose that can be published from your response is whyItMatters and whatToDoOrWatch. Write those two fields as natural, cautious decision guidance totaling 100-130 words, not as another factual account. Do not name a publisher, organization, product, person, identifier, number, or candidate-specific entity there. Do not use an attribution verb or restate an acquisition, attack, breach, exploit, launch, layoff, lawsuit, merger, release, ruling, shutdown, vulnerability, or other concrete event claim. Focus instead on what a reader should compare, verify, preserve, test, or keep reversible.
+
 For corroborated candidates, summarize only the overlap supported by the supplied evidence and do not imply that every publisher supports every detail. Any digit-bearing number, version, date, amount, or identifier in your prose must appear in that candidate's bounded data. For authoritative-single candidates, the publisher marked originating is the sole factual authority. Begin headline, deck, and whatHappened with the exact words "<originating publisher> reports". Keep each of those three fields to one neutral bounded clause with no colon, semicolon, second attribution, or second sentence. Keep whyItMatters and whatToDoOrWatch as cautious analysis with no attribution verb or third-party factual claim, and never claim independent confirmation.`,
     },
     {
@@ -538,6 +680,285 @@ function unsupportedSemanticTerms(summary, candidate) {
   return [...unsupported].sort().slice(0, 8);
 }
 
+function candidateSpecificAnalysisTerms(summary, candidate) {
+  const namedTerms = new Set();
+  const addNamedWords = (value, { all = false } = {}) => {
+    for (const { prose, rawTerm, index } of casePreservingWordMatches(value)) {
+      const term = rawTerm.normalize("NFKC").toLocaleLowerCase("en-US");
+      if (!term || term.length < 3 || ANALYSIS_ENTITY_STOP_WORDS.has(term)) continue;
+      const sentenceInitial = index === 0 ||
+        /[\p{Sentence_Terminal}…]\s*$/u.test(prose.slice(0, index));
+      if (
+        all ||
+        /\p{Ll}\p{Lu}|\p{Lu}{2}/u.test(rawTerm) ||
+        (/^\p{Lu}/u.test(rawTerm) && !sentenceInitial) ||
+        /\p{N}/u.test(rawTerm)
+      ) {
+        namedTerms.add(term);
+      }
+    }
+  };
+  addNamedWords(candidate.primaryEntity, { all: true });
+  for (const source of factualSources(candidate)) addNamedWords(source.publisher, { all: true });
+  for (const value of candidateSemanticInputs(candidate)) addNamedWords(value);
+
+  const used = new Set();
+  for (const field of MODEL_ANALYSIS_FIELDS) {
+    for (const term of words(summary[field])) {
+      if (namedTerms.has(term)) used.add(`${field}:${term}`);
+    }
+  }
+  return [...used].sort().slice(0, 8);
+}
+
+function analysisHighRiskTerms(summary) {
+  const used = new Set();
+  for (const field of MODEL_ANALYSIS_FIELDS) {
+    for (const term of words(summary[field])) {
+      if ([...lexicalForms(term)].some((form) => HIGH_RISK_SEMANTIC_TERMS.has(form))) {
+        used.add(`${field}:${term}`);
+      }
+    }
+  }
+  return [...used].sort().slice(0, 8);
+}
+
+function analysisAttributionTerms(summary) {
+  const used = new Set();
+  for (const field of MODEL_ANALYSIS_FIELDS) {
+    for (const term of words(summary[field])) {
+      if (AUTHORITATIVE_ATTRIBUTION_WORDS.has(term)) used.add(`${field}:${term}`);
+    }
+  }
+  return [...used].sort().slice(0, 8);
+}
+
+function securityGuidanceTokens(value) {
+  return words(String(value ?? "").normalize("NFKC")).map((word) => {
+    const text = word.replace(/[’'-]/gu, "");
+    const mixedScript = /\p{Script=Latin}/u.test(text) &&
+      /[\p{Script=Cyrillic}\p{Script=Greek}]/u.test(text);
+    const action = mixedScript
+      ? [...text].map((character) =>
+          MIXED_SCRIPT_ACTION_CONFUSABLES.get(character) ?? character).join("")
+      : text;
+    return { action, mixedScript, text };
+  });
+}
+
+function previousGuidanceTokenIndex(tokens, startIndex) {
+  let prefixIndex = startIndex;
+  while (
+    prefixIndex >= 0 &&
+    (
+      SAFE_DANGEROUS_ACTION_MODIFIERS.has(tokens[prefixIndex].text) ||
+      tokens[prefixIndex].text.endsWith("ly")
+    )
+  ) {
+    prefixIndex -= 1;
+  }
+  return prefixIndex;
+}
+
+function hasNegationBefore(tokens, tokenIndex) {
+  const prefixIndex = previousGuidanceTokenIndex(tokens, tokenIndex - 1);
+  return UNAMBIGUOUS_ACTION_NEGATIONS.has(tokens[prefixIndex]?.text);
+}
+
+function isSafeWarningFrame(tokens, actionIndex) {
+  let prefixIndex = previousGuidanceTokenIndex(tokens, actionIndex - 1);
+  if (tokens[prefixIndex]?.text === "to") prefixIndex -= 1;
+  if (tokens[prefixIndex]?.text !== "advice") return false;
+  prefixIndex = previousGuidanceTokenIndex(tokens, prefixIndex - 1);
+  if (["any", "the", "untrusted"].includes(tokens[prefixIndex]?.text)) {
+    prefixIndex = previousGuidanceTokenIndex(tokens, prefixIndex - 1);
+  }
+  return SAFE_WARNING_ACTIONS.has(tokens[prefixIndex]?.text) &&
+    !hasNegationBefore(tokens, prefixIndex);
+}
+
+function hasSafeDangerousActionPrefix(tokens, actionIndex) {
+  const prefixIndex = previousGuidanceTokenIndex(tokens, actionIndex - 1);
+  const prefix = tokens[prefixIndex]?.text;
+  if (UNAMBIGUOUS_ACTION_NEGATIONS.has(prefix)) return true;
+  if (AVOIDANCE_ACTIONS.has(prefix)) return !hasNegationBefore(tokens, prefixIndex);
+  if (prefix === "against") {
+    const framingIndex = previousGuidanceTokenIndex(tokens, prefixIndex - 1);
+    return SAFE_WARNING_ACTIONS.has(tokens[framingIndex]?.text) &&
+      !hasNegationBefore(tokens, framingIndex);
+  }
+  if (
+    prefix === "of" &&
+    tokens[prefixIndex - 1]?.text === "instead"
+  ) {
+    return !hasNegationBefore(tokens, prefixIndex - 1);
+  }
+  if (prefix === "than" && tokens[prefixIndex - 1]?.text === "rather") {
+    return !hasNegationBefore(tokens, prefixIndex - 1);
+  }
+  return isSafeWarningFrame(tokens, actionIndex);
+}
+
+function targetAt(tokens, targetIndex, targets) {
+  return targets.find((target) =>
+    target.every((word, offset) => tokens[targetIndex + offset]?.text === word));
+}
+
+function dangerousTargetAfterAction(tokens, actionEndIndex, targets) {
+  const maximumPrefixes = 5;
+  for (
+    let targetIndex = actionEndIndex + 1, skipped = 0;
+    targetIndex < tokens.length && skipped <= maximumPrefixes;
+    targetIndex += 1, skipped += 1
+  ) {
+    const matched = targetAt(tokens, targetIndex, targets);
+    if (matched) return matched.join(" ");
+    if (!DANGEROUS_ANALYSIS_TARGET_PREFIXES.has(tokens[targetIndex].text)) break;
+  }
+  return null;
+}
+
+function dangerousTargetBeforeAction(tokens, actionIndex, actionEndIndex, targets) {
+  let objectIndex = actionEndIndex + 1;
+  while (SAFE_DANGEROUS_ACTION_MODIFIERS.has(tokens[objectIndex]?.text)) objectIndex += 1;
+  const refersBack = ["it", "them", "these", "those"].includes(tokens[objectIndex]?.text);
+  const passive = ["am", "are", "be", "been", "being", "is", "was", "were"]
+    .includes(tokens[actionIndex - 1]?.text);
+  if (!refersBack && !passive) return null;
+
+  const minimumIndex = Math.max(0, actionIndex - 10);
+  for (let targetIndex = actionIndex - 1; targetIndex >= minimumIndex; targetIndex -= 1) {
+    const matched = targetAt(tokens, targetIndex, targets);
+    if (matched) return matched.join(" ");
+  }
+  return null;
+}
+
+function dangerousActionAt(tokens, actionIndex, rule) {
+  if (!tokens[actionIndex]) return null;
+  if (rule.actions.has(tokens[actionIndex].action)) {
+    return { endIndex: actionIndex, label: tokens[actionIndex].text };
+  }
+  const phrase = rule.actionPhrases?.find((candidate) =>
+    candidate.every((word, offset) => tokens[actionIndex + offset]?.action === word));
+  if (!phrase) return null;
+  return {
+    endIndex: actionIndex + phrase.length - 1,
+    label: tokens.slice(actionIndex, actionIndex + phrase.length)
+      .map((token) => token.text).join(" "),
+  };
+}
+
+function dangerousAnalysisActions(summary) {
+  const used = new Set();
+  for (const field of MODEL_ANALYSIS_FIELDS) {
+    const tokens = securityGuidanceTokens(summary[field]);
+    for (const actionIndex of tokens.keys()) {
+      for (const rule of DANGEROUS_ANALYSIS_ACTION_RULES) {
+        const action = dangerousActionAt(tokens, actionIndex, rule);
+        if (!action || hasSafeDangerousActionPrefix(tokens, actionIndex)) {
+          continue;
+        }
+        const target = dangerousTargetAfterAction(tokens, action.endIndex, rule.targets) ??
+          dangerousTargetBeforeAction(tokens, actionIndex, action.endIndex, rule.targets);
+        if (target !== null) {
+          const obfuscation = tokens[actionIndex].mixedScript ? " mixed-script" : "";
+          used.add(`${field}:${action.label} ${target}${obfuscation}`);
+        }
+      }
+    }
+  }
+  return [...used].sort().slice(0, 8);
+}
+
+function nextAdvisoryAction(tokens, modalIndex) {
+  let actionIndex = modalIndex + 1;
+  let negated = NEGATED_GUIDANCE_MODALS.has(tokens[modalIndex]?.text);
+  while (actionIndex < tokens.length) {
+    const token = tokens[actionIndex].text;
+    if (token === "to" || SAFE_DANGEROUS_ACTION_MODIFIERS.has(token) || token.endsWith("ly")) {
+      actionIndex += 1;
+      continue;
+    }
+    if (READER_GUIDANCE_MODALS.has(token)) {
+      if (NEGATED_GUIDANCE_MODALS.has(token)) negated = !negated;
+      actionIndex += 1;
+      continue;
+    }
+    if (["never", "not"].includes(token)) {
+      negated = !negated;
+      actionIndex += 1;
+      continue;
+    }
+    break;
+  }
+  return { actionIndex, negated };
+}
+
+function isSafeWarningDirective(tokens, actionIndex) {
+  if (!SAFE_WARNING_ACTIONS.has(tokens[actionIndex]?.action)) return false;
+  let adviceIndex = actionIndex + 1;
+  if (["any", "the", "untrusted"].includes(tokens[adviceIndex]?.text)) adviceIndex += 1;
+  if (tokens[adviceIndex]?.text !== "advice" || tokens[adviceIndex + 1]?.text !== "to") {
+    return false;
+  }
+  const nestedActionIndex = adviceIndex + 2;
+  return DANGEROUS_ANALYSIS_ACTION_RULES.some((rule) =>
+    dangerousActionAt(tokens, nestedActionIndex, rule) !== null);
+}
+
+function disallowedAdvisoryActions(summary) {
+  const used = new Set();
+  for (const field of MODEL_ANALYSIS_FIELDS) {
+    for (const sentence of String(summary[field] ?? "").normalize("NFKC")
+      .split(/[\p{Sentence_Terminal}…]+/u)) {
+      const sentenceTokens = securityGuidanceTokens(sentence);
+      for (const [modalIndex, modal] of sentenceTokens.entries()) {
+        if (!READER_GUIDANCE_MODALS.has(modal.text)) continue;
+        const hasReaderSubject = sentenceTokens
+          .slice(0, modalIndex)
+          .some((token) => READER_GUIDANCE_SUBJECTS.has(token.text));
+        if (!hasReaderSubject) continue;
+        const { actionIndex, negated } = nextAdvisoryAction(sentenceTokens, modalIndex);
+        const action = sentenceTokens[actionIndex]?.action;
+        if (
+          !action ||
+          negated ||
+          SAFE_ANALYSIS_ADVISORY_ACTIONS.has(action) ||
+          isSafeWarningDirective(sentenceTokens, actionIndex)
+        ) {
+          continue;
+        }
+        used.add(`${field}:${modal.text} ${sentenceTokens[actionIndex].text}`);
+      }
+      const politeImperative = sentenceTokens[0]?.text === "please";
+      let actionIndex = politeImperative ? 1 : 0;
+      let negated = false;
+      if (politeImperative && sentenceTokens[actionIndex]?.text === "do") actionIndex += 1;
+      if (["cannot", "cant", "dont", "never", "not"].includes(
+        sentenceTokens[actionIndex]?.text,
+      )) {
+        negated = true;
+        actionIndex += 1;
+      }
+      const action = sentenceTokens[actionIndex]?.action;
+      const knownDangerousAction = DANGEROUS_ANALYSIS_ACTION_RULES.some((rule) =>
+        dangerousActionAt(sentenceTokens, actionIndex, rule) !== null);
+      if (
+        !action ||
+        negated ||
+        (!politeImperative && !knownDangerousAction) ||
+        SAFE_ANALYSIS_ADVISORY_ACTIONS.has(action) ||
+        isSafeWarningDirective(sentenceTokens, actionIndex)
+      ) {
+        continue;
+      }
+      used.add(`${field}:imperative ${sentenceTokens[actionIndex].text}`);
+    }
+  }
+  return [...used].sort().slice(0, 8);
+}
+
 function containsModelDestination(value) {
   const normalized = String(value ?? "")
     .normalize("NFKC")
@@ -645,16 +1066,19 @@ function validationCandidateMap(candidates, issues) {
 function summaryValidationResult(issues) {
   let repairKind = null;
   if (issues.length > 0) {
-    if (issues.some((issue) =>
+    if (issues.some((issue) => /unsafe generic action guidance/u.test(issue))) {
+      repairKind = "originality";
+    } else if (issues.some((issue) =>
       /Selected candidate|payload|candidateId|six allowed fields|valid bounded prose|plain text without Markdown|unreviewed destination/u.test(issue))) {
       repairKind = "format";
     } else if (issues.some((issue) =>
       /originating-publisher attribution|one bounded claim|unsupported independent confirmation|third-party attribution verb/u.test(issue))) {
       repairKind = "authoritative-structure";
-    } else if (issues.some((issue) => /150-225 combined reader-facing words/u.test(issue))) {
+    } else if (issues.some((issue) =>
+      /(?:150-225 combined reader-facing|100-130 combined analysis) words/u.test(issue))) {
       repairKind = "length";
     } else if (issues.some((issue) =>
-      /contiguous evidence words|unsupported digit-bearing tokens|unsupported semantic content terms/u.test(issue))) {
+      /contiguous evidence words|unsupported digit-bearing tokens|unsupported semantic content terms|candidate-specific entity terms|factual event terms reserved|must not add factual attribution/u.test(issue))) {
       repairKind = "originality";
     } else {
       repairKind = "format";
@@ -732,6 +1156,18 @@ export function validateFreeSummaryDraftPayload(payload, candidates) {
     ) {
       issues.push(`${label} must contain 150-225 combined reader-facing words; found ${readerWords}.`);
     }
+    const analysisWords = MODEL_ANALYSIS_FIELDS.reduce(
+      (total, field) => total + words(summary[field]).length,
+      0,
+    );
+    if (
+      analysisWords < MIN_MODEL_ANALYSIS_WORDS ||
+      analysisWords > MAX_MODEL_ANALYSIS_WORDS
+    ) {
+      issues.push(
+        `${label} must contain 100-130 combined analysis words; found ${analysisWords}.`,
+      );
+    }
     if (copiedPhrase(summary, candidate)) {
       issues.push(`${label} repeats ${ORIGINALITY_PHRASE_WORDS} or more contiguous evidence words.`);
     }
@@ -742,6 +1178,33 @@ export function validateFreeSummaryDraftPayload(payload, candidates) {
     const unsupportedTerms = unsupportedSemanticTerms(summary, candidate);
     if (unsupportedTerms.length > 0) {
       issues.push(`${label} uses unsupported semantic content terms: ${unsupportedTerms.join(", ")}.`);
+    }
+    const analysisEntities = candidateSpecificAnalysisTerms(summary, candidate);
+    if (analysisEntities.length > 0) {
+      issues.push(
+        `${label} analysis contains candidate-specific entity terms: ${analysisEntities.join(", ")}.`,
+      );
+    }
+    const analysisRiskTerms = analysisHighRiskTerms(summary);
+    if (analysisRiskTerms.length > 0) {
+      issues.push(
+        `${label} analysis contains factual event terms reserved for the trusted digest: ${analysisRiskTerms.join(", ")}.`,
+      );
+    }
+    const analysisAttributions = analysisAttributionTerms(summary);
+    if (analysisAttributions.length > 0) {
+      issues.push(
+        `${label} analysis must not add factual attribution: ${analysisAttributions.join(", ")}.`,
+      );
+    }
+    const dangerousActions = [
+      ...dangerousAnalysisActions(summary),
+      ...disallowedAdvisoryActions(summary),
+    ];
+    if (dangerousActions.length > 0) {
+      issues.push(
+        `${label} analysis contains unsafe generic action guidance: ${dangerousActions.join(", ")}.`,
+      );
     }
     if (candidate.ranking.evidenceTier === "authoritative-single") {
       const publisher = factualSources(candidate)[0].publisher;
@@ -759,11 +1222,6 @@ export function validateFreeSummaryDraftPayload(payload, candidates) {
       }))) {
         issues.push(`${label} claims unsupported independent confirmation.`);
       }
-      for (const field of ["whyItMatters", "whatToDoOrWatch"]) {
-        if (words(summary[field]).some((word) => AUTHORITATIVE_ATTRIBUTION_WORDS.has(word))) {
-          issues.push(`${label}.${field} must not contain a third-party attribution verb.`);
-        }
-      }
     }
   }
   for (const candidate of normalized) {
@@ -774,92 +1232,11 @@ export function validateFreeSummaryDraftPayload(payload, candidates) {
   return summaryValidationResult(issues);
 }
 
-function outputSource(source) {
-  return {
-    id: source.id,
-    title: source.title,
-    publisher: source.publisher,
-    url: source.url,
-    relationship: source.relationship,
-    publishedAt: source.publishedAt,
-    retrievedAt: source.retrievedAt,
-  };
-}
-
-function deskLabel(desk) {
-  return {
-    ai: "AI & Models",
-    "work-and-tools": "Work & Tools",
-    "security-and-privacy": "Security & Privacy",
-    "platforms-and-power": "Platforms & Power",
-  }[desk];
-}
-
-function storyFromSummary(candidate, summary) {
-  const evidenceTier = candidate.ranking.evidenceTier;
-  const articleSources = factualSources(candidate);
-  const feedEvidenceSourceIds = new Set(candidate.feedEvidence.map((record) => record.sourceId));
-  const evidenceSources = feedEvidenceSourceIds.size > 0
-    ? articleSources.filter((source) => feedEvidenceSourceIds.has(source.id))
-    : articleSources;
-  const isMaterialUpdate =
-    candidate.ranking.eligibility === "material-update" ||
-    candidate.materiallyUpdatedAt !== null;
-  const storyId = `free-summary-${candidate.candidateId}`;
-  return {
-    id: storyId,
-    canonicalEventKey: candidate.canonicalEventKey,
-    desk: candidate.suggestedDesk,
-    headline: summary.headline,
-    deck: summary.deck,
-    status: isMaterialUpdate ? "material-update" : "new-development",
-    priority: candidate.ranking.score >= 85 && evidenceTier === "corroborated" ? "high" : "notable",
-    timing: {
-      eventAt: candidate.eventAt,
-      firstPublishedAt: candidate.firstPublishedAt,
-      materiallyUpdatedAt: isMaterialUpdate ? candidate.materiallyUpdatedAt : null,
-    },
-    whatHappened: summary.whatHappened,
-    whyItMatters: summary.whyItMatters,
-    whatToDoOrWatch: summary.whatToDoOrWatch,
-    editorial: {
-      primaryEntity: candidate.primaryEntity,
-      aiAdjacent: candidate.aiAdjacent,
-      maturity: "verified-development",
-      deskFit: `The selected development belongs on the ${deskLabel(candidate.suggestedDesk)} desk.`,
-    },
-    selection: {
-      score: candidate.ranking.score,
-      selectedBecause: "The deterministic free-lane scorecard selected this bounded development.",
-      materialDelta: isMaterialUpdate
-        ? "The trusted candidate metadata records a material update in the reporting window."
-        : null,
-    },
-    confidence: {
-      level: evidenceTier === "corroborated" ? "medium" : "developing",
-      rationale: evidenceTier === "corroborated"
-        ? "The bounded feed evidence includes factual articles from distinct reviewed publishers."
-        : "Only the named originating publisher supports the substantive account in this edition.",
-    },
-    sources: candidate.sources.map(outputSource),
-    // Keep arbitrary model synthesis out of the evidence ledger. Each local
-    // claim records only that one exact reviewed article supplied an event
-    // record; it does not pretend the article semantically verifies the
-    // model's reader-facing wording.
-    evidence: evidenceSources.map((source, index) => ({
-      id: `free-summary-claim-${candidate.candidateId}-${index + 1}`,
-      statement: `${source.publisher} reports the selected development in the cited feed article`,
-      sourceIds: [source.id],
-      verification: "preliminary",
-    })),
-    securityAction: null,
-  };
-}
-
 /**
- * Validate the model's small response, then compose the complete editorial
- * shape exclusively from trusted candidate metadata and the local extractive
- * evidence digest. Model prose never crosses into a delivered factual story.
+ * Validate the model's small response, build the complete trusted extractive
+ * digest, then replace only its two non-factual reader-guidance fields. Story
+ * identity, factual copy, source metadata, evidence, timing, rank, and desk
+ * placement remain locally owned. The edition changes all stories or none.
  */
 export function composeFreeEditorialFromSummaries({
   summaries,
@@ -885,6 +1262,39 @@ export function composeFreeEditorialFromSummaries({
       ? `${authoritativeCount} attributed primary-source ${authoritativeCount === 1 ? "summary" : "summaries"} made this edition.`
       : `${corroboratedCount} independently corroborated ${corroboratedCount === 1 ? "development" : "developments"} and ${authoritativeCount} attributed primary-source ${authoritativeCount === 1 ? "summary" : "summaries"} made this edition.`;
   const editorial = buildTrustedEvidenceDigestPayload({ candidates, quietReasons });
-  editorial.frontPage.note = note;
+  const summaryByCandidateId = new Map(payload.summaries.map((summary) => [
+    summary.candidateId,
+    summary,
+  ]));
+  for (const candidate of normalized) {
+    const story = editorial.desks[candidate.suggestedDesk]?.story;
+    const summary = summaryByCandidateId.get(candidate.candidateId);
+    if (!story || !summary || story.canonicalEventKey !== candidate.canonicalEventKey) {
+      const error = new Error("Free model-assisted digest lost its trusted candidate binding.");
+      error.code = FREE_SUMMARY_COMPOSITION_INVALID;
+      error.repairKind = "format";
+      throw error;
+    }
+    story.whyItMatters = summary.whyItMatters;
+    story.whatToDoOrWatch = summary.whatToDoOrWatch;
+    let readerWords = countReaderFacingStoryWords(story);
+    for (const disclosure of MODEL_ASSISTED_LOCAL_DISCLOSURES) {
+      if (readerWords >= MIN_READER_FACING_STORY_WORDS) break;
+      story.whatToDoOrWatch = `${story.whatToDoOrWatch} ${disclosure}`;
+      readerWords = countReaderFacingStoryWords(story);
+    }
+    if (
+      readerWords < MIN_READER_FACING_STORY_WORDS ||
+      readerWords > MAX_READER_FACING_STORY_WORDS
+    ) {
+      const error = new Error(
+        `Free model-assisted digest produced ${readerWords} reader-facing words after trusted composition.`,
+      );
+      error.code = FREE_SUMMARY_COMPOSITION_INVALID;
+      error.repairKind = "length";
+      throw error;
+    }
+  }
+  editorial.frontPage.note = `${note} A bounded free-model pass refined only the reader guidance; factual copy and sources remained local.`;
   return editorial;
 }

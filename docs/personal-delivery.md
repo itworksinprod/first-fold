@@ -4,9 +4,11 @@ The Personal Morning Paper is the repository's only automatically researched
 edition. At **5:05 AM `America/New_York` every calendar day, including
 weekends**, Cloudflare dispatches one owner-only GitHub Actions job. That job
 reads current items from the curated feed catalog, deterministically selects the
-qualifying slate, asks the fixed Cloudflare Workers AI model
-`@cf/meta/llama-3.3-70b-instruct-fp8-fast` to draft any selected stories, validates the result,
-and sends it to one email address through Resend. The delivered paper adapts to
+qualifying slate, builds each factual brief locally from its exact reviewed feed
+evidence, and gives the fixed Cloudflare Workers AI model
+`@cf/meta/llama-3.3-70b-instruct-fp8-fast` one optional chance to refine only the
+non-factual reader guidance. It validates the result and sends it to one email
+address through Resend. The delivered paper adapts to
 the number of stories that clear the unchanged editorial gates: regular with
 two to four stories, slim with one, or quiet with zero.
 
@@ -27,7 +29,7 @@ succeeded end to end.
 | Schedule | 5:05 AM `America/New_York` every day, including weekends |
 | Reporting window | The 72 elapsed hours ending at 5:00 AM New York time on the edition date; start inclusive and end exclusive |
 | Discovery | Live entries from the repository's curated, allowlisted feeds; no general web search |
-| Drafting | Fixed JSON-capable Cloudflare Workers AI model `@cf/meta/llama-3.3-70b-instruct-fp8-fast` |
+| Drafting | Trusted local factual brief plus at most one JSON-capable Workers AI request that may replace only “why it matters” and “what to watch”; the complete local brief is the fallback |
 | Completion rule | Deliver a regular edition with two to four validated stories, a slim edition with one, or a healthy quiet edition with zero; every edition keeps all four desks and no desk receives more than one story |
 | Recipient | Exactly the one address stored in `PERSONAL_PAPER_EMAIL` |
 | Sender | `First Fold <onboarding@resend.dev>`, Resend's self-only testing sender |
@@ -35,7 +37,7 @@ succeeded end to end.
 | Repository permissions | Read-only contents and Actions metadata; no pull-request, branch, commit, Pages, or public-content write permission; the workflow may download its bounded private-state ledger and upload only that ledger plus a separately validated public-safe diagnostic report |
 | Persistence | The candidate remains on the ephemeral runner; a keyed-HMAC-only ledger artifact retains bounded repeat state for 35 days, while an optional source-health artifact retains only public-safe operational counts for 14 days. Optional feedback stores one minimal response in D1, never the recipient, raw token, headline, story copy, or source URL |
 | Quiet edition | Healthy, internally consistent research with zero qualifying stories produces a deterministic all-quiet paper and research receipt without a model call; it is delivered and recorded in the ledger |
-| Failure | Feed coverage, quota, model, repeat-ledger, source, schema, rendering, required configuration, or send-precondition errors remain failed runs and send no email. Missing or broken advisory feedback and source-health reporting do not block an otherwise valid delivery |
+| Failure | Feed coverage, repeat-ledger, source, canonical schema, rendering, required configuration, or send-precondition errors remain failed runs and send no email. Quota, transient provider, or model-output rejection uses the complete local factual edition. Missing or broken advisory feedback and source-health reporting do not block an otherwise valid delivery |
 | Feedback | Optional signed story and edition links accept one private, human-reviewed response for 14 days. Feedback never changes scores, thresholds, vetoes, desk assignment, sources, or automation by itself |
 | Duplicate control | Suppress an earlier successful same-day workflow, veto matching story fingerprints from the previous 30 calendar dates, then make at most one Resend request with `Idempotency-Key: first-fold-personal-YYYY-MM-DD`; no application-level send retry |
 | Paid fallback | None |
@@ -103,12 +105,16 @@ At the matching 5:05 AM event on every day:
    with two to four stories, a slim edition with one story, or a deterministic
    all-quiet edition with zero. A zero-story edition skips Workers AI and states
    how many reviewed feeds completed plus why nothing cleared the unchanged
-   threshold. For one or more stories, the fixed Workers AI model receives only
-   the bounded, deterministically selected feed dossiers. It must draft every
-   selected dossier, no more than one per desk, and may not lower the quality
-   threshold to fill a page. Local validation binds every draft to its selected
-   feed URLs, enforces dates and story length, checks source reachability and
-   evidence mappings, and rejects duplicate events or unexplained quiet desks.
+   threshold. For one or more stories, trusted local code writes the headline,
+   deck, “what happened,” source list, evidence mapping, score, timing, and desk
+   from the bounded selected dossiers. The fixed Workers AI model receives only
+   that bounded feed evidence in one edition-wide request. After strict local
+   validation, only its “why it matters” and “what to watch” guidance can replace
+   the corresponding local fields. It cannot change facts, identity, sources,
+   URLs, evidence, rank, timing, or desk. If any summary in the batch is missing,
+   malformed, overly specific, attributed, unsafe, or outside the final word
+   range—or the free provider is unavailable—the whole edition keeps the local
+   digest. Stories are never mixed across model and fallback provenance.
 8. Each selected story receives a trusted validation receipt containing its total score,
    five component scores, required threshold, evidence tier, and factual source
    and publisher counts. The email renderer recomputes and validates that receipt
@@ -413,8 +419,8 @@ causes include:
   receipt, or receipt mismatch;
 - a missing, malformed, key-mismatched, ambiguous, or untrusted repeat-ledger artifact after the
   guarded bootstrap run;
-- the Workers AI free allocation being unavailable or exhausted;
-- a malformed, incomplete, repetitive, or unsupported model response;
+- an unknown Workers AI configuration or credential error that prevents the
+  fixed account boundary from being established;
 - an unsafe, stale, unreachable, unbound, or insufficient source;
 - a critical or independent claim lacking independent evidence;
 - schema, word-count, temporal, duplicate, desk, evidence, or provenance
@@ -445,18 +451,19 @@ to prompts, candidate copy, or the recipient field.
 Keep the Cloudflare account on **Workers Free** and do not enable prepaid AI
 Gateway credits. Cloudflare currently includes **10,000 Workers AI neurons per
 account per day** at no charge. On Workers Free, exhausting that allocation
-makes inference fail; this workflow then sends no email. It must not switch to a
-paid model or provider. Other Workers AI activity on the same account shares the
-daily allocation, so no code can guarantee capacity for the paper if another
-job consumes it first. Check Cloudflare's current
+makes the optional inference fail; this workflow then sends the complete local
+source-bound edition instead. It must not switch to a paid model or provider.
+Other Workers AI activity on the same account shares the daily allocation, so
+no code can guarantee model-assisted guidance for the paper if another job
+consumes it first. Check Cloudflare's current
 [Workers AI pricing and free allocation](https://developers.cloudflare.com/workers-ai/platform/pricing/)
 before changing plans or models.
 
 The automatic workflow fixes the model to `@cf/meta/llama-3.3-70b-instruct-fp8-fast`; there is no
-model override. The model name includes `openai`, but it runs inside Cloudflare
-Workers AI and does not use an OpenAI API key or OpenAI API billing account.
-One edition permits at most two semantic model requests, caps each model output
-at 6,000 tokens, and caps the serialized request at 100 KB. These are capacity
+model override. It is a Meta Llama model hosted by Cloudflare Workers AI and
+does not use an OpenAI API key or OpenAI API billing account.
+One edition permits at most one semantic model request, caps its output at 3,000
+tokens, and caps the serialized request at 100 KB. These are capacity
 guards, not permission to spend beyond the free allocation. The optional second
 research pass is feed-only, occurs before inference, and does not add a Workers
 AI request.

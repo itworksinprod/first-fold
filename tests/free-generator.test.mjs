@@ -25,6 +25,7 @@ import {
   validateFreePilotProvenance,
 } from "../scripts/automation/draft-free-edition.mjs";
 import { generateFreeEditionFile } from "../scripts/automation/generate-free-edition.mjs";
+import { buildTrustedEvidenceDigestPayload } from "../scripts/automation/free/evidence-digest.mjs";
 import { FREE_FEED_SOURCES } from "../scripts/automation/free/feed-sources.mjs";
 
 const priorEdition = JSON.parse(
@@ -922,6 +923,9 @@ test("trusted-evidence-digest-only mode requires selected-slate drafting and exc
 test("summaries-only selected-slate drafting composes complete source-checked stories from a small prompt", async () => {
   const scenario = selectedSlateScenario(["security-and-privacy", "platforms-and-power"]);
   const summaryPayload = summaryPayloadForScenario(scenario);
+  const trustedEditorial = buildTrustedEvidenceDigestPayload({
+    candidates: scenario.selectedCandidates,
+  });
   const calls = [];
   let sourceRequests = 0;
 
@@ -962,9 +966,39 @@ test("summaries-only selected-slate drafting composes complete source-checked st
     }
     const summary = summaryPayload.summaries.find((item) => item.candidateId === selected.candidateId);
     const story = candidate.desks[selected.suggestedDesk].story;
+    const trustedStory = trustedEditorial.desks[selected.suggestedDesk].story;
     assert.ok(story);
+    assert.deepEqual(
+      {
+        headline: story.headline,
+        deck: story.deck,
+        whatHappened: story.whatHappened,
+        sources: story.sources,
+        evidence: story.evidence,
+        timing: story.timing,
+      },
+      {
+        headline: trustedStory.headline,
+        deck: trustedStory.deck,
+        whatHappened: trustedStory.whatHappened,
+        sources: trustedStory.sources,
+        evidence: trustedStory.evidence,
+        timing: trustedStory.timing,
+      },
+    );
+    assert.equal(story.selection.score, trustedStory.selection.score);
+    assert.equal(story.selection.selectedBecause, trustedStory.selection.selectedBecause);
+    assert.equal(story.selection.materialDelta, trustedStory.selection.materialDelta);
+    assert.equal(story.selection.validationReceipt.score, selected.ranking.score);
+    assert.deepEqual(
+      story.selection.validationReceipt.components,
+      selected.ranking.components,
+    );
     assert.notEqual(story.headline, summary.headline);
+    assert.notEqual(story.deck, summary.deck);
     assert.notEqual(story.whatHappened, summary.whatHappened);
+    assert.equal(story.whyItMatters, summary.whyItMatters);
+    assert.ok(story.whatToDoOrWatch.startsWith(summary.whatToDoOrWatch));
     assert.match(story.id, /^trusted-evidence-digest-/);
     assert.equal(story.canonicalEventKey, selected.canonicalEventKey);
     assert.deepEqual(
@@ -977,9 +1011,89 @@ test("summaries-only selected-slate drafting composes complete source-checked st
         .map((source) => source.id),
     );
   }
-  assert.equal(candidate.provenance.freePilot.draftingMode, "model");
+  assert.equal(candidate.provenance.freePilot.draftingMode, "model-assisted-digest");
   assert.equal(candidate.provenance.freePilot.inference, "workers-ai");
   assert.equal(candidate.provenance.freePilot.responseId, "workers-ai-summary-only-response");
+  assert.equal(validateCanonicalEdition(candidate).valid, true);
+});
+
+test("one unsafe analysis block discards all four model summaries and uses only the local digest", async () => {
+  const scenario = selectedSlateScenario([
+    "ai",
+    "work-and-tools",
+    "security-and-privacy",
+    "platforms-and-power",
+  ]);
+  const summaryPayload = summaryPayloadForScenario(scenario);
+  summaryPayload.summaries.at(-1).whyItMatters +=
+    " Platforms Power Entity reports a breach with wider effects.";
+  const trustedEditorial = buildTrustedEvidenceDigestPayload({
+    candidates: scenario.selectedCandidates,
+  });
+  const calls = [];
+
+  const candidate = await draftFreeEdition(draftOptions({
+    evidencePolicy: "authoritative-or-corroborated",
+    draftSelectedSlate: true,
+    summarizeSelectedSlate: true,
+    maxModelRequests: 1,
+    researchImpl: async () => scenario.research,
+    aiRequestImpl: async (options) => {
+      calls.push(options);
+      const validation = await options.validatePayload(summaryPayload);
+      assert.equal(validation.valid, false);
+      assert.equal(validation.repairKind, "originality");
+      assert.match(
+        validation.issues.join(" "),
+        /candidate-specific entity terms|factual event terms reserved|must not add factual attribution/,
+      );
+      throw workersAiFormatError(1, {
+        provider: "cloudflare-workers-ai",
+        model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+        responseId: "workers-ai-one-unsafe-analysis",
+        requestSha256: "5".repeat(64),
+        responseSha256: "6".repeat(64),
+      }, validation.repairKind);
+    },
+  }));
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].maxAttempts, 1);
+  assert.equal(candidate.provenance.freePilot.draftingMode, "trusted-evidence-digest");
+  assert.equal(candidate.provenance.freePilot.inference, "trusted-evidence-digest");
+  assert.equal(candidate.provenance.freePilot.responseId, "local-digest");
+  for (const selected of scenario.selectedCandidates) {
+    const summary = summaryPayload.summaries.find((item) =>
+      item.candidateId === selected.candidateId);
+    const story = candidate.desks[selected.suggestedDesk].story;
+    const trustedStory = trustedEditorial.desks[selected.suggestedDesk].story;
+    assert.ok(story);
+    assert.equal(story.id, trustedStory.id);
+    assert.deepEqual(
+      {
+        headline: story.headline,
+        deck: story.deck,
+        whatHappened: story.whatHappened,
+        whyItMatters: story.whyItMatters,
+        whatToDoOrWatch: story.whatToDoOrWatch,
+        sources: story.sources,
+        evidence: story.evidence,
+        timing: story.timing,
+      },
+      {
+        headline: trustedStory.headline,
+        deck: trustedStory.deck,
+        whatHappened: trustedStory.whatHappened,
+        whyItMatters: trustedStory.whyItMatters,
+        whatToDoOrWatch: trustedStory.whatToDoOrWatch,
+        sources: trustedStory.sources,
+        evidence: trustedStory.evidence,
+        timing: trustedStory.timing,
+      },
+    );
+    assert.notEqual(story.whyItMatters, summary.whyItMatters);
+    assert.notEqual(story.whatToDoOrWatch, summary.whatToDoOrWatch);
+  }
   assert.equal(validateCanonicalEdition(candidate).valid, true);
 });
 
