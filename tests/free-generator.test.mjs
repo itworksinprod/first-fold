@@ -1181,6 +1181,7 @@ test("summary drafting never lets a bounded provider failure block the local dig
     new Error("Cloudflare Workers AI request failed with HTTP 403."),
     new Error("Cloudflare Workers AI request failed with HTTP 429."),
     new Error("Cloudflare Workers AI returned a non-JSON response."),
+    new Error("Unexpected optional AI adapter result."),
   ];
   for (const error of providerErrors) {
     await t.test(error.code ?? error.message, async () => {
@@ -1207,13 +1208,11 @@ test("summary drafting never lets a bounded provider failure block the local dig
     const scenario = selectedSlateScenario(["security-and-privacy"]);
     await assert.rejects(
       () => draftFreeEdition(draftOptions({
+        model: "@cf/meta/not-approved-for-first-fold",
         evidencePolicy: "authoritative-or-corroborated",
         draftSelectedSlate: true,
         summarizeSelectedSlate: true,
         researchImpl: async () => scenario.research,
-        aiRequestImpl: async () => {
-          throw new Error("CLOUDFLARE_AI_MODEL is not approved for the hard-$0 pilot.");
-        },
       })),
       /not approved for the hard-\$0 pilot/,
     );

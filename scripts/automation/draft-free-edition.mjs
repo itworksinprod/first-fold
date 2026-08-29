@@ -1296,6 +1296,14 @@ function isTrustedSummaryDigestFallbackError(error) {
   return /^(?:Cloudflare Workers AI )(?:(?:request failed after \d+ attempt\(s\)|request failed without a response|returned an invalid HTTP response|returned a non-JSON response|returned unreadable JSON|returned an unreadable response body|response exceeded the configured size limit|did not return a successful result envelope|returned errors in a successful result envelope)\.?|request failed with HTTP \d{3}\.)$/u.test(message);
 }
 
+function summaryFallbackRepairKind(error) {
+  return ["format", "length", "originality", "authoritative-structure"].includes(
+    error?.repairKind,
+  )
+    ? error.repairKind
+    : "format";
+}
+
 class FreeEditorialRepairError extends Error {
   constructor(message, repairKind) {
     super(message);
@@ -2716,8 +2724,8 @@ async function draftFreeEditionCore({
         } else if (summaryDraftMode && isTrustedSummaryDigestFallbackError(error)) {
           // AI prose is optional polish. Any bounded provider HTTP/transport
           // failure uses the source-bound local digest without another model
-          // call. Local configuration and contract errors remain hard because
-          // they do not match this adapter-owned, fixed error vocabulary.
+          // call. Model and local configuration validation has already run
+          // outside this optional inference boundary and remains a hard gate.
           remainingModelRequests = 0;
         }
         throw error;
@@ -2751,20 +2759,17 @@ async function draftFreeEditionCore({
     try {
       accepted = await requestInference(messages);
     } catch (error) {
-      if (
-        !isRecoverableWorkersAiEditorialError(error) &&
-        !(summaryDraftMode && isTrustedSummaryDigestFallbackError(error))
-      ) {
+      if (!summaryDraftMode && !isRecoverableWorkersAiEditorialError(error)) {
         throw error;
       }
-      repairKind = summaryDraftMode && [
-        "format",
-        "length",
-        "originality",
-        "authoritative-structure",
-      ].includes(error?.repairKind)
-        ? error.repairKind
-        : "format";
+      if (summaryDraftMode && !isRecoverableWorkersAiEditorialError(error)) {
+        // The summary writer is optional polish. Adapter/provenance failures
+        // that cannot be safely repaired must not block the already-scored,
+        // source-bound local digest. Known editorial repair errors retain the
+        // one bounded corrective request below.
+        remainingModelRequests = 0;
+      }
+      repairKind = summaryDraftMode ? summaryFallbackRepairKind(error) : "format";
     }
     if (accepted) {
       try {
@@ -2776,8 +2781,15 @@ async function draftFreeEditionCore({
         );
         if (summaryDraftMode) draftingMode = MODEL_ASSISTED_DIGEST_MODE;
       } catch (error) {
-        if (summaryDraftMode && error?.code === FREE_SUMMARY_COMPOSITION_INVALID) {
-          repairKind = error.repairKind ?? "format";
+        if (
+          summaryDraftMode &&
+          (error instanceof FreeEditorialRepairError ||
+            error?.code === FREE_SUMMARY_COMPOSITION_INVALID)
+        ) {
+          repairKind = summaryFallbackRepairKind(error);
+        } else if (summaryDraftMode) {
+          remainingModelRequests = 0;
+          repairKind = "format";
         } else {
           if (!(error instanceof FreeEditorialRepairError)) throw error;
           repairKind = error.repairKind;
@@ -2853,13 +2865,10 @@ async function draftFreeEditionCore({
             repairKind === "format" ? "json_object" : "json_schema",
           );
         } catch (error) {
-          if (
-            isRecoverableWorkersAiEditorialError(error) ||
-            (summaryDraftMode && isTrustedSummaryDigestFallbackError(error))
-          ) {
-            if (summaryDraftMode) {
-              useTrustedEvidenceDigest();
-            } else if (canUseTrustedFormatFallback()) {
+          if (summaryDraftMode) {
+            useTrustedEvidenceDigest();
+          } else if (isRecoverableWorkersAiEditorialError(error)) {
+            if (canUseTrustedFormatFallback()) {
               useTrustedFormatFallback();
             } else {
               throw freeEditorialDiagnosticError(
@@ -2882,11 +2891,7 @@ async function draftFreeEditionCore({
           );
           if (summaryDraftMode) draftingMode = MODEL_ASSISTED_DIGEST_MODE;
         } catch (error) {
-          if (
-            summaryDraftMode &&
-            (error instanceof FreeEditorialRepairError ||
-              error?.code === FREE_SUMMARY_COMPOSITION_INVALID)
-          ) {
+          if (summaryDraftMode) {
             useTrustedEvidenceDigest();
           } else {
             if (
