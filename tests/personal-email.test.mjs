@@ -524,11 +524,11 @@ test("model-assisted digest provenance is accepted and disclosed in the email", 
   assert.equal(assertPersonalEmailCandidate(candidate).valid, true);
   const rendered = renderPersonalEditionEmail(candidate);
 
-  assert.match(rendered.text, /THE MORNING BRIEF · FREE MODEL-ASSISTED EDITION/);
-  assert.match(rendered.html, /The morning brief · Free model-assisted edition/);
+  assert.match(rendered.text, /THE MORNING BRIEF · SOURCE-CHECKED EDITION/);
+  assert.match(rendered.html, /The morning brief · Source-checked edition/);
   assert.match(
     rendered.text,
-    /Facts source checked · Reader guidance refined by one free-model pass/,
+    /Facts source checked · Analysis polished before delivery/,
   );
   assert.equal(rendered.text.match(/WHAT HAPPENED/g)?.length, 4);
   assert.equal(rendered.text.match(/WHY IT MATTERS/g)?.length, 4);

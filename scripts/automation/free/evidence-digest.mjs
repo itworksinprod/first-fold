@@ -144,8 +144,8 @@ const DESK_WATCH = Object.freeze({
 });
 
 const SAFE_PADDING_SENTENCES = Object.freeze([
-  "The listed source records provide the audit trail for every detail retained in this digest.",
-  "Differences between feed descriptions should remain unresolved until later reporting explains them.",
+  "The linked reports provide the audit trail for every detail retained in this brief.",
+  "Differences between the available descriptions should remain unresolved until later reporting explains them.",
   "Keep consequential decisions reversible while the development and its practical effects continue to emerge.",
 ]);
 
@@ -363,6 +363,10 @@ function completeEvidenceExcerpt(sourceText, {
   for (const segment of declarativeSourceSegments(sourceText)) {
     if (hasUnsafeLink(segment)) continue;
     if (looksLikeInstruction(segment)) continue;
+    // Unicode Terminal_Punctuation includes comma-like separators. Reject a
+    // fragment that stops at one of those separators instead of presenting it
+    // as a complete event claim with its qualifying continuation removed.
+    if (/[,;:\u060C\u061B\uFF0C\uFF1B\uFF1A]\s*$/u.test(segment)) continue;
     const words = sourceWords(segment);
     if (words.length === 0 || words.length > MAX_TRUSTED_EVIDENCE_EXCERPT_WORDS) continue;
     if (requireMeaningfulSignal && !hasMeaningfulEventSignal(segment, candidate, evidence)) continue;
@@ -637,6 +641,63 @@ function ensureReaderWordRange(story) {
   return story;
 }
 
+function corroboratedHeadline(candidate, excerptRecords, deskLabel) {
+  const leadRecord = excerptRecords.find(({ excerpt }) => excerpt !== null);
+  return leadRecord === undefined
+    ? `${candidate.primaryEntity}: a new ${deskLabel} development`
+    : `${leadRecord.source.publisher} reports “${leadRecord.excerpt}”`;
+}
+
+function corroboratedAccount({ source, excerpt }, deskLabel) {
+  return excerpt === null
+    ? `${source.publisher} covers the same ${deskLabel} development in the report linked below, but the available ` +
+      "description did not contain a short passage that could be safely reproduced."
+    : `${source.publisher} reports “${excerpt}”.`;
+}
+
+function authoritativeNarrativeSubject(primaryEntity) {
+  // The downstream authoritative passage validator intentionally treats most
+  // punctuation as a clause boundary. Keep a trusted entity verbatim only
+  // when it can remain inside that single attributed clause without widening
+  // the validator's small dotted-product allowlist.
+  return /^[\p{L}\p{N}][\p{L}\p{N} &'’()+/#%-]{0,159}$/u.test(primaryEntity)
+    ? primaryEntity
+    : "the selected subject";
+}
+
+function authoritativeCopy({ publisher, excerpt, deskLabel, primaryEntity }) {
+  const subject = authoritativeNarrativeSubject(primaryEntity);
+  const boundedContext =
+    `and this brief associates the update with ${subject} while noting that no second factual account appears ` +
+    "in the reviewed material and the details therefore remain provisional";
+  if (excerpt === null) {
+    return {
+      headline: `${publisher} reports a new ${deskLabel} development`,
+      deck: `${publisher} reports the development in one originating account`,
+      whatHappened:
+        `${publisher} reports a new ${deskLabel} development in the originating publication linked below, ` +
+        boundedContext,
+    };
+  }
+  return {
+    headline: `${publisher} reports “${excerpt}”`,
+    deck: `${publisher} reports the development in one originating account`,
+    whatHappened:
+      `${publisher} reports “${excerpt}” in the originating publication linked below, ${boundedContext}`,
+  };
+}
+
+function corroboratedWhatHappened(excerptRecords, deskLabel, primaryEntity) {
+  const accounts = excerptRecords.map((record) => corroboratedAccount(record, deskLabel)).join(" ");
+  const context = `The distinct reports concern ${primaryEntity}; differences in their details remain unresolved, ` +
+    "and each publisher’s account stays separate.";
+  let copy = `${accounts} ${context}`;
+  if (readerWordCount(copy) < 35) {
+    copy += " A detail from one publisher should not be read as agreement by the other.";
+  }
+  return copy;
+}
+
 function buildStory(candidate) {
   const profile = DEFAULT_EVENT_PROFILE_BY_DESK[candidate.suggestedDesk];
   const authoritative = candidate.evidenceTier === "authoritative-single";
@@ -654,36 +715,29 @@ function buildStory(candidate) {
   }));
   const publishers = excerptRecords.map(({ source }) => source.publisher);
   const deskLabel = DESK_LABELS[candidate.suggestedDesk];
-  const neutralDevelopmentLabel = `a reviewed ${deskLabel} development`;
   const status = candidate.ranking?.eligibility === "material-update" ||
       candidate.materiallyUpdatedAt !== null
     ? "material-update"
     : "new-development";
-  const headline = authoritative
-    ? excerptRecords[0].excerpt === null
-      ? `${publishers[0]} reports ${neutralDevelopmentLabel}`
-      : `${publishers[0]} reports “${excerptRecords[0].excerpt}”`
-    : `${candidate.primaryEntity} receives reviewed ${deskLabel} coverage`;
-  const deck = authoritative
-    ? `${publishers[0]} reports the development through one reviewed originating feed record`
-    : `${publishers.length} distinct publishers’ feed records cover ${neutralDevelopmentLabel} involving ${candidate.primaryEntity}`;
-  const whatHappened = authoritative
-    ? excerptRecords[0].excerpt === null
-      ? `${publishers[0]} reports ${neutralDevelopmentLabel} during the reporting window and this edition ` +
-        "retains only its reviewed source metadata because no complete safe excerpt fit the local quotation boundary"
-      : `${publishers[0]} reports ${neutralDevelopmentLabel} during the reporting window, ` +
-        `with its feed summary highlighting “${excerptRecords[0].excerpt}” and this edition treating the account ` +
-        "as developing because it relies on that originating record"
-    : `During the reporting window, ${naturalList(publishers)} published feed records covering ${neutralDevelopmentLabel} ` +
-      `involving ${candidate.primaryEntity}. The records came from distinct publishing organizations and describe ` +
-      `the selected development through their own reporting. ${excerptRecords.map(({ source, excerpt }) => excerpt === null
-        ? `${source.publisher}’s reviewed source metadata is retained without a quotation because no complete safe ` +
-          "excerpt fit the local boundary."
-        : `${source.publisher}’s feed summary highlights “${excerpt}”.`).join(" ")}`;
+  const authoritativeFields = authoritative
+    ? authoritativeCopy({
+      publisher: publishers[0],
+      excerpt: excerptRecords[0].excerpt,
+      deskLabel,
+      primaryEntity: candidate.primaryEntity,
+    })
+    : null;
+  const headline = authoritativeFields?.headline ??
+    corroboratedHeadline(candidate, excerptRecords, deskLabel);
+  const deck = authoritativeFields?.deck ??
+    `Separate reports from ${naturalList(publishers)} cover the same ${deskLabel} development involving ` +
+      `${candidate.primaryEntity}`;
+  const whatHappened = authoritativeFields?.whatHappened ??
+    corroboratedWhatHappened(excerptRecords, deskLabel, candidate.primaryEntity);
   const tierContext = authoritative
-    ? `Only ${publishers[0]} supplies a factual article record in this digest, so the account remains developing.`
-    : `${publishers.length} distinct publisher records support the event grouping, although their feed summaries ` +
-      "may emphasize different details.";
+    ? `Only ${publishers[0]} supplies the factual account in this brief, so the development remains provisional.`
+    : `${publishers.length} separate publishers support the event grouping, although their descriptions may ` +
+      "emphasize different details.";
   const story = {
     id: `trusted-evidence-digest-${candidate.candidateId}`,
     canonicalEventKey: candidate.canonicalEventKey,
@@ -700,39 +754,39 @@ function buildStory(candidate) {
     whatHappened,
     whyItMatters:
       `${profile.why} ${DESK_CONTEXT[candidate.suggestedDesk]} ${tierContext} ` +
-      "This digest uses the listed feed text only; source URL checks establish reachability, not semantic review " +
-      "of the linked article bodies.",
+      "The analysis stays within the source excerpts shown here; a working link confirms access, not every claim " +
+      "on the full page.",
     whatToDoOrWatch:
       `${profile.watch} ${DESK_WATCH[candidate.suggestedDesk]} ` +
-      "Use the listed publisher records as the evidence trail, and avoid treating a condensed feed digest as a " +
-      "substitute for applicable official documentation.",
+      "Read the linked reports as the evidence trail, and do not treat this brief as a substitute for applicable " +
+      "official documentation.",
     editorial: {
       primaryEntity: candidate.primaryEntity,
       aiAdjacent: candidate.aiAdjacent,
       maturity: "verified-development",
-      deskFit: `The selected feed records concern the ${deskLabel} desk.`,
+      deskFit: `The selected reports belong on the ${deskLabel} desk.`,
     },
     selection: {
       score: candidate.ranking.score,
       selectedBecause: authoritative
-        ? "A timely originating feed record cleared the configured evidence and editorial thresholds."
-        : "Distinct publisher feed records cleared the configured evidence and editorial thresholds.",
+        ? "A timely originating report cleared the configured evidence and editorial thresholds."
+        : "Separate publisher reports cleared the configured evidence and editorial thresholds.",
       materialDelta: status === "material-update"
-        ? "The selected feed record materially changed during the reporting period."
+        ? "The selected report materially changed during the reporting period."
         : null,
     },
     confidence: {
       level: authoritative ? "developing" : "medium",
       rationale: authoritative
-        ? `Only ${publishers[0]} supplies the factual article record used by this digest.`
-        : `${publishers.length} distinct publishers supplied source-bound feed records for this digest.`,
+        ? `Only ${publishers[0]} supplies the factual account used by this brief.`
+        : `${publishers.length} distinct publishers supplied reports for this brief.`,
     },
     sources: candidate.sources.map(editorialSource),
     evidence: excerptRecords.map(({ source, excerpt }, index) => ({
       id: `trusted-evidence-digest-claim-${candidate.candidateId}-${index + 1}`,
       statement: excerpt === null
-        ? `${source.publisher} reports its source record was retained without a quotation by the local digest`
-        : `${source.publisher} reports its feed summary highlights “${excerpt}”`,
+        ? `${source.publisher} reports the development in the linked publication without a quoted excerpt`
+        : `${source.publisher} reports “${excerpt}”`,
       sourceIds: [source.id],
       verification: "preliminary",
     })),
@@ -795,10 +849,10 @@ export function buildTrustedEvidenceDigestPayload({
   const note = normalizedCandidates.length === 0
     ? "No selected development required a source digest in this edition."
     : authoritativeCount === 0
-      ? "Today’s source-checked digests use reviewed feed records from distinct publishers."
+      ? "Today’s source-checked briefs draw on separate reports from distinct publishers."
       : corroboratedCount === 0
-        ? "Today’s clearly attributed primary-source digests remain developing until more reporting appears."
-        : "Today’s source-checked edition combines distinct-publisher digests with clearly attributed primary-source digests.";
+        ? "Today’s clearly attributed primary-source briefs remain developing until more reporting appears."
+        : "Today’s source-checked edition combines distinct-publisher reporting with clearly attributed primary-source briefs.";
   const totalReaderWords = orderedStories.reduce((sum, story) =>
     sum + countReaderFacingStoryWords(story), 0);
   return {

@@ -970,7 +970,7 @@ function buildFreeSummaryCorrectiveRetryMessages(messages, repairKind) {
     format:
       "The prior response was not one complete JSON object matching the small summaries-only contract.",
     length:
-      `At least one prior summary fell outside the ${MIN_READER_FACING_STORY_WORDS}-${MAX_READER_FACING_STORY_WORDS} combined reader-word range.`,
+      "At least one prior summary missed the required length or two-to-three-sentence shape for the two analysis fields.",
     originality:
       `At least one prior summary repeated ${FREE_COPY_OVERLAP_WORDS} or more contiguous source words.`,
     "authoritative-structure":
@@ -980,7 +980,9 @@ function buildFreeSummaryCorrectiveRetryMessages(messages, repairKind) {
   if (!reason) throw new Error("Free summary corrective retry kind is invalid.");
   retryMessages[0].content += `\n\nCORRECTIVE RETRY: ${reason} ` +
     "The rejected response is intentionally unavailable. Return a fresh complete summaries array for every " +
-    "candidate from the same bounded evidence. Preserve exact candidateId values, add no fields, use no markdown, " +
+    "candidate from the same bounded evidence. Each item must contain only candidateId, whyItMatters, and " +
+    "whatToDoOrWatch. Preserve exact candidateId values, use [[SUBJECT]] exactly once in whyItMatters and " +
+    "never in whatToDoOrWatch, add no fields, use no markdown, " +
     "add no URL, email address, or digit-bearing fact absent from the supplied evidence, and recheck attribution, " +
     "originality, plain-prose formatting, and the combined word count before returning JSON.";
   return retryMessages;

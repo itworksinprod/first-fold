@@ -27,6 +27,7 @@ import {
 import { generateFreeEditionFile } from "../scripts/automation/generate-free-edition.mjs";
 import { buildTrustedEvidenceDigestPayload } from "../scripts/automation/free/evidence-digest.mjs";
 import { FREE_FEED_SOURCES } from "../scripts/automation/free/feed-sources.mjs";
+import { FREE_SUMMARY_SUBJECT_TOKEN } from "../scripts/automation/free/summary-draft.mjs";
 
 const priorEdition = JSON.parse(
   await readFile(new URL("../content/editions/2026-08-19.json", import.meta.url), "utf8"),
@@ -436,41 +437,19 @@ function aiResult(editorialPayload = buildEditorialPayload()) {
   };
 }
 
-function summaryFixtureBlock(prefix = "", count = 55) {
-  const prefixWords = prefix ? prefix.split(/\s+/u) : [];
-  const safeWords = [
-    "the", "selected", "development", "gives", "readers", "a", "bounded", "account",
-    "of", "available", "details", "while", "the", "summary", "stays", "within",
-    "supplied", "evidence", "with", "unresolved", "questions", "left", "open", "for",
-    "later", "independent", "coverage", "before", "any", "consequential", "decision",
-  ];
-  const generated = Array.from(
-    { length: Math.max(0, count - prefixWords.length) },
-    (_, index) => safeWords[index % safeWords.length],
-  );
-  return [...prefixWords, ...generated].join(" ");
-}
-
 function summaryPayloadForScenario(scenario) {
   return {
-    summaries: scenario.selectedCandidates.map((candidate) => {
-      const story = scenario.payload.desks[candidate.suggestedDesk].story;
-      const originatingPublisher = candidate.sources.find((source) =>
-        source.relationship === "originating")?.publisher;
-      const authoritative = candidate.ranking.evidenceTier === "authoritative-single";
-      return {
-        candidateId: candidate.candidateId,
-        headline: authoritative
-          ? `${originatingPublisher} reports a new development`
-          : story.headline,
-        deck: authoritative
-          ? `${originatingPublisher} reports a bounded update for readers`
-          : story.deck,
-        whatHappened: summaryFixtureBlock(`${originatingPublisher} reports`),
-        whyItMatters: summaryFixtureBlock(),
-        whatToDoOrWatch: summaryFixtureBlock(),
-      };
-    }),
+    summaries: scenario.selectedCandidates.map((candidate) => ({
+      candidateId: candidate.candidateId,
+      whyItMatters:
+        `For teams evaluating ${FREE_SUMMARY_SUBJECT_TOKEN}, the practical consequence is whether this development changes workflow control, cost, or available options. ` +
+        "A cautious comparison can separate an immediately useful choice for the people who rely on it from a change that matters only after its real operating effects become clearer. " +
+        "The value depends on evidence that links the potential effect to measurable everyday outcomes.",
+      whatToDoOrWatch:
+        "Watch for clearer scope, rollout details, explicit defaults, independent results, and support terms that would strengthen or weaken the case. " +
+        "Teams should compare those signals with current needs, test any change in a reversible setting, and preserve existing safeguards until the practical effect in day-to-day use is clear. " +
+        "Keep the first response narrow enough to reverse if those signals remain mixed.",
+    })),
   };
 }
 
@@ -955,6 +934,10 @@ test("summaries-only selected-slate drafting composes complete source-checked st
   assert.equal(calls[0].maxAttempts, 2);
   assert.deepEqual(Object.keys(calls[0].schema.properties), ["summaries"]);
   assert.equal(Object.hasOwn(calls[0].schema.properties, "desks"), false);
+  assert.deepEqual(
+    Object.keys(calls[0].schema.properties.summaries.items.properties),
+    ["candidateId", "whyItMatters", "whatToDoOrWatch"],
+  );
   const serializedMessages = JSON.stringify(calls[0].messages);
   assert.doesNotMatch(serializedMessages, /POLICY_MARKER|PROMPT_MARKER/);
   assert.doesNotMatch(serializedMessages, /publisherKey/);
@@ -994,10 +977,15 @@ test("summaries-only selected-slate drafting composes complete source-checked st
       story.selection.validationReceipt.components,
       selected.ranking.components,
     );
-    assert.notEqual(story.headline, summary.headline);
-    assert.notEqual(story.deck, summary.deck);
-    assert.notEqual(story.whatHappened, summary.whatHappened);
-    assert.equal(story.whyItMatters, summary.whyItMatters);
+    assert.deepEqual(
+      Object.keys(summary),
+      ["candidateId", "whyItMatters", "whatToDoOrWatch"],
+    );
+    assert.equal(
+      story.whyItMatters,
+      summary.whyItMatters.replaceAll(FREE_SUMMARY_SUBJECT_TOKEN, selected.primaryEntity),
+    );
+    assert.doesNotMatch(story.whyItMatters, /\[\[SUBJECT\]\]/);
     assert.ok(story.whatToDoOrWatch.startsWith(summary.whatToDoOrWatch));
     assert.match(story.id, /^trusted-evidence-digest-/);
     assert.equal(story.canonicalEventKey, selected.canonicalEventKey);
@@ -1025,8 +1013,11 @@ test("one unsafe analysis block discards all four model summaries and uses only 
     "platforms-and-power",
   ]);
   const summaryPayload = summaryPayloadForScenario(scenario);
-  summaryPayload.summaries.at(-1).whyItMatters +=
-    " Platforms Power Entity reports a breach with wider effects.";
+  summaryPayload.summaries.at(-1).whyItMatters =
+    summaryPayload.summaries.at(-1).whyItMatters.replace(
+      "The value depends on evidence",
+      "Platforms Power Entity reports a breach with wider effects, while the value depends on evidence",
+    );
   const trustedEditorial = buildTrustedEvidenceDigestPayload({
     candidates: scenario.selectedCandidates,
   });
@@ -1228,7 +1219,7 @@ test("summary drafting uses the local digest for bounded transient provider fail
 
 test("summary corrective retries retain bounded semantic repair guidance", async (t) => {
   const cases = [
-    ["length", /reader-word range/],
+    ["length", /required length|combined word count|analysisWords/],
     ["originality", /contiguous source words/],
     ["authoritative-structure", /single-publisher summary/],
   ];

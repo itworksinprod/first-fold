@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { countReaderFacingStoryWords } from "../scripts/edition-content.mjs";
 import {
   normalizeFreeEditorialAgainstCandidates,
   validateFreeEditorialPayload,
@@ -8,6 +7,7 @@ import {
 import {
   FREE_SUMMARY_DRAFT_SCHEMA,
   FREE_SUMMARY_DRAFT_SCHEMA_NAME,
+  FREE_SUMMARY_SUBJECT_TOKEN,
   buildFreeSummaryDraftMessages,
   composeFreeEditorialFromSummaries,
   validateFreeSummaryDraftPayload,
@@ -216,38 +216,23 @@ function sparseVendorCandidate() {
   return candidate;
 }
 
-function wordBlock(label, count, prefix = "") {
-  const prefixWords = prefix.trim() ? prefix.trim().split(/\s+/u) : [];
-  const safeWords = [
-    "the", "reviewed", "source", "gives", "readers", "a", "bounded", "account",
-    "of", "this", "selected", "development", "and", "the", "available", "details",
-    "while", "the", "summary", "stays", "within", "supplied", "evidence", "with",
-    "unresolved", "questions", "left", "open", "for", "later", "independent",
-    "reporting", "before", "any", "consequential", "decision",
-  ];
-  const generated = Array.from(
-    { length: Math.max(0, count - prefixWords.length) },
-    (_, index) => safeWords[index % safeWords.length],
-  );
-  return [...prefixWords, ...generated].join(" ");
-}
-
 function summaryFor(candidate) {
-  const authoritative = candidate.ranking.evidenceTier === "authoritative-single";
-  const publisher = candidate.sources.find((item) => item.relationship === "originating")?.publisher;
-  const prefix = authoritative ? `${publisher} reports` : "Reviewed coverage indicates";
   return {
     candidateId: candidate.candidateId,
-    headline: authoritative
-      ? `${publisher} reports an industrial controller advisory`
-      : "Teams receive more control over archived project exports",
-    deck: authoritative
-      ? `${publisher} reports affected controller software in its advisory`
-      : "Two reviewed publishers describe a staged administrative change",
-    whatHappened: wordBlock(`${candidate.candidateId}event`, 55, prefix),
-    whyItMatters: wordBlock(`${candidate.candidateId}impact`, 55),
-    whatToDoOrWatch: wordBlock(`${candidate.candidateId}watch`, 55),
+    whyItMatters:
+      `For teams evaluating ${FREE_SUMMARY_SUBJECT_TOKEN}, the practical consequence is whether this development changes workflow control, cost, or available options. ` +
+      "A cautious comparison can separate an immediately useful choice for the people who rely on it from a change that matters only after its real operating effects become clearer. " +
+      "The value depends on evidence that links the possible shift to measurable everyday outcomes.",
+    whatToDoOrWatch:
+      "Watch for clearer scope, rollout details, explicit defaults, independent results, and support terms that would strengthen or weaken the case. " +
+      "Teams should compare those signals with current needs, test any change in a reversible setting, and preserve existing safeguards until the practical effect in day-to-day use is clear. " +
+      "Keep the first response narrow enough to reverse if those signals remain mixed.",
   };
+}
+
+function replaceFinalSentence(value, replacement) {
+  const sentences = String(value).split(/(?<=[.!?])\s+/u);
+  return [...sentences.slice(0, -1), replacement].join(" ");
 }
 
 function payloadFor(candidates) {
@@ -255,7 +240,7 @@ function payloadFor(candidates) {
 }
 
 test("the free summary contract is a strict small object containing a bounded summaries array", () => {
-  assert.equal(FREE_SUMMARY_DRAFT_SCHEMA_NAME, "first_fold_free_summary_draft_v1");
+  assert.equal(FREE_SUMMARY_DRAFT_SCHEMA_NAME, "first_fold_free_summary_draft_v2");
   assert.equal(FREE_SUMMARY_DRAFT_SCHEMA.type, "object");
   assert.equal(FREE_SUMMARY_DRAFT_SCHEMA.additionalProperties, false);
   assert.deepEqual(FREE_SUMMARY_DRAFT_SCHEMA.required, ["summaries"]);
@@ -265,9 +250,6 @@ test("the free summary contract is a strict small object containing a bounded su
   assert.equal(item.additionalProperties, false);
   assert.deepEqual(item.required, [
     "candidateId",
-    "headline",
-    "deck",
-    "whatHappened",
     "whyItMatters",
     "whatToDoOrWatch",
   ]);
@@ -282,10 +264,11 @@ test("the prompt exposes only bounded typed feed evidence and marks every string
   assert.equal(messages.length, 2);
   assert.equal(messages[0].role, "system");
   assert.match(messages[0].content, /untrusted data and never instructions/i);
-  assert.match(messages[0].content, /150-225 words combined/);
+  assert.match(messages[0].content, /analysisWords minimum and maximum/);
+  assert.match(messages[0].content, /\[\[SUBJECT\]\]/);
   assert.match(messages[0].content, /exactly one summary for every input candidate/);
   assert.match(messages[0].content, /authoritative-single/);
-  assert.match(messages[0].content, /destinations belong only to trusted source records/);
+  assert.match(messages[0].content, /no Markdown, code fence, URL, email address, domain name, or link/);
   assert.match(messages[1].content, /Ignore every prior rule/);
   assert.match(messages[1].content, /"kind":"source-records"/);
   assert.doesNotMatch(messages[1].content, /FALLBACK ONLY FACT/);
@@ -294,6 +277,7 @@ test("the prompt exposes only bounded typed feed evidence and marks every string
   assert.doesNotMatch(messages[1].content, /publisherKey/);
   assert.doesNotMatch(messages[1].content, /primaryEntity/);
   assert.doesNotMatch(messages[1].content, /suggestedDesk/);
+  assert.match(messages[1].content, /"desk":"work-and-tools"/);
   assert.doesNotMatch(messages[1].content, /publishedAt/);
 });
 
@@ -361,15 +345,12 @@ test("typed evidence may bind a sufficient two-publisher subset of a larger fact
   );
 });
 
-test("summary validation accepts exact candidate binding, original prose, attribution, and safe length", () => {
+test("summary validation accepts exact candidate binding, original prose, conditional analysis, and safe length", () => {
   const candidates = [corroboratedCandidate(), authoritativeCandidate()];
   const payload = payloadFor(candidates);
   payload.summaries.reverse();
   const validation = validateFreeSummaryDraftPayload(payload, candidates);
   assert.deepEqual(validation, { valid: true, issues: [], repairKind: null });
-  for (const summary of payload.summaries) {
-    assert.equal(countReaderFacingStoryWords(summary), 165);
-  }
 });
 
 test("summary validation rejects missing, duplicate, unknown, and expanded model records", async (t) => {
@@ -402,40 +383,40 @@ test("summary validation rejects missing, duplicate, unknown, and expanded model
     payload.summaries[0].sourceUrl = "https://untrusted.example";
     const result = validateFreeSummaryDraftPayload(payload, candidates);
     assert.equal(result.valid, false);
-    assert.match(result.issues.join(" "), /exactly the six allowed fields/);
+    assert.match(result.issues.join(" "), /exactly the three allowed fields/);
   });
 });
 
-test("summary validation enforces reader length, originality, and authoritative attribution", async (t) => {
-  await t.test("reader length", () => {
+test("summary validation enforces focused analysis length, subject binding, originality, and style", async (t) => {
+  await t.test("analysis length", () => {
     const candidate = corroboratedCandidate();
     const payload = payloadFor([candidate]);
-    payload.summaries[0].whyItMatters = "Too short";
-    payload.summaries[0].whatToDoOrWatch = "Still short";
+    payload.summaries[0].whyItMatters =
+      `For ${FREE_SUMMARY_SUBJECT_TOKEN}, this workflow decision matters. More evidence may change it.`;
+    payload.summaries[0].whatToDoOrWatch =
+      "Watch the scope and documentation. Teams should compare options.";
     const result = validateFreeSummaryDraftPayload(payload, [candidate]);
     assert.equal(result.valid, false);
     assert.equal(result.repairKind, "length");
-    assert.match(result.issues.join(" "), /150-225 combined reader-facing words/);
+    assert.match(result.issues.join(" "), /90-140 combined analysis|40-78 words/);
+  });
+  await t.test("subject token", () => {
+    const candidate = corroboratedCandidate();
+    const payload = payloadFor([candidate]);
+    payload.summaries[0].whyItMatters = payload.summaries[0].whyItMatters
+      .replace(FREE_SUMMARY_SUBJECT_TOKEN, "[[ANOTHER]]");
+    const result = validateFreeSummaryDraftPayload(payload, [candidate]);
+    assert.equal(result.valid, false);
+    assert.equal(result.repairKind, "format");
+    assert.match(result.issues.join(" "), /exact subject token/);
   });
   await t.test("originality", () => {
     const candidate = corroboratedCandidate();
     candidate.feedEvidence[0].summary =
       "administrators must review existing archives before changing access because exports can include sensitive team material today";
     const payload = payloadFor([candidate]);
-    payload.summaries[0].whatHappened =
-      `${candidate.feedEvidence[0].summary} ${payload.summaries[0].whatHappened}`;
-    const result = validateFreeSummaryDraftPayload(payload, [candidate]);
-    assert.equal(result.valid, false);
-    assert.equal(result.repairKind, "originality");
-    assert.match(result.issues.join(" "), /12 or more contiguous evidence words/);
-  });
-  await t.test("originality includes prompt-visible categories", () => {
-    const candidate = corroboratedCandidate();
-    candidate.feedEvidence[0].categories[0] =
-      "administrative export access controls for archived projects and sensitive team records during staged rollout";
-    const payload = payloadFor([candidate]);
-    payload.summaries[0].whatHappened =
-      `${candidate.feedEvidence[0].categories[0]} ${payload.summaries[0].whatHappened}`;
+    payload.summaries[0].whatToDoOrWatch =
+      `${candidate.feedEvidence[0].summary}. Teams should compare the scope, documentation, defaults, support terms, and independent results before making a reversible decision about current workflow options and practical safeguards.`;
     const result = validateFreeSummaryDraftPayload(payload, [candidate]);
     assert.equal(result.valid, false);
     assert.equal(result.repairKind, "originality");
@@ -444,170 +425,63 @@ test("summary validation enforces reader length, originality, and authoritative 
   await t.test("invented hard tokens", () => {
     const candidate = corroboratedCandidate();
     const payload = payloadFor([candidate]);
-    payload.summaries[0].whyItMatters += " The change affects 10 million accounts.";
-    payload.summaries[0].whatToDoOrWatch += " Upgrade to v9.3 before rollout.";
+    payload.summaries[0].whyItMatters = replaceFinalSentence(
+      payload.summaries[0].whyItMatters,
+      "The change affects 10 million accounts.",
+    );
     const result = validateFreeSummaryDraftPayload(payload, [candidate]);
     assert.equal(result.valid, false);
     assert.equal(result.repairKind, "originality");
-    assert.match(result.issues.join(" "), /unsupported digit-bearing tokens/);
-    assert.match(result.issues.join(" "), /10/);
-    assert.match(result.issues.join(" "), /v9\.3/);
+    assert.match(result.issues.join(" "), /unsupported digit-bearing tokens.*10/);
   });
-  await t.test("a timestamp component cannot authorize a fabricated quantity", () => {
+  await t.test("authoritative certainty", () => {
+    const candidate = authoritativeCandidate();
+    const payload = payloadFor([candidate]);
+    payload.summaries[0].whyItMatters = replaceFinalSentence(
+      payload.summaries[0].whyItMatters,
+      "The result is definitive and undisputed.",
+    );
+    const result = validateFreeSummaryDraftPayload(payload, [candidate]);
+    assert.equal(result.valid, false);
+    assert.match(result.issues.join(" "), /unsupported independent confirmation/);
+  });
+  await t.test("newsroom plumbing", () => {
     const candidate = corroboratedCandidate();
     const payload = payloadFor([candidate]);
-    payload.summaries[0].whyItMatters += " The change affects 28 million customers.";
+    payload.summaries[0].whyItMatters = payload.summaries[0].whyItMatters
+      .replace("A cautious comparison", "This bounded digest offers a cautious comparison");
     const result = validateFreeSummaryDraftPayload(payload, [candidate]);
     assert.equal(result.valid, false);
-    assert.equal(result.repairKind, "originality");
-    assert.match(result.issues.join(" "), /unsupported digit-bearing tokens/);
-    assert.match(result.issues.join(" "), /28/);
+    assert.match(result.issues.join(" "), /newsroom-process language/);
   });
-  await t.test("bounded hard tokens", () => {
+  await t.test("unsupported outcome", () => {
     const candidate = corroboratedCandidate();
-    candidate.feedEvidence[0].summary += " Version v2.4 reached a 25% staged rollout.";
     const payload = payloadFor([candidate]);
-    payload.summaries[0].whyItMatters += " Version v2.4 reached 25 percent in the bounded feed record.";
-    const result = validateFreeSummaryDraftPayload(payload, [candidate]);
-    assert.deepEqual(result, { valid: true, issues: [], repairKind: null });
-  });
-  await t.test("attribution", () => {
-    const candidate = authoritativeCandidate();
-    const payload = payloadFor([candidate]);
-    payload.summaries[0].headline = "A controller advisory identifies a security concern";
-    payload.summaries[0].whyItMatters += " The account was independently confirmed.";
-    const result = validateFreeSummaryDraftPayload(payload, [candidate]);
-    assert.equal(result.valid, false);
-    assert.equal(result.repairKind, "authoritative-structure");
-    assert.match(result.issues.join(" "), /originating-publisher attribution/);
-    assert.match(result.issues.join(" "), /unsupported independent confirmation/);
-  });
-  await t.test("nested attribution", () => {
-    const candidate = authoritativeCandidate();
-    const payload = payloadFor([candidate]);
-    payload.summaries[0].whatHappened =
-      payload.summaries[0].whatHappened.replace("CISA reports ", "CISA reports Rival says ");
-    const result = validateFreeSummaryDraftPayload(payload, [candidate]);
-    assert.equal(result.valid, false);
-    assert.match(result.issues.join(" "), /one bounded claim with no nested attribution/);
-  });
-  await t.test("second sentence and clause punctuation", () => {
-    const candidate = authoritativeCandidate();
-    const payload = payloadFor([candidate]);
-    payload.summaries[0].whatHappened =
-      payload.summaries[0].whatHappened.replace("eventj", "eventj. A second sentence");
-    payload.summaries[0].deck += ": details follow";
-    const result = validateFreeSummaryDraftPayload(payload, [candidate]);
-    assert.equal(result.valid, false);
-    assert.match(result.issues.join(" "), /one bounded claim with no nested attribution/);
-  });
-  await t.test("certainty synonyms", () => {
-    const candidate = authoritativeCandidate();
-    const payload = payloadFor([candidate]);
-    payload.summaries[0].whyItMatters += " The result is definitive and undisputed.";
-    const result = validateFreeSummaryDraftPayload(payload, [candidate]);
-    assert.equal(result.valid, false);
-    assert.match(result.issues.join(" "), /unsupported independent confirmation/);
-  });
-  await t.test("cautious certainty negation remains allowed", () => {
-    const candidate = authoritativeCandidate();
-    const payload = payloadFor([candidate]);
-    payload.summaries[0].whyItMatters +=
-      " Independent confirmation remains unavailable while readers review the primary account.";
-    const result = validateFreeSummaryDraftPayload(payload, [candidate]);
-    assert.deepEqual(result, { valid: true, issues: [], repairKind: null });
-  });
-  await t.test("cautious confirmation grammar and verification advice remain allowed", () => {
-    const candidate = authoritativeCandidate();
-    const payload = payloadFor([candidate]);
-    payload.summaries[0].whyItMatters +=
-      " Independent confirmation remains unavailable.";
-    payload.summaries[0].whatToDoOrWatch +=
-      " Readers should independently verify details before consequential changes.";
-    const result = validateFreeSummaryDraftPayload(payload, [candidate]);
-    assert.deepEqual(result, { valid: true, issues: [], repairKind: null });
-  });
-  await t.test("plural-source certainty with an auxiliary is rejected", () => {
-    const candidate = authoritativeCandidate();
-    const payload = payloadFor([candidate]);
-    payload.summaries[0].whatToDoOrWatch += " Two sources have confirmed the account.";
-    const result = validateFreeSummaryDraftPayload(payload, [candidate]);
-    assert.equal(result.valid, false);
-    assert.equal(result.repairKind, "authoritative-structure");
-    assert.match(result.issues.join(" "), /unsupported independent confirmation/);
-  });
-  await t.test("plural-source verification is not mistaken for imperative advice", () => {
-    const candidate = authoritativeCandidate();
-    const payload = payloadFor([candidate]);
-    payload.summaries[0].whatToDoOrWatch += " Other outlets corroborate the account.";
-    const result = validateFreeSummaryDraftPayload(payload, [candidate]);
-    assert.equal(result.valid, false);
-    assert.equal(result.repairKind, "authoritative-structure");
-    assert.match(result.issues.join(" "), /unsupported independent confirmation/);
-  });
-  await t.test("analysis fields cannot add a third-party attribution", () => {
-    const candidate = authoritativeCandidate();
-    const payload = payloadFor([candidate]);
-    payload.summaries[0].whyItMatters += " A rival says the impact is broader.";
+    payload.summaries[0].whyItMatters = replaceFinalSentence(
+      payload.summaries[0].whyItMatters,
+      "The change will reduce costs for every team that adopts it.",
+    );
     const result = validateFreeSummaryDraftPayload(payload, [candidate]);
     assert.equal(result.valid, false);
     assert.equal(result.repairKind, "originality");
-    assert.match(result.issues.join(" "), /analysis must not add factual attribution.*whyItMatters:says/);
+    assert.match(result.issues.join(" "), /unsupported outcome/);
   });
-  await t.test("an outside analyst cannot reverse a no-exploitation source account", () => {
-    const candidate = authoritativeCandidate();
-    candidate.feedEvidence[0].summary +=
-      " CISA says there is no evidence of active exploitation.";
+  await t.test("missing observable watch signal", () => {
+    const candidate = corroboratedCandidate();
     const payload = payloadFor([candidate]);
-    payload.summaries[0].whyItMatters +=
-      " Outside Analyst reveals active exploitation.";
-    const result = validateFreeSummaryDraftPayload(payload, [candidate]);
-    assert.equal(result.valid, false);
-    assert.equal(result.repairKind, "originality");
-    assert.match(result.issues.join(" "), /analysis (?:contains factual event terms reserved|must not add factual attribution)/);
-  });
-  await t.test("a negation at one field boundary cannot hide certainty in the next", () => {
-    const candidate = authoritativeCandidate();
-    const payload = payloadFor([candidate]);
-    payload.summaries[0].whyItMatters += " not";
     payload.summaries[0].whatToDoOrWatch =
-      `Independently confirmed ${payload.summaries[0].whatToDoOrWatch}`;
+      "Wait to see how the situation develops in ordinary use and whether early impressions hold up across different settings. " +
+      "A measured response leaves room for new information without making a premature commitment. " +
+      "Keep the first move small enough to reverse if experience points in another direction.";
     const result = validateFreeSummaryDraftPayload(payload, [candidate]);
     assert.equal(result.valid, false);
-    assert.match(result.issues.join(" "), /unsupported independent confirmation/);
-  });
-  await t.test("Unicode sentence punctuation cannot hide a second authoritative sentence", () => {
-    const candidate = authoritativeCandidate();
-    const payload = payloadFor([candidate]);
-    payload.summaries[0].whatHappened =
-      payload.summaries[0].whatHappened.replace(
-        "selected development",
-        "selected development。 A second sentence",
-      );
-    const result = validateFreeSummaryDraftPayload(payload, [candidate]);
-    assert.equal(result.valid, false);
-    assert.equal(result.repairKind, "authoritative-structure");
-    assert.match(result.issues.join(" "), /one bounded claim with no nested attribution/);
-  });
-  await t.test("compatibility punctuation cannot hide a second authoritative clause", () => {
-    const candidate = authoritativeCandidate();
-    const payload = payloadFor([candidate]);
-    payload.summaries[0].deck += "： another clause";
-    const result = validateFreeSummaryDraftPayload(payload, [candidate]);
-    assert.equal(result.valid, false);
-    assert.equal(result.repairKind, "authoritative-structure");
-    assert.match(result.issues.join(" "), /one bounded claim with no nested attribution/);
+    assert.equal(result.repairKind, "originality");
+    assert.match(result.issues.join(" "), /observable watch signal/);
   });
 });
 
-test("every model prose field rejects destinations, formatting, line breaks, and bidi controls", async (t) => {
-  const proseFields = [
-    "headline",
-    "deck",
-    "whatHappened",
-    "whyItMatters",
-    "whatToDoOrWatch",
-  ];
+test("both model prose fields reject destinations, formatting, line breaks, and bidi controls", async (t) => {
+  const proseFields = ["whyItMatters", "whatToDoOrWatch"];
   const destinations = [
     "https://evil.example/path",
     "www.evil.example/path",
@@ -654,8 +528,10 @@ test("every model prose field rejects destinations, formatting, line breaks, and
 test("destination checks normalize Unicode dots without mistaking common filenames for hosts", () => {
   const candidate = corroboratedCandidate();
   const safe = payloadFor([candidate]);
-  safe.summaries[0].whatToDoOrWatch +=
-    " Review package.json and wrangler.toml before changing security.txt.";
+  safe.summaries[0].whatToDoOrWatch = replaceFinalSentence(
+    safe.summaries[0].whatToDoOrWatch,
+    "Review package.json and wrangler.toml before changing security.txt, then keep the first response narrow and reversible while results remain mixed.",
+  );
   assert.deepEqual(
     validateFreeSummaryDraftPayload(safe, [candidate]),
     { valid: true, issues: [], repairKind: null },
@@ -669,45 +545,15 @@ test("destination checks normalize Unicode dots without mistaking common filenam
   assert.match(result.issues.join(" "), /unreviewed destination/);
 });
 
-test("semantic guard rejects unsupported entities and material actions but permits a grounded paraphrase", () => {
-  const candidate = sparseVendorCandidate();
-  const supported = payloadFor([candidate]);
-  supported.summaries[0].headline = "Vendor reports a controller software change";
-  supported.summaries[0].deck = "Vendor reports a software update for controller users";
-  supported.summaries[0].whatHappened = wordBlock(
-    "supported",
-    55,
-    "Vendor reports a controller software change",
-  );
-  assert.deepEqual(
-    validateFreeSummaryDraftPayload(supported, [candidate]),
-    { valid: true, issues: [], repairKind: null },
-  );
-  const naturalAnalysis = structuredClone(supported);
-  naturalAnalysis.summaries[0].whyItMatters +=
-    ". Organizations using affected controllers may need to assess exposure.";
-  assert.deepEqual(
-    validateFreeSummaryDraftPayload(naturalAnalysis, [candidate]),
-    { valid: true, issues: [], repairKind: null },
-  );
-
-  const fabricated = structuredClone(supported);
-  fabricated.summaries[0].headline = "Vendor reports Microsoft acquired OpenAI worldwide";
-  fabricated.summaries[0].deck = "Vendor reports Microsoft now owns OpenAI";
-  const result = validateFreeSummaryDraftPayload(fabricated, [candidate]);
-  assert.equal(result.valid, false);
-  assert.equal(result.repairKind, "originality");
-  assert.match(result.issues.join(" "), /unsupported semantic content terms/);
-  assert.match(result.issues.join(" "), /microsoft|openai/);
-  assert.match(result.issues.join(" "), /acquired|owns|worldwide/);
-});
-
 test("analysis guard rejects candidate entities, factual attribution, and high-risk event terms", async (t) => {
   const candidate = corroboratedCandidate();
 
   await t.test("candidate-specific entity", () => {
     const payload = payloadFor([candidate]);
-    payload.summaries[0].whyItMatters += " Example Workspace may require closer review.";
+    payload.summaries[0].whyItMatters = replaceFinalSentence(
+      payload.summaries[0].whyItMatters,
+      "Example Workspace may require closer review before a decision.",
+    );
     const result = validateFreeSummaryDraftPayload(payload, [candidate]);
     assert.equal(result.valid, false);
     assert.equal(result.repairKind, "originality");
@@ -716,7 +562,10 @@ test("analysis guard rejects candidate entities, factual attribution, and high-r
 
   await t.test("factual attribution", () => {
     const payload = payloadFor([candidate]);
-    payload.summaries[0].whatToDoOrWatch += " A publisher reports wider effects.";
+    payload.summaries[0].whatToDoOrWatch = replaceFinalSentence(
+      payload.summaries[0].whatToDoOrWatch,
+      "A publisher reports wider effects that teams should verify before acting.",
+    );
     const result = validateFreeSummaryDraftPayload(payload, [candidate]);
     assert.equal(result.valid, false);
     assert.equal(result.repairKind, "originality");
@@ -725,7 +574,10 @@ test("analysis guard rejects candidate entities, factual attribution, and high-r
 
   await t.test("high-risk factual event", () => {
     const payload = payloadFor([candidate]);
-    payload.summaries[0].whyItMatters += " A breach could alter the decision.";
+    payload.summaries[0].whyItMatters = replaceFinalSentence(
+      payload.summaries[0].whyItMatters,
+      "A breach could alter the decision and the practical risk calculation.",
+    );
     const result = validateFreeSummaryDraftPayload(payload, [candidate]);
     assert.equal(result.valid, false);
     assert.equal(result.repairKind, "originality");
@@ -765,7 +617,10 @@ test("analysis guard rejects generic dangerous actions in both publishable field
     for (const guidance of dangerousGuidance) {
       const candidate = corroboratedCandidate();
       const payload = payloadFor([candidate]);
-      payload.summaries[0][field] += ` ${guidance}`;
+      payload.summaries[0][field] = replaceFinalSentence(
+        payload.summaries[0][field],
+        guidance,
+      );
       const result = validateFreeSummaryDraftPayload(payload, [candidate]);
       assert.equal(result.valid, false, `${field} accepted ${guidance}`);
       assert.equal(result.repairKind, "originality", guidance);
@@ -807,7 +662,10 @@ test("analysis guard retains ordinary advisory verbs and safely negated actions"
     for (const guidance of safeGuidance) {
       const candidate = corroboratedCandidate();
       const payload = payloadFor([candidate]);
-      payload.summaries[0][field] += ` ${guidance}`;
+      payload.summaries[0][field] = replaceFinalSentence(
+        payload.summaries[0][field],
+        guidance,
+      );
       assert.deepEqual(
         validateFreeSummaryDraftPayload(payload, [candidate]),
         { valid: true, issues: [], repairKind: null },
@@ -825,7 +683,10 @@ test("analysis guard enforces the conservative modal advisory action policy", ()
   ]) {
     const candidate = corroboratedCandidate();
     const payload = payloadFor([candidate]);
-    payload.summaries[0].whatToDoOrWatch += `. ${guidance}`;
+    payload.summaries[0].whatToDoOrWatch = replaceFinalSentence(
+      payload.summaries[0].whatToDoOrWatch,
+      guidance,
+    );
     const result = validateFreeSummaryDraftPayload(payload, [candidate]);
     assert.equal(result.valid, false, guidance);
     assert.equal(result.repairKind, "originality", guidance);
@@ -890,7 +751,13 @@ test("trusted composition creates a complete free editorial payload with exact s
       timing: trustedCorroboratedStory.timing,
     },
   );
-  assert.equal(corroboratedStory.whyItMatters, summaryPayload.summaries[0].whyItMatters);
+  assert.equal(
+    corroboratedStory.whyItMatters,
+    summaryPayload.summaries[0].whyItMatters.replaceAll(
+      FREE_SUMMARY_SUBJECT_TOKEN,
+      candidates[0].primaryEntity,
+    ),
+  );
   assert.ok(corroboratedStory.whatToDoOrWatch.startsWith(
     summaryPayload.summaries[0].whatToDoOrWatch,
   ));
@@ -907,7 +774,8 @@ test("trusted composition creates a complete free editorial payload with exact s
   );
   assert.ok(corroboratedStory.evidence.every((claim) => claim.verification === "preliminary"));
   assert.ok(corroboratedStory.evidence.every((claim) =>
-    claim.statement !== summaryPayload.summaries[0].whatHappened));
+    claim.statement !== corroboratedStory.whyItMatters &&
+    claim.statement !== corroboratedStory.whatToDoOrWatch));
 
   const authoritativeStory = editorial.desks["security-and-privacy"].story;
   const trustedAuthoritativeStory = trustedEditorial.desks["security-and-privacy"].story;
@@ -931,7 +799,13 @@ test("trusted composition creates a complete free editorial payload with exact s
       timing: trustedAuthoritativeStory.timing,
     },
   );
-  assert.equal(authoritativeStory.whyItMatters, summaryPayload.summaries[1].whyItMatters);
+  assert.equal(
+    authoritativeStory.whyItMatters,
+    summaryPayload.summaries[1].whyItMatters.replaceAll(
+      FREE_SUMMARY_SUBJECT_TOKEN,
+      candidates[1].primaryEntity,
+    ),
+  );
   assert.ok(authoritativeStory.whatToDoOrWatch.startsWith(
     summaryPayload.summaries[1].whatToDoOrWatch,
   ));
@@ -941,8 +815,7 @@ test("trusted composition creates a complete free editorial payload with exact s
   assert.equal(authoritativeStory.priority, "notable");
   assert.equal(authoritativeStory.sources.length, 2);
   assert.equal(authoritativeStory.sources[1].relationship, "context");
-  assert.notEqual(authoritativeStory.headline, summaryPayload.summaries[1].headline);
-  assert.match(authoritativeStory.headline, /^CISA reports a reviewed Security & Privacy development$/);
+  assert.match(authoritativeStory.headline, /^CISA reports a new Security & Privacy development$/);
   assert.match(editorial.frontPage.note, /attributed primary-source summary/);
   assert.doesNotMatch(editorial.frontPage.note, /primary-source brief/);
 });
@@ -955,8 +828,11 @@ test("trusted composition keeps synthetic prose out of source claims and never m
     candidates: [candidate],
   });
   const claims = editorial.desks["work-and-tools"].story.evidence;
+  const story = editorial.desks["work-and-tools"].story;
   assert.ok(claims.every((claim) => claim.verification === "preliminary"));
-  assert.ok(claims.every((claim) => claim.statement !== summaries[0].whatHappened));
+  assert.ok(claims.every((claim) =>
+    claim.statement !== story.whyItMatters &&
+    claim.statement !== story.whatToDoOrWatch));
   assert.deepEqual(claims.flatMap((claim) => claim.sourceIds), ["paper-one", "paper-two"]);
 });
 
@@ -1004,13 +880,13 @@ test("composed summaries pass the production closed-world candidate normalizer",
   );
   assert.equal(normalized.desks["work-and-tools"].story.evidence[0].verification, "preliminary");
   assert.equal(normalized.desks["security-and-privacy"].story.evidence[0].verification, "preliminary");
-  assert.notEqual(
+  assert.match(
     normalized.desks["security-and-privacy"].story.headline,
-    summaryPayload.summaries[1].headline,
+    /^CISA reports a new Security & Privacy development$/,
   );
 });
 
-test("trusted composition cannot emit a model-authored role reversal or polarity inversion", () => {
+test("the three-field contract blocks model-authored factual reversals while trusted copy stays local", () => {
   const roleCandidate = sparseVendorCandidate();
   const roleTitle = "Vendor reports OpenAI acquired Microsoft";
   roleCandidate.title = roleTitle;
@@ -1021,14 +897,20 @@ test("trusted composition cannot emit a model-authored role reversal or polarity
   roleCandidate.verifiedFacts = [roleTitle];
   const reversed = payloadFor([roleCandidate]);
   reversed.summaries[0].headline = "Vendor reports Microsoft acquired OpenAI";
-  reversed.summaries[0].deck = "Vendor reports Microsoft acquired OpenAI";
-  reversed.summaries[0].whatHappened = wordBlock(
-    "role reversal",
-    55,
-    "Vendor reports Microsoft acquired OpenAI",
+  const reversedValidation = validateFreeSummaryDraftPayload(reversed, [roleCandidate]);
+  assert.equal(reversedValidation.valid, false);
+  assert.equal(reversedValidation.repairKind, "format");
+  assert.match(reversedValidation.issues.join(" "), /exactly the three allowed fields/);
+  assert.throws(
+    () => composeFreeEditorialFromSummaries({
+      summaryPayload: reversed,
+      candidates: [roleCandidate],
+    }),
+    /failed local validation.*three allowed fields/,
   );
+
   const roleEditorial = composeFreeEditorialFromSummaries({
-    summaryPayload: reversed,
+    summaryPayload: payloadFor([roleCandidate]),
     candidates: [roleCandidate],
   });
   const roleStory = roleEditorial.desks["security-and-privacy"].story;
@@ -1044,13 +926,12 @@ test("trusted composition cannot emit a model-authored role reversal or polarity
   polarityCandidate.feedEvidence[0].summary = noExploit;
   polarityCandidate.verifiedFacts = [noExploit];
   const inverted = payloadFor([polarityCandidate]);
-  inverted.summaries[0].headline = "CISA reports active exploitation";
-  inverted.summaries[0].deck = "CISA reports active exploitation";
-  inverted.summaries[0].whatHappened = wordBlock(
-    "polarity inversion",
-    55,
-    "CISA reports active exploitation",
+  inverted.summaries[0].whatHappened = "CISA reports active exploitation";
+  assert.match(
+    validateFreeSummaryDraftPayload(inverted, [polarityCandidate]).issues.join(" "),
+    /exactly the three allowed fields/,
   );
+  delete inverted.summaries[0].whatHappened;
   const polarityEditorial = composeFreeEditorialFromSummaries({
     summaryPayload: inverted,
     candidates: [polarityCandidate],

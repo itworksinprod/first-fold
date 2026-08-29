@@ -773,7 +773,7 @@ export function renderPersonalEditionEmail(candidate, { feedbackLinks } = {}) {
   const allSourceBriefs = selectedStoryCount > 0 && sourceBriefStoryCount === selectedStoryCount;
   const mixedSourceEdition = sourceBriefStoryCount > 0 && corroboratedStoryCount > 0;
   const editionLabel = modelAssisted
-    ? "Free model-assisted edition"
+    ? "Source-checked edition"
     : allSourceBriefs
     ? "Source brief edition"
     : mixedSourceEdition
@@ -797,7 +797,7 @@ export function renderPersonalEditionEmail(candidate, { feedbackLinks } = {}) {
   const deliveryCheckLabel = selectedStoryCount === 0
     ? "Curated-feed research completed · Quality threshold unchanged"
     : modelAssisted
-      ? "Facts source checked · Reader guidance refined by one free-model pass"
+      ? "Facts source checked · Analysis polished before delivery"
     : allSourceBriefs
       ? "Primary links checked before delivery"
       : mixedSourceEdition

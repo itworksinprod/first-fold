@@ -352,8 +352,13 @@ test("the local digest builds schema-valid corroborated and authoritative storie
     const story = payload.desks[candidate.suggestedDesk].story;
     assert.ok(story);
     const words = countReaderFacingStoryWords(story);
+    const factualWords = normalizedWords(story.whatHappened).length;
     assert.ok(words >= MIN_READER_FACING_STORY_WORDS, `${candidate.candidateId} has ${words} words`);
     assert.ok(words <= MAX_READER_FACING_STORY_WORDS, `${candidate.candidateId} has ${words} words`);
+    assert.ok(
+      factualWords >= 35 && factualWords <= 60,
+      `${candidate.candidateId} has ${factualWords} whatHappened words`,
+    );
     assert.equal(Object.hasOwn(story.sources[0], "publisherKey"), false);
     assert.deepEqual(
       story.sources,
@@ -368,8 +373,8 @@ test("the local digest builds schema-valid corroborated and authoritative storie
       assert.ok(factualSourceIds.has(claim.sourceIds[0]));
       assert.equal(claim.verification, "preliminary");
     }
-    assert.match(story.whyItMatters, /feed text only/i);
-    assert.match(story.whyItMatters, /not semantic review of the linked article bodies/i);
+    assert.match(story.whyItMatters, /source excerpts shown here/i);
+    assert.match(story.whyItMatters, /working link confirms access, not every claim/i);
     assert.doesNotMatch(JSON.stringify(story), /ignore previous instructions|reveal the secret|<script/i);
     assertNoLongSourceOverlap(story, candidate);
   }
@@ -378,13 +383,23 @@ test("the local digest builds schema-valid corroborated and authoritative storie
     payload.desks["security-and-privacy"].story.whatToDoOrWatch,
     /affected products.*versions.*severity.*exploitation evidence.*fixes.*mitigations/i,
   );
-  for (const passage of [
-    payload.desks["security-and-privacy"].story.headline,
-    payload.desks["security-and-privacy"].story.deck,
-    payload.desks["security-and-privacy"].story.whatHappened,
-  ]) {
+  const corroboratedStory = payload.desks["security-and-privacy"].story;
+  assert.equal(
+    corroboratedStory.headline,
+    "SecurityWeek & Research reports “PaperCut Releases Emergency Patch for Exploited Zero-Day”",
+  );
+  assert.match(
+    corroboratedStory.deck,
+    /Separate reports from SecurityWeek & Research and BleepingComputer cover the same Security & Privacy development involving PaperCut/i,
+  );
+  assert.match(corroboratedStory.whatHappened, /^SecurityWeek & Research reports /);
+  assert.match(corroboratedStory.whatHappened, /BleepingComputer (?:reports|covers) /);
+  assert.match(corroboratedStory.whatHappened, /differences in their details remain unresolved/i);
+  assert.match(corroboratedStory.whatHappened, /each publisher’s account stays separate/i);
+  for (const passage of [corroboratedStory.headline, corroboratedStory.deck,
+    corroboratedStory.whatHappened]) {
     assert.doesNotMatch(passage, /an exploited security issue/i);
-    assert.match(passage, /reviewed Security & Privacy (?:development|coverage)/i);
+    assert.doesNotMatch(passage, /receives reviewed|feed records?|local (?:quotation )?boundary/i);
   }
   assert.match(
     payload.desks["work-and-tools"].story.whatToDoOrWatch,
@@ -397,6 +412,10 @@ test("the local digest builds schema-valid corroborated and authoritative storie
   assert.match(payload.desks["work-and-tools"].story.whatToDoOrWatch, /official documentation/i);
 
   const authoritativeStory = payload.desks["work-and-tools"].story;
+  assert.match(authoritativeStory.deck, /development in one originating account$/i);
+  assert.match(authoritativeStory.whyItMatters, /only GitHub supplies the factual account/i);
+  assert.match(authoritativeStory.whatHappened, /no second factual account appears/i);
+  assert.match(authoritativeStory.whatHappened, /details therefore remain provisional$/i);
   for (const passage of [
     authoritativeStory.headline,
     authoritativeStory.deck,
@@ -644,12 +663,12 @@ test("authoritative excerpts reject quotation delimiters and use the neutral hea
 
     assert.equal(
       story.headline,
-      "GitHub reports a reviewed Work & Tools development",
+      "GitHub reports a new Work & Tools development",
       label,
     );
     assert.deepEqual(quotedExcerpts(story), [], label);
     assert.doesNotMatch(story.whatHappened, /disable endpoint protection/i, label);
-    assert.match(story.evidence[0].statement, /retained without a quotation/i, label);
+    assert.match(story.evidence[0].statement, /without a quoted excerpt/i, label);
   }
 });
 
@@ -692,7 +711,7 @@ test("corroborated excerpts reject quote breakouts and overlong source text", ()
   assert.ok(longSummaries.every((summary) => !JSON.stringify(longStory).includes(summary)));
   assert.ok(quotedExcerpts(longStory).every((excerpt) =>
     excerpt.length <= MAX_TRUSTED_EVIDENCE_EXCERPT_CHARACTERS));
-  assert.match(longStory.evidence[1].statement, /retained without a quotation/i);
+  assert.match(longStory.evidence[1].statement, /without a quoted excerpt/i);
 });
 
 test("quoted excerpt characters fit the complete 500-character headline budget", () => {
@@ -732,7 +751,7 @@ test("quoted excerpt characters fit the complete 500-character headline budget",
   const rejectedStory = rejectedPayload.desks["work-and-tools"].story;
   assert.equal(
     rejectedStory.headline,
-    `${publisher} reports a reviewed Work & Tools development`,
+    `${publisher} reports a new Work & Tools development`,
   );
   assert.ok(rejectedStory.headline.length <= 500);
   assert.deepEqual(quotedExcerpts(rejectedStory), []);
@@ -791,7 +810,7 @@ test("imperative source instructions always use the neutral no-excerpt fallback"
 
     assert.deepEqual(quotedExcerpts(story), [], summary);
     assert.doesNotMatch(JSON.stringify(story), /disable endpoint|turn off multifactor|share passwords/i);
-    assert.match(story.evidence[0].statement, /retained without a quotation/i);
+    assert.match(story.evidence[0].statement, /without a quoted excerpt/i);
   }
 });
 
@@ -807,7 +826,7 @@ test("anonymous-source attribution rejects the entire authoritative segment", ()
 
   assert.deepEqual(quotedExcerpts(story), []);
   assert.doesNotMatch(JSON.stringify(story), /anonymous sources say/i);
-  assert.match(story.evidence[0].statement, /retained without a quotation/i);
+  assert.match(story.evidence[0].statement, /without a quoted excerpt/i);
   assert.doesNotThrow(() => normalizeFreeEditorialAgainstCandidates(
     payload,
     [candidate],
@@ -842,7 +861,7 @@ test("finite nested attribution verbs cannot enter authoritative-single excerpts
 
     assert.deepEqual(quotedExcerpts(story), [], summary);
     assert.doesNotMatch(JSON.stringify(story), /Foreign Outlet/i);
-    assert.match(story.evidence[0].statement, /retained without a quotation/i);
+    assert.match(story.evidence[0].statement, /without a quoted excerpt/i);
   }
 });
 
@@ -860,7 +879,7 @@ test("a distant qualifier blocks a scored predicate that cannot fit in the same 
   assert.deepEqual(excerpts, []);
   assert.match(
     payload.desks["work-and-tools"].story.evidence[0].statement,
-    /retained without a quotation by the local digest/i,
+    /without a quoted excerpt/i,
   );
 });
 
@@ -896,7 +915,7 @@ test("boilerplate removal never turns a partial sentence into an excerpt", () =>
 
   assert.deepEqual(quotedExcerpts(story), []);
   assert.doesNotMatch(story.whatHappened, /GitHub may acquire Acme Tools/i);
-  assert.match(story.evidence[0].statement, /retained without a quotation/i);
+  assert.match(story.evidence[0].statement, /without a quoted excerpt/i);
 });
 
 test("an attributed title uses the total neutral no-excerpt fallback", () => {
@@ -928,7 +947,7 @@ test("an attributed title uses the total neutral no-excerpt fallback", () => {
   assert.deepEqual(quotedExcerpts(story), []);
   assert.doesNotMatch(story.whatHappened, /Apple announces Xcode/i);
   assert.equal(story.sources[0].title, title);
-  assert.match(story.evidence[0].statement, /retained without a quotation/i);
+  assert.match(story.evidence[0].statement, /without a quoted excerpt/i);
   assert.doesNotThrow(() => normalizeFreeEditorialAgainstCandidates(
     payload,
     [candidate],

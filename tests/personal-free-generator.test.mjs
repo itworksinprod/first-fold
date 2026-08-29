@@ -19,7 +19,7 @@ import {
 } from "../scripts/automation/source-health.mjs";
 import { TRUSTED_EVIDENCE_DIGEST_MODE } from
   "../scripts/automation/free/evidence-digest.mjs";
-import { MODEL_ASSISTED_DIGEST_MODE } from
+import { FREE_SUMMARY_SUBJECT_TOKEN, MODEL_ASSISTED_DIGEST_MODE } from
   "../scripts/automation/free/summary-draft.mjs";
 import {
   PERSONAL_FREE_EVIDENCE_POLICY,
@@ -481,18 +481,17 @@ function boundedSummaryWords(prefix = "", count = 55) {
 
 function summaryPayloadForResearch(research) {
   return {
-    summaries: research.selectedCandidates.map((candidate) => {
-      const publisher = candidate.sources.find((source) =>
-        source.relationship === "originating").publisher;
-      return {
-        candidateId: candidate.candidateId,
-        headline: `${publisher} reports a reviewed security development`,
-        deck: `${publisher} reports a bounded update for readers`,
-        whatHappened: boundedSummaryWords(`${publisher} reports`),
-        whyItMatters: boundedSummaryWords(),
-        whatToDoOrWatch: boundedSummaryWords(),
-      };
-    }),
+    summaries: research.selectedCandidates.map((candidate) => ({
+      candidateId: candidate.candidateId,
+      whyItMatters:
+        `For teams evaluating ${FREE_SUMMARY_SUBJECT_TOKEN}, the practical consequence is whether this development changes workflow control, cost, or available options. ` +
+        "A cautious comparison can separate an immediately useful choice for the people who rely on it from a change that matters only after its real operating effects become clearer. " +
+        "The value depends on evidence that links the decision context to measurable everyday outcomes.",
+      whatToDoOrWatch:
+        "Watch for clearer scope, rollout details, explicit defaults, independent results, and support terms that would strengthen or weaken the case. " +
+        "Teams should compare those signals with current needs, test any change in a reversible setting, and preserve existing safeguards until the practical effect in day-to-day use is clear. " +
+        "Keep the first response narrow enough to reverse if those signals remain mixed.",
+    })),
   };
 }
 
