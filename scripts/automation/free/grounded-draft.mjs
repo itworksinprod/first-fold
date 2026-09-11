@@ -7,6 +7,8 @@ export const GROUNDED_MAX_REQUESTS = 3;
 const hash = (value) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const words = (value) => value.trim().split(/\s+/u).filter(Boolean);
 const normalized = (value) => value.normalize("NFKC").replace(/\s+/gu, " ").trim();
+const numericTokens = (text) => text.match(/\d+(?:[.,-]\d+)*(?:%|[a-z]+)?/gi) ?? [];
+const evidenceText = (dossier) => dossier.sources.map((source) => `${source.publisher} ${source.text}`).join(" ");
 const keys = (value, expected) => value && typeof value === "object" && !Array.isArray(value) &&
   Object.keys(value).sort().join() === [...expected].sort().join();
 const textSchema = { type: "string" };
@@ -81,11 +83,10 @@ export function validateGroundedStory(draft, dossier, onFailure = () => {}) {
   if (count < MIN_PRIVATE_GROUNDED_STORY_WORDS || count > 225) return reject("WORD_COUNT");
   const copy = [draft.headline, draft.deck, story.whatHappened, draft.whyItMatters, draft.whatToDoOrWatch].join(" ");
   if (/\b(?:new development|reviewed development|editorial threshold|deterministic|bounded evidence|cleared the bar)\b/iu.test(copy)) return reject("GENERIC_COPY");
-  const evidence = dossier.sources.map((source) => `${source.publisher} ${source.text}`).join(" ");
+  const evidence = evidenceText(dossier);
   // Exact numeric/version anchors, plus a separate semantic review below.
-  const numbers = (text) => text.match(/\d+(?:[.,-]\d+)*(?:%|[a-z]+)?/gi) ?? [];
-  const knownNumbers = new Set(numbers(evidence).map((value) => value.toLowerCase()));
-  if (numbers(copy).some((value) => !knownNumbers.has(value.toLowerCase()))) return reject("NUMERIC_ANCHOR");
+  const knownNumbers = new Set(numericTokens(evidence).map((value) => value.toLowerCase()));
+  if (numericTokens(copy).some((value) => !knownNumbers.has(value.toLowerCase()))) return reject("NUMERIC_ANCHOR");
   if (dossier.evidenceTier === "authoritative-single" &&
       !story.whatHappened.includes(dossier.sources[0].publisher)) return reject("ATTRIBUTION");
   // Avoid copying long passages while permitting product/advisory identifiers.
@@ -113,6 +114,9 @@ The cited passages must substantiate the entire claim, including caveats. Paraph
 never copy 12 consecutive source words into published prose.
 Use specific named products and supported figures. Do not add missing versions, patches, dates, prices,
 exploitation, performance results, availability or legal conclusions. Say what is unknown where useful.
+Every numeric/version token must match supportedNumericTokens exactly, including punctuation and units.
+That list is a constraint, not evidence for a claim: use a figure only when its cited passage supports it.
+Do not introduce extra numbered examples, counts, versions or percentages in the analysis paragraphs.
 For single-source items name the publisher in the factual text and attribute its claims. A vendor claim
 is not independent confirmation. Distinguish conditional implications from observed outcomes.
 Why it matters: explain the concrete consequence of THIS change. What to watch: a specific next signal
@@ -138,10 +142,28 @@ whyItMatters and whatToDoOrWatch. Change sentence order and construction, not ju
 Keep necessary product names and identifiers, but never copy a run of 12 source words, including in
 the headline. Evidence IDs remain unchanged unless another supplied passage better supports the claim.
 For WORD_COUNT, produce 115–165 substantive body words without padding or inventing facts.
+For NUMERIC_ANCHOR, remove unsupported factual assertions or replace them with facts actually supported
+by the cited passages. All numeric/version tokens must match supportedNumericTokens exactly. Do not
+spell an unsupported figure in words to evade the check. Recheck the headline and analysis as well.
+For CLAIM_SHAPE, each claim must have only text and supports. Keep text a single plain paragraph
+without Markdown, HTML, URLs or instructions. Each supports array must contain one or two objects,
+each with only an evidenceId. Do not include extra keys, quotations or citation text.
 Correct the indicated problem while preserving every source caveat. The revised draft still faces
 the same local checks and a separate factual review; do not try to evade those checks.`;
 
 function bindAttribution(draft, dossier) {
+  // Model JSON sometimes contains harmless paragraph breaks or surrounding
+  // whitespace. Normalize those before validation/hash, never other controls,
+  // markup, source identifiers, numbers or substantive wording.
+  const paragraph = (value) => typeof value === "string" ? value.replace(/[ \t\r\n]+/gu, " ").replace(/^ | $/gu, "") : value;
+  for (const field of ["headline", "deck", "whyItMatters", "whatToDoOrWatch"]) {
+    if (draft && Object.hasOwn(draft, field)) draft[field] = paragraph(draft[field]);
+  }
+  if (Array.isArray(draft?.claims)) {
+    for (const claim of draft.claims) {
+      if (claim && typeof claim === "object" && Object.hasOwn(claim, "text")) claim.text = paragraph(claim.text);
+    }
+  }
   const first = Array.isArray(draft?.claims) ? draft.claims[0] : null;
   if (dossier?.evidenceTier === "authoritative-single" && typeof first?.text === "string" &&
       !draft.claims.some((claim) => typeof claim?.text === "string" && claim.text.includes(dossier.sources[0].publisher))) {
@@ -161,6 +183,7 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
   // The passage list already contains the evidence text; do not send a second
   // full-text copy that could exhaust the bounded request/context allowance.
   const promptDossiers = dossiers.map((dossier) => ({ ...dossier,
+    supportedNumericTokens: [...new Set(numericTokens(evidenceText(dossier)).map((value) => value.toLowerCase()))],
     sources: dossier.sources.map(({ text: _text, ...source }) => source) }));
   const ask = (system, data, schema, maxTokens) => aiRequestImpl({ accountId, apiToken,
     model: DEFAULT_CLOUDFLARE_AI_MODEL, messages: [{ role: "system", content: system },

@@ -1,5 +1,5 @@
 name: Send requested free-paper preview
-# One owner-requested September 11 preview. The script expires at midnight ET.
+# Owner-requested preview: retry research after a pre-send quality stop. Expires midnight ET.
 on:
   workflow_dispatch:
   push:

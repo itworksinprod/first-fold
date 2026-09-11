@@ -174,3 +174,20 @@ test("revision only replaces a rejected draft and preserves an already valid dra
   assert.equal(result.editorial.desks["security-and-privacy"].story.headline, groundedDraft.headline);
   assert.equal(result.editorial.desks["ai-and-models"].story.headline, secondDraft.headline);
 });
+
+test("harmless JSON paragraph breaks normalize before validation and the final review hash", async () => {
+  const lineBreaks = structuredClone(groundedDraft);
+  lineBreaks.claims[0].text = ` \n${lineBreaks.claims[0].text.replace("The issue", "\nThe issue")}\t `;
+  let calls = 0;
+  const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
+    aiRequestImpl: async (options) => {
+      if (++calls === 1) {
+        assert.ok(Array.isArray(JSON.parse(options.messages[1].content).dossiers[0].supportedNumericTokens));
+        return response({ stories: [lineBreaks] });
+      }
+      assert.equal(JSON.parse(options.messages[1].content).drafts[0].draftSha256, hash(groundedDraft));
+      return response({ reviews: [review] });
+    } });
+  assert.equal(calls, 2);
+  assert.equal(result.editorial.desks["security-and-privacy"].story.whatHappened, groundedDraft.claims.map((claim) => claim.text).join(" "));
+});
