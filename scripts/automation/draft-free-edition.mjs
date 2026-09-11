@@ -2432,6 +2432,7 @@ async function draftFreeEditionCore({
   summarizeSelectedSlate = false,
   trustedEvidenceDigestOnly = false,
   groundedSummaries = false,
+  onFreeDiagnostic = () => {},
   maxResearchAttempts = 1,
   researchRetryBelowStoryCount = 0,
   lookbackHours = DEFAULT_FREE_LOOKBACK_HOURS,
@@ -2566,7 +2567,7 @@ async function draftFreeEditionCore({
     enrichArticles: groundedSummaries,
     ...(groundedSummaries ? { reviewNewsworthiness: createNewsworthinessReview({
       accountId, apiToken, aiRequestImpl, fetchImpl,
-      onDiagnostic: (event) => console.info(`::notice title=Free selection::${JSON.stringify(event)}`),
+      onDiagnostic: onFreeDiagnostic,
     }) } : {}),
     sources: feedSources,
     reportingWindow: scaffold.reportingWindow,
@@ -3026,7 +3027,7 @@ async function draftFreeEditionCore({
   if (groundedSummaries && candidates.length > 0) {
     const grounded = await synthesizeGroundedEditorial({ editorial, candidates,
       accountId, apiToken, aiRequestImpl, fetchImpl,
-      onDiagnostic: (event) => console.info(`::notice title=Free synthesis::${JSON.stringify(event)}`) });
+      onDiagnostic: onFreeDiagnostic });
     if (grounded) {
       editorial = grounded.editorial;
       inference = grounded.inference;

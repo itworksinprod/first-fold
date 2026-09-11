@@ -5,7 +5,7 @@ import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { validateCanonicalEdition } from "../scripts/edition-content.mjs";
+import { validateCanonicalEdition, countReaderFacingStoryWords } from "../scripts/edition-content.mjs";
 import { buildEditionDraft } from "../scripts/new-edition.mjs";
 import { assertPersonalEmailCandidate } from "../scripts/automation/personal-email.mjs";
 import { createEmptyPersonalStoryLedger } from "../scripts/automation/personal-story-ledger.mjs";
@@ -612,6 +612,16 @@ test("source-grounded personal summaries pass final canonical, source and email 
   assert.equal(candidate.provenance.personalFreeResearch.inference, "workers-ai");
   assert.equal(validateCanonicalEdition(candidate).valid, true);
   assert.doesNotThrow(() => assertPersonalEmailCandidate(candidate));
+  const concise = structuredClone(candidate);
+  const story = concise.desks["security-and-privacy"].story;
+  story.whyItMatters = story.whyItMatters.split(/\s+/).slice(0, 18).join(" ");
+  story.whatToDoOrWatch = story.whatToDoOrWatch.split(/\s+/).slice(0, 18).join(" ");
+  assert.ok(countReaderFacingStoryWords(story) >= 100 && countReaderFacingStoryWords(story) < 150);
+  assert.equal(validateCanonicalEdition(concise).valid, true);
+  assert.doesNotThrow(() => assertPersonalEmailCandidate(concise));
+  concise.status = "published";
+  concise.publication.publishedAt = concise.publication.publishAt;
+  assert.ok(validateCanonicalEdition(concise).issues.some((issue) => issue.includes("150–225")));
 });
 
 test("personal production preserves delivery when the bounded writer is unavailable", async (t) => {

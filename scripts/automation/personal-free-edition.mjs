@@ -672,6 +672,9 @@ async function generatePersonalFreeEditionWithHealth({
     summarizeSelectedSlate: false,
     trustedEvidenceDigestOnly: true,
     groundedSummaries: true,
+    onFreeDiagnostic: env.GITHUB_ACTIONS === "true"
+      ? (event) => console.info(`::notice title=Free newsroom::${JSON.stringify(event)}`)
+      : () => {},
     maxResearchAttempts: PERSONAL_FREE_MAX_RESEARCH_ATTEMPTS,
     researchRetryBelowStoryCount: PERSONAL_FREE_RETRY_BELOW_STORY_COUNT,
     lookbackHours: PERSONAL_FREE_LOOKBACK_HOURS,

@@ -1,5 +1,5 @@
 name: Check free paper quality (no email)
-# Live fixed-passage citation check; only safe annotations, never paper/source text.
+# Live concise-summary check; only safe annotations, never paper/source text.
 
 on:
   workflow_dispatch:

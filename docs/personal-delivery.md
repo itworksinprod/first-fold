@@ -137,6 +137,8 @@ At the matching 5:05 AM event on every day:
    locally owned. The edition mode `source-grounded-summary` means at least one
    story passed both writing checks; other stories may retain the baseline.
    This is a quality check, not proof of factual truth or independent reporting.
+   Checked private summaries may be 100–225 body words; public editions and the
+   unreviewed local fallback retain their existing 150–225-word contract.
 8. Each selected story receives a trusted validation receipt containing its total score,
    five component scores, required threshold, evidence tier, and factual source
    and publisher counts. The email renderer recomputes and validates that receipt

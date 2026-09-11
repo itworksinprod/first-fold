@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { countReaderFacingStoryWords } from "../../edition-content.mjs";
+import { countReaderFacingStoryWords, MIN_PRIVATE_GROUNDED_STORY_WORDS } from "../../edition-content.mjs";
 import { DEFAULT_CLOUDFLARE_AI_MODEL, requestWorkersAiEditorial } from "./workers-ai.mjs";
 
 export const GROUNDED_DIGEST_MODE = "source-grounded-summary";
@@ -75,7 +75,7 @@ export function validateGroundedStory(draft, dossier, onFailure = () => {}) {
   if (dossier.evidenceTier === "corroborated" && cited.size < 2) return reject("CORROBORATION");
   const story = { ...draft, whatHappened: draft.claims.map((claim) => claim.text).join(" ") };
   const count = countReaderFacingStoryWords(story);
-  if (count < 150 || count > 225) return reject("WORD_COUNT");
+  if (count < MIN_PRIVATE_GROUNDED_STORY_WORDS || count > 225) return reject("WORD_COUNT");
   const copy = [draft.headline, draft.deck, story.whatHappened, draft.whyItMatters, draft.whatToDoOrWatch].join(" ");
   if (/\b(?:new development|reviewed development|editorial threshold|deterministic|bounded evidence|cleared the bar)\b/iu.test(copy)) return reject("GENERIC_COPY");
   const evidence = dossier.sources.map((source) => source.text).join(" ");
@@ -100,10 +100,10 @@ These stories have already passed editorial selection. Write ONE story for EVERY
 A primary-source announcement is sufficient to summarize what that publisher announced. Lack of
 independent reporting does NOT prevent a useful attributed summary. Do not return an empty stories array.
 Write concrete news: who did what, the actual change, affected product, and why a reader should care.
-Return JSON matching the schema. 150–225 body words per story across claims.text,
-whyItMatters and whatToDoOrWatch (headline/deck do NOT count); aim for 180. No filler, policy explanations or vague development headlines.
-Write two factual claims of 35–45 words each, a whyItMatters paragraph of 50–60 words and a
-whatToDoOrWatch paragraph of 40–50 words. This gives a concise, substantive 160–200 word body.
+Return JSON matching the schema. 100–225 body words per story across claims.text,
+whyItMatters and whatToDoOrWatch (headline/deck do NOT count); aim for 150. No filler, policy explanations or vague development headlines.
+Write two factual claims of 25–35 words each, a whyItMatters paragraph of 35–50 words and a
+whatToDoOrWatch paragraph of 30–45 words. This gives a concise, substantive 115–165 word body.
 Each claim must cite one or two supplied evidenceId values (such as S1P2) in supports.
 These IDs identify exact publisher passages already stored locally. Do not write or invent quotes.
 The cited passages must substantiate the entire claim, including caveats. Paraphrase the facts;
@@ -159,7 +159,9 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
       const dossier = dossiers.find((value) => value.candidateId === draft?.candidateId);
       return dossier && validateGroundedStory(draft, dossier, (code) => rejectionCodes.push(code));
     });
-    onDiagnostic({ stage: "local-evidence-check", submitted: drafts.length, accepted: valid.length, rejectionCodes });
+    onDiagnostic({ stage: "local-evidence-check", submitted: drafts.length, accepted: valid.length, rejectionCodes,
+      wordCounts: drafts.map((draft) => countReaderFacingStoryWords({ ...draft,
+        whatHappened: Array.isArray(draft?.claims) ? draft.claims.map((claim) => claim?.text ?? "").join(" ") : "" })) });
     if (!valid.length) return null;
     const checked = await ask(REVIEW_PROMPT, { dossiers: promptDossiers,
       drafts: valid.map((draft) => ({ draftSha256: hash(draft), draft })) }, GROUNDED_REVIEW_SCHEMA, 800);

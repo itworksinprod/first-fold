@@ -20,6 +20,7 @@ const PIPELINE = [
 ];
 
 export const MIN_READER_FACING_STORY_WORDS = 150;
+export const MIN_PRIVATE_GROUNDED_STORY_WORDS = 100;
 export const MAX_READER_FACING_STORY_WORDS = 225;
 
 function isObject(value) {
@@ -175,11 +176,18 @@ export function validateCanonicalEdition(edition) {
     }
 
     const readerWords = countReaderFacingStoryWords(story);
+    const freeResearch = edition.provenance?.personalFreeResearch ?? edition.provenance?.freePilot;
+    const privateGroundedBrief = edition.status === "validated" && edition.publication?.publishedAt === null &&
+      freeResearch?.draftingMode === "source-grounded-summary" && freeResearch?.inference === "workers-ai" &&
+      freeResearch?.provider === "cloudflare-workers-ai" &&
+      story.evidence?.length > 0 && story.evidence.every((claim) =>
+        typeof claim.id === "string" && claim.id.startsWith(`${story.id}-grounded-`));
+    const minimumWords = privateGroundedBrief ? MIN_PRIVATE_GROUNDED_STORY_WORDS : MIN_READER_FACING_STORY_WORDS;
     if (
-      readerWords < MIN_READER_FACING_STORY_WORDS ||
+      readerWords < minimumWords ||
       readerWords > MAX_READER_FACING_STORY_WORDS
     ) {
-      issues.push(`Story ${story.id} must contain 150–225 reader-facing words.`);
+      issues.push(`Story ${story.id} must contain ${minimumWords}–225 reader-facing words.`);
     }
 
     if (story.status === "material-update") {
