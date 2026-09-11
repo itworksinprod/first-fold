@@ -3,11 +3,11 @@
 The Personal Morning Paper is the repository's only automatically researched
 edition. At **5:05 AM `America/New_York` every calendar day, including
 weekends**, Cloudflare dispatches one owner-only GitHub Actions job. That job
-reads current items from the curated feed catalog, deterministically selects the
-qualifying slate, builds each factual brief locally from its exact reviewed feed
-evidence, and gives the fixed Cloudflare Workers AI model
-`@cf/meta/llama-3.3-70b-instruct-fp8-fast` one optional chance to refine only the
-non-factual reader guidance. It validates the result and sends it to one email
+reads current items from the curated feed catalog and up to 24 shortlisted
+publisher articles per research pass. The fixed free-tier Cloudflare model
+`@cf/meta/llama-3.3-70b-instruct-fp8-fast` gets at most three calls per edition:
+assess importance/usefulness, write specific source-grounded summaries, and
+check those summaries against the evidence. It validates the result and sends it to one email
 address through Resend. The delivered paper adapts to
 the number of stories that clear the unchanged editorial gates: regular with
 two to four stories, slim with one, or quiet with zero.
@@ -24,12 +24,26 @@ succeeded end to end.
 
 ## Hard boundary
 
+Keep the Cloudflare account on **Workers Free** to enforce zero inference
+spending. Workers AI includes a daily free allowance; on Free, exhaustion rejects
+calls and this pipeline keeps its local fallback. A Workers Paid account can
+incur overages from account-wide use, so request caps alone are not a billing
+guarantee. No code here enables a paid plan or calls OpenAI.
+
+The owner-only **Check free paper quality (no email)** workflow performs live
+research, writing, evidence review and rendering using the existing credentials.
+It does not send mail, change the repeat ledger, publish a paper, or archive
+article text. Public logs contain only stage/status/count diagnostics. It uses
+an isolated empty test ledger, so it is not a replay of personal repeat filtering.
+It can be started manually and also runs when its own workflow file changes on
+trusted `main`, providing a live integration check for its initial rollout.
+
 | Property | Personal Morning Paper |
 | --- | --- |
 | Schedule | 5:05 AM `America/New_York` every day, including weekends |
 | Reporting window | The 72 elapsed hours ending at 5:00 AM New York time on the edition date; start inclusive and end exclusive |
-| Discovery | Live entries from the repository's curated, allowlisted feeds; no general web search |
-| Drafting | Trusted local factual brief plus at most one JSON-capable Workers AI request that may replace only “why it matters” and “what to watch”; the complete local brief is the fallback |
+| Discovery | Live allowlisted feeds plus up to six shortlisted articles per desk per pass; no general web search or paid search API |
+| Drafting | Up to three fixed-model calls: editorial assessment, concrete factual writing, and a separate evidence-checking prompt. No model or transport retries. Rejected or unavailable synthesis retains the local baseline |
 | Completion rule | Deliver a regular edition with two to four validated stories, a slim edition with one, or a healthy quiet edition with zero; every edition keeps all four desks and no desk receives more than one story |
 | Recipient | Exactly the one address stored in `PERSONAL_PAPER_EMAIL` |
 | Sender | `First Fold <onboarding@resend.dev>`, Resend's self-only testing sender |
@@ -93,9 +107,16 @@ At the matching 5:05 AM event on every day:
    must stay explicitly attributed and cannot be presented as independently
    confirmed or critical. Independent allegations and critical claims still
    require independent evidence.
-6. When the first healthy research pass selects fewer than three stories, the job
-   makes exactly one bounded, feed-only research retry before any Workers AI
-   request. Both attempts use the same reporting window, cutoff, source
+6. Each research pass can read 24 shortlisted articles over pinned public DNS,
+   with reviewed exact hosts, bounded redirects, deadlines, and 600 KB compressed
+   and decompressed limits. Only article regions are extracted. The importance
+   and usefulness assessment uses one bounded model request shared across both
+   research attempts; any cached assessment is tied to an exact evidence digest.
+   It cannot rescue hard vetoes, weak source evidence, repeats or insufficient
+   topicality. Source strength, freshness, desk relevance, score weights, the
+   70-point threshold and originating-source component floors remain local.
+   If the first healthy pass selects fewer than three stories, the job makes one
+   bounded research retry. Both attempts use the same reporting window, cutoff, source
    allowlist, and editorial rules. The retry replaces the first snapshot only
    when its deterministic selected slate contains more qualifying stories; the
    job never merges candidates or feed state across attempts. A failed initial
@@ -105,16 +126,17 @@ At the matching 5:05 AM event on every day:
    with two to four stories, a slim edition with one story, or a deterministic
    all-quiet edition with zero. A zero-story edition skips Workers AI and states
    how many reviewed feeds completed plus why nothing cleared the unchanged
-   threshold. For one or more stories, trusted local code writes the headline,
-   deck, “what happened,” source list, evidence mapping, score, timing, and desk
-   from the bounded selected dossiers. The fixed Workers AI model receives only
-   that bounded feed evidence in one edition-wide request. After strict local
-   validation, only its “why it matters” and “what to watch” guidance can replace
-   the corresponding local fields. It cannot change facts, identity, sources,
-   URLs, evidence, rank, timing, or desk. If any summary in the batch is missing,
-   malformed, overly specific, attributed, unsafe, or outside the final word
-   range—or the free provider is unavailable—the whole edition keeps the local
-   digest. Stories are never mixed across model and fallback provenance.
+   threshold. For one or more stories, local code builds a validated baseline.
+   The writer can replace headline, deck, factual summary, implications and
+   watch items. Each factual claim must cite an existing factual source and an
+   exact supporting evidence quote. Local checks enforce length, numeric/version
+   anchors, attribution, originality and safe text; a separate model prompt then
+   checks every draft's factual support, caveats, attribution and reader value.
+   Only explicitly approved exact draft hashes are adopted, independently per
+   story. Source metadata, timestamps, desks, event identities and scores are
+   locally owned. The edition mode `source-grounded-summary` means at least one
+   story passed both writing checks; other stories may retain the baseline.
+   This is a quality check, not proof of factual truth or independent reporting.
 8. Each selected story receives a trusted validation receipt containing its total score,
    five component scores, required threshold, evidence tier, and factual source
    and publisher counts. The email renderer recomputes and validates that receipt
@@ -462,11 +484,11 @@ before changing plans or models.
 The automatic workflow fixes the model to `@cf/meta/llama-3.3-70b-instruct-fp8-fast`; there is no
 model override. It is a Meta Llama model hosted by Cloudflare Workers AI and
 does not use an OpenAI API key or OpenAI API billing account.
-One edition permits at most one semantic model request, caps its output at 3,000
-tokens, and caps the serialized request at 100 KB. These are capacity
-guards, not permission to spend beyond the free allocation. The optional second
-research pass is feed-only, occurs before inference, and does not add a Workers
-AI request.
+One edition permits at most three model requests: editorial assessment (2,000
+output tokens / 65 KB request), writing (4,000 tokens / 70 KB), and checking
+(800 tokens / 70 KB). Each has one attempt and a 90-second timeout. The optional
+second research pass shares the same one-call assessment budget. These are
+capacity guards, not permission to spend beyond the free allocation.
 
 Keep Resend on a free plan appropriate for one daily self-only message and keep
 the repository public if relying on public-repository GitHub Actions usage.

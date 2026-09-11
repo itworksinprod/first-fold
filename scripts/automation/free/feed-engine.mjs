@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
+import { extractArticleEvidence, enrichShortlist } from "./article-evidence.mjs";
 import { lookup as dnsLookup } from "node:dns/promises";
 import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
+import { gunzipSync, inflateSync, brotliDecompressSync } from "node:zlib";
 import { isPublicNetworkAddress } from "../newsroom-qa.mjs";
 import {
   assertPersonalStoryLedgerFingerprintKey,
@@ -215,6 +217,7 @@ const DESK_TERMS = {
 // summary before a prior is allowed to influence classification.
 const MINIMUM_STRONG_DESK_TERM_WEIGHT = 5;
 const PROMOTIONAL_TITLE_PATTERNS = [
+  /\b(?:get|buy|save|subscribe)\b[^.!?]{0,100}\b\d+(?:\.\d+)?\s*%\s+off\b/i,
   /\b(?:buying|shopping|gift) guide\b/i,
   /\b(?:coupon|coupons|promo code|promotional offer|limited[- ]time offer|affiliate links?)\b/i,
   /\b(?:price drop|shop now|buy now|save \$|black friday|cyber monday)\b/i,
@@ -796,7 +799,7 @@ function pinnedGet(url, options) {
         return;
       }
       const encoding = String(headerValue(response.headers, "content-encoding") ?? "identity").toLowerCase();
-      if (encoding !== "identity") {
+      if (encoding !== "identity" && !(options.allowCompression && ["gzip", "deflate", "br"].includes(encoding))) {
         response.destroy();
         finish(() => reject(new FeedError("ENCODING_UNSUPPORTED", "Compressed feed responses are not accepted.")));
         return;
@@ -815,7 +818,7 @@ function pinnedGet(url, options) {
         finish(() => resolve({
           status,
           headers: response.headers,
-          body: Buffer.concat(chunks).toString("utf8"),
+          body: encoding === "identity" ? Buffer.concat(chunks).toString("utf8") : Buffer.concat(chunks),
           byteLength: bytes,
         }));
       });
@@ -855,6 +858,27 @@ async function readResponseBody(response, maxBytes) {
 }
 
 export async function fetchFeedSource(source, options = {}) {
+  const allowedTypes = source.format === "xml"
+    ? new Set(["application/atom+xml", "application/rss+xml", "application/xml", "text/xml"])
+    : new Set(["application/feed+json", "application/json"]);
+  return fetchReviewedText(source, options, allowedTypes);
+}
+
+// Article requests inherit the feed transport's public-DNS pinning, HTTPS,
+// redirect-host, timeout and body limits. No URLs supplied by a model are used.
+export async function fetchReviewedArticle(item, options = {}) {
+  const reviewed = FREE_FEED_SOURCES.find((source) =>
+    source.publisherKey === item.publisherKey &&
+    source.itemHosts.includes(new URL(item.url).hostname));
+  if (!reviewed) throw new Error("Article is not on the reviewed source manifest.");
+  const response = await fetchReviewedText({
+    ...reviewed, url: item.url, feedHosts: reviewed.itemHosts,
+  }, { ...options, maxBytes: 600_000, maxRedirects: 1 },
+  new Set(["text/html", "application/xhtml+xml"]), true);
+  return extractArticleEvidence(response.body);
+}
+
+async function fetchReviewedText(source, options, allowedTypes, allowCompression = false) {
   validateSource(source);
   const timeoutMs = options.timeoutMs ?? DEFAULT_FEED_TIMEOUT_MS;
   const maxBytes = options.maxBytes ?? DEFAULT_MAX_FEED_BYTES;
@@ -878,6 +902,7 @@ export async function fetchFeedSource(source, options = {}) {
         hostname: normalizeHostname(current.hostname),
         addresses,
         signal: controller.signal,
+        allowCompression,
       }), timeoutMs, () => controller.abort());
     } catch (error) {
       if (error instanceof FeedError) throw error;
@@ -901,17 +926,27 @@ export async function fetchFeedSource(source, options = {}) {
     }
     if (status < 200 || status >= 300) throw new FeedError("HTTP_STATUS", `Feed returned HTTP ${status}.`);
     const contentEncoding = String(headerValue(response.headers, "content-encoding") ?? "identity").toLowerCase();
-    if (contentEncoding !== "identity") {
+    if (contentEncoding !== "identity" && !allowCompression) {
       throw new FeedError("ENCODING_UNSUPPORTED", "Compressed feed responses are not accepted.");
     }
-    const body = await readResponseBody(response, maxBytes);
+    let body;
+    if (contentEncoding !== "identity") {
+      const decompress = { gzip: gunzipSync, deflate: inflateSync, br: brotliDecompressSync }[contentEncoding];
+      if (!decompress || !(response.body instanceof Uint8Array) || response.body.byteLength > maxBytes) {
+        throw new FeedError("ENCODING_UNSUPPORTED", "Unsupported article encoding.");
+      }
+      try {
+        body = decompress(response.body, { maxOutputLength: maxBytes }).toString("utf8");
+      } catch {
+        throw new FeedError("BODY_TOO_LARGE", "Article decompression failed within its size limit.");
+      }
+    } else {
+      body = await readResponseBody(response, maxBytes);
+    }
     const contentType = String(headerValue(response.headers, "content-type") ?? "")
       .split(";", 1)[0]
       .trim()
       .toLowerCase();
-    const allowedTypes = source.format === "xml"
-      ? new Set(["application/atom+xml", "application/rss+xml", "application/xml", "text/xml"])
-      : new Set(["application/feed+json", "application/json"]);
     if (!allowedTypes.has(contentType)) {
       throw new FeedError("CONTENT_TYPE_INVALID", `Feed returned unsupported content type ${contentType || "(missing)"}.`);
     }
@@ -2555,14 +2590,41 @@ function containsTerm(text, term) {
 }
 
 function termScore(text, terms, multiplier = 1) {
-  return terms.reduce((sum, [term, weight]) => sum + (containsTerm(text, term) ? weight * multiplier : 0), 0);
+  return terms.reduce((sum, [term, weight]) => sum + (containsRankingTerm(text, term) ? weight * multiplier : 0), 0);
 }
 
 function matchedStrongDeskTerms(text, terms) {
   return terms
     .filter(([, weight]) => weight >= MINIMUM_STRONG_DESK_TERM_WEIGHT)
-    .filter(([term]) => containsTerm(text, term))
+    .filter(([term]) => containsRankingTerm(text, term))
     .map(([term]) => term);
+}
+
+// Inflection is not a new editorial signal. Count a concept once, whether a
+// publisher says "launch" or "launched", "developer" or "developers". Keep
+// event matching on its stricter, separate identity rules.
+const RANKING_INFLECTIONS = Object.freeze({
+  launch: ["launches", "launched", "launching"],
+  release: ["releases", "released", "releasing"],
+  update: ["updates", "updated", "updating"],
+  upgrade: ["upgrades", "upgraded", "upgrading"],
+  patch: ["patches", "patched", "patching"],
+  fix: ["fixes", "fixed", "fixing"],
+  change: ["changes", "changed", "changing"],
+  migrate: ["migrates", "migrated", "migrating"],
+  vulnerability: ["vulnerabilities"], advisory: ["advisories"],
+  developer: ["developers"], administrator: ["administrators"],
+  user: ["users"], customer: ["customers"], mitigation: ["mitigations"],
+  model: ["models"], "language model": ["language models"],
+  "foundation model": ["foundation models"], "ai model": ["ai models"],
+  tool: ["tools"], "developer tool": ["developer tools"],
+  workflow: ["workflows"], agent: ["agents"], benchmark: ["benchmarks"],
+  regulation: ["regulations"], lawsuit: ["lawsuits"], layoff: ["layoffs"],
+  breach: ["breaches", "breached"], outage: ["outages"], deadline: ["deadlines"],
+  chip: ["chips"], semiconductor: ["semiconductors"], "data center": ["data centers"],
+});
+function containsRankingTerm(text, term) {
+  return [term, ...(RANKING_INFLECTIONS[term] ?? [])].some((form) => containsTerm(text, form));
 }
 
 function rejectionReason(code, message) {
@@ -2705,7 +2767,7 @@ function deskClassification(items) {
 }
 
 function countTerms(text, terms) {
-  return terms.filter((term) => containsTerm(text, term)).length;
+  return terms.filter((term) => containsRankingTerm(text, term)).length;
 }
 
 function freshnessScore(group, reportingWindow) {
@@ -2851,6 +2913,7 @@ function groupToCandidate(group, reportingWindow) {
       publisher: item.publisher,
       title: item.title,
       summary: item.summary,
+      articleExcerpt: item.articleExcerpt ?? "",
       categories: item.categories.slice(0, 12),
       publishedAt: item.publishedAt,
     });
@@ -3390,7 +3453,16 @@ export async function collectFreeResearchSnapshot(options = {}) {
   // The production entry point always uses the reviewed, checked-in manifest.
   // Tests can exercise custom fixtures through ingestCuratedFeeds directly.
   const ingestion = await ingestCuratedFeeds({ ...runtimeOptions, sources: FREE_FEED_SOURCES });
-  const assessments = assessFeedCandidates({
+  if (options.enrichArticles === true) {
+    ingestion.items = await enrichShortlist(ingestion.items, {
+      assess: (items) => assessFeedCandidates({ ...options, items,
+        reportingWindow: ingestion.reportingWindow, evidencePolicy: normalizedEvidencePolicy }),
+      fetchArticle: (item) => fetchReviewedArticle(item, {
+        requestImpl: options.requestImpl, lookupImpl: options.lookupImpl,
+      }),
+    });
+  }
+  let assessments = assessFeedCandidates({
     items: ingestion.items,
     reportingWindow: ingestion.reportingWindow,
     recentArchive: options.recentArchive,
@@ -3400,6 +3472,9 @@ export async function collectFreeResearchSnapshot(options = {}) {
     minimumAuthoritativeScore: options.minimumAuthoritativeScore,
     evidencePolicy: normalizedEvidencePolicy,
   });
+  if (options.enrichArticles === true && typeof options.reviewNewsworthiness === "function") {
+    assessments = await options.reviewNewsworthiness(assessments);
+  }
   const rankedCandidates = sortRankedCandidates(assessments
     .filter((assessment) => assessment.decision === "accepted")
     .map((assessment) => assessment.candidate));

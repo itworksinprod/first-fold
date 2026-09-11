@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { GROUNDED_DIGEST_MODE, synthesizeGroundedEditorial } from "./free/grounded-draft.mjs";
+import { createNewsworthinessReview } from "./free/newsworthiness.mjs";
 import {
   MAX_READER_FACING_STORY_WORDS,
   MIN_READER_FACING_STORY_WORDS,
@@ -66,6 +68,7 @@ const FREE_RESEARCH_RETRY_OUTCOMES = Object.freeze([
 ]);
 
 const FREE_DRAFTING_MODES = Object.freeze([
+  GROUNDED_DIGEST_MODE,
   "model",
   MODEL_ASSISTED_DIGEST_MODE,
   "trusted-authoritative-source-alert",
@@ -564,6 +567,7 @@ function compactCandidate(candidate, index) {
         publisher: boundedText(evidence.publisher, 160, `${label} publisher`),
         title: boundedText(evidence.title, 300, `${label} title`),
         summary: boundedText(evidence.summary ?? "", 1_200, `${label} summary`),
+        articleExcerpt: boundedText(evidence.articleExcerpt ?? "", 5_000, `${label} articleExcerpt`),
         categories: (Array.isArray(evidence.categories) ? evidence.categories : [])
           .slice(0, 12)
           .map((category, categoryIndex) =>
@@ -2318,6 +2322,7 @@ export function validateFreePilotProvenance(
           freePilot.responseId === "not-invoked" ||
           ![
             "model",
+            GROUNDED_DIGEST_MODE,
             MODEL_ASSISTED_DIGEST_MODE,
             "trusted-authoritative-source-alert",
           ].includes(freePilot.draftingMode)
@@ -2426,6 +2431,7 @@ async function draftFreeEditionCore({
   draftSelectedSlate = false,
   summarizeSelectedSlate = false,
   trustedEvidenceDigestOnly = false,
+  groundedSummaries = false,
   maxResearchAttempts = 1,
   researchRetryBelowStoryCount = 0,
   lookbackHours = DEFAULT_FREE_LOOKBACK_HOURS,
@@ -2481,6 +2487,9 @@ async function draftFreeEditionCore({
       "Free trustedEvidenceDigestOnly cannot be combined with Workers AI summary drafting.",
     );
   }
+  if (groundedSummaries && (!trustedEvidenceDigestOnly || maxModelRequests !== 3)) {
+    throw new Error("Grounded summaries require a validated digest baseline and three bounded model calls.");
+  }
   if (
     !Number.isInteger(minimumStoryCount) ||
     minimumStoryCount < 0 ||
@@ -2499,7 +2508,7 @@ async function draftFreeEditionCore({
   if (
     !Number.isInteger(maxModelRequests) ||
     maxModelRequests < (trustedEvidenceDigestOnly ? 0 : 1) ||
-    maxModelRequests > 2
+    maxModelRequests > (groundedSummaries ? 3 : 2)
   ) {
     throw new Error(trustedEvidenceDigestOnly
       ? "Free maxModelRequests must be 0, 1, or 2 in trusted digest-only mode."
@@ -2554,6 +2563,11 @@ async function draftFreeEditionCore({
   };
 
   const researchOptions = {
+    enrichArticles: groundedSummaries,
+    ...(groundedSummaries ? { reviewNewsworthiness: createNewsworthinessReview({
+      accountId, apiToken, aiRequestImpl, fetchImpl,
+      onDiagnostic: (event) => console.info(`Free selection: ${JSON.stringify(event)}`),
+    }) } : {}),
     sources: feedSources,
     reportingWindow: scaffold.reportingWindow,
     retrievedAt: generatedAt,
@@ -3009,6 +3023,16 @@ async function draftFreeEditionCore({
     }
   }
 
+  if (groundedSummaries && candidates.length > 0) {
+    const grounded = await synthesizeGroundedEditorial({ editorial, candidates,
+      accountId, apiToken, aiRequestImpl, fetchImpl,
+      onDiagnostic: (event) => console.info(`Free synthesis: ${JSON.stringify(event)}`) });
+    if (grounded) {
+      editorial = grounded.editorial;
+      inference = grounded.inference;
+      draftingMode = GROUNDED_DIGEST_MODE;
+    }
+  }
   editorial = applyTrustedQuietReasons(editorial, research);
   const selectedStoryCount = FREE_DESKS.filter((desk) =>
     isObject(editorial.desks?.[desk]?.story)).length;

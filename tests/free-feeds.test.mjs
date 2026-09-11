@@ -126,6 +126,16 @@ function matchingItem(title, publisherKey, suffix, {
   };
 }
 
+test("editorial scoring recognizes inflections once without changing event identity rules", () => {
+  const score = (title, summary) => assessFeedCandidates({ reportingWindow,
+    evidencePolicy: "authoritative-or-corroborated", items: [editorialItem({ suffix: "inflections",
+      title, summary, categories: ["AI"], deskPriors: { ai: 28 } })] })[0].candidate.ranking.components;
+  assert.deepEqual(score("Launch of an AI model release", "A developer update is required for a customer."),
+    score("Launched AI models released", "Developers updated systems required for customers."));
+  assert.deepEqual(score("Launch of an AI model release", "A developer update is required for a customer."),
+    score("Launch launched launches AI model models release released", "A developer developers update updated is required for a customer customers."));
+});
+
 test("the reviewed manifest includes expanded bounded AI and work coverage", () => {
   assert.equal(FREE_FEED_SOURCES.length, 46);
   assert.equal(FREE_FEED_SOURCES.filter((item) => item.relationship === "originating").length, 33);

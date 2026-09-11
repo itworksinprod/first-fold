@@ -10,6 +10,7 @@ import {
   TRUSTED_EVIDENCE_DIGEST_PROVIDER,
 } from "./free/evidence-digest.mjs";
 import { PERSONAL_STORY_LEDGER_SCHEMA_VERSION } from "./personal-story-ledger.mjs";
+import { DEFAULT_CLOUDFLARE_AI_MODEL, WORKERS_AI_PROVIDER } from "./free/workers-ai.mjs";
 
 export const RESEND_EMAIL_ENDPOINT = "https://api.resend.com/emails";
 export const PERSONAL_EMAIL_FROM = "First Fold <onboarding@resend.dev>";
@@ -23,13 +24,14 @@ const EXPECTED_PERSONAL_REPOSITORY = "itworksinprod/first-fold";
 const PERSONAL_RESEARCH_WORKFLOW = "personal-morning-paper";
 const PERSONAL_RESEARCH_METHOD = "curated-live-feeds";
 const PERSONAL_RESEARCH_EVIDENCE_POLICY = "authoritative-or-corroborated";
-const PERSONAL_RESEARCH_MAX_MODEL_REQUESTS = 0;
+const PERSONAL_RESEARCH_MAX_MODEL_REQUESTS = 3;
 const PERSONAL_RESEARCH_LOOKBACK_HOURS = 72;
 const PERSONAL_RESEARCH_MINIMUM_SCORE = 70;
 const PERSONAL_RESEARCH_MINIMUM_AUTHORITATIVE_SCORE = 70;
 const PERSONAL_RESEARCH_MAX_RESEARCH_ATTEMPTS = 2;
 const PERSONAL_RESEARCH_RETRY_BELOW_STORY_COUNT = 3;
 const PERSONAL_RESEARCH_DRAFTING_MODES = Object.freeze([
+  "source-grounded-summary",
   TRUSTED_EVIDENCE_DIGEST_MODE,
   "quiet",
 ]);
@@ -269,6 +271,11 @@ function hasPersonalResearchInferenceTuple(research, storyCount) {
       research.inference === "skipped-no-eligible-candidates" &&
       research.responseId === "not-invoked";
   }
+  if (research.draftingMode === "source-grounded-summary") {
+    return research.provider === WORKERS_AI_PROVIDER && research.model === DEFAULT_CLOUDFLARE_AI_MODEL &&
+      research.inference === "workers-ai" && typeof research.responseId === "string" &&
+      !["not-invoked", "local-digest"].includes(research.responseId);
+  }
   return research.provider === TRUSTED_EVIDENCE_DIGEST_PROVIDER &&
     research.model === TRUSTED_EVIDENCE_DIGEST_MODEL &&
     research.draftingMode === TRUSTED_EVIDENCE_DIGEST_MODE &&
@@ -507,7 +514,7 @@ export function assertPersonalEmailCandidate(candidate) {
     !inferenceIsValid ||
     !PERSONAL_RESEARCH_DRAFTING_MODES.includes(research.draftingMode) ||
     (selectedStoryCount === 0 && research.draftingMode !== "quiet") ||
-    (selectedStoryCount > 0 && research.draftingMode !== TRUSTED_EVIDENCE_DIGEST_MODE) ||
+    (selectedStoryCount > 0 && ![TRUSTED_EVIDENCE_DIGEST_MODE, "source-grounded-summary"].includes(research.draftingMode)) ||
     typeof research.responseId !== "string" ||
     !RESPONSE_ID_PATTERN.test(research.responseId) ||
     !/^[a-f0-9]{64}$/.test(research.feedSnapshotSha256 ?? "") ||
@@ -555,7 +562,8 @@ export function assertPersonalEmailCandidate(candidate) {
         ? research.priorLedgerEditionCount + 1
         : null
     ) ||
-    research.maxModelRequests !== PERSONAL_RESEARCH_MAX_MODEL_REQUESTS ||
+    !(research.maxModelRequests === PERSONAL_RESEARCH_MAX_MODEL_REQUESTS ||
+      (research.maxModelRequests === 0 && research.draftingMode !== "source-grounded-summary")) ||
     selectedStoryCount > DESKS.length ||
     !sourceCheck ||
     typeof sourceCheck !== "object" ||

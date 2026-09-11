@@ -49,7 +49,7 @@ export const PERSONAL_FREE_MODEL = DEFAULT_CLOUDFLARE_AI_MODEL;
 export const PERSONAL_FREE_FALLBACK_PROVIDER = TRUSTED_EVIDENCE_DIGEST_PROVIDER;
 export const PERSONAL_FREE_FALLBACK_MODEL = TRUSTED_EVIDENCE_DIGEST_MODEL;
 export const PERSONAL_FREE_EVIDENCE_POLICY = "authoritative-or-corroborated";
-export const PERSONAL_FREE_MAX_MODEL_REQUESTS = 0;
+export const PERSONAL_FREE_MAX_MODEL_REQUESTS = 3;
 export const PERSONAL_FREE_MAX_TOKENS = 3_000;
 export const PERSONAL_FREE_MAX_REQUEST_BYTES = 100_000;
 export const PERSONAL_FREE_AI_TIMEOUT_MS = 240_000;
@@ -63,6 +63,7 @@ export const PERSONAL_FREE_RETRY_BELOW_STORY_COUNT = 3;
 export const PERSONAL_FREE_GITHUB_OUTCOME_FLAG = "--github-actions-outcome";
 export const PERSONAL_FREE_RUN_MODES = Object.freeze(["on_time", "same_day_backfill"]);
 export const PERSONAL_FREE_DRAFTING_MODES = Object.freeze([
+  "source-grounded-summary",
   TRUSTED_EVIDENCE_DIGEST_MODE,
   "quiet",
 ]);
@@ -407,6 +408,11 @@ function hasPersonalFreeInferenceTuple(provenance, storyCount) {
       provenance.inference === "skipped-no-eligible-candidates" &&
       provenance.responseId === "not-invoked";
   }
+  if (provenance.draftingMode === "source-grounded-summary") {
+    return provenance.provider === PERSONAL_FREE_PROVIDER && provenance.model === PERSONAL_FREE_MODEL &&
+      provenance.inference === "workers-ai" && typeof provenance.responseId === "string" &&
+      !["not-invoked", "local-digest"].includes(provenance.responseId);
+  }
   return provenance.provider === TRUSTED_EVIDENCE_DIGEST_PROVIDER &&
     provenance.model === TRUSTED_EVIDENCE_DIGEST_MODEL &&
     provenance.draftingMode === TRUSTED_EVIDENCE_DIGEST_MODE &&
@@ -543,7 +549,7 @@ export function validatePersonalFreeCandidate(
     !inferenceIsValid ||
     !PERSONAL_FREE_DRAFTING_MODES.includes(research?.draftingMode) ||
     (stories.length === 0 && research?.draftingMode !== "quiet") ||
-    (stories.length > 0 && research?.draftingMode !== TRUSTED_EVIDENCE_DIGEST_MODE) ||
+    (stories.length > 0 && ![TRUSTED_EVIDENCE_DIGEST_MODE, "source-grounded-summary"].includes(research?.draftingMode)) ||
     !RESPONSE_ID_PATTERN.test(research?.responseId ?? "") ||
     !SHA256_PATTERN.test(research?.feedSnapshotSha256 ?? "") ||
     !SHA256_PATTERN.test(research?.requestSha256 ?? "") ||
@@ -665,6 +671,7 @@ async function generatePersonalFreeEditionWithHealth({
     draftSelectedSlate: true,
     summarizeSelectedSlate: false,
     trustedEvidenceDigestOnly: true,
+    groundedSummaries: true,
     maxResearchAttempts: PERSONAL_FREE_MAX_RESEARCH_ATTEMPTS,
     researchRetryBelowStoryCount: PERSONAL_FREE_RETRY_BELOW_STORY_COUNT,
     lookbackHours: PERSONAL_FREE_LOOKBACK_HOURS,

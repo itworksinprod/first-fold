@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { groundedDraft, groundedEvidence } from "./fixtures/grounded-summary.mjs";
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -580,7 +582,39 @@ test("private free generation fixes the zero-model deterministic evidence contra
   );
 });
 
-test("personal production creates a complete trusted digest without invoking AI", async (t) => {
+test("source-grounded personal summaries pass final canonical, source and email gates", async (t) => {
+  const projectRoot = await createProject(t);
+  const research = localDigestResearchFixture();
+  const dossier = research.candidates[0];
+  dossier.title = groundedEvidence.title;
+  dossier.sources[0] = { ...dossier.sources[0], id: groundedEvidence.sourceId,
+    title: groundedEvidence.title, publisher: groundedEvidence.publisher };
+  dossier.sources[1].publisher = groundedEvidence.publisher;
+  dossier.feedEvidence = [groundedEvidence];
+  let calls = 0;
+  const candidate = await generatePersonalFreeEdition({ editionDate: "2026-08-20", projectRoot,
+    env: automationEnv, now: GENERATED_AT, feedSources: FREE_FEED_SOURCES,
+    personalStoryLedger: createEmptyPersonalStoryLedger({ fingerprintKey: automationEnv.CLOUDFLARE_AI_API_TOKEN }),
+    researchImpl: async (options) => { assert.equal(options.enrichArticles, true); return research; },
+    aiRequestImpl: async () => ({ provider: PERSONAL_FREE_PROVIDER, model: PERSONAL_FREE_MODEL,
+      responseId: "grounded-fixture", requestSha256: "c".repeat(64), responseSha256: "d".repeat(64),
+      editorialPayload: ++calls === 1 ? { stories: [groundedDraft] } : { reviews: [{
+        candidateId: groundedDraft.candidateId,
+        draftSha256: createHash("sha256").update(JSON.stringify(groundedDraft)).digest("hex"),
+        factsSupported: true, attributionAccurate: true, analysisSupported: true, usefulAndSpecific: true,
+      }] } }),
+    sourceLookupImpl: async () => [{ address: "93.184.216.34" }],
+    sourceRequestImpl: async () => ({ status: 200, headers: {} }),
+  });
+  assert.equal(calls, 2);
+  assert.equal(candidate.desks["security-and-privacy"].story.headline, groundedDraft.headline);
+  assert.equal(candidate.provenance.personalFreeResearch.draftingMode, "source-grounded-summary");
+  assert.equal(candidate.provenance.personalFreeResearch.inference, "workers-ai");
+  assert.equal(validateCanonicalEdition(candidate).valid, true);
+  assert.doesNotThrow(() => assertPersonalEmailCandidate(candidate));
+});
+
+test("personal production preserves delivery when the bounded writer is unavailable", async (t) => {
   const projectRoot = await createProject(t);
   const research = localDigestResearchFixture();
   let aiCalls = 0;
@@ -596,14 +630,14 @@ test("personal production creates a complete trusted digest without invoking AI"
     researchImpl: async () => research,
     aiRequestImpl: async () => {
       aiCalls += 1;
-      throw new Error("Deterministic personal production must not invoke Workers AI.");
+      throw new Error("Free inference allowance exhausted.");
     },
     sourceLookupImpl: async () => [{ address: "93.184.216.34" }],
     sourceRequestImpl: async () => ({ status: 200, headers: {} }),
     draftFreeEditionImpl: async (options) => draftFreeEdition(options),
   });
 
-  assert.equal(aiCalls, 0);
+  assert.equal(aiCalls, 1);
   assert.equal(candidate.provenance.personalFreeResearch.provider, PERSONAL_FREE_FALLBACK_PROVIDER);
   assert.equal(candidate.provenance.personalFreeResearch.model, PERSONAL_FREE_FALLBACK_MODEL);
   assert.equal(
@@ -618,7 +652,7 @@ test("personal production creates a complete trusted digest without invoking AI"
     candidate.provenance.personalFreeResearch.responseId,
     "local-digest",
   );
-  assert.equal(candidate.provenance.personalFreeResearch.maxModelRequests, 0);
+  assert.equal(candidate.provenance.personalFreeResearch.maxModelRequests, 3);
   assert.match(candidate.provenance.personalFreeResearch.requestSha256, /^[a-f0-9]{64}$/);
   assert.match(candidate.provenance.personalFreeResearch.responseSha256, /^[a-f0-9]{64}$/);
   assert.equal(validatePersonalFreeCandidate(candidate, {
