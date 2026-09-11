@@ -128,8 +128,8 @@ At the matching 5:05 AM event on every day:
    how many reviewed feeds completed plus why nothing cleared the unchanged
    threshold. For one or more stories, local code builds a validated baseline.
    The writer can replace headline, deck, factual summary, implications and
-   watch items. Each factual claim must cite an existing factual source and an
-   exact supporting evidence quote. Local checks enforce length, numeric/version
+   watch items. Each factual claim must cite a locally assigned passage ID bound
+   to an exact factual source excerpt. Local checks enforce length, numeric/version
    anchors, attribution, originality and safe text; a separate model prompt then
    checks every draft's factual support, caveats, attribution and reader value.
    Only explicitly approved exact draft hashes are adopted, independently per

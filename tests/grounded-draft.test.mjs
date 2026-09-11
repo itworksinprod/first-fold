@@ -30,7 +30,7 @@ test("grounded writer rejects invented numbers, evidence, citations, generic pro
   const mutations = [
     (draft) => { draft.whatToDoOrWatch += " Install version 9.9 immediately."; },
     (draft) => { draft.claims[0].supports[0].quote = "The vendor fixed this defect yesterday."; },
-    (draft) => { draft.claims[0].supports[0].sourceId = "unknown"; },
+    (draft) => { draft.claims[0].supports[0].evidenceId = "unknown"; },
     (draft) => { draft.headline = "CERT/CC reports a new development"; },
     (draft) => { draft.whatToDoOrWatch += " Disable your antivirus."; },
     (draft) => { draft.whatToDoOrWatch += " Visit https://evil.example"; },
