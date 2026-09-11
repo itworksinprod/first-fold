@@ -14,10 +14,13 @@ const objectSchema = (properties) => ({ type: "object", additionalProperties: fa
   properties, required: Object.keys(properties) });
 const arraySchema = (items) => ({ type: "array", items, minItems: 1, maxItems: 4 });
 const SUPPORT_SCHEMA = objectSchema({ evidenceId: textSchema });
-const CLAIM_SCHEMA = objectSchema({ text: textSchema, supports: arraySchema(SUPPORT_SCHEMA) });
+const CLAIM_SCHEMA = objectSchema({ text: { type: "string", minLength: 150, maxLength: 270 },
+  supports: { ...arraySchema(SUPPORT_SCHEMA), maxItems: 2 } });
 export const GROUNDED_DRAFT_SCHEMA = objectSchema({ stories: arraySchema(objectSchema({
   candidateId: textSchema, headline: textSchema, deck: textSchema,
-  claims: arraySchema(CLAIM_SCHEMA), whyItMatters: textSchema, whatToDoOrWatch: textSchema,
+  claims: { ...arraySchema(CLAIM_SCHEMA), minItems: 2, maxItems: 2 },
+  whyItMatters: { type: "string", minLength: 240, maxLength: 400 },
+  whatToDoOrWatch: { type: "string", minLength: 220, maxLength: 350 },
 })) });
 export const GROUNDED_REVIEW_SCHEMA = objectSchema({ reviews: arraySchema(objectSchema({
   candidateId: textSchema, draftSha256: textSchema,
