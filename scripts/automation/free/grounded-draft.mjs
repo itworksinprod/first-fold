@@ -78,7 +78,7 @@ export function validateGroundedStory(draft, dossier, onFailure = () => {}) {
   if (count < MIN_PRIVATE_GROUNDED_STORY_WORDS || count > 225) return reject("WORD_COUNT");
   const copy = [draft.headline, draft.deck, story.whatHappened, draft.whyItMatters, draft.whatToDoOrWatch].join(" ");
   if (/\b(?:new development|reviewed development|editorial threshold|deterministic|bounded evidence|cleared the bar)\b/iu.test(copy)) return reject("GENERIC_COPY");
-  const evidence = dossier.sources.map((source) => source.text).join(" ");
+  const evidence = dossier.sources.map((source) => `${source.publisher} ${source.text}`).join(" ");
   // Exact numeric/version anchors, plus a separate semantic review below.
   const numbers = (text) => text.match(/\d+(?:[.,-]\d+)*(?:%|[a-z]+)?/gi) ?? [];
   const knownNumbers = new Set(numbers(evidence).map((value) => value.toLowerCase()));
@@ -152,8 +152,19 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
     const written = await ask(WRITER_PROMPT, { dossiers: promptDossiers }, writerSchema, 4_000);
     if (!keys(written.editorialPayload, ["stories"]) || !Array.isArray(written.editorialPayload.stories) ||
         written.editorialPayload.stories.length > 4) return null;
-    const drafts = written.editorialPayload.stories;
+    const drafts = structuredClone(written.editorialPayload.stories);
     if (new Set(drafts.map((draft) => draft?.candidateId)).size !== drafts.length) return null;
+    for (const draft of drafts) {
+      const dossier = dossiers.find((value) => value.candidateId === draft?.candidateId);
+      const first = Array.isArray(draft?.claims) ? draft.claims[0] : null;
+      if (dossier?.evidenceTier === "authoritative-single" && typeof first?.text === "string" &&
+          !draft.claims.some((claim) => typeof claim.text === "string" && claim.text.includes(dossier.sources[0].publisher))) {
+        // Bind attribution from trusted source metadata before the semantic
+        // reviewer sees and hashes the final prose. Channel-name abbreviations
+        // should not discard an otherwise useful factual summary.
+        first.text = `According to ${dossier.sources[0].publisher}, ${first.text}`;
+      }
+    }
     const rejectionCodes = [];
     const valid = drafts.filter((draft) => {
       const dossier = dossiers.find((value) => value.candidateId === draft?.candidateId);

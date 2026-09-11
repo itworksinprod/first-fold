@@ -180,7 +180,7 @@ export function validateCanonicalEdition(edition) {
     const privateGroundedBrief = edition.status === "validated" && edition.publication?.publishedAt === null &&
       freeResearch?.draftingMode === "source-grounded-summary" && freeResearch?.inference === "workers-ai" &&
       freeResearch?.provider === "cloudflare-workers-ai" &&
-      story.evidence?.length > 0 && story.evidence.every((claim) =>
+      Array.isArray(story.evidence) && story.evidence.length > 0 && story.evidence.every((claim) =>
         typeof claim.id === "string" && claim.id.startsWith(`${story.id}-grounded-`));
     const minimumWords = privateGroundedBrief ? MIN_PRIVATE_GROUNDED_STORY_WORDS : MIN_READER_FACING_STORY_WORDS;
     if (
