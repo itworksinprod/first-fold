@@ -1,4 +1,5 @@
 name: Check free paper quality (no email)
+# Reports only safe stage/count annotations; no paper or source text is published.
 
 on:
   workflow_dispatch:

@@ -2566,7 +2566,7 @@ async function draftFreeEditionCore({
     enrichArticles: groundedSummaries,
     ...(groundedSummaries ? { reviewNewsworthiness: createNewsworthinessReview({
       accountId, apiToken, aiRequestImpl, fetchImpl,
-      onDiagnostic: (event) => console.info(`Free selection: ${JSON.stringify(event)}`),
+      onDiagnostic: (event) => console.info(`::notice title=Free selection::${JSON.stringify(event)}`),
     }) } : {}),
     sources: feedSources,
     reportingWindow: scaffold.reportingWindow,
@@ -3026,7 +3026,7 @@ async function draftFreeEditionCore({
   if (groundedSummaries && candidates.length > 0) {
     const grounded = await synthesizeGroundedEditorial({ editorial, candidates,
       accountId, apiToken, aiRequestImpl, fetchImpl,
-      onDiagnostic: (event) => console.info(`Free synthesis: ${JSON.stringify(event)}`) });
+      onDiagnostic: (event) => console.info(`::notice title=Free synthesis::${JSON.stringify(event)}`) });
     if (grounded) {
       editorial = grounded.editorial;
       inference = grounded.inference;

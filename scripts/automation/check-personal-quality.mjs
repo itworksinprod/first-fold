@@ -23,11 +23,11 @@ try {
   assert.ok(rendered.html && rendered.text);
   const stories = Object.values(candidate.desks).filter((desk) => desk.story).length;
   const mode = candidate.provenance.personalFreeResearch.draftingMode;
-  console.info(JSON.stringify({ status: "validated-and-rendered", stories, mode,
-    emailSent: false, repeatHistory: "isolated-test-empty-ledger", maxModelRequests: 3 }));
+  console.info(`::notice title=Quality result::${JSON.stringify({ status: "validated-and-rendered", stories, mode,
+    emailSent: false, repeatHistory: "isolated-test-empty-ledger", maxModelRequests: 3 })}`);
   assert.ok(stories > 0 && mode === "source-grounded-summary", "No model-checked live summary survived.");
 } catch (error) {
   // Only stable codes/counts enter public workflow logs, never copy, URLs or tokens.
-  console.error(`Quality smoke test failed: ${/^[A-Z_]+$/.test(error?.code ?? "") ? error.code : "QUALITY_CHECK_FAILED"}`);
+  console.error(`::error title=Quality failure::${/^[A-Z_]+$/.test(error?.code ?? "") ? error.code : "QUALITY_CHECK_FAILED"}`);
   process.exitCode = 1;
 }

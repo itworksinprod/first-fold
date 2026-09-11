@@ -69,8 +69,10 @@ export function createNewsworthinessReview({ accountId, apiToken,
           decisions.set(digest(dossier), verdict);
         }
         onDiagnostic({ stage: "newsworthiness", reviewed: dossiers.length, acceptedAssessments: decisions.size });
-      } catch {
-        onDiagnostic({ stage: "newsworthiness-unavailable" });
+      } catch (error) {
+        onDiagnostic({ stage: "newsworthiness-unavailable",
+          code: /^[A-Z_]{1,64}$/.test(error?.code ?? "") ? error.code : "PROVIDER_OR_FORMAT_ERROR",
+          httpStatus: /^Cloudflare Workers AI request failed with HTTP (\d{3})\.$/.exec(error?.message ?? "")?.[1] ?? null });
       }
     }
     return assessments.map((entry) => {

@@ -48,41 +48,42 @@ function safeProse(value, max = 1_500) {
     !/\b(?:ignore (?:previous|prior)|system prompt|api key|access token|disable\s+(?:your\s+)?(?:security|antivirus|firewall)|run (?:this|the following) command)\b/iu.test(value);
 }
 
-export function validateGroundedStory(draft, dossier) {
+export function validateGroundedStory(draft, dossier, onFailure = () => {}) {
+  const reject = (code) => { onFailure(code); return false; };
   if (!keys(draft, ["candidateId", "headline", "deck", "claims", "whyItMatters", "whatToDoOrWatch"]) ||
       draft.candidateId !== dossier.candidateId || !safeProse(draft.headline, 180) ||
       !safeProse(draft.deck, 280) || !safeProse(draft.whyItMatters) || !safeProse(draft.whatToDoOrWatch) ||
-      !Array.isArray(draft.claims) || draft.claims.length < 2 || draft.claims.length > 4) return false;
+      !Array.isArray(draft.claims) || draft.claims.length < 2 || draft.claims.length > 4) return reject("SHAPE");
   const sourceById = new Map(dossier.sources.map((source) => [source.sourceId, source]));
   const cited = new Set();
   for (const claim of draft.claims) {
     if (!keys(claim, ["text", "supports"]) || !safeProse(claim.text, 700) ||
-        !Array.isArray(claim.supports) || claim.supports.length < 1 || claim.supports.length > 2) return false;
+        !Array.isArray(claim.supports) || claim.supports.length < 1 || claim.supports.length > 2) return reject("CLAIM_SHAPE");
     for (const support of claim.supports) {
       const source = sourceById.get(support?.sourceId);
       if (!keys(support, ["sourceId", "quote"]) || !source || !safeProse(support.quote, 650) ||
-          words(support.quote).length < 4 || !normalized(source.text).includes(normalized(support.quote))) return false;
+          words(support.quote).length < 4 || !normalized(source.text).includes(normalized(support.quote))) return reject("QUOTE_MISMATCH");
       cited.add(source.publisherKey);
     }
   }
-  if (dossier.evidenceTier === "corroborated" && cited.size < 2) return false;
+  if (dossier.evidenceTier === "corroborated" && cited.size < 2) return reject("CORROBORATION");
   const story = { ...draft, whatHappened: draft.claims.map((claim) => claim.text).join(" ") };
   const count = countReaderFacingStoryWords(story);
-  if (count < 150 || count > 225) return false;
+  if (count < 150 || count > 225) return reject("WORD_COUNT");
   const copy = [draft.headline, draft.deck, story.whatHappened, draft.whyItMatters, draft.whatToDoOrWatch].join(" ");
-  if (/\b(?:new development|reviewed development|editorial threshold|deterministic|bounded evidence|cleared the bar)\b/iu.test(copy)) return false;
+  if (/\b(?:new development|reviewed development|editorial threshold|deterministic|bounded evidence|cleared the bar)\b/iu.test(copy)) return reject("GENERIC_COPY");
   const evidence = dossier.sources.map((source) => source.text).join(" ");
   // Exact numeric/version anchors, plus a separate semantic review below.
   const numbers = (text) => text.match(/\d+(?:[.,-]\d+)*(?:%|[a-z]+)?/gi) ?? [];
   const knownNumbers = new Set(numbers(evidence).map((value) => value.toLowerCase()));
-  if (numbers(copy).some((value) => !knownNumbers.has(value.toLowerCase()))) return false;
+  if (numbers(copy).some((value) => !knownNumbers.has(value.toLowerCase()))) return reject("NUMERIC_ANCHOR");
   if (dossier.evidenceTier === "authoritative-single" &&
-      !story.whatHappened.includes(dossier.sources[0].publisher)) return false;
+      !story.whatHappened.includes(dossier.sources[0].publisher)) return reject("ATTRIBUTION");
   // Avoid copying long passages while permitting product/advisory identifiers.
   const sourceTokens = words(normalized(evidence).toLowerCase());
   const copyTokens = words(normalized(copy).toLowerCase());
   for (let i = 0; i <= copyTokens.length - 12; i++) {
-    if (sourceTokens.join(" ").includes(copyTokens.slice(i, i + 12).join(" "))) return false;
+    if (sourceTokens.join(" ").includes(copyTokens.slice(i, i + 12).join(" "))) return reject("ORIGINALITY");
   }
   return true;
 }
@@ -130,11 +131,12 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
         written.editorialPayload.stories.length > 4) return null;
     const drafts = written.editorialPayload.stories;
     if (new Set(drafts.map((draft) => draft?.candidateId)).size !== drafts.length) return null;
+    const rejectionCodes = [];
     const valid = drafts.filter((draft) => {
       const dossier = dossiers.find((value) => value.candidateId === draft?.candidateId);
-      return dossier && validateGroundedStory(draft, dossier);
+      return dossier && validateGroundedStory(draft, dossier, (code) => rejectionCodes.push(code));
     });
-    onDiagnostic({ stage: "local-evidence-check", submitted: drafts.length, accepted: valid.length });
+    onDiagnostic({ stage: "local-evidence-check", submitted: drafts.length, accepted: valid.length, rejectionCodes });
     if (!valid.length) return null;
     const checked = await ask(REVIEW_PROMPT, { dossiers,
       drafts: valid.map((draft) => ({ draftSha256: hash(draft), draft })) }, GROUNDED_REVIEW_SCHEMA, 800);
@@ -172,8 +174,10 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
     return { editorial: result, inference: { provider: written.provider, model: written.model,
       responseId: checked.responseId, requestSha256: hash([written.requestSha256, checked.requestSha256]),
       responseSha256: hash([written.responseSha256, checked.responseSha256]), kind: "workers-ai" } };
-  } catch {
-    onDiagnostic({ stage: "free-writer-unavailable" });
+  } catch (error) {
+    onDiagnostic({ stage: "free-writer-unavailable",
+      code: /^[A-Z_]{1,64}$/.test(error?.code ?? "") ? error.code : "PROVIDER_OR_FORMAT_ERROR",
+      httpStatus: /^Cloudflare Workers AI request failed with HTTP (\d{3})\.$/.exec(error?.message ?? "")?.[1] ?? null });
     return null; // Quota, authentication, transport, format and review failures are non-gating.
   }
 }
