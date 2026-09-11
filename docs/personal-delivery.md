@@ -400,6 +400,19 @@ must not log a token, recipient, provider body, or paper content.
 
 ## Manual run and same-day recovery
 
+### Owner-requested September 11 preview
+
+The separate `personal-preview.yml` workflow fulfills the owner's explicit
+request for one additional demonstration email on September 11, 2026. It is
+owner-only on trusted main, rejects rerun attempts, and expires at midnight
+Eastern. It performs fresh free research using an isolated empty repeat ledger
+and sends only when every selected story has a checked source-grounded summary.
+The subject begins `[Preview]` and both message parts explain the comparison
+context. It uses the existing recipient secret, a separate fixed per-date Resend
+idempotency key, and no send retry. It never changes daily duplicate protection,
+the private repeat ledger, the schedule, or any public edition. It has no cron
+trigger. No additional preview is authorized after the fixed date.
+
 ### Normal `on_time` run
 
 Use this only between 5:00 and 5:59 AM New York time:

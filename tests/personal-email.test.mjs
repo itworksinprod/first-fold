@@ -16,6 +16,7 @@ import {
   personalEditionIdempotencyKey,
   renderPersonalEditionEmail,
   sendPersonalEditionEmail,
+  sendPersonalEditionPreview,
 } from "../scripts/automation/personal-email.mjs";
 
 const baseEdition = JSON.parse(
@@ -668,6 +669,37 @@ test("the sender posts one bounded Resend request with fixed identity and date i
     });
   }
   assert.deepEqual(observedKeys, [result.idempotencyKey, result.idempotencyKey]);
+});
+
+test("an explicitly requested preview is labeled and uses its own fixed date key", async () => {
+  const candidate = personalCandidate();
+  const calls = [];
+  const result = await sendPersonalEditionPreview(candidate, {
+    apiKey: API_KEY, recipient: RECIPIENT,
+    previewConfirmation: "SEND PREVIEW 2026-08-19", previewNow: new Date("2026-08-19T16:00:00Z"),
+    fetchImpl: async (...args) => { calls.push(args); return successResponse(); },
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(result.idempotencyKey, "first-fold-personal-preview-2026-08-19");
+  assert.equal(personalEditionIdempotencyKey(candidate.editionDate), "first-fold-personal-2026-08-19");
+  const body = JSON.parse(calls[0][1].body);
+  assert.deepEqual(body.to, [RECIPIENT]);
+  assert.equal(body.from, PERSONAL_EMAIL_FROM);
+  assert.match(body.subject, /^\[Preview\] First Fold/);
+  assert.match(body.html, /Requested preview/);
+  assert.match(body.text, /isolated repeat history/);
+});
+
+test("preview confirmation and date guards reject before contacting Resend", async () => {
+  let calls = 0;
+  for (const [confirmation, date] of [["", "2026-08-19T16:00:00Z"],
+    ["SEND PREVIEW 2026-08-19", "2026-08-20T16:00:00Z"]]) {
+    await assert.rejects(sendPersonalEditionPreview(personalCandidate(), {
+      apiKey: API_KEY, recipient: RECIPIENT, previewConfirmation: confirmation, previewNow: new Date(date),
+      fetchImpl: async () => { calls++; return successResponse(); },
+    }), /explicit confirmation/);
+  }
+  assert.equal(calls, 0);
 });
 
 test("the sender enables signed feedback only for complete valid configuration", async () => {

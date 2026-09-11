@@ -1010,7 +1010,24 @@ async function performResendRequest({ fetchImpl, apiKey, requestBody, idempotenc
  * Send exactly one request. Workflow-level reruns are made safe by the
  * deterministic per-edition Resend idempotency key; this function never retries.
  */
-export async function sendPersonalEditionEmail(candidate, {
+export async function sendPersonalEditionEmail(candidate, options = {}) {
+  return sendPersonalEmail(candidate, options);
+}
+
+/** An explicitly requested same-day preview is separate from daily delivery.
+ * Its fixed per-date key protects the preview too; it never changes the daily key. */
+export async function sendPersonalEditionPreview(candidate, {
+  previewConfirmation, previewNow = new Date(), ...options
+} = {}) {
+  const date = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York",
+    year: "numeric", month: "2-digit", day: "2-digit" }).format(previewNow);
+  if (candidate?.editionDate !== date || previewConfirmation !== `SEND PREVIEW ${date}`) {
+    throw new Error("Personal preview requires explicit confirmation for today's edition.");
+  }
+  return sendPersonalEmail(candidate, options, true);
+}
+
+async function sendPersonalEmail(candidate, {
   apiKey = process.env.RESEND_API_KEY,
   recipient = process.env.PERSONAL_PAPER_EMAIL,
   feedbackLinks,
@@ -1019,7 +1036,7 @@ export async function sendPersonalEditionEmail(candidate, {
   feedbackNow,
   fetchImpl = globalThis.fetch,
   timeoutMs = DEFAULT_RESEND_TIMEOUT_MS,
-} = {}) {
+} = {}, preview = false) {
   assertPersonalEmailCandidate(candidate);
   const resolvedFeedbackLinks = optionalFeedbackLinks(candidate, {
     feedbackLinks,
@@ -1030,6 +1047,13 @@ export async function sendPersonalEditionEmail(candidate, {
   const rendered = renderPersonalEditionEmail(candidate, {
     feedbackLinks: resolvedFeedbackLinks,
   });
+  if (preview) {
+    const notice = "Requested preview of the upgraded free paper. Uses today's morning reporting window and isolated repeat history; it does not replace your daily edition.";
+    rendered.subject = `[Preview] ${rendered.subject}`;
+    rendered.text = `${notice}\n\n${rendered.text}`;
+    rendered.html = rendered.html.replace(/(<body[^>]*>)/u,
+      `$1<div style="padding:16px;text-align:center;font:14px/1.5 Arial,sans-serif;">${notice}</div>`);
+  }
   const normalizedKey = requireApiKey(apiKey);
   const normalizedRecipient = requireRecipient(recipient);
   const normalizedTimeout = requireTimeout(timeoutMs);
@@ -1037,7 +1061,9 @@ export async function sendPersonalEditionEmail(candidate, {
     throw new Error("A fetch implementation is required for personal email delivery.");
   }
 
-  const idempotencyKey = personalEditionIdempotencyKey(candidate.editionDate);
+  const idempotencyKey = preview
+    ? `first-fold-personal-preview-${candidate.editionDate}`
+    : personalEditionIdempotencyKey(candidate.editionDate);
   const requestBody = JSON.stringify({
     from: PERSONAL_EMAIL_FROM,
     to: [normalizedRecipient],
