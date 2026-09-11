@@ -662,7 +662,7 @@ test("personal production preserves delivery when the bounded writer is unavaila
     candidate.provenance.personalFreeResearch.responseId,
     "local-digest",
   );
-  assert.equal(candidate.provenance.personalFreeResearch.maxModelRequests, 3);
+  assert.equal(candidate.provenance.personalFreeResearch.maxModelRequests, 4);
   assert.match(candidate.provenance.personalFreeResearch.requestSha256, /^[a-f0-9]{64}$/);
   assert.match(candidate.provenance.personalFreeResearch.responseSha256, /^[a-f0-9]{64}$/);
   assert.equal(validatePersonalFreeCandidate(candidate, {

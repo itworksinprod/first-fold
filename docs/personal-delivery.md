@@ -5,9 +5,10 @@ edition. At **5:05 AM `America/New_York` every calendar day, including
 weekends**, Cloudflare dispatches one owner-only GitHub Actions job. That job
 reads current items from the curated feed catalog and up to 24 shortlisted
 publisher articles per research pass. The fixed free-tier Cloudflare model
-`@cf/meta/llama-3.3-70b-instruct-fp8-fast` gets at most three calls per edition:
-assess importance/usefulness, write specific source-grounded summaries, and
-check those summaries against the evidence. It validates the result and sends it to one email
+`@cf/meta/llama-3.3-70b-instruct-fp8-fast` gets at most four calls per edition:
+assess importance/usefulness, write specific source-grounded summaries, optionally
+revise locally rejected drafts once, and check the final summaries against the evidence.
+It validates the result and sends it to one email
 address through Resend. The delivered paper adapts to
 the number of stories that clear the unchanged editorial gates: regular with
 two to four stories, slim with one, or quiet with zero.
@@ -43,7 +44,7 @@ trusted `main`, providing a live integration check for its initial rollout.
 | Schedule | 5:05 AM `America/New_York` every day, including weekends |
 | Reporting window | The 72 elapsed hours ending at 5:00 AM New York time on the edition date; start inclusive and end exclusive |
 | Discovery | Live allowlisted feeds plus up to six shortlisted articles per desk per pass; no general web search or paid search API |
-| Drafting | Up to three fixed-model calls: editorial assessment, concrete factual writing, and a separate evidence-checking prompt. No model or transport retries. Rejected or unavailable synthesis retains the local baseline |
+| Drafting | Up to four fixed-model calls: editorial assessment, concrete factual writing, one optional revision of locally rejected drafts, and a separate evidence-checking prompt. No transport retries or repeated revision loop. Rejected or unavailable synthesis retains the local baseline |
 | Completion rule | Deliver a regular edition with two to four validated stories, a slim edition with one, or a healthy quiet edition with zero; every edition keeps all four desks and no desk receives more than one story |
 | Recipient | Exactly the one address stored in `PERSONAL_PAPER_EMAIL` |
 | Sender | `First Fold <onboarding@resend.dev>`, Resend's self-only testing sender |
@@ -486,9 +487,12 @@ before changing plans or models.
 The automatic workflow fixes the model to `@cf/meta/llama-3.3-70b-instruct-fp8-fast`; there is no
 model override. It is a Meta Llama model hosted by Cloudflare Workers AI and
 does not use an OpenAI API key or OpenAI API billing account.
-One edition permits at most three model requests: editorial assessment (2,000
-output tokens / 65 KB request), writing (4,000 tokens / 70 KB), and checking
-(800 tokens / 70 KB). Each has one attempt and a 90-second timeout. The optional
+One edition permits at most four model requests: editorial assessment (2,000
+output tokens / 65 KB request), writing (4,000 tokens / 70 KB), one optional
+revision (3,000 tokens / 70 KB), and checking (800 tokens / 70 KB).
+Revisions preserve the same source, numeric, attribution, originality and length
+checks, and only the final, hashed draft can pass the separate semantic review.
+Each request has one attempt and a 90-second timeout. The optional
 second research pass shares the same one-call assessment budget. These are
 capacity guards, not permission to spend beyond the free allocation.
 

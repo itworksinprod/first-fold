@@ -1,7 +1,7 @@
 // Owner-only live smoke test. Uses existing free credentials, never imports
 // delivery functions, never sends email, never archives raw evidence or copy.
 import assert from "node:assert/strict";
-import { generatePersonalFreeEdition } from "./personal-free-edition.mjs";
+import { generatePersonalFreeEdition, PERSONAL_FREE_MAX_MODEL_REQUESTS } from "./personal-free-edition.mjs";
 import { createEmptyPersonalStoryLedger } from "./personal-story-ledger.mjs";
 import { collectFreeResearchSnapshot } from "./free/feed-engine.mjs";
 import { assertPersonalEmailCandidate, renderPersonalEditionEmail } from "./personal-email.mjs";
@@ -26,7 +26,7 @@ try {
     story.evidence.length > 0 && story.evidence.every((claim) => claim.id.startsWith(`${story.id}-grounded-`))).length;
   const mode = candidate.provenance.personalFreeResearch.draftingMode;
   console.info(`::notice title=Quality result::${JSON.stringify({ status: "validated-and-rendered", stories, checkedStories, mode,
-    emailSent: false, repeatHistory: "isolated-test-empty-ledger", maxModelRequests: 3 })}`);
+    emailSent: false, repeatHistory: "isolated-test-empty-ledger", maxModelRequests: PERSONAL_FREE_MAX_MODEL_REQUESTS })}`);
   assert.ok(stories > 0 && checkedStories === stories && mode === "source-grounded-summary",
     "Not every live story received a model-checked summary.");
 } catch (error) {

@@ -90,3 +90,87 @@ test("ambiguous drafts cannot replace stories", async () => {
     assert.equal(calls, 1);
   }
 });
+
+test("one originality revision is revalidated, hash-bound and separately checked", async () => {
+  const copied = structuredClone(groundedDraft);
+  copied.claims[0].text = `CERT/CC says: ${groundedEvidence.summary}`;
+  const codes = [];
+  assert.equal(validateGroundedStory(copied, dossier, (code) => codes.push(code)), false);
+  assert.deepEqual(codes, ["ORIGINALITY"]);
+  const calls = [];
+  const diagnostics = [];
+  const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
+    onDiagnostic: (event) => diagnostics.push(event), aiRequestImpl: async (options) => {
+      calls.push(options);
+      if (calls.length === 1) return response({ stories: [copied] });
+      if (calls.length === 2) {
+        const data = JSON.parse(options.messages[1].content);
+        assert.equal(data.rejected[0].rejectionCode, "ORIGINALITY");
+        assert.equal(options.maxTokens, 3_000);
+        assert.equal(options.maxAttempts, 1);
+        return response({ stories: [groundedDraft] });
+      }
+      assert.equal(JSON.parse(options.messages[1].content).drafts[0].draftSha256, hash(groundedDraft));
+      return response({ reviews: [review] });
+    } });
+  assert.equal(calls.length, 3);
+  assert.equal(result.editorial.desks["security-and-privacy"].story.headline, groundedDraft.headline);
+  assert.equal(result.inference.requestSha256, hash(Array(3).fill("a".repeat(64))));
+  assert.ok(diagnostics.some((event) => event.stage === "draft-repair" && event.accepted === 1));
+});
+
+test("bad or unrequested revisions cannot bypass checks or trigger another revision", async () => {
+  const copied = structuredClone(groundedDraft);
+  copied.claims[0].text = `CERT/CC says: ${groundedEvidence.summary}`;
+  for (const revisions of [[copied], [{ ...groundedDraft, candidateId: "injected" }],
+    [groundedDraft, groundedDraft], []]) {
+    let calls = 0;
+    const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
+      aiRequestImpl: async () => response({ stories: ++calls === 1 ? [copied] : revisions }) });
+    assert.equal(result, null);
+    assert.equal(calls, 2);
+  }
+});
+
+test("a repaired draft still needs semantic approval; repair quota errors stop immediately", async () => {
+  const copied = structuredClone(groundedDraft);
+  copied.claims[0].text = `CERT/CC says: ${groundedEvidence.summary}`;
+  for (const quota of [false, true]) {
+    let calls = 0;
+    const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
+      aiRequestImpl: async () => {
+        if (++calls === 1) return response({ stories: [copied] });
+        if (calls === 2) {
+          if (quota) throw new Error("quota");
+          return response({ stories: [groundedDraft] });
+        }
+        return response({ reviews: [{ ...review, factsSupported: false }] });
+      } });
+    assert.equal(result, null);
+    assert.equal(calls, quota ? 2 : 3);
+  }
+});
+
+test("revision only replaces a rejected draft and preserves an already valid draft", async () => {
+  const secondCandidate = { ...structuredClone(candidate), candidateId: "candidate-second", suggestedDesk: "ai-and-models" };
+  const secondDraft = { ...structuredClone(groundedDraft), candidateId: secondCandidate.candidateId };
+  const copied = structuredClone(secondDraft);
+  copied.claims[0].text = `CERT/CC says: ${groundedEvidence.summary}`;
+  const twoDesks = structuredClone(baseline);
+  twoDesks.desks["ai-and-models"] = structuredClone(twoDesks.desks["security-and-privacy"]);
+  twoDesks.desks["ai-and-models"].story.id = "s2";
+  let calls = 0;
+  const result = await synthesizeGroundedEditorial({ editorial: twoDesks, candidates: [candidate, secondCandidate],
+    aiRequestImpl: async (options) => {
+      if (++calls === 1) return response({ stories: [groundedDraft, copied] });
+      if (calls === 2) {
+        assert.deepEqual(JSON.parse(options.messages[1].content).dossiers.map((value) => value.candidateId), [secondCandidate.candidateId]);
+        return response({ stories: [secondDraft] });
+      }
+      assert.deepEqual(JSON.parse(options.messages[1].content).drafts.map((value) => value.draft), [groundedDraft, secondDraft]);
+      return response({ reviews: [review, { ...review, candidateId: secondCandidate.candidateId, draftSha256: hash(secondDraft) }] });
+    } });
+  assert.equal(calls, 3);
+  assert.equal(result.editorial.desks["security-and-privacy"].story.headline, groundedDraft.headline);
+  assert.equal(result.editorial.desks["ai-and-models"].story.headline, secondDraft.headline);
+});

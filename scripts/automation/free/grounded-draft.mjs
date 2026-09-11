@@ -3,7 +3,7 @@ import { countReaderFacingStoryWords, MIN_PRIVATE_GROUNDED_STORY_WORDS } from ".
 import { DEFAULT_CLOUDFLARE_AI_MODEL, requestWorkersAiEditorial } from "./workers-ai.mjs";
 
 export const GROUNDED_DIGEST_MODE = "source-grounded-summary";
-export const GROUNDED_MAX_REQUESTS = 2;
+export const GROUNDED_MAX_REQUESTS = 3;
 const hash = (value) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const words = (value) => value.trim().split(/\s+/u).filter(Boolean);
 const normalized = (value) => value.normalize("NFKC").replace(/\s+/gu, " ").trim();
@@ -130,8 +130,28 @@ analysisSupported requires grounded, explicitly conditional implications and saf
 no invented fix, exploitation, availability, scope, price, urgency or performance claim.
 usefulAndSpecific requires an actual intelligible news summary, not generic desk advice or filler.
 When in doubt reject. Do not assume that a matching quote proves the paraphrase is accurate.`;
+const REPAIR_PROMPT = `${WRITER_PROMPT}
+You are revising ONLY the rejected drafts supplied here. Return exactly one corrected story per
+rejected candidateId, without introducing other candidates. The rejectionCode is a trusted local check.
+For ORIGINALITY, rewrite ALL reader prose in your own sentence structure: headlines, deck, claims,
+whyItMatters and whatToDoOrWatch. Change sentence order and construction, not just a few synonyms.
+Keep necessary product names and identifiers, but never copy a run of 12 source words, including in
+the headline. Evidence IDs remain unchanged unless another supplied passage better supports the claim.
+For WORD_COUNT, produce 115–165 substantive body words without padding or inventing facts.
+Correct the indicated problem while preserving every source caveat. The revised draft still faces
+the same local checks and a separate factual review; do not try to evade those checks.`;
 
-/** Two calls total (writer + independent checking prompt), no retries or paid
+function bindAttribution(draft, dossier) {
+  const first = Array.isArray(draft?.claims) ? draft.claims[0] : null;
+  if (dossier?.evidenceTier === "authoritative-single" && typeof first?.text === "string" &&
+      !draft.claims.some((claim) => typeof claim?.text === "string" && claim.text.includes(dossier.sources[0].publisher))) {
+    // Trusted attribution is bound before validation and the review hash.
+    first.text = `According to ${dossier.sources[0].publisher}, ${first.text}`;
+  }
+  return draft;
+}
+
+/** At most three calls (writer, optional local-check repair, checking prompt), no transport retries or paid
  * fallback. On Free Workers AI, quota exhaustion rejects; delivery still uses
  * the already validated digest. Each approved story is adopted independently. */
 export async function synthesizeGroundedEditorial({ editorial, candidates, accountId, apiToken,
@@ -153,32 +173,59 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
     writerSchema.properties.stories.minItems = dossiers.length;
     writerSchema.properties.stories.maxItems = dossiers.length;
     const written = await ask(WRITER_PROMPT, { dossiers: promptDossiers }, writerSchema, 4_000);
+    const inferenceTrail = [written];
     if (!keys(written.editorialPayload, ["stories"]) || !Array.isArray(written.editorialPayload.stories) ||
         written.editorialPayload.stories.length > 4) return null;
     const drafts = structuredClone(written.editorialPayload.stories);
-    if (new Set(drafts.map((draft) => draft?.candidateId)).size !== drafts.length) return null;
+    if (new Set(drafts.map((draft) => draft?.candidateId)).size !== drafts.length ||
+        drafts.some((draft) => !dossiers.some((dossier) => dossier.candidateId === draft?.candidateId))) return null;
     for (const draft of drafts) {
       const dossier = dossiers.find((value) => value.candidateId === draft?.candidateId);
-      const first = Array.isArray(draft?.claims) ? draft.claims[0] : null;
-      if (dossier?.evidenceTier === "authoritative-single" && typeof first?.text === "string" &&
-          !draft.claims.some((claim) => typeof claim.text === "string" && claim.text.includes(dossier.sources[0].publisher))) {
-        // Bind attribution from trusted source metadata before the semantic
-        // reviewer sees and hashes the final prose. Channel-name abbreviations
-        // should not discard an otherwise useful factual summary.
-        first.text = `According to ${dossier.sources[0].publisher}, ${first.text}`;
-      }
+      bindAttribution(draft, dossier);
     }
     const rejectionCodes = [];
+    const rejected = [];
     const valid = drafts.filter((draft) => {
       const dossier = dossiers.find((value) => value.candidateId === draft?.candidateId);
-      return dossier && validateGroundedStory(draft, dossier, (code) => rejectionCodes.push(code));
+      return validateGroundedStory(draft, dossier, (code) => {
+        rejectionCodes.push(code);
+        rejected.push({ draft, rejectionCode: code });
+      });
     });
     onDiagnostic({ stage: "local-evidence-check", submitted: drafts.length, accepted: valid.length, rejectionCodes,
       wordCounts: drafts.map((draft) => countReaderFacingStoryWords({ ...draft,
         whatHappened: Array.isArray(draft?.claims) ? draft.claims.map((claim) => claim?.text ?? "").join(" ") : "" })) });
+    if (rejected.length) {
+      const repairIds = new Set(rejected.map(({ draft }) => draft.candidateId));
+      const repairSchema = structuredClone(GROUNDED_DRAFT_SCHEMA);
+      repairSchema.properties.stories.minItems = repairIds.size;
+      repairSchema.properties.stories.maxItems = repairIds.size;
+      const repaired = await ask(REPAIR_PROMPT, {
+        dossiers: promptDossiers.filter((dossier) => repairIds.has(dossier.candidateId)), rejected,
+      }, repairSchema, 3_000);
+      inferenceTrail.push(repaired);
+      const revisions = structuredClone(repaired.editorialPayload?.stories);
+      const repairRejections = [];
+      let accepted = 0;
+      if (keys(repaired.editorialPayload, ["stories"]) && Array.isArray(revisions) &&
+          revisions.length === repairIds.size &&
+          new Set(revisions.map((draft) => draft?.candidateId)).size === revisions.length &&
+          revisions.every((draft) => repairIds.has(draft?.candidateId))) {
+        for (const draft of revisions) {
+          const dossier = dossiers.find((value) => value.candidateId === draft.candidateId);
+          bindAttribution(draft, dossier);
+          if (validateGroundedStory(draft, dossier, (code) => repairRejections.push(code))) {
+            valid.push(draft);
+            accepted++;
+          }
+        }
+      } else repairRejections.push("SHAPE");
+      onDiagnostic({ stage: "draft-repair", submitted: rejected.length, accepted, rejectionCodes: repairRejections });
+    }
     if (!valid.length) return null;
     const checked = await ask(REVIEW_PROMPT, { dossiers: promptDossiers,
       drafts: valid.map((draft) => ({ draftSha256: hash(draft), draft })) }, GROUNDED_REVIEW_SCHEMA, 800);
+    inferenceTrail.push(checked);
     const reviews = checked.editorialPayload?.reviews;
     if (!keys(checked.editorialPayload, ["reviews"]) || !Array.isArray(reviews) || reviews.length !== valid.length ||
         new Set(reviews.map((review) => review?.candidateId)).size !== reviews.length) return null;
@@ -214,8 +261,8 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
     result.frontPage.estimatedMinutes = Math.max(1, Math.ceil(Object.values(result.desks)
       .reduce((total, desk) => total + (desk.story ? countReaderFacingStoryWords(desk.story) : 0), 0) / 180));
     return { editorial: result, inference: { provider: written.provider, model: written.model,
-      responseId: checked.responseId, requestSha256: hash([written.requestSha256, checked.requestSha256]),
-      responseSha256: hash([written.responseSha256, checked.responseSha256]), kind: "workers-ai" } };
+      responseId: checked.responseId, requestSha256: hash(inferenceTrail.map((entry) => entry.requestSha256)),
+      responseSha256: hash(inferenceTrail.map((entry) => entry.responseSha256)), kind: "workers-ai" } };
   } catch (error) {
     onDiagnostic({ stage: "free-writer-unavailable",
       code: /^[A-Z_]{1,64}$/.test(error?.code ?? "") ? error.code : "PROVIDER_OR_FORMAT_ERROR",

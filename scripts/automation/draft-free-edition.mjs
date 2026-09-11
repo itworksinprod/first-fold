@@ -2488,8 +2488,8 @@ async function draftFreeEditionCore({
       "Free trustedEvidenceDigestOnly cannot be combined with Workers AI summary drafting.",
     );
   }
-  if (groundedSummaries && (!trustedEvidenceDigestOnly || maxModelRequests !== 3)) {
-    throw new Error("Grounded summaries require a validated digest baseline and three bounded model calls.");
+  if (groundedSummaries && (!trustedEvidenceDigestOnly || maxModelRequests !== 4)) {
+    throw new Error("Grounded summaries require a validated digest baseline and at most four bounded model calls.");
   }
   if (
     !Number.isInteger(minimumStoryCount) ||
@@ -2509,7 +2509,7 @@ async function draftFreeEditionCore({
   if (
     !Number.isInteger(maxModelRequests) ||
     maxModelRequests < (trustedEvidenceDigestOnly ? 0 : 1) ||
-    maxModelRequests > (groundedSummaries ? 3 : 2)
+    maxModelRequests > (groundedSummaries ? 4 : 2)
   ) {
     throw new Error(trustedEvidenceDigestOnly
       ? "Free maxModelRequests must be 0, 1, or 2 in trusted digest-only mode."
