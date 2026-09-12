@@ -754,6 +754,68 @@ test("preview confirmation and date guards reject before contacting Resend", asy
   assert.equal(calls, 0);
 });
 
+function updatedPreviewCandidate() {
+  const candidate = JSON.parse(JSON.stringify(personalCandidate())
+    .replaceAll("2026-08-19", "2026-09-11").replaceAll("2026-08-18", "2026-09-10"));
+  useWorkersAiProvenance(candidate, "source-grounded-summary");
+  const research = candidate.provenance.personalFreeResearch;
+  research.maxModelRequests = 4;
+  research.researchMethod = "curated-live-feeds-and-web-search";
+  research.webSearch = { provider: "tavily", queriesUsed: 12, creditsReserved: 24, admittedArticles: 2 };
+  for (const { story } of Object.values(candidate.desks)) {
+    story.evidence.forEach((claim, index) => { claim.id = `${story.id}-grounded-${index}`; });
+  }
+  return candidate;
+}
+
+const updatedPreviewOptions = {
+  apiKey: API_KEY, recipient: RECIPIENT, previewRevision: "web-search-upgrade-2026-09-11",
+  previewConfirmation: "SEND WEB SEARCH PREVIEW 2026-09-11", previewNow: new Date("2026-09-12T01:56:00Z"),
+};
+
+test("the authorized web-search preview has a distinct fixed key and unchanged recipient", async () => {
+  const keys = [];
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const result = await sendPersonalEditionPreview(updatedPreviewCandidate(), { ...updatedPreviewOptions,
+      fetchImpl: async (_url, request) => {
+        keys.push(request.headers["Idempotency-Key"]);
+        const body = JSON.parse(request.body);
+        assert.deepEqual(body.to, [RECIPIENT]);
+        assert.equal(body.from, PERSONAL_EMAIL_FROM);
+        assert.match(body.subject, /^\[Updated preview\] First Fold/);
+        assert.match(body.text, /free web discovery and evidence-checked summaries/);
+        return successResponse();
+      } });
+    assert.equal(result.idempotencyKey, "first-fold-personal-preview-web-search-upgrade-2026-09-11");
+    assert.notEqual(result.idempotencyKey, personalEditionIdempotencyKey("2026-09-11"));
+    assert.notEqual(result.idempotencyKey, "first-fold-personal-preview-2026-09-11");
+  }
+  assert.equal(keys[0], keys[1]);
+});
+
+test("updated preview rejects unknown revisions, stale approval, midnight and unchecked search before sending", async () => {
+  let calls = 0;
+  const fetchImpl = async () => { calls++; return successResponse(); };
+  for (const override of [{ previewRevision: "random-send-id" }, { previewRevision: undefined },
+    { previewConfirmation: "SEND PREVIEW 2026-09-11" }, { previewConfirmation: "" },
+    { previewNow: new Date("2026-09-12T04:00:00Z") }]) {
+    await assert.rejects(sendPersonalEditionPreview(updatedPreviewCandidate(), {
+      ...updatedPreviewOptions, ...override, fetchImpl,
+    }), /explicit confirmation/);
+  }
+  for (const mutate of [
+    c => { delete c.provenance.personalFreeResearch.webSearch; },
+    c => { c.provenance.personalFreeResearch.webSearch.admittedArticles = 0; },
+    c => { c.provenance.personalFreeResearch.webSearch.extra = "untrusted"; },
+    c => { c.provenance.personalFreeResearch.draftingMode = TRUSTED_EVIDENCE_DIGEST_MODE; },
+    c => { Object.values(c.desks)[0].story.evidence[0].id = "unchecked"; },
+  ]) {
+    const candidate = updatedPreviewCandidate(); mutate(candidate);
+    await assert.rejects(sendPersonalEditionPreview(candidate, { ...updatedPreviewOptions, fetchImpl }), /checked summaries/);
+  }
+  assert.equal(calls, 0);
+});
+
 test("the sender enables signed feedback only for complete valid configuration", async () => {
   const candidate = personalCandidate();
   let configuredRequest;

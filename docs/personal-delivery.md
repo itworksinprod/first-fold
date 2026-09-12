@@ -481,9 +481,15 @@ request for one additional demonstration email on September 11, 2026. It is
 owner-only on trusted main, rejects rerun attempts, and expires at midnight
 Eastern. It performs fresh free research using an isolated empty repeat ledger
 and sends only when every selected story has a checked source-grounded summary.
-The subject begins `[Preview]` and both message parts explain the comparison
-context. It uses the existing recipient secret, a separate fixed per-date Resend
-idempotency key, and no send retry. It never changes daily duplicate protection,
+The latest explicitly requested demonstration includes free web discovery and
+requires a valid receipt with at least one publisher article admitted. Its
+confirmation is exactly `SEND WEB SEARCH PREVIEW 2026-09-11`, the subject begins
+`[Updated preview]`, and both message parts explain the comparison context.
+It uses the existing recipient secret and fixed Resend key
+`first-fold-personal-preview-web-search-upgrade-2026-09-11`, distinct from both
+the already-sent original preview and the daily edition, with no send retry.
+The workflow is manual-only; publishing its code does not send an email.
+It never changes daily duplicate protection,
 the private repeat ledger, the schedule, or any public edition. It has no cron
 trigger. No additional preview is authorized after the fixed date.
 

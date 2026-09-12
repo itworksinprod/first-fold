@@ -11,7 +11,7 @@ import {
 } from "./free/evidence-digest.mjs";
 import { PERSONAL_STORY_LEDGER_SCHEMA_VERSION } from "./personal-story-ledger.mjs";
 import { DEFAULT_CLOUDFLARE_AI_MODEL, WORKERS_AI_PROVIDER } from "./free/workers-ai.mjs";
-import { hasValidWebSearchResearchMethod } from "./free/search-receipt.mjs";
+import { hasValidWebSearchResearchMethod, isValidWebSearchReceipt } from "./free/search-receipt.mjs";
 
 export const RESEND_EMAIL_ENDPOINT = "https://api.resend.com/emails";
 export const PERSONAL_EMAIL_FROM = "First Fold <onboarding@resend.dev>";
@@ -1023,14 +1023,27 @@ export async function sendPersonalEditionEmail(candidate, options = {}) {
 /** An explicitly requested same-day preview is separate from daily delivery.
  * Its fixed per-date key protects the preview too; it never changes the daily key. */
 export async function sendPersonalEditionPreview(candidate, {
-  previewConfirmation, previewNow = new Date(), ...options
+  previewConfirmation, previewRevision, previewNow = new Date(), ...options
 } = {}) {
   const date = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York",
     year: "numeric", month: "2-digit", day: "2-digit" }).format(previewNow);
-  if (candidate?.editionDate !== date || previewConfirmation !== `SEND PREVIEW ${date}`) {
+  const updated = previewRevision === "web-search-upgrade-2026-09-11";
+  const expectedConfirmation = updated ? "SEND WEB SEARCH PREVIEW 2026-09-11" : `SEND PREVIEW ${date}`;
+  if (candidate?.editionDate !== date || previewConfirmation !== expectedConfirmation ||
+      (previewRevision !== undefined && !updated) || (updated && date !== "2026-09-11")) {
     throw new Error("Personal preview requires explicit confirmation for today's edition.");
   }
-  return sendPersonalEmail(candidate, options, true);
+  if (updated) {
+    const research = candidate?.provenance?.personalFreeResearch;
+    const stories = Object.values(candidate.desks ?? {}).flatMap(({ story }) => story ? [story] : []);
+    if (!isValidWebSearchReceipt(research?.webSearch) || research.webSearch.admittedArticles < 1 ||
+        research.draftingMode !== "source-grounded-summary" || !stories.length ||
+        !stories.every((story) => story.evidence?.length > 0 &&
+          story.evidence.every((claim) => claim.id.startsWith(`${story.id}-grounded-`)))) {
+      throw new Error("Updated preview requires verified web discovery and checked summaries.");
+    }
+  }
+  return sendPersonalEmail(candidate, options, updated ? previewRevision : true);
 }
 
 async function sendPersonalEmail(candidate, {
@@ -1054,8 +1067,11 @@ async function sendPersonalEmail(candidate, {
     feedbackLinks: resolvedFeedbackLinks,
   });
   if (preview) {
-    const notice = "Requested preview of the upgraded free paper. Uses today's morning reporting window and isolated repeat history; it does not replace your daily edition.";
-    rendered.subject = `[Preview] ${rendered.subject}`;
+    const updated = preview === "web-search-upgrade-2026-09-11";
+    const notice = updated
+      ? "Requested updated preview with free web discovery and evidence-checked summaries. Uses today's morning reporting window and isolated repeat history; it does not replace your daily edition."
+      : "Requested preview of the upgraded free paper. Uses today's morning reporting window and isolated repeat history; it does not replace your daily edition.";
+    rendered.subject = `[${updated ? "Updated preview" : "Preview"}] ${rendered.subject}`;
     rendered.text = `${notice}\n\n${rendered.text}`;
     rendered.html = rendered.html.replace(/(<body[^>]*>)/u,
       `$1<div style="padding:16px;text-align:center;font:14px/1.5 Arial,sans-serif;">${notice}</div>`);
@@ -1068,7 +1084,9 @@ async function sendPersonalEmail(candidate, {
   }
 
   const idempotencyKey = preview
-    ? `first-fold-personal-preview-${candidate.editionDate}`
+    ? preview === "web-search-upgrade-2026-09-11"
+      ? "first-fold-personal-preview-web-search-upgrade-2026-09-11"
+      : `first-fold-personal-preview-${candidate.editionDate}`
     : personalEditionIdempotencyKey(candidate.editionDate);
   const requestBody = JSON.stringify({
     from: PERSONAL_EMAIL_FROM,
