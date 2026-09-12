@@ -121,6 +121,30 @@ test("quota/provider failures stop without fallback and arbitrary exception data
   assert.ok(!JSON.stringify(report).includes(apiToken));
 });
 
+test("provider diagnostics preserve only a bounded HTTP status, never raw failure text", async () => {
+  for (const status of ["401", "429", "502", "503"]) {
+    const report = await checkFreeWriter({ accountId, apiToken, aiRequestImpl: async () => {
+      throw new Error(`Cloudflare Workers AI request failed with HTTP ${status}.`);
+    } });
+    assert.equal(report.status, "failed");
+    assert.equal(report.modelRequests, 1);
+    const unavailable = report.diagnostics.find(event => event.stage === "free-writer-unavailable");
+    assert.equal(unavailable.httpStatus, Number(status));
+    assert.doesNotMatch(JSON.stringify(report), /request failed with HTTP/);
+  }
+  for (const message of [
+    `Cloudflare Workers AI request failed with HTTP 429. ${apiToken}`,
+    "Cloudflare Workers AI request failed with HTTP 999.",
+    "Cloudflare Workers AI request failed with HTTP 42.",
+    `provider returned ${apiToken}`,
+  ]) {
+    const report = await checkFreeWriter({ accountId, apiToken, aiRequestImpl: async () => { throw new Error(message); } });
+    assert.ok(report.diagnostics.every(event => !Object.hasOwn(event, "httpStatus")));
+    assert.ok(!JSON.stringify(report).includes(apiToken));
+    assert.ok(!JSON.stringify(report).includes(message));
+  }
+});
+
 test("transport is restricted to the fixed Cloudflare endpoint and at most three requests", async () => {
   let externalCalls = 0;
   const badEndpoint = await checkFreeWriter({ accountId, apiToken,

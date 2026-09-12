@@ -33,7 +33,9 @@ export const GROUNDED_DRAFT_SCHEMA = objectSchema({ stories: arraySchema(objectS
 export const GROUNDED_REVIEW_SCHEMA = objectSchema({ reviews: arraySchema(objectSchema({
   candidateId: textSchema, draftSha256: textSchema,
   claimSupport: { type: "array", minItems: 2, maxItems: 2,
-    items: { type: "array", minItems: 0, maxItems: 2, uniqueItems: true, items: textSchema } },
+    // Keep the provider grammar simple. Uniqueness and exact per-claim support
+    // coverage are still mandatory in completeClaimReview before adoption.
+    items: { type: "array", minItems: 0, maxItems: 2, items: textSchema } },
   factsSupported: { type: "boolean" }, attributionAccurate: { type: "boolean" },
   analysisSupported: { type: "boolean" }, usefulAndSpecific: { type: "boolean" },
 })) });

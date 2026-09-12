@@ -76,6 +76,10 @@ export async function checkFreeWriter({ accountId, apiToken,
       for (const field of ["submitted", "accepted"]) {
         if (Number.isInteger(event?.[field]) && event[field] >= 0 && event[field] <= 4) diagnostic[field] = event[field];
       }
+      if (event?.stage === "free-writer-unavailable" && typeof event.httpStatus === "string" &&
+          /^[1-5]\d{2}$/u.test(event.httpStatus)) {
+        diagnostic.httpStatus = Number(event.httpStatus);
+      }
       const codes = [...(Array.isArray(event?.rejectionCodes) ? event.rejectionCodes : []),
         ...[event?.rejectionCode, event?.code].filter(Boolean)];
       if (codes.length) diagnostic.codes = [...new Set(codes.map(safeCode))].slice(0, 8);

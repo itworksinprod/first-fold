@@ -416,6 +416,7 @@ test("a reviewer must explicitly cover each claim with its actual supporting pas
       assert.equal(options.maxTokens, 800);
       assert.equal(options.schema.properties.reviews.minItems, 1);
       assert.equal(options.schema.properties.reviews.maxItems, 1);
+      assert.equal(Object.hasOwn(options.schema.properties.reviews.items.properties.claimSupport.items, "uniqueItems"), false);
       return response({ reviews: [{ ...review, claimSupport: [["S1P3", "S1P2"], ["S1P5", "S1P4"]] }] });
     } });
   assert.ok(result);
