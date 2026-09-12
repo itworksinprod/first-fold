@@ -7,7 +7,7 @@ import path from "node:path";
 import test from "node:test";
 import { validateCanonicalEdition, countReaderFacingStoryWords } from "../scripts/edition-content.mjs";
 import { buildEditionDraft } from "../scripts/new-edition.mjs";
-import { assertPersonalEmailCandidate } from "../scripts/automation/personal-email.mjs";
+import { assertPersonalEmailCandidate, renderPersonalEditionEmail } from "../scripts/automation/personal-email.mjs";
 import { createEmptyPersonalStoryLedger } from "../scripts/automation/personal-story-ledger.mjs";
 import {
   InsufficientFreeCandidatesError,
@@ -661,6 +661,7 @@ test("source-grounded personal summaries pass final canonical, source and email 
         candidateId: groundedDraft.candidateId,
         draftSha256: createHash("sha256").update(JSON.stringify(groundedDraft)).digest("hex"),
         factsSupported: true, attributionAccurate: true, analysisSupported: true, usefulAndSpecific: true,
+        claimSupport: groundedDraft.claims.map((claim) => claim.supports.map((support) => support.evidenceId)),
       }] } }),
     sourceLookupImpl: async () => [{ address: "93.184.216.34" }],
     sourceRequestImpl: async () => ({ status: 200, headers: {} }),
@@ -726,6 +727,24 @@ test("personal production preserves delivery when the bounded writer is unavaila
     "local-digest",
   );
   assert.equal(candidate.provenance.personalFreeResearch.maxModelRequests, 4);
+  assert.equal(candidate.provenance.personalFreeResearch.privateSourceBriefs, true);
+  const sourceBrief = Object.values(candidate.desks).find((page) => page.story)?.story;
+  assert.ok(countReaderFacingStoryWords(sourceBrief) >= 60 && countReaderFacingStoryWords(sourceBrief) < 150);
+  assert.match(sourceBrief.id, /^trusted-evidence-brief-/);
+  const sourceBriefRender = renderPersonalEditionEmail(candidate);
+  assert.match(sourceBriefRender.html, /Source digest/);
+  assert.match(sourceBriefRender.text, /SOURCE DIGEST/);
+  const notPrivate = structuredClone(candidate);
+  delete notPrivate.provenance.personalFreeResearch.privateSourceBriefs;
+  assert.ok(validateCanonicalEdition(notPrivate).issues.some((issue) => issue.includes("150–225")));
+  assert.throws(() => assertPersonalEmailCandidate(notPrivate));
+  const publicBrief = structuredClone(candidate);
+  publicBrief.status = "published";
+  publicBrief.publication.publishedAt = publicBrief.publication.publishAt;
+  assert.ok(validateCanonicalEdition(publicBrief).issues.some((issue) => issue.includes("150–225")));
+  const fakeBrief = structuredClone(candidate);
+  Object.values(fakeBrief.desks).find((page) => page.story).story.evidence[0].id = "forged-local-brief";
+  assert.ok(validateCanonicalEdition(fakeBrief).issues.some((issue) => issue.includes("150–225")));
   assert.match(candidate.provenance.personalFreeResearch.requestSha256, /^[a-f0-9]{64}$/);
   assert.match(candidate.provenance.personalFreeResearch.responseSha256, /^[a-f0-9]{64}$/);
   assert.equal(validatePersonalFreeCandidate(candidate, {

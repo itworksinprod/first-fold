@@ -9,6 +9,9 @@ export const TRUSTED_EVIDENCE_DIGEST_DRAFTING_MODE = TRUSTED_EVIDENCE_DIGEST_MOD
 export const TRUSTED_EVIDENCE_DIGEST_PROVIDER = "local-deterministic";
 export const TRUSTED_EVIDENCE_DIGEST_MODEL = "not-invoked";
 export const MAX_TRUSTED_EVIDENCE_EXCERPT_WORDS = 10;
+// The caller must opt into this range only for an unpublished personal brief.
+// The default payload keeps the public edition's existing word contract.
+export const MIN_CONCISE_TRUSTED_EVIDENCE_DIGEST_WORDS = 60;
 const MAX_TRUSTED_EVIDENCE_PUBLISHER_CHARACTERS = 160;
 const MAX_TRUSTED_EVIDENCE_HEADLINE_CHARACTERS = 500;
 const AUTHORITATIVE_HEADLINE_WRAPPER_CHARACTERS = " reports “”".length;
@@ -148,6 +151,97 @@ const SAFE_PADDING_SENTENCES = Object.freeze([
   "Differences between the available descriptions should remain unresolved until later reporting explains them.",
   "Keep consequential decisions reversible while the development and its practical effects continue to emerge.",
 ]);
+
+// These lenses ask concrete questions about a source topic; they never infer
+// that a launch, exploit, fix, outage, or ruling happened merely from keywords.
+// Only fixed repository-owned language is rendered. Source text chooses the
+// lens but cannot supply an action, number, entity, or factual assertion here.
+const CONCISE_TOPIC_PROFILES = Object.freeze([
+  {
+    desks: ["security-and-privacy"],
+    signals: [/\b(?:driver|kernel|backupper)\b/i, /\b(?:disk|disks)\b/i, /\b(?:write|writes|writing)\b/i],
+    topic: "driver access to disk devices",
+    why: "The useful distinction is whether an application account can cross into disk-level permissions. Risk depends on the access an attacker already needs and the system conditions attached to each claimed impact; those limits belong with the claim.",
+    watch: "Check the driver and application versions, the allowed disk operations, and any boot-setting or encryption conditions. Look for a vendor-identified fix and its exact scope. A disclosure alone does not establish active exploitation or identify a corrected version.",
+  },
+  {
+    desks: ["work-and-tools"],
+    signals: [/\bretention\b/i, /\b(?:workflow|repository|checks|logs?|records?)\b/i],
+    topic: "workflow record retention",
+    why: "Retention settings determine how far back a team can inspect build history and investigate failures. The practical question is which records a policy covers, who can change it, and whether existing records follow the same rules as newly created ones.",
+    watch: "Compare the documented retention scope with the history your team needs for audits and debugging. Check defaults, administrator permissions, and deletion timing before changing a policy; verify export options instead of assuming deleted records can be recovered.",
+  },
+  {
+    desks: ["ai", "work-and-tools", "platforms-and-power"],
+    signals: [/\b(?:price|prices|pricing|cost|costs)\b/i, /\b(?:api|inference|cloud|model|compute|subscription)\b/i],
+    topic: "technology pricing and usage costs",
+    why: "A headline rate is only one part of the cost of a workload. The useful comparison includes usage units, request limits, required plans, and the amount of work completed, so a lower advertised rate need not mean a lower total bill.",
+    watch: "Check when the rate applies, which customers qualify, and whether it is permanent or introductory. Compare the same workload under both sets of terms, including storage or transfer charges where relevant, before changing a budget or provider.",
+  },
+  {
+    desks: ["ai", "work-and-tools"],
+    signals: [/\b(?:model|models|llm|ai)\b/i, /\b(?:benchmark|benchmarks|evaluation|evaluations|reasoning)\b/i],
+    topic: "model capabilities and evaluation",
+    why: "A model comparison is useful when the test resembles the work you need it to do. Evaluation setup, baseline choice, and failure cases matter alongside an aggregate score; results from one task should not be treated as a guarantee for another.",
+    watch: "Look for the test method, the exact model version, and independent attempts to reproduce the result. Compare quality, latency, and usage cost on representative tasks, keeping sensitive data out of an unfamiliar service while assessing its terms.",
+  },
+  {
+    desks: ["ai", "work-and-tools"],
+    signals: [/\b(?:model|models|llm|gemini|claude)\b/i, /\b(?:access|available|availability|release|launch|license|licence|weights)\b/i],
+    topic: "model access and deployment terms",
+    why: "Access to a model is not the same as permission or readiness to use it in production. The useful questions concern where it runs, who can obtain it, and which data-handling or licensing terms apply to the intended workload.",
+    watch: "Check the exact model version, availability channel, license, and usage restrictions. Look for practical evaluations on your own task and any documented rollout limits; distinguish publisher claims from separately reproduced results before replacing an existing workflow.",
+  },
+  {
+    desks: ["security-and-privacy"],
+    signals: [/\b(?:privilege|privileges)\b/i, /\b(?:escalation|elevation|elevated|unauthorized)\b/i],
+    topic: "privilege boundaries in affected software",
+    why: "A privilege issue is actionable only when the starting access and resulting permissions are clear. Local access, authentication, and configuration requirements can change who is exposed, so a severity label should not replace the advisory's specific attack conditions.",
+    watch: "Match the advisory to deployed products and versions, then check the required starting privileges and the boundary crossed. Look for a vendor-identified correction and evidence about exploitation; do not treat a proposed mitigation as proof that the underlying flaw is fixed.",
+  },
+  {
+    desks: ["platforms-and-power"],
+    signals: [/\b(?:court|ruling|regulator|regulatory|antitrust|legislation)\b/i],
+    topic: "platform rules and legal scope",
+    why: "The practical effect of a legal update depends on its scope and procedural stage. A proposal, an initial decision, and an enforceable obligation are different signals; the important question is which services, users, or business practices would actually be covered.",
+    watch: "Check the jurisdiction, effective date, and any appeal or implementation process in the originating document. Look for concrete changes to access, contracts, or product behavior rather than assuming a headline immediately changes how a service operates.",
+  },
+  {
+    desks: ["security-and-privacy"],
+    signals: [/\b(?:vulnerability|vulnerabilities|zero-day|patch|advisory)\b/i],
+    topic: "software exposure and remediation",
+    why: "A security advisory helps set priorities when it can be matched to software actually in use. The decisive details are the affected versions, prerequisites for attack, and available correction; an urgent headline alone does not establish the exposure of a particular system.",
+    watch: "Compare the affected product and version range with the installed inventory. Check the originating advisory for exploitation evidence, a fixed release, and any limits on proposed mitigations. Keep a workaround distinct from a permanent correction when planning follow-up verification.",
+  },
+  {
+    desks: ["work-and-tools", "platforms-and-power"],
+    signals: [/\b(?:outage|disruption|unavailable)\b/i],
+    topic: "service availability and recovery",
+    why: "Service continuity depends on the functions and regions a workflow actually uses. The useful distinction is between the scope of an interruption and its current status; a recovery notice does not by itself explain the cause or establish that every dependency is healthy.",
+    watch: "Check timestamps, affected services, and the provider's current status record. Look for a later incident explanation and evidence that normal operations have resumed for the relevant workload before undoing a temporary contingency plan.",
+  },
+]);
+
+const CONCISE_DEFAULT_TOPICS = Object.freeze({
+  ai: "AI research and model access",
+  "work-and-tools": "work tools and administrative controls",
+  "security-and-privacy": "security and privacy",
+  "platforms-and-power": "platform services and operating terms",
+});
+
+function conciseTopicProfile(candidate, selectedEvidence) {
+  const sourceText = selectedEvidence.flatMap((evidence) =>
+    [evidence.title, evidence.summary].flatMap(declarativeSourceSegments)
+      .filter((segment) => !hasUnsafeLink(segment) && !looksLikeInstruction(segment)))
+    .join(" ");
+  return CONCISE_TOPIC_PROFILES.find((profile) =>
+    profile.desks.includes(candidate.suggestedDesk) &&
+    profile.signals.every((pattern) => pattern.test(sourceText))) ?? {
+    topic: CONCISE_DEFAULT_TOPICS[candidate.suggestedDesk],
+    why: "Treat this as a source lead, not a full summary: the retained excerpt is too limited to establish practical consequences. The original report is the place to check what changed, whom it affects, and what remains uncertain.",
+    watch: "Check the report's date, exact subject, and scope before drawing conclusions. Look for a later, separately reported account of the same event, and compare any disagreement with the originating record rather than treating a second link as confirmation.",
+  };
+}
 
 function isObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -631,20 +725,23 @@ function naturalList(values) {
   return new Intl.ListFormat("en-US", { style: "long", type: "conjunction" }).format(values);
 }
 
-function ensureReaderWordRange(story) {
+function ensureReaderWordRange(story, { concise = false } = {}) {
+  const minimum = concise ? MIN_CONCISE_TRUSTED_EVIDENCE_DIGEST_WORDS : MIN_READER_FACING_STORY_WORDS;
   let words = countReaderFacingStoryWords(story);
-  for (const sentence of SAFE_PADDING_SENTENCES) {
-    if (words >= MIN_READER_FACING_STORY_WORDS) break;
-    story.whatToDoOrWatch = `${story.whatToDoOrWatch} ${sentence}`;
-    words = countReaderFacingStoryWords(story);
+  if (!concise) {
+    for (const sentence of SAFE_PADDING_SENTENCES) {
+      if (words >= minimum) break;
+      story.whatToDoOrWatch = `${story.whatToDoOrWatch} ${sentence}`;
+      words = countReaderFacingStoryWords(story);
+    }
   }
   if (
-    words < MIN_READER_FACING_STORY_WORDS ||
+    words < minimum ||
     words > MAX_READER_FACING_STORY_WORDS
   ) {
     throw new Error(
       `Trusted evidence digest produced ${words} reader-facing words; ` +
-        `${MIN_READER_FACING_STORY_WORDS}–${MAX_READER_FACING_STORY_WORDS} are required.`,
+        `${minimum}–${MAX_READER_FACING_STORY_WORDS} are required.`,
     );
   }
   return story;
@@ -707,7 +804,7 @@ function corroboratedWhatHappened(excerptRecords, deskLabel, primaryEntity) {
   return copy;
 }
 
-function buildStory(candidate) {
+function buildStory(candidate, { concise = false } = {}) {
   const profile = DEFAULT_EVENT_PROFILE_BY_DESK[candidate.suggestedDesk];
   const authoritative = candidate.evidenceTier === "authoritative-single";
   const selectedEvidence = authoritative
@@ -801,7 +898,31 @@ function buildStory(candidate) {
     })),
     securityAction: null,
   };
-  return ensureReaderWordRange(story);
+  if (concise) {
+    const conciseProfile = conciseTopicProfile(candidate, selectedEvidence);
+    const lead = excerptRecords.find(({ excerpt }) => excerpt !== null);
+    story.id = `trusted-evidence-brief-${candidate.candidateId}`;
+    story.headline = lead
+      ? `${lead.source.publisher} reports “${lead.excerpt}”`
+      : `${publishers[0]} reports on ${conciseProfile.topic}`;
+    story.deck = authoritative
+      ? `${publishers[0]} reports the source item summarized in this short brief`
+      : `A short source digest with separate accounts from ${naturalList(publishers)}`;
+    story.whatHappened = authoritative
+      ? lead
+        ? `${publishers[0]} reports “${lead.excerpt}” in its originating account, with no second factual source included in this brief.`
+        : `${publishers[0]} reports on ${conciseProfile.topic}, with the original source linked below because the available text does not support a short direct quotation.`
+      : excerptRecords.map(({ source, excerpt }) => excerpt === null
+        ? `${source.publisher} covers the linked source item, but no short direct quotation was safe to retain.`
+        : `${source.publisher} reports “${excerpt}”.`).join(" ");
+    story.whyItMatters = conciseProfile.why;
+    story.whatToDoOrWatch = conciseProfile.watch;
+    story.evidence = story.evidence.map((claim, index) => ({
+      ...claim,
+      id: `trusted-evidence-brief-claim-${candidate.candidateId}-${index + 1}`,
+    }));
+  }
+  return ensureReaderWordRange(story, { concise });
 }
 
 function normalizedQuietReasons(quietReasons) {
@@ -823,7 +944,9 @@ function normalizedQuietReasons(quietReasons) {
 export function buildTrustedEvidenceDigestPayload({
   candidates,
   quietReasons = {},
+  concise = false,
 } = {}) {
+  if (typeof concise !== "boolean") throw new Error("concise must be a boolean.");
   if (!Array.isArray(candidates) || candidates.length > DESKS.length) {
     throw new Error("candidates must be an array containing at most four selected candidates.");
   }
@@ -836,7 +959,7 @@ export function buildTrustedEvidenceDigestPayload({
   const reasons = normalizedQuietReasons(quietReasons);
   const storyByDesk = new Map(normalizedCandidates.map((candidate) => [
     candidate.suggestedDesk,
-    buildStory(candidate),
+    buildStory(candidate, { concise }),
   ]));
   const orderedStories = normalizedCandidates
     .map((candidate, index) => ({
@@ -855,7 +978,9 @@ export function buildTrustedEvidenceDigestPayload({
   const authoritativeCount = normalizedCandidates.filter((candidate) =>
     candidate.evidenceTier === "authoritative-single").length;
   const corroboratedCount = normalizedCandidates.length - authoritativeCount;
-  const note = normalizedCandidates.length === 0
+  const note = concise && normalizedCandidates.length > 0
+    ? "Short source digests link today's selected reports, with focused questions about what to check next."
+    : normalizedCandidates.length === 0
     ? "No selected development required a source digest in this edition."
     : authoritativeCount === 0
       ? "Today’s source-checked briefs draw on separate reports from distinct publishers."

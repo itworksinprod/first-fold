@@ -6,6 +6,7 @@ import { isValidWebSearchReceipt } from "./free/search-receipt.mjs";
 import {
   MAX_READER_FACING_STORY_WORDS,
   MIN_READER_FACING_STORY_WORDS,
+  MIN_PRIVATE_SOURCE_BRIEF_WORDS,
   countReaderFacingStoryWords,
   validateCanonicalEdition,
 } from "../edition-content.mjs";
@@ -1533,10 +1534,10 @@ function assertFreeEditorialRelationalIntegrity(payload, desks, authoritativeSto
   }
 }
 
-function assertFreeStoryReaderWordCount(story) {
+function assertFreeStoryReaderWordCount(story, minimum = MIN_READER_FACING_STORY_WORDS) {
   const readerWords = countReaderFacingStoryWords(story);
   if (
-    readerWords < MIN_READER_FACING_STORY_WORDS ||
+    readerWords < minimum ||
     readerWords > MAX_READER_FACING_STORY_WORDS
   ) {
     throw new FreeStoryWordCountError(readerWords);
@@ -1580,14 +1581,20 @@ export function normalizeFreeEditorialAgainstCandidates(
   {
     evidencePolicy = "corroborated",
     requiredEventKeys = null,
+    privateSourceBriefs = false,
   } = {},
 ) {
+  if (typeof privateSourceBriefs !== "boolean") throw new Error("Private source brief mode must be boolean.");
   const normalizedEvidencePolicy = requireEvidencePolicy(evidencePolicy);
   const validation = validateFreeEditorialPayload(payload);
   if (!validation.valid) {
     throw new Error(`Workers AI editorial payload failed local schema validation: ${validation.issues.join(" ")}`);
   }
   const frontPage = structuredClone(payload.frontPage);
+  // Only exact locally constructed brief copy receives the private format's
+  // shorter range. A model cannot select the range by forging an evidence ID.
+  const trustedBriefs = privateSourceBriefs
+    ? buildTrustedEvidenceDigestPayload({ candidates, concise: true }).desks : null;
   const candidateByEventKey = new Map();
   for (const candidate of candidates) {
     if (candidateByEventKey.has(candidate.canonicalEventKey)) {
@@ -1622,6 +1629,9 @@ export function normalizeFreeEditorialAgainstCandidates(
       continue;
     }
     const story = structuredClone(page.story);
+    if (trustedBriefs && JSON.stringify(page.story) !== JSON.stringify(trustedBriefs[desk]?.story)) {
+      throw new Error("Private source briefs must match the trusted local construction.");
+    }
     const candidate = candidateByEventKey.get(story.canonicalEventKey);
     if (!candidate) {
       throw new Error(`Workers AI selected an unknown free event for desk ${desk}.`);
@@ -1860,7 +1870,8 @@ export function normalizeFreeEditorialAgainstCandidates(
     }
     for (const assertion of [
       () => assertOriginalFreeStoryCopy(story, candidate),
-      () => assertFreeStoryReaderWordCount(story),
+      () => assertFreeStoryReaderWordCount(story, trustedBriefs
+        ? MIN_PRIVATE_SOURCE_BRIEF_WORDS : MIN_READER_FACING_STORY_WORDS),
     ]) {
       try {
         assertion();
@@ -2752,12 +2763,13 @@ async function draftFreeEditionCore({
         const digestPayload = buildTrustedEvidenceDigestPayload({
           candidates,
           quietReasons,
+          concise: groundedSummaries,
         });
         editorial = normalizeFreeEditorialAgainstCandidates(
           digestPayload,
           candidates,
           generatedAt,
-          { evidencePolicy: normalizedEvidencePolicy, requiredEventKeys },
+          { evidencePolicy: normalizedEvidencePolicy, requiredEventKeys, privateSourceBriefs: groundedSummaries },
         );
       } catch {
         throw freeEditorialDiagnosticError(
@@ -3103,6 +3115,7 @@ async function draftFreeEditionCore({
         responseId: inference.responseId,
         inference: inference.kind,
         draftingMode,
+        ...(groundedSummaries ? { privateSourceBriefs: true } : {}),
         feedSourceCount: coverage.sourceCount,
         successfulFeedSourceCount: coverage.successfulSourceCount,
         coveredDeskCount: FREE_DESKS.length,

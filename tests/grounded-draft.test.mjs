@@ -22,6 +22,7 @@ function response(editorialPayload) {
     responseId: "test", requestSha256: "a".repeat(64), responseSha256: "b".repeat(64) };
 }
 const review = { candidateId: groundedDraft.candidateId, draftSha256: hash(groundedDraft),
+  claimSupport: groundedDraft.claims.map((claim) => claim.supports.map((support) => support.evidenceId)),
   factsSupported: true, attributionAccurate: true, analysisSupported: true, usefulAndSpecific: true };
 const copiedClaim = `CERT/CC says: ${groundedEvidence.summary.split(". ").slice(0, 2).join(". ")}.`;
 
@@ -339,4 +340,129 @@ test("the real Workers AI adapter carries safe format provenance into bounded re
   assert.deepEqual(requests.map((request) => request.max_tokens), [4_000, 3_000, 800]);
   assert.equal(result.editorial.desks["security-and-privacy"].story.headline, groundedDraft.headline);
   assert.ok(!JSON.stringify(result).includes("synthetic-token"));
+});
+
+test("each numeric claim is anchored to its cited passages, not an unrelated dossier figure", () => {
+  const numbered = structuredClone(dossier);
+  const latePassage = { evidenceId: "S1P6", text: "The report covers AOMEI Backupper 8.4.0, whose driver has insufficient disk-access checks." };
+  numbered.sources[0].text += ` ${latePassage.text}`;
+  numbered.sources[0].passages.push(latePassage);
+  const draft = structuredClone(groundedDraft);
+  draft.claims[0].text = draft.claims[0].text.replace("AOMEI Backupper", "AOMEI Backupper 8.4.0");
+  const failures = [];
+  assert.equal(validateGroundedStory(draft, numbered, (code, feedback) => failures.push({ code, feedback })), false);
+  assert.equal(failures[0].code, "NUMERIC_CITATION");
+  assert.equal(failures[0].feedback.field, "claims[0].text");
+  assert.deepEqual(failures[0].feedback.unsupportedNumericTokens, ["8.4.0"]);
+  draft.claims[0].supports[1].evidenceId = latePassage.evidenceId;
+  assert.equal(validateGroundedStory(draft, numbered), true);
+});
+
+test("analysis and headline cannot borrow a figure from an uncited passage", () => {
+  const numbered = structuredClone(dossier);
+  numbered.sources[0].text += " An unrelated measurement reached 9.9%.";
+  numbered.sources[0].passages.push({ evidenceId: "S1P6", text: "An unrelated measurement reached 9.9%." });
+  const draft = { ...structuredClone(groundedDraft), headline: "AOMEI driver exposure reaches 9.9%" };
+  const reasons = [];
+  assert.equal(validateGroundedStory(draft, numbered, (code) => reasons.push(code)), false);
+  assert.deepEqual(reasons, ["NUMERIC_ANCHOR"]);
+});
+
+test("single-publisher copy cannot claim independent confirmation", () => {
+  const draft = { ...structuredClone(groundedDraft), deck: "Independent reporting confirms the backup driver's disk-writing exposure." };
+  const reasons = [];
+  assert.equal(validateGroundedStory(draft, dossier, (code) => reasons.push(code)), false);
+  assert.deepEqual(reasons, ["ATTRIBUTION"]);
+  draft.deck = "The backup driver's exposure has not been independently confirmed.";
+  assert.equal(validateGroundedStory(draft, dossier), true);
+});
+
+test("future or conditional independent review is a useful signal, not an assertion of confirmation", () => {
+  const draft = structuredClone(groundedDraft);
+  draft.whatToDoOrWatch = "Watch for independently verified results before choosing this model for an existing workflow. Compare its behavior on representative documents and check the license and device requirements, keeping the decision tied to the actual task rather than an aggregate claim.";
+  assert.equal(validateGroundedStory(draft, dossier), true);
+  for (const deck of [
+    "If the claim is independently confirmed, its scope will be clearer.",
+    "Wait for independently corroborated results before relying on the claim.",
+    "The report lacks independent testing; no independent reporting confirms the finding.",
+  ]) assert.equal(validateGroundedStory({ ...draft, deck }, dossier), true, deck);
+  for (const deck of [
+    "The results were independently verified.",
+    "Watch for updates. The results were independently verified.",
+    "Watch for updates, but independent reporting confirms the finding.",
+    "If the vendor responds, independent reporting confirms the finding.",
+  ]) {
+    const reasons = [];
+    assert.equal(validateGroundedStory({ ...draft, deck }, dossier, (code) => reasons.push(code)), false, deck);
+    assert.deepEqual(reasons, ["ATTRIBUTION"]);
+  }
+});
+
+test("a reviewer must explicitly cover each claim with its actual supporting passages", async () => {
+  for (const claimSupport of [undefined, [], [[], []], [["S1P2"], ["S1P4", "S1P5"]],
+    [["S1P4", "S1P5"], ["S1P2", "S1P3"]], [["S1P2", "S1P2"], ["S1P4", "S1P5"]],
+    [["unknown", "S1P3"], ["S1P4", "S1P5"]]]) {
+    let calls = 0;
+    const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
+      aiRequestImpl: async () => response(++calls === 1 ? { stories: [groundedDraft] }
+        : { reviews: [{ ...review, claimSupport }] }) });
+    assert.equal(result, null);
+    assert.equal(calls, 2);
+  }
+  let calls = 0;
+  const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
+    aiRequestImpl: async (options) => {
+      if (++calls === 1) return response({ stories: [groundedDraft] });
+      assert.equal(options.maxTokens, 800);
+      assert.equal(options.schema.properties.reviews.minItems, 1);
+      assert.equal(options.schema.properties.reviews.maxItems, 1);
+      return response({ reviews: [{ ...review, claimSupport: [["S1P3", "S1P2"], ["S1P5", "S1P4"]] }] });
+    } });
+  assert.ok(result);
+});
+
+test("repair receives the exact failing field and measured bounds without extra inference calls", async () => {
+  const short = { ...structuredClone(groundedDraft), whyItMatters: "Backup software should protect recovery rather than create a new path to disk damage." };
+  const calls = [];
+  const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
+    aiRequestImpl: async (options) => {
+      calls.push(options);
+      if (calls.length === 1) {
+        assert.match(options.messages[0].content, /there is no separate per-field word quota/);
+        assert.doesNotMatch(options.messages[0].content, /25–35 words|115–165/);
+        return response({ stories: [short] });
+      }
+      if (calls.length === 2) {
+        const rejected = JSON.parse(options.messages[1].content).rejected[0];
+        assert.equal(rejected.rejectionCode, "SHAPE");
+        assert.equal(rejected.feedback.field, "whyItMatters");
+        assert.equal(rejected.feedback.minCharacters, 240);
+        assert.equal(rejected.feedback.maxCharacters, 400);
+        assert.equal(rejected.feedback.actualCharacters, short.whyItMatters.length);
+        return response({ stories: [groundedDraft] });
+      }
+      return response({ reviews: [review] });
+    } });
+  assert.ok(result);
+  assert.deepEqual(calls.map((call) => call.maxTokens), [4_000, 3_000, 800]);
+  assert.ok(calls.every((call) => call.maxAttempts === 1 && call.maxRequestBytes === 70_000 && call.maxResponseBytes === 100_000));
+});
+
+test("a missing draft can consume only the existing repair slot and still requires factual review", async () => {
+  for (const approved of [false, true]) {
+    let calls = 0;
+    const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
+      aiRequestImpl: async (options) => {
+        if (++calls === 1) return response({ stories: [] });
+        if (calls === 2) {
+          const data = JSON.parse(options.messages[1].content);
+          assert.equal(data.rejected[0].draft.candidateId, candidate.candidateId);
+          assert.equal(data.rejected[0].feedback.field, "story");
+          return response({ stories: [groundedDraft] });
+        }
+        return response({ reviews: [{ ...review, factsSupported: approved }] });
+      } });
+    assert.equal(Boolean(result), approved);
+    assert.equal(calls, 3);
+  }
 });

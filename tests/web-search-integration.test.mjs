@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { collectFreeResearchSnapshot, createReviewedArticlePageFetcher, fetchReviewedArticlePage } from
+import { buildFreeFollowupQueries, collectFreeResearchSnapshot, createReviewedArticlePageFetcher, fetchReviewedArticlePage } from
   "../scripts/automation/free/feed-engine.mjs";
 import { FREE_FEED_SOURCES } from "../scripts/automation/free/feed-sources.mjs";
 
@@ -43,6 +43,26 @@ const collect = (network, overrides = {}) => collectFreeResearchSnapshot({ repor
   evidencePolicy: "authoritative-or-corroborated", enrichArticles: true,
   requestImpl: network.requestImpl, lookupImpl: network.lookupImpl,
   discoverWebArticles: async () => discovery(), ...overrides });
+
+test("follow-up queries prioritize missing evidence without rescuing vetoed content", () => {
+  const entry = (title, desk, score, evidenceTier, reasons = [], decision = "accepted") => ({
+    candidate: { title, suggestedDesk: desk, canonicalEventKey: title, ranking: { score, evidenceTier } },
+    rejectionReasons: reasons.map((code) => ({ code })), decision,
+  });
+  const queries = buildFreeFollowupQueries([
+    entry("Already corroborated model release", "ai", 95, "corroborated"),
+    entry("Official model release needing another account", "ai", 78, "authoritative-single"),
+    entry("Buy this promotional deal", "ai", 99, "authoritative-single", ["PROMOTIONAL_OR_DEAL_CONTENT"], "rejected"),
+    entry("New workspace controls", "work-and-tools", 68, "authoritative-single", ["BELOW_EDITORIAL_THRESHOLD"], "rejected"),
+    entry("Confirmed platform change", "platforms-and-power", 88, "corroborated"),
+  ]);
+  assert.equal(queries.length, 3);
+  assert.equal(queries[0].priority, "corroboration");
+  assert.match(queries[0].query, /^Official model release/);
+  assert.equal(queries[1].priority, "desk-gap");
+  assert.equal(queries[2].priority, "context");
+  assert.doesNotMatch(JSON.stringify(queries), /promotional deal/);
+});
 
 test("wired discovery reads reviewed articles, retains factual provenance, and does not inflate feed coverage", async () => {
   const network = fixture();

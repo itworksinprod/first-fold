@@ -107,9 +107,12 @@ At the matching 5:05 AM event on every day:
    healthy coverage from the configured publisher set. It considers only items
    first published inside the bounded 72-hour lookback ending at the edition's
    5:00 AM New York cutoff. Feed text is treated as untrusted data, not
-   instructions. With a configured free Tavily key, eight fixed news searches
-   plus up to four event follow-ups can discover pages missing from the feeds.
-   The query slate and results are cached across the optional research retry.
+   instructions. With a configured free Tavily key, four broad searches give
+   every desk an opportunity, then adaptive slots prioritize missing
+   corroboration, desk gaps and fresh reviewed-publisher leads. Remaining slots
+   cover unused broad angles, up to twelve searches total. No hard-vetoed
+   promotion or rumor receives a follow-up. The bounded query plan and results
+   are cached across the optional research retry, not spent again.
    Search titles, snippets, and dates are discovery hints, never factual evidence.
    Admission requires an existing reviewed publisher, a directly fetched page,
    consistent page/canonical identity, publication metadata inside the same
@@ -132,7 +135,13 @@ At the matching 5:05 AM event on every day:
    shared slots, leaving at least eight available for feed enrichment. Each page
    operation allows at most one redirect, so the 24-page cap permits at most 48
    HTTP hops, not unlimited redirect chains. Feed enrichment and research retries
-   reuse the same bounded fetch cache. Only article regions are extracted. The importance
+   reuse the same bounded fetch cache. Only article regions are extracted.
+   Extractive selection reads across the size-bounded region, retaining complete
+   relevant blocks and nearby conditions instead of stopping at a 5,000-character
+   prefix. It still emits at most 5,000 characters. Writer packets favor an
+   originating and a distinct independent publisher when available, with at most
+   two sources, 5,800 characters and forty passages per source. Source text stays
+   untrusted data; this does not add publishers, fetches or model calls. The importance
    and usefulness assessment uses one bounded model request shared across both
    research attempts; any cached assessment is tied to an exact evidence digest.
    It cannot rescue hard vetoes, weak source evidence, repeats or insufficient
@@ -153,8 +162,12 @@ At the matching 5:05 AM event on every day:
    The writer can replace headline, deck, factual summary, implications and
    watch items. Each factual claim must cite a locally assigned passage ID bound
    to an exact factual source excerpt. Local checks enforce length, numeric/version
-   anchors, attribution, originality and safe text; a separate model prompt then
-   checks every draft's factual support, caveats, attribution and reader value.
+   anchors, attribution, originality and safe text. A claim's numbers and
+   versions must appear in its actual cited passages, not elsewhere in the
+   dossier. A separate prompt to the same model then checks every draft's
+   factual support, caveats, attribution and reader value, returning explicit
+   support IDs for both claims as well as the exact draft hash. This is not
+   an independent second model or an external fact checker.
    Provider field bounds are also enforced locally. Reader prose containing JSON
    field spillover, repeated serialization fragments or unfinished sentences is
    rejected before that model review. A bounded lexical guard additionally checks
@@ -166,8 +179,14 @@ At the matching 5:05 AM event on every day:
    locally owned. The edition mode `source-grounded-summary` means at least one
    story passed both writing checks; other stories may retain the baseline.
    This is a quality check, not proof of factual truth or independent reporting.
-   Checked private summaries may be 100–225 body words; public editions and the
-   unreviewed local fallback retain their existing 150–225-word contract.
+   Checked private summaries may be 100–225 body words. The private local
+   fallback is a visibly labeled **Source digest**, allowed 60–225 words with no
+   word-count padding. Its short source excerpt stays attributed, and fixed
+   event-specific questions distinguish what to investigate from what is known.
+   Only exact locally reconstructed briefs with the private provenance marker
+   receive this format; model output cannot claim it by inventing an ID.
+   Public editions retain their existing 150–225-word contract. Shortening a
+   fallback does not reduce story-selection thresholds or factual requirements.
 8. Each selected story receives a trusted validation receipt containing its total score,
    five component scores, required threshold, evidence tier, and factual source
    and publisher counts. The email renderer recomputes and validates that receipt
@@ -465,7 +484,7 @@ setup and a live no-email check before describing search as operational:
    treating a passing feeds-only run as proof that search worked.
 
 Tavily currently includes **1,000 free credits per month**; advanced search uses
-two credits per query. Eight base queries and up to four follow-ups reserve at
+two credits per query. The bounded adaptive plan of up to twelve searches reserves at
 most **24 credits per run**, or **744 credits for 31 daily runs**. Manual tests
 and extra runs share the dedicated key's 900-credit monthly cap. The provider
 limit, rather than an in-memory counter alone, constrains repeated runs. See
@@ -599,6 +618,10 @@ errors, or skips the final checks. Invalid output itself is never salvaged.
 Revisions preserve the same source, numeric, attribution, originality and length
 checks, and only the final, hashed draft can pass the separate semantic review.
 The September 11 malformed-email regression runs without contacting any provider.
+The writer uses one consistent character/whole-body length contract, without
+conflicting per-field word quotas. The one existing revision receives the exact
+failed field, bound, caveat or citation diagnostic; it can also recover a missing
+story, but cannot create another revision slot.
 An AI review returning all approval flags cannot override the deterministic copy
 or source-caveat vetoes. The manual no-email quality workflow reports success only
 after its story and final-render assertions pass; it does not certify factual
@@ -606,6 +629,29 @@ truth or guarantee a model-written edition when free quota is exhausted.
 Each request has one attempt and a 90-second timeout. The optional
 second research pass shares the same one-call assessment budget. These are
 capacity guards, not permission to spend beyond the free allocation.
+
+### Quality checks without email
+
+`npm run quality:offline` runs a synthetic four-desk editorial evaluation pack.
+It checks accepted useful copy against deliberate JSON corruption, fabricated
+figures, wrong-passage citations, omitted security conditions, false independence
+and generic text, plus actual rendered-copy integrity. It uses no network,
+provider quota or email and reports named failures instead of a misleading
+"paid-quality percentage."
+
+The manual owner-only **Check free writer on synthetic stories (no email)** workflow exercises the
+real fixed free model against those synthetic sources at any time of day. It
+permits only the existing writer/optional-repair/reviewer calls, has no search
+or delivery credentials, saves no raw model output, and requires all four
+synthetic stories to pass for green. It is not today's edition and does not
+test real-news discovery or delivery. The separate full discovery quality
+workflow tests the complete private candidate and rendered email in its normal
+edition window, also without sending. Live checks share the account's free
+allowance; do not repeatedly rerun a quota failure.
+
+Neither test proves paid-model parity. Review live editions for factual accuracy,
+importance, relevance, usefulness, freshness, desk placement, missed stories and
+repeats before proposing changes to score weights or thresholds.
 
 Keep Resend on a free plan appropriate for one daily self-only message and keep
 the repository public if relying on public-repository GitHub Actions usage.

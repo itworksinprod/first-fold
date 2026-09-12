@@ -1,4 +1,5 @@
 import { isIP } from "node:net";
+import { reviewedSearchPublisher } from "./publisher-registry.mjs";
 
 // Search results are discovery hints, never source evidence. Article ingestion
 // must independently establish publisher identity, publication time and facts.
@@ -10,6 +11,7 @@ const USAGE_URL = "https://api.tavily.com/usage";
 const REQUEST_TIMEOUT_MS = 10_000;
 const CREDIT_COST = 2;
 const DESKS = new Set(["ai", "work-and-tools", "security-and-privacy", "platforms-and-power"]);
+const FOLLOWUP_PRIORITIES = new Set(["corroboration", "desk-gap", "context"]);
 const DISCOVERY_QUERIES = Object.freeze([
   { desk: "ai", query: "artificial intelligence model release research capabilities benchmark announcement" },
   { desk: "ai", query: "AI model independent evaluation safety deployment major news" },
@@ -51,8 +53,29 @@ function followups(value) {
     const key = `${entry.desk}:${query.toLowerCase()}`;
     if (seen.has(key)) return [];
     seen.add(key);
-    return [{ desk: entry.desk, query }];
+    return [{ desk: entry.desk, query,
+      priority: FOLLOWUP_PRIORITIES.has(entry.priority) ? entry.priority : "context" }];
   });
+}
+
+const queryKey = (query) => query.normalize("NFKC").replace(/\s+/gu, " ").trim().toLowerCase();
+
+// A result can suggest the next question, never answer it. Restrict adaptive
+// lead followups to the existing publisher registry, use only lexical title
+// terms (not snippets, URLs, operators or provider answers), and keep all of
+// these leads subject to the unchanged publisher-page admission downstream.
+function searchLeadFollowup(results, desk, usedQueries) {
+  for (const lead of results) {
+    if (lead.desk !== desk || !reviewedSearchPublisher(lead.url) ||
+        /[\p{Cc}\p{Cf}]|\b(?:ignore (?:previous|prior|all)|system prompt|developer message|api key|access token|reveal secrets?|execute commands?)\b/iu.test(lead.title)) continue;
+    const terms = lead.title.normalize("NFKC").match(/[\p{L}\p{N}]+(?:[.'’/-][\p{L}\p{N}]+)*/gu) ?? [];
+    if (terms.length < 4) continue;
+    const joined = terms.slice(0, 28).join(" ");
+    const title = joined.length > 170 ? joined.slice(0, 170).replace(/\s+\S*$/u, "") : joined;
+    const query = `${title} official announcement independent reporting`;
+    if (!usedQueries.has(queryKey(query))) return { desk, query, priority: "search-lead" };
+  }
+  return null;
 }
 
 function freeBudget(payload, paygoDisabledVerified) {
@@ -135,8 +158,9 @@ async function readBoundedJson(response) {
   }
 }
 
-/** One factory per edition. First invocation freezes the query/window slate;
- * retries and concurrent callers receive cached hints without spending again.
+/** One factory per edition. First invocation freezes the window and candidate
+ * seeds; a bounded adaptive plan runs once against its own discovery hints.
+ * Retries and concurrent callers receive cached hints without spending again.
  * No key, unsafe billing state or provider trouble gracefully disables search.
  */
 export function createTavilyDiscovery({ apiKey, paygoDisabledVerified = false,
@@ -145,7 +169,8 @@ export function createTavilyDiscovery({ apiKey, paygoDisabledVerified = false,
   async function discover({ reportingWindow, followupQueries = [] } = {}) {
     const diagnostics = { status: "complete", usageChecks: 0, searchRequests: 0, creditsReserved: 0,
       results: 0, discardedResults: 0, maxSearchRequests: TAVILY_MAX_SEARCH_REQUESTS,
-      monthlyCreditCap: TAVILY_MONTHLY_CREDIT_CAP };
+      monthlyCreditCap: TAVILY_MONTHLY_CREDIT_CAP,
+      queryPlan: { broad: 0, corroboration: 0, deskGap: 0, searchLead: 0, context: 0 } };
     const results = [];
     const finish = () => {
       diagnostics.results = results.length;
@@ -188,7 +213,7 @@ export function createTavilyDiscovery({ apiKey, paygoDisabledVerified = false,
     }
     try {
       const dates = searchDateWindow(reportingWindow);
-      const queries = [...DISCOVERY_QUERIES, ...followups(followupQueries)];
+      const candidateQueries = followups(followupQueries);
       diagnostics.usageChecks++;
       const usage = await request(USAGE_URL);
       // Only fixed enums/booleans, never an account response or a credential,
@@ -196,12 +221,18 @@ export function createTavilyDiscovery({ apiKey, paygoDisabledVerified = false,
       diagnostics.billing = billingStates(usage);
       let creditsAvailable = freeBudget(usage, paygoDisabledVerified);
       const seen = new Set();
-      for (const { query, desk } of queries.slice(0, TAVILY_MAX_SEARCH_REQUESTS)) {
+      const usedQueries = new Set();
+      const issueQuery = async ({ query, desk, priority = "broad" }) => {
+        const key = queryKey(query);
+        if (usedQueries.has(key) || diagnostics.searchRequests >= TAVILY_MAX_SEARCH_REQUESTS) return;
         if (creditsAvailable < CREDIT_COST) fail("quota_exhausted");
         // Reserve before the single network attempt, including unknown outcomes.
         creditsAvailable -= CREDIT_COST;
         diagnostics.creditsReserved += CREDIT_COST;
         diagnostics.searchRequests++;
+        usedQueries.add(key);
+        const countKey = ({ "desk-gap": "deskGap", "search-lead": "searchLead" })[priority] ?? priority;
+        diagnostics.queryPlan[countKey]++;
         const payload = await request(SEARCH_URL, { query, ...dates, topic: "news", search_depth: "advanced",
           auto_parameters: false, max_results: 5, chunks_per_source: 1, include_answer: false,
           include_raw_content: false, include_images: false, include_image_descriptions: false,
@@ -219,6 +250,28 @@ export function createTavilyDiscovery({ apiKey, paygoDisabledVerified = false,
           seen.add(hint.url);
           results.push(hint);
         }
+      };
+      // First give every desk one broad search. Limited remaining monthly
+      // credits cannot be spent on two AI queries before other desks are seen.
+      const broad = DISCOVERY_QUERIES.filter((_, index) => index % 2 === 0);
+      const secondary = DISCOVERY_QUERIES.filter((_, index) => index % 2 === 1);
+      for (const query of broad) await issueQuery(query);
+      // Then spend one desk-fair slot on the most useful next question. Trusted
+      // feed assessments identify corroboration or coverage needs. Otherwise a
+      // reviewed-publisher lead can seed a new question after broad discovery.
+      for (const desk of DESKS) {
+        const pending = candidateQueries.filter((entry) => entry.desk === desk && !usedQueries.has(queryKey(entry.query)));
+        const priority = pending.find((entry) => entry.priority === "corroboration") ??
+          pending.find((entry) => entry.priority === "desk-gap");
+        await issueQuery(priority ?? searchLeadFollowup(results, desk, usedQueries) ??
+          pending[0] ?? secondary.find((entry) => entry.desk === desk));
+      }
+      // Complete the unused alternate broad angles, then remaining bounded
+      // candidate seeds. There are at most twelve calls INCLUDING these slots;
+      // there is no recursive search, second slate or additional model call.
+      for (const query of [...secondary, ...candidateQueries]) {
+        if (diagnostics.searchRequests >= TAVILY_MAX_SEARCH_REQUESTS) break;
+        await issueQuery(query);
       }
     } catch (error) {
       diagnostics.status = error instanceof SearchFailure ? error.status : "provider_unavailable";

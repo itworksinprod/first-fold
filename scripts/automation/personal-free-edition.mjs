@@ -480,6 +480,7 @@ function buildPersonalCandidate(
     generatedAt: candidate.publication.generatedAt,
     inference: freePilot.inference,
     draftingMode: freePilot.draftingMode,
+    ...(freePilot.privateSourceBriefs === true ? { privateSourceBriefs: true } : {}),
     feedSnapshotSha256: freePilot.feedSnapshotSha256,
     requestSha256: freePilot.requestSha256,
     responseSha256: freePilot.responseSha256,

@@ -2,7 +2,7 @@
 
 import { readFile, stat } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
-import { validateCanonicalEdition } from "../edition-content.mjs";
+import { isPrivateSourceBrief, validateCanonicalEdition } from "../edition-content.mjs";
 import { readerProseErrors } from "../reader-prose.mjs";
 import { buildPersonalFeedbackLinkMap } from "./personal-feedback.mjs";
 import {
@@ -740,7 +740,7 @@ function renderDeskHtml(candidate, deskKey, deskLabel, feedbackLinks, sourceBrie
   return `
   <tr>
     <td style="padding:30px 34px;border-top:2px solid #24211d;">
-      <p style="margin:0;color:#712b27;font:700 12px/1.2 Arial,Helvetica,sans-serif;letter-spacing:1.6px;text-transform:uppercase;">${deskLabel}${page.story === null ? " · Quiet desk" : ""}</p>${content}
+      <p style="margin:0;color:#712b27;font:700 12px/1.2 Arial,Helvetica,sans-serif;letter-spacing:1.6px;text-transform:uppercase;">${deskLabel}${page.story === null ? " · Quiet desk" : isPrivateSourceBrief(candidate, page.story) ? " · Source digest" : ""}</p>${content}
     </td>
   </tr>`;
 }
@@ -750,7 +750,7 @@ function renderDeskText(candidate, deskKey, deskLabel, feedbackLinks, sourceBrie
   const isSourceBriefStory = shouldRenderSourceBrief(page.story, sourceBriefMode);
   return page.story === null
     ? `${deskLabel.toUpperCase()} — QUIET DESK\nNothing cleared the bar today.\n${compactText(page.emptyReason)}`
-    : `${deskLabel.toUpperCase()}\n${isSourceBriefStory
+    : `${deskLabel.toUpperCase()}${isPrivateSourceBrief(candidate, page.story) ? " — SOURCE DIGEST" : ""}\n${isSourceBriefStory
       ? renderSourceBriefText(page.story, feedbackLinks?.stories[page.story.id])
       : renderStoryText(page.story, feedbackLinks?.stories[page.story.id])}`;
 }

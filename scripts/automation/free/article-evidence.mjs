@@ -1,5 +1,6 @@
 // Public publisher pages are evidence, never instructions. Keep extraction
 // bounded and ephemeral; do not copy full pages into an edition or artifact.
+import { selectEvidencePassages } from "./evidence-packets.mjs";
 export const MAX_RESEARCH_ARTICLES = 24;
 export const MAX_ARTICLE_EXCERPT_CHARS = 5_000;
 
@@ -30,11 +31,12 @@ export function extractArticleEvidence(html) {
   const blocks = [...body.matchAll(/<(p|h[1-4]|li)\b[^>]*>([\s\S]*?)<\/\1\s*>/gi)]
     .map((match) => plain(match[2]))
     .filter((text) => text.length > 30 && !/^(?:subscribe|sign up|cookie|share this|all rights reserved)/i.test(text));
-  const kept = [];
-  for (const block of new Set(blocks)) {
-    if ([...kept, block].join(" ").length > MAX_ARTICLE_EXCERPT_CHARS) break;
-    kept.push(block);
-  }
+  // Read across the already size-bounded article, not just its introduction.
+  // Keep complete factual/caveat blocks with their context inside the same
+  // excerpt budget; no added fetches, model calls or clipped sentences.
+  const title = plain(body.match(/<h1\b[^>]*>([\s\S]*?)<\/h1\s*>/i)?.[1] ?? "");
+  const kept = selectEvidencePassages(blocks, { title,
+    maxChars: MAX_ARTICLE_EXCERPT_CHARS, minChars: 31 });
   const text = kept.join(" ");
   if (text.length < 120) return "";
   return text;

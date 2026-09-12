@@ -1,0 +1,32 @@
+name: Check free writer on synthetic stories (no email)
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: personal-morning-paper
+  cancel-in-progress: false
+
+jobs:
+  check:
+    if: github.repository == 'itworksinprod/first-fold' && github.ref == 'refs/heads/main' && github.actor == 'itworksinprod' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: '24'
+      - name: Test contracts before using credentials
+        run: npm test
+      - name: Check real free writer and reviewer on synthetic sources only
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_AI_API_TOKEN: ${{ secrets.CLOUDFLARE_AI_API_TOKEN }}
+        run: node scripts/automation/check-free-writer.mjs

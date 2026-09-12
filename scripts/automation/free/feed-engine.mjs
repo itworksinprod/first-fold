@@ -3471,6 +3471,30 @@ export async function ingestCuratedFeeds({
  * diagnostics from a failed attempt for observability while keeping the
  * production research entry point fail-closed.
  */
+export function buildFreeFollowupQueries(assessments) {
+  const recoverable = new Set(["BELOW_EDITORIAL_THRESHOLD",
+    "AUTHORITATIVE_SINGLE_COMPONENT_FLOOR", "INSUFFICIENT_SOURCE_EVIDENCE"]);
+  return FREE_DESKS.flatMap((desk) => {
+    const eligible = assessments.filter((entry) => entry.candidate?.suggestedDesk === desk &&
+      entry.rejectionReasons.every((reason) => recoverable.has(reason.code)));
+    const hasSelectedStory = eligible.some((entry) => entry.decision === "accepted");
+    // Spend a scarce follow-up on missing evidence before adding another
+    // account to an already corroborated winner. Hard vetoes remain excluded.
+    const priority = (entry) => entry.candidate.ranking.evidenceTier !== "corroborated"
+      ? entry.decision === "accepted" ? 0 : 1
+      : 2;
+    const lead = eligible.sort((a, b) => priority(a) - priority(b) ||
+      b.candidate.ranking.score - a.candidate.ranking.score ||
+      a.candidate.canonicalEventKey.localeCompare(b.candidate.canonicalEventKey))[0];
+    if (!lead) return [];
+    const needsCorroboration = lead.candidate.ranking.evidenceTier !== "corroborated";
+    return [{ desk, priority: needsCorroboration && lead.decision === "accepted"
+      ? "corroboration" : !hasSelectedStory ? "desk-gap" : "context",
+    query: `${lead.candidate.title.slice(0, 170)} ${needsCorroboration
+      ? "independent reporting original source" : "limitations availability original documentation"}` }];
+  });
+}
+
 export async function collectFreeResearchSnapshot(options = {}) {
   const {
     sources: _ignoredSources,
@@ -3489,12 +3513,7 @@ export async function collectFreeResearchSnapshot(options = {}) {
     try {
       const assessed = assessFeedCandidates({ ...options, items: ingestion.items,
         reportingWindow: ingestion.reportingWindow, evidencePolicy: normalizedEvidencePolicy });
-      const followupQueries = FREE_DESKS.flatMap((desk) => {
-        const lead = assessed.filter((entry) => entry.candidate?.suggestedDesk === desk &&
-          entry.rejectionReasons.every((reason) => ["BELOW_EDITORIAL_THRESHOLD", "AUTHORITATIVE_SINGLE_COMPONENT_FLOOR", "INSUFFICIENT_SOURCE_EVIDENCE"].includes(reason.code)))
-          .sort((a, b) => b.candidate.ranking.score - a.candidate.ranking.score)[0]?.candidate;
-        return lead ? [{ desk, query: `${lead.title.slice(0, 170)} original announcement independent reporting` }] : [];
-      });
+      const followupQueries = buildFreeFollowupQueries(assessed);
       const discovered = await options.discoverWebArticles({ reportingWindow: ingestion.reportingWindow, followupQueries });
       const queriesUsed = discovered.diagnostics.searchRequests;
       const receipt = { provider: "tavily", queriesUsed,

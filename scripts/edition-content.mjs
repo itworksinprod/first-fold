@@ -22,7 +22,28 @@ const PIPELINE = [
 
 export const MIN_READER_FACING_STORY_WORDS = 150;
 export const MIN_PRIVATE_GROUNDED_STORY_WORDS = 100;
+export const MIN_PRIVATE_SOURCE_BRIEF_WORDS = 60;
 export const MAX_READER_FACING_STORY_WORDS = 225;
+
+// A short local source digest is a different format, not a relaxed AI story.
+// Require the private-only marker, complete provenance and exact local claim
+// identity. Published/public stories retain their existing 150-word contract.
+export function isPrivateSourceBrief(edition, story) {
+  const research = edition.provenance?.personalFreeResearch ?? edition.provenance?.freePilot;
+  const local = research?.draftingMode === "trusted-evidence-digest" &&
+    research?.inference === "trusted-evidence-digest" && research?.provider === "local-deterministic" &&
+    research?.model === "not-invoked";
+  const mixed = research?.draftingMode === "source-grounded-summary" &&
+    research?.inference === "workers-ai" && research?.provider === "cloudflare-workers-ai" &&
+    research?.model === "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+  if (edition.status !== "validated" || edition.publication?.publishedAt !== null ||
+      research?.privateSourceBriefs !== true || !(local || mixed) ||
+      typeof story?.id !== "string" || !story.id.startsWith("trusted-evidence-brief-")) return false;
+  const candidateId = story.id.slice("trusted-evidence-brief-".length);
+  return candidateId.length > 0 && Array.isArray(story.evidence) && story.evidence.length > 0 &&
+    story.evidence.length <= 4 && story.evidence.every((claim, index) =>
+      claim?.id === `trusted-evidence-brief-claim-${candidateId}-${index + 1}`);
+}
 
 function isObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -183,7 +204,9 @@ export function validateCanonicalEdition(edition) {
       freeResearch?.provider === "cloudflare-workers-ai" &&
       Array.isArray(story.evidence) && story.evidence.length > 0 && story.evidence.every((claim) =>
         typeof claim.id === "string" && claim.id.startsWith(`${story.id}-grounded-`));
-    const minimumWords = privateGroundedBrief ? MIN_PRIVATE_GROUNDED_STORY_WORDS : MIN_READER_FACING_STORY_WORDS;
+    const privateSourceBrief = isPrivateSourceBrief(edition, story);
+    const minimumWords = privateGroundedBrief ? MIN_PRIVATE_GROUNDED_STORY_WORDS
+      : privateSourceBrief ? MIN_PRIVATE_SOURCE_BRIEF_WORDS : MIN_READER_FACING_STORY_WORDS;
     for (const field of ["headline", "deck", "whatHappened", "whyItMatters", "whatToDoOrWatch"]) {
       const paragraph = privateGroundedBrief && ["whatHappened", "whyItMatters", "whatToDoOrWatch"].includes(field);
       if (readerProseErrors(story[field], { paragraph }).length) {

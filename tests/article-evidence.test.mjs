@@ -16,6 +16,23 @@ test("extracts article paragraphs and excludes navigation, scripts and footer", 
   assert.equal(extractArticleEvidence("<p>A menu without an article region.</p>"), "");
   assert.ok(extractArticleEvidence(`<article>${"<p>" + paragraph + "</p>".repeat(20)}</article>`).length <= 5_000);
 });
+test("reads late caveats and solution details within the existing excerpt budget", () => {
+  const background = Array.from({ length: 70 }, (_, index) =>
+    `<p>Background section ${index} describes the history of the product and its ordinary use in managed installations over time.</p>`).join("");
+  const condition = "UEFI-level execution is possible only when Secure Boot is disabled on the affected machine.";
+  const solution = "The vendor has not released a fixed version, and evidence of exploitation is currently unknown.";
+  const result = extractArticleEvidence(`<article><h1>Example backup driver vulnerability</h1>
+    <p>A local backup driver flaw permits changes to physical disks by an unprivileged user already present on the machine.</p>
+    ${background}<p>${condition}</p><p>${solution}</p></article>`);
+  assert.ok(result.length <= 5_000);
+  assert.ok(result.includes(condition), "Do not silently lose a condition beyond the old prefix cutoff");
+  assert.ok(result.includes(solution));
+});
+test("an oversized first paragraph does not hide later usable source evidence", () => {
+  const result = extractArticleEvidence(`<main><p>${"Background content without useful detail. ".repeat(160)}</p><p>${paragraph}</p></main>`);
+  assert.ok(result.includes(paragraph));
+  assert.ok(result.length <= 5_000);
+});
 test("article fetch reuses reviewed ownership and pinned public DNS", async () => {
   assert.equal(await fetchReviewedArticle(item, options), paragraph);
   await assert.rejects(fetchReviewedArticle({ ...item, url: "https://evil.example/article" }, options), /reviewed/);
