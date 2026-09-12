@@ -4,9 +4,12 @@ import { createHash } from "node:crypto";
 import { appendFile, lstat, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
+import { HISTORICAL_PREVIEW, assertHistoricalPreviewAuthorization,
+  isHistoricalPreviewRecord, isHistoricalPreviewTiming } from "./historical-preview-policy.mjs";
 import { validateCanonicalEdition } from "../edition-content.mjs";
 import {
   FREE_AUTOMATION_WORKFLOW,
+  assertFreeEditionGenerationTime,
   draftFreeEditionWithHealth,
   validateFreePilotProvenance,
 } from "./draft-free-edition.mjs";
@@ -477,6 +480,8 @@ function buildPersonalCandidate(
     runUrl: automation.runUrl,
     repository: automation.repository,
     runMode,
+    ...(Object.hasOwn(freePilot, "historicalPreview")
+      ? { historicalPreview: structuredClone(freePilot.historicalPreview) } : {}),
     generatedAt: candidate.publication.generatedAt,
     inference: freePilot.inference,
     draftingMode: freePilot.draftingMode,
@@ -536,6 +541,13 @@ export function validatePersonalFreeCandidate(
     Number.isInteger(research?.candidateCount) &&
     research.candidateCount === stories.length;
   const inferenceIsValid = hasPersonalFreeInferenceTuple(research, stories.length);
+  const historical = research?.runMode === HISTORICAL_PREVIEW.runMode;
+  const historicalModeIsValid = historical ?
+    isHistoricalPreviewRecord(research.historicalPreview) &&
+    isHistoricalPreviewTiming({ editionDate: candidate.editionDate,
+      generatedAt: research.generatedAt, checkedAt: sourceCheck?.checkedAt }) &&
+    research.privateSourceBriefs === true :
+    !Object.hasOwn(research ?? {}, "historicalPreview");
 
   if (
     !validation.valid ||
@@ -553,7 +565,8 @@ export function validatePersonalFreeCandidate(
     research?.runUrl !==
       `https://github.com/${EXPECTED_REPOSITORY}/actions/runs/${research?.runId ?? ""}` ||
     !RUN_ID_PATTERN.test(research?.runId ?? "") ||
-    !PERSONAL_FREE_RUN_MODES.includes(research?.runMode) ||
+    (!PERSONAL_FREE_RUN_MODES.includes(research?.runMode) && !historical) ||
+    !historicalModeIsValid ||
     (runMode !== undefined && research.runMode !== runMode) ||
     research?.generatedAt !== candidate.publication?.generatedAt ||
     !inferenceIsValid ||
@@ -615,6 +628,11 @@ export function validatePersonalFreeCandidate(
   ) {
     throw new Error("Personal free candidate failed its private source-checked provenance contract.");
   }
+  if (!historical) {
+    assertFreeEditionGenerationTime({ editionDate: candidate.editionDate,
+      now: research.generatedAt, cutoffInstant: candidate.reportingWindow.endExclusive,
+      publishInstant: candidate.publication.publishAt, runMode: research.runMode });
+  }
   return true;
 }
 
@@ -630,6 +648,7 @@ async function generatePersonalFreeEditionWithHealth({
   env = process.env,
   now,
   runMode = "on_time",
+  historicalPreviewAuthorization,
   researchImpl,
   feedSources,
   feedRequestImpl,
@@ -644,7 +663,10 @@ async function generatePersonalFreeEditionWithHealth({
   personalStoryLedger,
 } = {}) {
   requireEditionDate(editionDate);
-  if (!PERSONAL_FREE_RUN_MODES.includes(runMode)) {
+  if (runMode === HISTORICAL_PREVIEW.runMode) {
+    assertHistoricalPreviewAuthorization(historicalPreviewAuthorization,
+      typeof now === "function" ? now() : now ?? new Date(), editionDate);
+  } else if (historicalPreviewAuthorization !== undefined || !PERSONAL_FREE_RUN_MODES.includes(runMode)) {
     throw new Error("Personal free runMode must be on_time or same_day_backfill.");
   }
   const automation = personalFreeAutomationFromEnvironment(env);
@@ -679,6 +701,7 @@ async function generatePersonalFreeEditionWithHealth({
     model: DEFAULT_CLOUDFLARE_AI_MODEL,
     now,
     runMode,
+    historicalPreviewAuthorization,
     evidencePolicy: PERSONAL_FREE_EVIDENCE_POLICY,
     requireComplete: false,
     minimumStoryCount: PERSONAL_FREE_MINIMUM_STORY_COUNT,
@@ -729,6 +752,10 @@ async function generatePersonalFreeEditionWithHealth({
       throw new Error("Personal free detailed drafting returned an invalid result.");
     }
     sourceHealth = detailedDraft.sourceHealth ?? null;
+    if (runMode === HISTORICAL_PREVIEW.runMode) {
+      assertHistoricalPreviewAuthorization(historicalPreviewAuthorization,
+        typeof now === "function" ? now() : now ?? new Date(), editionDate);
+    }
     let candidate;
     try {
       candidate = buildPersonalCandidate(detailedDraft.candidate, {

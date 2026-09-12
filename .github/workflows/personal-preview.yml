@@ -1,5 +1,6 @@
 name: Send requested free-paper preview
-# Owner-requested web-search upgrade preview. Manual only; expires midnight ET.
+# Owner-requested September 11 preview, researched September 12. Manual only;
+# expires at the end of September 12 Eastern. Never replaces a daily edition.
 on:
   workflow_dispatch:
 permissions: {}
@@ -24,7 +25,7 @@ jobs:
         run: npm test
       - name: Research, check every summary, and send the requested preview once
         env:
-          PREVIEW_CONFIRMATION: SEND WEB SEARCH PREVIEW 2026-09-11
+          PREVIEW_CONFIRMATION: SEND SEPTEMBER 11 PREVIEW 2026-09-12
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_AI_API_TOKEN: ${{ secrets.CLOUDFLARE_AI_API_TOKEN }}
           TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}

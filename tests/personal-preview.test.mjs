@@ -3,6 +3,7 @@ import test from "node:test";
 import { readFile } from "node:fs/promises";
 import { assertRequestedPreview, assertRequestedPreviewQuality, assertRequestedSearchReceipt,
   REQUESTED_PREVIEW_REVISION, runRequestedPreview } from "../scripts/automation/personal-preview.mjs";
+import { HISTORICAL_PREVIEW, assertHistoricalPreviewAuthorization } from "../scripts/automation/historical-preview-policy.mjs";
 
 const env = {
   GITHUB_ACTIONS: "true", GITHUB_REPOSITORY: "itworksinprod/first-fold", GITHUB_REF: "refs/heads/main",
@@ -39,6 +40,24 @@ test("a closed preview gate prevents both model use and sending", async () => {
   await assert.rejects(runRequestedPreview({ env: { ...env, GITHUB_RUN_ATTEMPT: "2" }, now,
     generate: async () => { calls++; }, send: async () => { calls++; } }), /gate is closed/);
   assert.equal(calls, 0);
+});
+test("the explicitly requested historical preview preserves yesterday and uses a real research clock", async () => {
+  const current = new Date("2026-09-12T05:15:00.000Z");
+  const historicalEnv = { ...configuredEnv, PREVIEW_CONFIRMATION: HISTORICAL_PREVIEW.confirmation };
+  const token = assertRequestedPreview(historicalEnv, current);
+  assert.equal(assertHistoricalPreviewAuthorization(token, current, "2026-09-11"), true);
+  let calls = 0;
+  await assert.rejects(runRequestedPreview({ env: historicalEnv, now: current, clock: () => current,
+    generate: async (options) => {
+      calls++;
+      assert.equal(options.editionDate, "2026-09-11");
+      assert.equal(options.runMode, HISTORICAL_PREVIEW.runMode);
+      assert.equal(options.now().toISOString(), current.toISOString());
+      assert.equal(assertHistoricalPreviewAuthorization(options.historicalPreviewAuthorization, current, "2026-09-11"), true);
+      assert.ok(options.personalStoryLedger);
+      throw new Error("stop-before-inference");
+    }, send: async () => { throw new Error("must-not-send"); } }), /stop-before-inference/);
+  assert.equal(calls, 1);
 });
 test("missing search credentials stop before research, model use or email", async () => {
   for (const value of [undefined, "", "   "]) {
@@ -88,7 +107,7 @@ test("the preview workflow is not scheduled and has no public or ledger artifact
   assert.match(workflow, /PERSONAL_PAPER_EMAIL: \$\{\{ secrets\.PERSONAL_PAPER_EMAIL \}\}/);
   assert.match(workflow, /TAVILY_API_KEY: \$\{\{ secrets\.TAVILY_API_KEY \}\}/);
   assert.match(workflow, /TAVILY_PAYGO_DISABLED_VERIFIED: \$\{\{ vars\.TAVILY_PAYGO_DISABLED_VERIFIED \}\}/);
-  assert.match(workflow, /PREVIEW_CONFIRMATION: SEND WEB SEARCH PREVIEW 2026-09-11/);
+  assert.match(workflow, /PREVIEW_CONFIRMATION: SEND SEPTEMBER 11 PREVIEW 2026-09-12/);
   assert.match(workflow, /workflow_dispatch:/);
   assert.doesNotMatch(workflow, /push:|schedule:|upload-artifact|actions: write|contents: write|OPENAI_API_KEY/);
 });

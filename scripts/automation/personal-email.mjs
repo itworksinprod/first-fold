@@ -13,6 +13,8 @@ import {
 import { PERSONAL_STORY_LEDGER_SCHEMA_VERSION } from "./personal-story-ledger.mjs";
 import { DEFAULT_CLOUDFLARE_AI_MODEL, WORKERS_AI_PROVIDER } from "./free/workers-ai.mjs";
 import { hasValidWebSearchResearchMethod, isValidWebSearchReceipt } from "./free/search-receipt.mjs";
+import { HISTORICAL_PREVIEW, assertHistoricalPreviewAuthorization, isHistoricalPreviewRecord,
+  isHistoricalPreviewTiming } from "./historical-preview-policy.mjs";
 
 export const RESEND_EMAIL_ENDPOINT = "https://api.resend.com/emails";
 export const PERSONAL_EMAIL_FROM = "First Fold <onboarding@resend.dev>";
@@ -513,6 +515,11 @@ export function assertPersonalEmailCandidate(candidate) {
   const runId = typeof research?.runId === "string" ? research.runId : "";
   const expectedRunUrl =
     `https://github.com/${EXPECTED_PERSONAL_REPOSITORY}/actions/runs/${runId}`;
+  const historicalPreview = research?.runMode === HISTORICAL_PREVIEW.runMode;
+  const validHistoricalPreview = historicalPreview && isHistoricalPreviewRecord(research?.historicalPreview) &&
+    typeof sourceCheck?.checkedAt === "string" &&
+    isHistoricalPreviewTiming({ editionDate: candidate.editionDate, generatedAt: research.generatedAt,
+      checkedAt: sourceCheck?.checkedAt });
   if (
     !research ||
     typeof research !== "object" ||
@@ -521,7 +528,9 @@ export function assertPersonalEmailCandidate(candidate) {
     research.repository !== EXPECTED_PERSONAL_REPOSITORY ||
     research.runUrl !== expectedRunUrl ||
     !/^[1-9]\d*$/.test(runId) ||
-    !["on_time", "same_day_backfill"].includes(research.runMode) ||
+    (!historicalPreview && !["on_time", "same_day_backfill"].includes(research.runMode)) ||
+    (historicalPreview && !validHistoricalPreview) ||
+    (!historicalPreview && Object.hasOwn(research, "historicalPreview")) ||
     research.generatedAt !== candidate.publication.generatedAt ||
     !inferenceIsValid ||
     !PERSONAL_RESEARCH_DRAFTING_MODES.includes(research.draftingMode) ||
@@ -1109,14 +1118,35 @@ async function performResendRequest({ fetchImpl, apiKey, requestBody, idempotenc
  * deterministic per-edition Resend idempotency key; this function never retries.
  */
 export async function sendPersonalEditionEmail(candidate, options = {}) {
+  const research = candidate?.provenance?.personalFreeResearch;
+  if (research?.runMode === HISTORICAL_PREVIEW.runMode || Object.hasOwn(research ?? {}, "historicalPreview")) {
+    throw new Error("Historical previews cannot use daily email delivery.");
+  }
   return sendPersonalEmail(candidate, options);
 }
 
 /** An explicitly requested same-day preview is separate from daily delivery.
  * Its fixed per-date key protects the preview too; it never changes the daily key. */
 export async function sendPersonalEditionPreview(candidate, {
-  previewConfirmation, previewRevision, previewNow = new Date(), ...options
+  previewConfirmation, previewRevision, previewNow = new Date(), previewClock = () => new Date(),
+  historicalPreviewAuthorization, ...options
 } = {}) {
+  const research = candidate?.provenance?.personalFreeResearch;
+  const historical = previewRevision === HISTORICAL_PREVIEW.revision;
+  if (historical) {
+    if (previewConfirmation !== HISTORICAL_PREVIEW.confirmation || research?.runMode !== HISTORICAL_PREVIEW.runMode ||
+        !isHistoricalPreviewRecord(research?.historicalPreview) || typeof previewClock !== "function") {
+      throw new Error("Historical preview requires its exact requested authorization.");
+    }
+    assertHistoricalPreviewAuthorization(historicalPreviewAuthorization, previewNow, candidate?.editionDate);
+    assertRequestedGroundedPreview(candidate);
+    return sendPersonalEmail(candidate, options, HISTORICAL_PREVIEW.revision, () => {
+      assertHistoricalPreviewAuthorization(historicalPreviewAuthorization, previewClock(), candidate?.editionDate);
+    });
+  }
+  if (research?.runMode === HISTORICAL_PREVIEW.runMode || Object.hasOwn(research ?? {}, "historicalPreview")) {
+    throw new Error("Historical preview requires its exact requested authorization.");
+  }
   const date = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York",
     year: "numeric", month: "2-digit", day: "2-digit" }).format(previewNow);
   const updated = previewRevision === "web-search-upgrade-2026-09-11";
@@ -1125,17 +1155,19 @@ export async function sendPersonalEditionPreview(candidate, {
       (previewRevision !== undefined && !updated) || (updated && date !== "2026-09-11")) {
     throw new Error("Personal preview requires explicit confirmation for today's edition.");
   }
-  if (updated) {
-    const research = candidate?.provenance?.personalFreeResearch;
-    const stories = Object.values(candidate.desks ?? {}).flatMap(({ story }) => story ? [story] : []);
-    if (!isValidWebSearchReceipt(research?.webSearch) || research.webSearch.admittedArticles < 1 ||
-        research.draftingMode !== "source-grounded-summary" || !stories.length ||
-        !stories.every((story) => story.evidence?.length > 0 &&
-          story.evidence.every((claim) => claim.id.startsWith(`${story.id}-grounded-`)))) {
-      throw new Error("Updated preview requires verified web discovery and checked summaries.");
-    }
-  }
+  if (updated) assertRequestedGroundedPreview(candidate);
   return sendPersonalEmail(candidate, options, updated ? previewRevision : true);
+}
+
+function assertRequestedGroundedPreview(candidate) {
+  const research = candidate?.provenance?.personalFreeResearch;
+  const stories = Object.values(candidate.desks ?? {}).flatMap(({ story }) => story ? [story] : []);
+  if (!isValidWebSearchReceipt(research?.webSearch) || research.webSearch.admittedArticles < 1 ||
+      research.draftingMode !== "source-grounded-summary" || !stories.length ||
+      !stories.every((story) => story.evidence?.length > 0 &&
+        story.evidence.every((claim) => typeof claim?.id === "string" && claim.id.startsWith(`${story.id}-grounded-`)))) {
+    throw new Error("Updated preview requires verified web discovery and checked summaries.");
+  }
 }
 
 async function sendPersonalEmail(candidate, {
@@ -1147,8 +1179,12 @@ async function sendPersonalEmail(candidate, {
   feedbackNow,
   fetchImpl = globalThis.fetch,
   timeoutMs = DEFAULT_RESEND_TIMEOUT_MS,
-} = {}, preview = false) {
+} = {}, preview = false, historicalDeliveryGuard) {
   assertPersonalEmailCandidate(candidate);
+  const historical = preview === HISTORICAL_PREVIEW.revision;
+  if (historical && typeof historicalDeliveryGuard !== "function") {
+    throw new Error("Historical preview requires its exact requested authorization.");
+  }
   const resolvedFeedbackLinks = optionalFeedbackLinks(candidate, {
     feedbackLinks,
     feedbackBaseUrl,
@@ -1160,10 +1196,12 @@ async function sendPersonalEmail(candidate, {
   });
   if (preview) {
     const updated = preview === "web-search-upgrade-2026-09-11";
-    const notice = updated
+    const notice = historical
+      ? "Requested September 11 preview. Researched on September 12, 2026 for the September 11, 2026 5:00 AM ET reporting cutoff. This is not your September 12 daily edition; isolated preview history is used and daily delivery is unchanged."
+      : updated
       ? "Requested updated preview with free web discovery and evidence-checked summaries. Uses today's morning reporting window and isolated repeat history; it does not replace your daily edition."
       : "Requested preview of the upgraded free paper. Uses today's morning reporting window and isolated repeat history; it does not replace your daily edition.";
-    rendered.subject = `[${updated ? "Updated preview" : "Preview"}] ${rendered.subject}`;
+    rendered.subject = `[${historical ? "September 11 preview" : updated ? "Updated preview" : "Preview"}] ${rendered.subject}`;
     rendered.text = `${notice}\n\n${rendered.text}`;
     rendered.html = rendered.html.replace(/(<body[^>]*>)/u,
       `$1<div style="padding:16px;text-align:center;font:14px/1.5 Arial,sans-serif;">${notice}</div>`);
@@ -1177,7 +1215,9 @@ async function sendPersonalEmail(candidate, {
   }
 
   const idempotencyKey = preview
-    ? preview === "web-search-upgrade-2026-09-11"
+    ? historical
+      ? "first-fold-personal-preview-free-quality-2026-09-11-requested-2026-09-12"
+      : preview === "web-search-upgrade-2026-09-11"
       ? "first-fold-personal-preview-web-search-upgrade-2026-09-11"
       : `first-fold-personal-preview-${candidate.editionDate}`
     : personalEditionIdempotencyKey(candidate.editionDate);
@@ -1192,6 +1232,9 @@ async function sendPersonalEmail(candidate, {
     throw new Error("Personal email request exceeds the safe delivery size limit.");
   }
 
+  // Everything between this real-clock check and the request is synchronous.
+  // An authorization that expires while preparing copy cannot send after midnight.
+  if (historical) historicalDeliveryGuard();
   const controller = new AbortController();
   let timeoutHandle;
   const timeout = new Promise((_, reject) => {

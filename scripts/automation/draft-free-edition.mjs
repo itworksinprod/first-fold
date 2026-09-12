@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { HISTORICAL_PREVIEW, assertHistoricalPreviewAuthorization,
+  isHistoricalPreviewRecord, isHistoricalPreviewTiming } from "./historical-preview-policy.mjs";
 import { GROUNDED_DIGEST_MODE, synthesizeGroundedEditorial } from "./free/grounded-draft.mjs";
 import { createNewsworthinessReview } from "./free/newsworthiness.mjs";
 import { createTavilyDiscovery } from "./free/web-search.mjs";
@@ -241,8 +243,20 @@ export function assertFreeEditionGenerationTime({
   cutoffInstant,
   publishInstant,
   runMode = "on_time",
+  historicalPreviewAuthorization,
 }) {
   const generatedAt = resolveNow(now);
+  if (runMode === HISTORICAL_PREVIEW.runMode) {
+    assertHistoricalPreviewAuthorization(historicalPreviewAuthorization, generatedAt, editionDate);
+    if (!sameInstant(cutoffInstant, localTimeToIso(editionDate, 5, 0)) ||
+        !sameInstant(publishInstant, localTimeToIso(editionDate, 6, 0))) {
+      throw new Error("The requested historical preview must preserve the original edition cutoff and schedule.");
+    }
+    return generatedAt;
+  }
+  if (historicalPreviewAuthorization !== undefined) {
+    throw new Error("Historical preview authorization cannot change an ordinary free run.");
+  }
   if (!FREE_RUN_MODES.includes(runMode)) {
     throw new Error("Free runMode must be on_time or same_day_backfill.");
   }
@@ -2205,7 +2219,15 @@ function assertCheckedAt({
   publishAt,
   editionDate,
   runMode = "on_time",
+  historicalPreviewAuthorization,
 }) {
+  if (runMode === HISTORICAL_PREVIEW.runMode) {
+    assertHistoricalPreviewAuthorization(historicalPreviewAuthorization, checkedAt, editionDate);
+    if (!isHistoricalPreviewTiming({ editionDate, generatedAt, checkedAt })) {
+      throw new Error("Historical preview checks must finish after generation on the explicit request date.");
+    }
+    return;
+  }
   const isBackfill = runMode === "same_day_backfill";
   if (
     !isInstant(checkedAt) ||
@@ -2240,13 +2262,23 @@ export function validateFreePilotProvenance(
   }
   const expectedRun = requireGitHubRun(automation ?? {});
   const freePilot = candidate.provenance?.freePilot;
+  const historical = freePilot?.runMode === HISTORICAL_PREVIEW.runMode;
+  if (historical ? (
+    !isHistoricalPreviewRecord(freePilot.historicalPreview) ||
+    !isHistoricalPreviewTiming({ editionDate: candidate.editionDate,
+      generatedAt: freePilot.generatedAt, checkedAt: candidate.provenance?.sourceCheck?.checkedAt }) ||
+    freePilot.draftSelectedSlate !== true || freePilot.privateSourceBriefs !== true ||
+    ![GROUNDED_DIGEST_MODE, TRUSTED_EVIDENCE_DIGEST_MODE, "quiet"].includes(freePilot.draftingMode)
+  ) : Object.hasOwn(freePilot ?? {}, "historicalPreview")) {
+    throw new Error("Free candidate historical-preview provenance or timing is invalid.");
+  }
   if (Object.hasOwn(freePilot ?? {}, "webSearch") && !isValidWebSearchReceipt(freePilot.webSearch)) {
     throw new Error("Free candidate has an invalid web discovery receipt.");
   }
   if (
     !isObject(freePilot) ||
     freePilot.workflow !== FREE_AUTOMATION_WORKFLOW ||
-    !FREE_RUN_MODES.includes(freePilot.runMode) ||
+    (!FREE_RUN_MODES.includes(freePilot.runMode) && !historical) ||
     freePilot.runId !== expectedRun.runId ||
     freePilot.runUrl !== expectedRun.runUrl ||
     freePilot.repository !== expectedRun.repository ||
@@ -2427,6 +2459,13 @@ export function validateFreePilotProvenance(
   ) {
     throw new Error("Free candidate must carry a passing newsroom source check.");
   }
+  if (!historical) {
+    assertFreeEditionGenerationTime({ editionDate: candidate.editionDate,
+      now: freePilot.generatedAt, cutoffInstant: candidate.reportingWindow.endExclusive,
+      publishInstant: candidate.publication.publishAt, runMode: freePilot.runMode });
+    assertCheckedAt({ editionDate: candidate.editionDate, generatedAt: freePilot.generatedAt,
+      checkedAt: sourceCheck.checkedAt, publishAt: candidate.publication.publishAt, runMode: freePilot.runMode });
+  }
   return true;
 }
 
@@ -2445,6 +2484,7 @@ async function draftFreeEditionCore({
   model = process.env.CLOUDFLARE_AI_MODEL,
   now,
   runMode = "on_time",
+  historicalPreviewAuthorization,
   evidencePolicy = "corroborated",
   requireComplete = false,
   minimumStoryCount = 0,
@@ -2480,6 +2520,10 @@ async function draftFreeEditionCore({
 } = {}, healthState = { attempts: [] }) {
   if (typeof researchImpl !== "function") throw new Error("researchImpl must be a function.");
   if (typeof aiRequestImpl !== "function") throw new Error("aiRequestImpl must be a function.");
+  if (runMode === HISTORICAL_PREVIEW.runMode &&
+      (!draftSelectedSlate || !groundedSummaries || !trustedEvidenceDigestOnly || summarizeSelectedSlate)) {
+    throw new Error("Historical preview generation is restricted to the private selected-slate grounded pipeline.");
+  }
   const normalizedEvidencePolicy = requireEvidencePolicy(evidencePolicy);
   const normalizedLookbackHours = requireLookbackHours(lookbackHours);
   const normalizedMinimumScore = requireMinimumScore(minimumScore);
@@ -2567,6 +2611,7 @@ async function draftFreeEditionCore({
     cutoffInstant: scaffold.reportingWindow.endExclusive,
     publishInstant: scaffold.publication.publishAt,
     runMode,
+    historicalPreviewAuthorization,
   });
   const githubRun = requireGitHubRun(automation ?? {});
   scaffold.publication.generatedAt = generatedAt;
@@ -2574,6 +2619,9 @@ async function draftFreeEditionCore({
     editionDate,
     automation: githubRun,
     runMode,
+    ...(runMode === HISTORICAL_PREVIEW.runMode ? { generatedAt,
+      historicalPreview: { editionDate: HISTORICAL_PREVIEW.editionDate,
+        requestedOn: HISTORICAL_PREVIEW.requestedOn, revision: HISTORICAL_PREVIEW.revision } } : {}),
     settings: {
       evidencePolicy: normalizedEvidencePolicy,
       lookbackHours: normalizedLookbackHours,
@@ -3085,6 +3133,7 @@ async function draftFreeEditionCore({
     publishAt: scaffold.publication.publishAt,
     editionDate,
     runMode,
+    historicalPreviewAuthorization,
   });
   const candidate = {
     ...scaffold,
@@ -3108,6 +3157,10 @@ async function draftFreeEditionCore({
         runUrl: githubRun.runUrl,
         repository: githubRun.repository,
         runMode,
+        ...(runMode === HISTORICAL_PREVIEW.runMode ? {
+          historicalPreview: { editionDate: HISTORICAL_PREVIEW.editionDate,
+            requestedOn: HISTORICAL_PREVIEW.requestedOn, revision: HISTORICAL_PREVIEW.revision },
+        } : {}),
         generatedAt,
         feedSnapshotSha256,
         requestSha256: inference.requestSha256,
@@ -3151,6 +3204,9 @@ async function draftFreeEditionCore({
     lookupImpl: sourceLookupImpl,
     timeoutMs: sourceCheckTimeoutMs,
     maxRedirects: 0,
+    ...(runMode === HISTORICAL_PREVIEW.runMode ? {
+      temporalMode: "requested-historical-preview", historicalPreviewAuthorization,
+    } : {}),
     ...(runMode === "same_day_backfill"
       ? { temporalMode: "free-same-day-backfill" }
       : {}),

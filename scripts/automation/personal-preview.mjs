@@ -4,10 +4,14 @@ import { createEmptyPersonalStoryLedger } from "./personal-story-ledger.mjs";
 import { collectFreeResearchSnapshot } from "./free/feed-engine.mjs";
 import { assertPersonalEmailCandidate, sendPersonalEditionPreview } from "./personal-email.mjs";
 import { isValidWebSearchReceipt } from "./free/search-receipt.mjs";
+import { HISTORICAL_PREVIEW, authorizeHistoricalPreview } from "./historical-preview-policy.mjs";
 
 export const REQUESTED_PREVIEW_DATE = "2026-09-11";
 export const REQUESTED_PREVIEW_REVISION = "web-search-upgrade-2026-09-11";
 export function assertRequestedPreview(env, now = new Date()) {
+  if (env.PREVIEW_CONFIRMATION === HISTORICAL_PREVIEW.confirmation) {
+    return authorizeHistoricalPreview(env, now);
+  }
   const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York",
     year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23" })
     .formatToParts(now).map(({ type, value }) => [type, value]));
@@ -47,14 +51,17 @@ export function assertRequestedPreviewQuality(candidate) {
 export async function runRequestedPreview({ env = process.env, now = new Date(),
   clock = () => new Date(), research = collectFreeResearchSnapshot,
   generate = generatePersonalFreeEdition, send = sendPersonalEditionPreview } = {}) {
-  assertRequestedPreview(env, now);
+  const historicalPreviewAuthorization = assertRequestedPreview(env, now);
+  const historical = Boolean(historicalPreviewAuthorization);
   if (!env.RESEND_API_KEY || !env.PERSONAL_PAPER_EMAIL) throw new Error("Preview email configuration is missing.");
   if (!env.TAVILY_API_KEY?.trim()) {
     throw Object.assign(new Error("Search credentials are not configured."), { code: "SEARCH_KEY_REQUIRED" });
   }
   let snapshot;
-  const candidate = await generate({ editionDate: REQUESTED_PREVIEW_DATE,
-    runMode: "same_day_backfill", env, now,
+  const candidate = await generate({ editionDate: historical ? HISTORICAL_PREVIEW.editionDate : REQUESTED_PREVIEW_DATE,
+    runMode: historical ? HISTORICAL_PREVIEW.runMode : "same_day_backfill", env,
+    now: historical ? () => clock() : now,
+    ...(historical ? { historicalPreviewAuthorization } : {}),
     personalStoryLedger: createEmptyPersonalStoryLedger({ fingerprintKey: env.CLOUDFLARE_AI_API_TOKEN }),
     researchImpl: async (options) => {
       snapshot ??= await research(options);
@@ -65,12 +72,16 @@ export async function runRequestedPreview({ env = process.env, now = new Date(),
   });
   assertPersonalEmailCandidate(candidate);
   const quality = assertRequestedPreviewQuality(candidate);
-  console.info(`::notice title=Preview quality::${JSON.stringify(quality)}`);
+  console.info(`::notice title=Preview quality::${JSON.stringify({ ...quality,
+    ...(historical ? { editionDate: HISTORICAL_PREVIEW.editionDate,
+      researchedOn: HISTORICAL_PREVIEW.requestedOn, archivedSnapshot: false } : {}) })}`);
   // Recheck expiry immediately before sending, without changing any daily state.
   const sendNow = clock();
   assertRequestedPreview(env, sendNow);
   await send(candidate, { apiKey: env.RESEND_API_KEY, recipient: env.PERSONAL_PAPER_EMAIL,
-    previewConfirmation: env.PREVIEW_CONFIRMATION, previewRevision: REQUESTED_PREVIEW_REVISION,
+    previewConfirmation: env.PREVIEW_CONFIRMATION,
+    previewRevision: historical ? HISTORICAL_PREVIEW.revision : REQUESTED_PREVIEW_REVISION,
+    ...(historical ? { historicalPreviewAuthorization } : {}),
     previewNow: sendNow });
   console.info(`::notice title=Preview sent::${JSON.stringify({ resendAccepted: true,
     stories: quality.stories, dailyLedgerChanged: false, publicEditionCreated: false })}`);

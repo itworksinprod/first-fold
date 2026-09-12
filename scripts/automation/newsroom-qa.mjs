@@ -1,6 +1,8 @@
 import { lookup as dnsLookup } from "node:dns/promises";
 import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
+import { HISTORICAL_PREVIEW, assertHistoricalPreviewAuthorization,
+  isHistoricalPreviewRecord, isHistoricalPreviewTiming } from "./historical-preview-policy.mjs";
 
 const DESKS = [
   "ai",
@@ -431,6 +433,33 @@ function analyzeNewsroomDraft(edition, options = {}) {
     };
   }
 
+  const historicalResearch = edition.provenance?.freePilot ?? edition.provenance?.personalFreeResearch;
+  let historicalPreview = false;
+  if (options.temporalMode === "requested-historical-preview" ||
+      historicalResearch?.runMode === HISTORICAL_PREVIEW.runMode ||
+      Object.hasOwn(historicalResearch ?? {}, "historicalPreview")) {
+    try {
+      assertHistoricalPreviewAuthorization(options.historicalPreviewAuthorization, checkedAt, edition.editionDate);
+      historicalPreview = options.temporalMode === "requested-historical-preview" &&
+        historicalResearch?.runMode === HISTORICAL_PREVIEW.runMode &&
+        isHistoricalPreviewRecord(historicalResearch.historicalPreview) &&
+        historicalResearch.generatedAt === edition.publication?.generatedAt &&
+        historicalResearch.privateSourceBriefs === true &&
+        isHistoricalPreviewTiming({ editionDate: edition.editionDate,
+          generatedAt: edition.publication?.generatedAt, checkedAt }) &&
+        edition.status === "validated" && edition.publication?.publishedAt === null &&
+        !Object.hasOwn(edition.provenance ?? {}, "automation") &&
+        !Object.hasOwn(edition.provenance ?? {}, "personalResearch") &&
+        ((historicalResearch.workflow === "free-morning-press" && historicalResearch.draftSelectedSlate === true &&
+          !Object.hasOwn(edition.provenance ?? {}, "personalFreeResearch")) ||
+         (historicalResearch.workflow === "personal-morning-paper" && historicalResearch.ephemeral === true &&
+          historicalResearch.candidateSelection === "deterministic-selected-slate" &&
+          !Object.hasOwn(edition.provenance ?? {}, "freePilot")));
+    } catch { /* A record in candidate JSON cannot grant temporal permission. */ }
+    if (!historicalPreview) issues.push(createIssue("HISTORICAL_PREVIEW_UNAUTHORIZED", "sourceCheck",
+      "Historical source checks require the live requested-preview authorization and exact private timing provenance."));
+  }
+
   const sameDayBackfill =
     (
       options.temporalMode === "free-same-day-backfill" &&
@@ -485,7 +514,7 @@ function analyzeNewsroomDraft(edition, options = {}) {
   } else if (
     Number.isFinite(generatedAt) &&
     generatedAt > publishAt &&
-    !sameDayBackfill
+    !sameDayBackfill && !historicalPreview
   ) {
     issues.push(
       createIssue(
@@ -935,7 +964,7 @@ function analyzeNewsroomDraft(edition, options = {}) {
           if (
             Number.isFinite(publishAt) &&
             retrievedAt > publishAt &&
-            !sameDayBackfill
+            !sameDayBackfill && !historicalPreview
           ) {
             issues.push(
               createIssue(

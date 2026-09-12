@@ -21,6 +21,7 @@ import {
   sendPersonalEditionPreview,
 } from "../scripts/automation/personal-email.mjs";
 import { malformedEmailStories } from "./fixtures/malformed-email-2026-09-11.mjs";
+import { HISTORICAL_PREVIEW, authorizeHistoricalPreview } from "../scripts/automation/historical-preview-policy.mjs";
 
 const baseEdition = JSON.parse(
   await readFile(new URL("../content/editions/2026-08-19.json", import.meta.url), "utf8"),
@@ -912,6 +913,112 @@ test("updated preview rejects unknown revisions, stale approval, midnight and un
   ]) {
     const candidate = updatedPreviewCandidate(); mutate(candidate);
     await assert.rejects(sendPersonalEditionPreview(candidate, { ...updatedPreviewOptions, fetchImpl }), /checked summaries/);
+  }
+  assert.equal(calls, 0);
+});
+
+const historicalPreviewNow = new Date("2026-09-12T04:30:00.000Z");
+const historicalPreviewEnv = {
+  GITHUB_ACTIONS: "true", GITHUB_REPOSITORY: "itworksinprod/first-fold", GITHUB_REF: "refs/heads/main",
+  GITHUB_ACTOR: "itworksinprod", GITHUB_TRIGGERING_ACTOR: "itworksinprod", GITHUB_RUN_ATTEMPT: "1",
+  GITHUB_EVENT_NAME: "workflow_dispatch", GITHUB_RUN_ID: "123456789", GITHUB_SHA: "a".repeat(40),
+  GITHUB_WORKFLOW_REF: "itworksinprod/first-fold/.github/workflows/personal-preview.yml@refs/heads/main",
+  PREVIEW_CONFIRMATION: HISTORICAL_PREVIEW.confirmation,
+};
+function historicalPreviewCandidate() {
+  const candidate = updatedPreviewCandidate();
+  const research = candidate.provenance.personalFreeResearch;
+  research.runMode = HISTORICAL_PREVIEW.runMode;
+  research.historicalPreview = { editionDate: HISTORICAL_PREVIEW.editionDate,
+    requestedOn: HISTORICAL_PREVIEW.requestedOn, revision: HISTORICAL_PREVIEW.revision };
+  candidate.publication.generatedAt = "2026-09-12T04:20:00.000Z";
+  research.generatedAt = candidate.publication.generatedAt;
+  candidate.provenance.sourceCheck.checkedAt = "2026-09-12T04:25:00.000Z";
+  return candidate;
+}
+function historicalSendOptions() {
+  return { apiKey: API_KEY, recipient: RECIPIENT, previewConfirmation: HISTORICAL_PREVIEW.confirmation,
+    previewRevision: HISTORICAL_PREVIEW.revision, previewNow: historicalPreviewNow,
+    previewClock: () => historicalPreviewNow,
+    historicalPreviewAuthorization: authorizeHistoricalPreview(historicalPreviewEnv, historicalPreviewNow) };
+}
+
+test("the requested historical preview is labeled truthfully and cannot consume the daily delivery key", async () => {
+  const candidate = historicalPreviewCandidate();
+  const original = JSON.stringify(candidate);
+  assert.equal(assertPersonalEmailCandidate(candidate).valid, true);
+  const keys = [];
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const result = await sendPersonalEditionPreview(candidate, { ...historicalSendOptions(),
+      fetchImpl: async (_url, request) => {
+        keys.push(request.headers["Idempotency-Key"]);
+        const body = JSON.parse(request.body);
+        assert.deepEqual(body.to, [RECIPIENT]);
+        assert.equal(body.from, PERSONAL_EMAIL_FROM);
+        assert.match(body.subject, /^\[September 11 preview\] First Fold — Friday, September 11, 2026$/u);
+        for (const copy of [body.html, body.text]) {
+          assert.match(copy, /Researched on September 12, 2026/u);
+          assert.match(copy, /September 11, 2026 5:00 AM ET reporting cutoff/u);
+          assert.match(copy, /not your September 12 daily edition/u);
+          assert.match(copy, /isolated preview history/u);
+        }
+        return successResponse();
+      } });
+    assert.equal(result.idempotencyKey,
+      "first-fold-personal-preview-free-quality-2026-09-11-requested-2026-09-12");
+    assert.notEqual(result.idempotencyKey, personalEditionIdempotencyKey("2026-09-11"));
+    assert.notEqual(result.idempotencyKey, personalEditionIdempotencyKey("2026-09-12"));
+    assert.notEqual(result.idempotencyKey, "first-fold-personal-preview-web-search-upgrade-2026-09-11");
+  }
+  assert.equal(keys[0], keys[1]);
+  assert.equal(JSON.stringify(candidate), original);
+  let calls = 0;
+  await assert.rejects(sendPersonalEditionEmail(candidate, { apiKey: API_KEY, recipient: RECIPIENT,
+    fetchImpl: async () => { calls++; return successResponse(); } }), /cannot use daily email/u);
+  assert.equal(calls, 0);
+});
+
+test("historical preview metadata is exact and its timestamps must represent the requested later research day", () => {
+  for (const mutate of [
+    c => { delete c.provenance.personalFreeResearch.historicalPreview; },
+    c => { c.provenance.personalFreeResearch.historicalPreview.extra = true; },
+    c => { c.provenance.personalFreeResearch.historicalPreview.requestedOn = "2026-09-13"; },
+    c => { c.provenance.personalFreeResearch.runMode = "on_time"; },
+    c => { c.provenance.personalFreeResearch.generatedAt = c.publication.generatedAt = "2026-09-11T10:00:00.000Z"; },
+    c => { c.provenance.sourceCheck.checkedAt = "2026-09-12T04:10:00.000Z"; },
+    c => { c.provenance.sourceCheck.checkedAt = "2026-09-13T04:25:00.000Z"; },
+    c => { delete c.provenance.sourceCheck.checkedAt; },
+  ]) {
+    const candidate = historicalPreviewCandidate();
+    mutate(candidate);
+    assert.throws(() => assertPersonalEmailCandidate(candidate));
+  }
+});
+
+test("historical sending requires an issued token, fixed approval and a final unexpired clock check", async () => {
+  let calls = 0;
+  const fetchImpl = async () => { calls++; return successResponse(); };
+  const options = historicalSendOptions();
+  for (const override of [
+    { historicalPreviewAuthorization: undefined }, { historicalPreviewAuthorization: {} },
+    { historicalPreviewAuthorization: structuredClone(options.historicalPreviewAuthorization) },
+    { previewConfirmation: "SEND PREVIEW 2026-09-12" }, { previewRevision: undefined },
+    { previewRevision: "web-search-upgrade-2026-09-11" },
+    { previewNow: new Date("2026-09-11T23:30:00.000Z") },
+    { previewClock: () => new Date("2026-09-13T04:00:00.000Z") },
+  ]) {
+    await assert.rejects(sendPersonalEditionPreview(historicalPreviewCandidate(), {
+      ...options, ...override, fetchImpl,
+    }));
+  }
+  for (const mutate of [
+    c => { c.provenance.personalFreeResearch.webSearch.admittedArticles = 0; },
+    c => { c.desks.ai.story.evidence[0].id = "local-fallback-claim"; },
+    c => { c.provenance.personalFreeResearch.draftingMode = TRUSTED_EVIDENCE_DIGEST_MODE; },
+    c => { c.desks.ai.story.whyItMatters += '.”, “stories”: [{'; },
+  ]) {
+    const candidate = historicalPreviewCandidate(); mutate(candidate);
+    await assert.rejects(sendPersonalEditionPreview(candidate, { ...historicalSendOptions(), fetchImpl }));
   }
   assert.equal(calls, 0);
 });

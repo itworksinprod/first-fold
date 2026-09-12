@@ -4,6 +4,8 @@ import path from "node:path";
 import { FREE_DESKS } from "./free/feed-engine.mjs";
 import { FREE_FEED_SOURCES } from "./free/feed-sources.mjs";
 import { isValidWebSearchReceipt } from "./free/search-receipt.mjs";
+import { HISTORICAL_PREVIEW, isHistoricalPreviewRecord,
+  isHistoricalPreviewTiming } from "./historical-preview-policy.mjs";
 
 export const SOURCE_HEALTH_SCHEMA_VERSION = "first-fold-source-health-v1";
 export const SOURCE_HEALTH_MAX_JSON_BYTES = 256 * 1024;
@@ -233,7 +235,7 @@ function normalizedSettings(settings) {
   return { ...settings };
 }
 
-function normalizedRun(automation, runMode) {
+function normalizedRun(automation, runMode, { editionDate, historicalPreview, generatedAt } = {}) {
   if (!isObject(automation)) throw new Error("Source health requires trusted GitHub automation metadata.");
   const repository = automation.repository;
   const runId = automation.runId;
@@ -243,9 +245,20 @@ function normalizedRun(automation, runMode) {
     typeof runId !== "string" ||
     !RUN_ID_PATTERN.test(runId) ||
     runUrl !== `https://github.com/${EXPECTED_REPOSITORY}/actions/runs/${runId}` ||
-    !RUN_MODES.has(runMode)
+    (!RUN_MODES.has(runMode) && runMode !== HISTORICAL_PREVIEW.runMode)
   ) {
     throw new Error("Source health requires the trusted First Fold GitHub run identity.");
+  }
+  if (runMode === HISTORICAL_PREVIEW.runMode) {
+    if (!isHistoricalPreviewRecord(historicalPreview) ||
+        !isHistoricalPreviewTiming({ editionDate, generatedAt })) {
+      throw new Error("Source health historical preview identity or timing is invalid.");
+    }
+    return { repository, runId, runUrl, mode: runMode,
+      historicalPreview: structuredClone(historicalPreview), generatedAt };
+  }
+  if (historicalPreview !== undefined || generatedAt !== undefined) {
+    throw new Error("Ordinary source health runs must not carry historical preview metadata.");
   }
   return { repository, runId, runUrl, mode: runMode };
 }
@@ -471,6 +484,8 @@ export function buildSourceHealthSnapshot({
   editionDate,
   automation,
   runMode,
+  historicalPreview,
+  generatedAt,
   settings,
   attempts,
   selectedAttempt,
@@ -482,7 +497,7 @@ export function buildSourceHealthSnapshot({
   const snapshot = {
     schemaVersion: SOURCE_HEALTH_SCHEMA_VERSION,
     editionDate: requireEditionDate(editionDate),
-    run: normalizedRun(automation, runMode),
+    run: normalizedRun(automation, runMode, { editionDate, historicalPreview, generatedAt }),
     settings: normalizedSettings(settings),
     attempts: attempts.map((attempt, index) => buildAttempt(index + 1, attempt)),
     selectedAttempt,
@@ -685,12 +700,14 @@ export function validateSourceHealthSnapshot(snapshot) {
     throw new Error("Source health schemaVersion is unsupported.");
   }
   requireEditionDate(snapshot.editionDate);
-  assertExactKeys(snapshot.run, RUN_KEYS, "Source health run");
+  assertExactKeys(snapshot.run, snapshot.run?.mode === HISTORICAL_PREVIEW.runMode
+    ? [...RUN_KEYS, "historicalPreview", "generatedAt"] : RUN_KEYS, "Source health run");
   normalizedRun({
     repository: snapshot.run.repository,
     runId: snapshot.run.runId,
     runUrl: snapshot.run.runUrl,
-  }, snapshot.run.mode);
+  }, snapshot.run.mode, { editionDate: snapshot.editionDate,
+    historicalPreview: snapshot.run.historicalPreview, generatedAt: snapshot.run.generatedAt });
   normalizedSettings(snapshot.settings);
   if (
     !Array.isArray(snapshot.attempts) ||
