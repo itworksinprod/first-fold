@@ -40,8 +40,11 @@ try {
     story.evidence.length > 0 && story.evidence.every((claim) => claim.id.startsWith(`${story.id}-grounded-`))).length;
   const mode = candidate.provenance.personalFreeResearch.draftingMode;
   const webSearch = candidate.provenance.personalFreeResearch.webSearch;
-  assert.ok(stories > 0 && checkedStories === stories && mode === "source-grounded-summary",
-    "Not every live story received a model-checked summary.");
+  if (!(stories > 0 && checkedStories === stories && mode === "source-grounded-summary")) {
+    throw Object.assign(new Error("Not every live story received a model-checked summary."), {
+      code: "QUALITY_GROUNDED_SUMMARIES_INCOMPLETE",
+    });
+  }
   console.info(`::notice title=Quality result::${JSON.stringify({ status: "validated-and-rendered", stories, checkedStories, mode,
     ...(isValidWebSearchReceipt(webSearch) ? { webSearch } : {}),
     renderedCopyChecked: true,

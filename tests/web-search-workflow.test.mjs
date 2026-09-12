@@ -102,10 +102,11 @@ test("the quality script imports only candidate validation and rendering from th
 
 test("the live quality notice is emitted only after all final copy and story assertions", () => {
   const successNotice = qualityScript.indexOf("console.info(`::notice title=Quality result::");
-  const storyCheck = qualityScript.indexOf("assert.ok(stories > 0 && checkedStories === stories");
+  const storyCheck = qualityScript.indexOf("if (!(stories > 0 && checkedStories === stories");
   const renderCheck = qualityScript.indexOf("const rendered = renderPersonalEditionEmail(candidate)");
   assert.ok(renderCheck >= 0 && storyCheck > renderCheck && successNotice > storyCheck);
   assert.match(qualityScript, /renderedCopyChecked: true/);
+  assert.match(qualityScript, /code: "QUALITY_GROUNDED_SUMMARIES_INCOMPLETE"/);
 });
 
 test("requiring web search without a key fails before research, with cleared credentials and network blocked", () => {

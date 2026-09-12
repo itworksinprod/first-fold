@@ -290,7 +290,10 @@ function isDisplayString(value, maximumLength, { paragraph = false } = {}) {
 }
 
 function hasSafeDisplayFields(candidate) {
-  const paragraph = candidate.provenance?.personalFreeResearch?.draftingMode === "source-grounded-summary";
+  const research = candidate.provenance?.personalFreeResearch;
+  const groundedEdition = candidate.status === "validated" && candidate.publication?.publishedAt === null &&
+    research?.draftingMode === "source-grounded-summary" && research?.inference === "workers-ai" &&
+    research?.provider === WORKERS_AI_PROVIDER;
   if (
     !isDisplayString(candidate.masthead?.name, 100) ||
     !isDisplayString(candidate.masthead?.tagline, 300) ||
@@ -308,6 +311,12 @@ function hasSafeDisplayFields(candidate) {
       continue;
     }
     const story = page?.story;
+    // Grounded prose and deterministic fallbacks can share one edition. Match
+    // the canonical per-story contract; do not mistake a local excerpt's ending
+    // for a truncated model paragraph merely because another desk used AI.
+    const paragraph = groundedEdition && Array.isArray(story?.evidence) && story.evidence.length > 0 &&
+      story.evidence.every((claim) => typeof claim?.id === "string" &&
+        claim.id.startsWith(`${story.id}-grounded-`));
     if (
       !story ||
       !isDisplayString(story.headline, 500) ||

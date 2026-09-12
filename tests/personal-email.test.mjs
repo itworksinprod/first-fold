@@ -804,6 +804,28 @@ test("grounded paragraphs reject truncation while legacy escaped source copy rem
   assert.doesNotThrow(() => renderPersonalEditionEmail(updatedPreviewCandidate()));
 });
 
+test("mixed grounded editions keep local fallback copy while enforcing each grounded story", () => {
+  const candidate = updatedPreviewCandidate();
+  const fallbackStory = candidate.desks["security-and-privacy"].story;
+  fallbackStory.evidence.forEach((claim, index) => { claim.id = `${fallbackStory.id}-local-${index}`; });
+  // The deterministic digest may end a sourced excerpt without sentence punctuation.
+  fallbackStory.whatHappened = fallbackStory.whatHappened.replace(/[.!?]$/u, "");
+  assert.equal(validateCanonicalEdition(candidate).valid, true);
+  assert.doesNotThrow(() => assertPersonalEmailCandidate(candidate));
+  const rendered = renderPersonalEditionEmail(candidate);
+  assert.equal(assertRenderedPersonalEmailCopy(candidate, rendered), true);
+  assert.ok(rendered.text.includes(fallbackStory.whatHappened));
+
+  const truncatedGrounded = structuredClone(candidate);
+  truncatedGrounded.desks.ai.story.whatHappened += " Watch for updates and";
+  assert.throws(() => renderPersonalEditionEmail(truncatedGrounded));
+
+  const corruptFallback = structuredClone(candidate);
+  corruptFallback.desks["security-and-privacy"].story.whyItMatters +=
+    '.”, “whatToDoOrWatch”: “Leaked output.”}], “stories”:[{';
+  assert.throws(() => renderPersonalEditionEmail(corruptFallback));
+});
+
 test("JSON field spillover is rejected in every dynamic reader-facing field", () => {
   const suffix = '.”, “whatToDoOrWatch”: “This is leaked model output.”}], “stories”:[{';
   for (const mutate of [
