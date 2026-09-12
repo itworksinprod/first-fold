@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
+import { readerProseErrors } from "./reader-prose.mjs";
 
 const DESKS = ["ai", "work-and-tools", "security-and-privacy", "platforms-and-power"];
 const DESK_PRESENTATION = {
@@ -183,6 +184,12 @@ export function validateCanonicalEdition(edition) {
       Array.isArray(story.evidence) && story.evidence.length > 0 && story.evidence.every((claim) =>
         typeof claim.id === "string" && claim.id.startsWith(`${story.id}-grounded-`));
     const minimumWords = privateGroundedBrief ? MIN_PRIVATE_GROUNDED_STORY_WORDS : MIN_READER_FACING_STORY_WORDS;
+    for (const field of ["headline", "deck", "whatHappened", "whyItMatters", "whatToDoOrWatch"]) {
+      const paragraph = privateGroundedBrief && ["whatHappened", "whyItMatters", "whatToDoOrWatch"].includes(field);
+      if (readerProseErrors(story[field], { paragraph }).length) {
+        issues.push(`Story ${story.id} has invalid reader copy in ${field}.`);
+      }
+    }
     if (
       readerWords < minimumWords ||
       readerWords > MAX_READER_FACING_STORY_WORDS

@@ -100,6 +100,14 @@ test("the quality script imports only candidate validation and rendering from th
     qualityScript.indexOf("await generatePersonalFreeEdition("));
 });
 
+test("the live quality notice is emitted only after all final copy and story assertions", () => {
+  const successNotice = qualityScript.indexOf("console.info(`::notice title=Quality result::");
+  const storyCheck = qualityScript.indexOf("assert.ok(stories > 0 && checkedStories === stories");
+  const renderCheck = qualityScript.indexOf("const rendered = renderPersonalEditionEmail(candidate)");
+  assert.ok(renderCheck >= 0 && storyCheck > renderCheck && successNotice > storyCheck);
+  assert.match(qualityScript, /renderedCopyChecked: true/);
+});
+
 test("requiring web search without a key fails before research, with cleared credentials and network blocked", () => {
   // This preloader makes an accidental early network call fail visibly; the
   // subprocess receives none of the developer's real credentials or NODE_OPTIONS.

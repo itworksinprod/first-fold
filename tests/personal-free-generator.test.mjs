@@ -673,11 +673,15 @@ test("source-grounded personal summaries pass final canonical, source and email 
   assert.doesNotThrow(() => assertPersonalEmailCandidate(candidate));
   const concise = structuredClone(candidate);
   const story = concise.desks["security-and-privacy"].story;
-  story.whyItMatters = story.whyItMatters.split(/\s+/).slice(0, 18).join(" ");
-  story.whatToDoOrWatch = story.whatToDoOrWatch.split(/\s+/).slice(0, 18).join(" ");
+  story.whyItMatters = "Unauthorized disk changes could damage the information backups are meant to protect. Installed drivers therefore deserve attention alongside backup jobs.";
+  story.whatToDoOrWatch = "Check whether this driver is installed, then follow the advisory for affected releases and documented remediation before choosing a response.";
   assert.ok(countReaderFacingStoryWords(story) >= 100 && countReaderFacingStoryWords(story) < 150);
   assert.equal(validateCanonicalEdition(concise).valid, true);
   assert.doesNotThrow(() => assertPersonalEmailCandidate(concise));
+  const truncated = structuredClone(concise);
+  truncated.desks["security-and-privacy"].story.whatToDoOrWatch = "Check whether this driver is installed, then follow the advisory for affected releases and";
+  assert.ok(validateCanonicalEdition(truncated).issues.some((issue) => issue.includes("invalid reader copy")));
+  assert.throws(() => assertPersonalEmailCandidate(truncated));
   concise.status = "published";
   concise.publication.publishedAt = concise.publication.publishAt;
   assert.ok(validateCanonicalEdition(concise).issues.some((issue) => issue.includes("150–225")));

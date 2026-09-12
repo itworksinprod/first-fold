@@ -155,6 +155,12 @@ At the matching 5:05 AM event on every day:
    to an exact factual source excerpt. Local checks enforce length, numeric/version
    anchors, attribution, originality and safe text; a separate model prompt then
    checks every draft's factual support, caveats, attribution and reader value.
+   Provider field bounds are also enforced locally. Reader prose containing JSON
+   field spillover, repeated serialization fragments or unfinished sentences is
+   rejected before that model review. A bounded lexical guard additionally checks
+   Secure Boot prerequisites for firmware-execution claims, explicit uncertainty
+   about exploitation, and unsupported fix-version claims. These are specific
+   regression defenses, not a general semantic fact checker.
    Only explicitly approved exact draft hashes are adopted, independently per
    story. Source metadata, timestamps, desks, event identities and scores are
    locally owned. The edition mode `source-grounded-summary` means at least one
@@ -171,7 +177,10 @@ At the matching 5:05 AM event on every day:
    selected stories, keyed by the existing Workers AI token, then stages that
    immutable ledger as an artifact
    before delivery. It then sends one escaped HTML and plain-text message through
-   Resend. A later run trusts the staged artifact only when GitHub records that
+   Resend. Both rendered formats must retain the validated paragraphs exactly and
+   pass a final copy-integrity check, including after any preview wrapper. Bad copy
+   is rejected, never silently stripped into a supposedly verified story. A later
+   run trusts the staged artifact only when GitHub records that
    run's exact send step as successful; artifacts from unsent runs are ignored.
    This ordering prevents an artifact-service failure after delivery from losing
    the repeat state. The workflow makes no commit, branch, pull request, Pages
@@ -585,6 +594,11 @@ output tokens / 65 KB request), writing (4,000 tokens / 70 KB), one optional
 revision (3,000 tokens / 70 KB), and checking (800 tokens / 70 KB).
 Revisions preserve the same source, numeric, attribution, originality and length
 checks, and only the final, hashed draft can pass the separate semantic review.
+The September 11 malformed-email regression runs without contacting any provider.
+An AI review returning all approval flags cannot override the deterministic copy
+or source-caveat vetoes. The manual no-email quality workflow reports success only
+after its story and final-render assertions pass; it does not certify factual
+truth or guarantee a model-written edition when free quota is exhausted.
 Each request has one attempt and a 90-second timeout. The optional
 second research pass shares the same one-call assessment budget. These are
 capacity guards, not permission to spend beyond the free allocation.

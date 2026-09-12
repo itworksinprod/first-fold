@@ -220,7 +220,12 @@ const DESK_TERMS = {
 // summary before a prior is allowed to influence classification.
 const MINIMUM_STRONG_DESK_TERM_WEIGHT = 5;
 const PROMOTIONAL_TITLE_PATTERNS = [
-  /\b(?:get|buy|save|subscribe)\b[^.!?]{0,100}\b\d+(?:\.\d+)?\s*%\s+off\b/i,
+  // Headlines contain model versions (3.8), product names (Node.js), and
+  // punctuation before an offer. A sentence-boundary span lets those titles
+  // evade the veto. Keep the span bounded and require both a purchase-style
+  // invitation and an explicit percentage-off/discount offer; a percentage
+  // price reduction or performance result alone is still newsworthy input.
+  /\b(?:get|buy|save|subscribe)\b.{0,100}\b\d+(?:\.\d+)?\s*(?:%|percent\b|per\s+cent\b|pct\.?)\s*[-–—]?\s*(?:off|(?:introductory\s+|launch\s+)?discount)\b/i,
   /\b(?:buying|shopping|gift) guide\b/i,
   /\b(?:coupon|coupons|promo code|promotional offer|limited[- ]time offer|affiliate links?)\b/i,
   /\b(?:price drop|shop now|buy now|save \$|black friday|cyber monday)\b/i,

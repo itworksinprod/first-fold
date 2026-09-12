@@ -843,6 +843,71 @@ test("editorial hard vetoes return stable, reader-clear rejection reasons", () =
   );
 });
 
+test("percentage-off promotions cannot evade the veto through model decimals or headline punctuation", () => {
+  const titles = [
+    "Get Gemini 3.8 Flash With 75% Off",
+    "Get Gemini 3.8 Flash! 75% Off",
+    "Get Gemini 3.8 Flash? 75 percent off",
+    "Buy the Node.js developer tool: 75%-off",
+    "Subscribe to the AI model — 75 per cent off",
+    "Save with Gemini 3.8 Flash: 75.5 pct. off",
+    "Get Gemini 3.8 Flash at a 75% discount",
+    "Get Gemini 3.8 Flash with a 75% introductory discount",
+  ];
+  for (const [index, title] of titles.entries()) {
+    const options = {
+      items: [editorialItem({
+        suffix: `percentage-promotion-${index}`,
+        title,
+        summary: "The developer tool launches a new AI model integration available now.",
+        categories: ["Developer tools", "AI"],
+        deskPriors: { ai: 30, "work-and-tools": 30 },
+      })],
+      reportingWindow,
+      minimumScore: 0,
+      minimumAuthoritativeScore: 0,
+      evidencePolicy: AUTHORITATIVE_FREE_EVIDENCE_POLICY,
+    };
+    const assessment = assessFeedCandidates(options)[0];
+    assert.equal(assessment.decision, "rejected", title);
+    assert.ok(
+      assessment.rejectionReasons.some(({ code }) => code === "PROMOTIONAL_OR_DEAL_CONTENT"),
+      title,
+    );
+    assert.deepEqual(rankFeedCandidates(options), [], "even zero score thresholds cannot admit the offer");
+  }
+});
+
+test("percentage pricing, performance, and security news are not automatically promotional", () => {
+  const titles = [
+    "AWS cuts Glue prices by 30% for all cloud customers",
+    "Developers get Gemini 3.8 Flash API pricing 75 percent lower for all users",
+    "Gemini 3.8 Flash delivers 75% faster code analysis",
+    "Save 75% of GPU memory with the new AI model architecture",
+    "Microsoft lays off 75% of its developer tools team",
+    "Security researchers get a patch that blocks 75% of observed attacks",
+    "Attackers get access to 75% of affected servers when security controls are off",
+  ];
+  for (const [index, title] of titles.entries()) {
+    const assessment = assessFeedCandidates({
+      items: [editorialItem({
+        suffix: `percentage-news-${index}`,
+        title,
+        categories: ["Technology"],
+      })],
+      reportingWindow,
+      minimumScore: 0,
+      minimumAuthoritativeScore: 0,
+      evidencePolicy: AUTHORITATIVE_FREE_EVIDENCE_POLICY,
+    })[0];
+    assert.equal(
+      assessment.rejectionReasons.some(({ code }) => code === "PROMOTIONAL_OR_DEAL_CONTENT"),
+      false,
+      title,
+    );
+  }
+});
+
 test("routine cloud capacity notices need a reviewed broad-impact signal", () => {
   const assessOne = (item) => assessFeedCandidates({
     items: [item],

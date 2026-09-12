@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createHash } from "node:crypto";
 import { groundedDraft, groundedEvidence } from "./fixtures/grounded-summary.mjs";
-import { groundedDossiers, validateGroundedStory, synthesizeGroundedEditorial } from
+import { malformedEmailStories } from "./fixtures/malformed-email-2026-09-11.mjs";
+import { GROUNDED_DRAFT_SCHEMA, groundedDossiers, validateGroundedStory, synthesizeGroundedEditorial } from
   "../scripts/automation/free/grounded-draft.mjs";
 import { DEFAULT_CLOUDFLARE_AI_MODEL } from "../scripts/automation/free/workers-ai.mjs";
 
@@ -22,6 +23,7 @@ function response(editorialPayload) {
 }
 const review = { candidateId: groundedDraft.candidateId, draftSha256: hash(groundedDraft),
   factsSupported: true, attributionAccurate: true, analysisSupported: true, usefulAndSpecific: true };
+const copiedClaim = `CERT/CC says: ${groundedEvidence.summary.split(". ").slice(0, 2).join(". ")}.`;
 
 test("grounded writer accepts concrete supported news including a driver filename", () => {
   assert.equal(validateGroundedStory(groundedDraft, dossier), true);
@@ -33,6 +35,8 @@ test("grounded writer rejects invented numbers, evidence, citations, generic pro
     (draft) => { draft.claims[0].supports[0].evidenceId = "unknown"; },
     (draft) => { draft.headline = "CERT/CC reports a new development"; },
     (draft) => { draft.whatToDoOrWatch += " Disable your antivirus."; },
+    (draft) => { draft.whatToDoOrWatch += " Disable Secure Boot."; },
+    (draft) => { draft.whatToDoOrWatch += " Turn off Secure Boot."; },
     (draft) => { draft.whatToDoOrWatch += " Visit https://evil.example"; },
     (draft) => { draft.claims[0].text = groundedEvidence.summary; },
     (draft) => { draft.claims[0].text = draft.claims[0].text.replace("CERT/CC", "Another source"); },
@@ -93,7 +97,7 @@ test("ambiguous drafts cannot replace stories", async () => {
 
 test("one originality revision is revalidated, hash-bound and separately checked", async () => {
   const copied = structuredClone(groundedDraft);
-  copied.claims[0].text = `CERT/CC says: ${groundedEvidence.summary}`;
+  copied.claims[0].text = copiedClaim;
   const codes = [];
   assert.equal(validateGroundedStory(copied, dossier, (code) => codes.push(code)), false);
   assert.deepEqual(codes, ["ORIGINALITY"]);
@@ -121,7 +125,7 @@ test("one originality revision is revalidated, hash-bound and separately checked
 
 test("bad or unrequested revisions cannot bypass checks or trigger another revision", async () => {
   const copied = structuredClone(groundedDraft);
-  copied.claims[0].text = `CERT/CC says: ${groundedEvidence.summary}`;
+  copied.claims[0].text = copiedClaim;
   for (const revisions of [[copied], [{ ...groundedDraft, candidateId: "injected" }],
     [groundedDraft, groundedDraft], []]) {
     let calls = 0;
@@ -134,7 +138,7 @@ test("bad or unrequested revisions cannot bypass checks or trigger another revis
 
 test("a repaired draft still needs semantic approval; repair quota errors stop immediately", async () => {
   const copied = structuredClone(groundedDraft);
-  copied.claims[0].text = `CERT/CC says: ${groundedEvidence.summary}`;
+  copied.claims[0].text = copiedClaim;
   for (const quota of [false, true]) {
     let calls = 0;
     const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
@@ -155,7 +159,7 @@ test("revision only replaces a rejected draft and preserves an already valid dra
   const secondCandidate = { ...structuredClone(candidate), candidateId: "candidate-second", suggestedDesk: "ai-and-models" };
   const secondDraft = { ...structuredClone(groundedDraft), candidateId: secondCandidate.candidateId };
   const copied = structuredClone(secondDraft);
-  copied.claims[0].text = `CERT/CC says: ${groundedEvidence.summary}`;
+  copied.claims[0].text = copiedClaim;
   const twoDesks = structuredClone(baseline);
   twoDesks.desks["ai-and-models"] = structuredClone(twoDesks.desks["security-and-privacy"]);
   twoDesks.desks["ai-and-models"].story.id = "s2";
@@ -190,4 +194,76 @@ test("harmless JSON paragraph breaks normalize before validation and the final r
     } });
   assert.equal(calls, 2);
   assert.equal(result.editorial.desks["security-and-privacy"].story.whatHappened, groundedDraft.claims.map((claim) => claim.text).join(" "));
+});
+
+test("September 11 email spillover is rejected before any approving AI review", async () => {
+  for (const emailStory of malformedEmailStories) {
+    for (const field of ["whyItMatters", "whatToDoOrWatch"]) {
+      const draft = { ...structuredClone(groundedDraft), [field]: emailStory[field] };
+      assert.equal(validateGroundedStory(draft, dossier), false);
+      const calls = [];
+      const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
+        aiRequestImpl: async (options) => {
+          calls.push(options);
+          if (options.schema.properties.reviews) {
+            return response({ reviews: [{ ...review, draftSha256: hash(draft) }] });
+          }
+          return response({ stories: [draft] });
+        } });
+      assert.equal(result, null);
+      assert.equal(calls.length, 2, "only original draft plus existing bounded repair");
+      assert.ok(calls.every((call) => !call.schema.properties.reviews), "AI cannot override copy veto");
+    }
+  }
+});
+
+test("nested leakage and truncation fail even within provider character bounds", () => {
+  for (const ending of ['”, “stories”: [{', " and", " at alower"]) {
+    const draft = structuredClone(groundedDraft);
+    draft.whyItMatters = `${draft.whyItMatters.slice(0, -1)}${ending}`;
+    const reasons = [];
+    assert.equal(validateGroundedStory(draft, dossier, (code) => reasons.push(code)), false);
+    assert.deepEqual(reasons, ["READER_COPY"]);
+  }
+});
+
+test("local shape checks enforce the same field bounds and claim count as the sent schema", () => {
+  const fields = GROUNDED_DRAFT_SCHEMA.properties.stories.items.properties;
+  for (const field of ["whyItMatters", "whatToDoOrWatch"]) {
+    for (const size of [fields[field].minLength - 1, fields[field].maxLength + 1]) {
+      const draft = { ...structuredClone(groundedDraft), [field]: `${"a".repeat(size - 1)}.` };
+      const reasons = [];
+      assert.equal(validateGroundedStory(draft, dossier, (code) => reasons.push(code)), false);
+      assert.deepEqual(reasons, ["SHAPE"]);
+    }
+  }
+  for (const size of [149, 271]) {
+    const draft = structuredClone(groundedDraft);
+    draft.claims[0].text = `${"a".repeat(size - 1)}.`;
+    const reasons = [];
+    assert.equal(validateGroundedStory(draft, dossier, (code) => reasons.push(code)), false);
+    assert.deepEqual(reasons, ["CLAIM_SHAPE"]);
+  }
+  const draft = structuredClone(groundedDraft);
+  draft.claims.push(structuredClone(draft.claims[0]));
+  assert.equal(validateGroundedStory(draft, dossier), false);
+});
+
+test("a known Secure Boot prerequisite cannot be dropped from a claim or headline", () => {
+  const conditional = structuredClone(candidate);
+  conditional.feedEvidence[0].articleExcerpt = "When Secure Boot is disabled, disk modification can permit UEFI code execution before the operating system starts.";
+  const conditionalDossier = groundedDossiers([conditional])[0];
+  for (const field of ["claim", "headline", "whyItMatters", "whatToDoOrWatch"]) {
+    const draft = structuredClone(groundedDraft);
+    if (field === "claim") {
+      draft.claims[0].text = "CERT/CC reports that the AOMEI driver allows disk modification by a local user, and the resulting access can permit UEFI code execution before the operating system starts.";
+    } else if (field === "headline") {
+      draft.headline = "AOMEI driver flaw permits UEFI code execution";
+    } else {
+      draft[field] = `${draft[field]} This can permit UEFI code execution.`;
+    }
+    const reasons = [];
+    assert.equal(validateGroundedStory(draft, conditionalDossier, (code) => reasons.push(code)), false);
+    assert.deepEqual(reasons, ["SOURCE_CAVEAT"], field);
+  }
 });

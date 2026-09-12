@@ -3,6 +3,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { validateCanonicalEdition } from "../edition-content.mjs";
+import { readerProseErrors } from "../reader-prose.mjs";
 import { buildPersonalFeedbackLinkMap } from "./personal-feedback.mjs";
 import {
   TRUSTED_EVIDENCE_DIGEST_MODE,
@@ -283,11 +284,13 @@ function hasPersonalResearchInferenceTuple(research, storyCount) {
     research.responseId === "local-digest";
 }
 
-function isDisplayString(value, maximumLength) {
-  return typeof value === "string" && value.trim().length > 0 && value.length <= maximumLength;
+function isDisplayString(value, maximumLength, { paragraph = false } = {}) {
+  return typeof value === "string" && value.trim().length > 0 && value.length <= maximumLength &&
+    readerProseErrors(compactText(value), { paragraph }).length === 0;
 }
 
 function hasSafeDisplayFields(candidate) {
+  const paragraph = candidate.provenance?.personalFreeResearch?.draftingMode === "source-grounded-summary";
   if (
     !isDisplayString(candidate.masthead?.name, 100) ||
     !isDisplayString(candidate.masthead?.tagline, 300) ||
@@ -309,9 +312,9 @@ function hasSafeDisplayFields(candidate) {
       !story ||
       !isDisplayString(story.headline, 500) ||
       !isDisplayString(story.deck, 1_000) ||
-      !isDisplayString(story.whatHappened, 10_000) ||
-      !isDisplayString(story.whyItMatters, 10_000) ||
-      !isDisplayString(story.whatToDoOrWatch, 10_000) ||
+      !isDisplayString(story.whatHappened, 10_000, { paragraph }) ||
+      !isDisplayString(story.whyItMatters, 10_000, { paragraph }) ||
+      !isDisplayString(story.whatToDoOrWatch, 10_000, { paragraph }) ||
       !Array.isArray(story.sources) ||
       story.sources.length < 1 ||
       story.sources.length > 20
@@ -743,6 +746,91 @@ function renderDeskText(candidate, deskKey, deskLabel, feedbackLinks, sourceBrie
       : renderStoryText(page.story, feedbackLinks?.stories[page.story.id])}`;
 }
 
+function readerFrontNote(candidate) {
+  const sourceBriefMode = candidate.provenance.personalFreeResearch.draftingMode ===
+    "trusted-authoritative-source-alert";
+  const stories = DESKS.map(([desk]) => candidate.desks[desk].story).filter(Boolean);
+  const briefCount = stories.filter((story) => shouldRenderSourceBrief(story, sourceBriefMode)).length;
+  const corroboratedCount = stories.length - briefCount;
+  if (briefCount === 0) return candidate.frontPage.note;
+  const counts = corroboratedCount === 0
+    ? `${briefCount} primary-source ${briefCount === 1 ? "brief" : "briefs"} made today’s paper. `
+    : `${corroboratedCount} independently corroborated ${corroboratedCount === 1 ? "article" : "articles"} and ` +
+      `${briefCount} clearly labeled primary-source ${briefCount === 1 ? "brief" : "briefs"} made today’s paper. `;
+  return counts + "Each primary-source brief links to the publisher and is clearly marked when " +
+    "independent reporting was not available before press time.";
+}
+
+// Decode exactly one escaping layer, after removing the renderer's real tags.
+// An escaped source title containing literal <script> remains inert visible text.
+function decodeRenderedText(value) {
+  return value.replace(/&(?:amp|lt|gt|quot|#39);/gu, (entity) => ({
+    "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": "\"", "&#39;": "'",
+  })[entity]);
+}
+
+function renderedHtmlLines(html) {
+  const body = html.match(/<body\b[^>]*>([\s\S]*?)<\/body>/iu)?.[1];
+  if (!body || /<(?:script|style|iframe|form|img|svg|object|embed)\b/iu.test(body)) {
+    throw new Error("Personal email rendered copy is invalid.");
+  }
+  return body.replace(/<!--[\s\S]*?-->/gu, "")
+    .replace(/<\/(?:p|h[1-6]|li|div)>/giu, "\n")
+    .replace(/<[^>]*>/gu, "")
+    .split("\n").map((line) => compactText(decodeRenderedText(line))).filter(Boolean);
+}
+
+/** Inspect the actual visible HTML and text fallback, not CSS or JSON envelopes.
+ * Copy must survive rendering intact in both formats; a provider's review flags
+ * never exempt malformed prose from this deterministic final delivery gate. */
+export function assertRenderedPersonalEmailCopy(candidate, rendered) {
+  if (!hasSafeDisplayFields(candidate) || !rendered ||
+      !isDisplayString(rendered.subject, 1_000) ||
+      typeof rendered.html !== "string" || typeof rendered.text !== "string" ||
+      Buffer.byteLength(rendered.html, "utf8") > MAX_RESEND_REQUEST_BYTES ||
+      Buffer.byteLength(rendered.text, "utf8") > MAX_RESEND_REQUEST_BYTES) {
+    throw new Error("Personal email rendered copy is invalid.");
+  }
+  const htmlLines = renderedHtmlLines(rendered.html);
+  const textLines = rendered.text.split("\n").map(compactText).filter(Boolean);
+  if (!htmlLines.length || !textLines.length ||
+      [...htmlLines, ...textLines].some((line) =>
+        // URLs are already restricted to HTTPS and are not editorial paragraphs.
+        !/^https:\/\/\S+$/u.test(line) && readerProseErrors(line).length > 0)) {
+    throw new Error("Personal email rendered copy is invalid.");
+  }
+  const expected = [
+    { value: candidate.masthead.name, textValue: compactText(candidate.masthead.name).toUpperCase() },
+    { value: candidate.masthead.tagline },
+    { value: readerFrontNote(candidate), exact: true },
+  ];
+  const sourceBriefMode = candidate.provenance.personalFreeResearch.draftingMode ===
+    "trusted-authoritative-source-alert";
+  for (const [desk] of DESKS) {
+    const { story, emptyReason } = candidate.desks[desk];
+    if (story === null) {
+      expected.push({ value: emptyReason, exact: true });
+      continue;
+    }
+    const brief = shouldRenderSourceBrief(story, sourceBriefMode);
+    if (!brief) expected.push({ value: story.headline, exact: true }, { value: story.deck, exact: true });
+    for (const field of ["whatHappened", "whyItMatters", "whatToDoOrWatch"]) {
+      expected.push({ value: story[field], exact: true });
+    }
+    for (const source of readerFacingSources(story)) {
+      expected.push({ value: source.publisher }, { value: source.title });
+    }
+  }
+  for (const { value, textValue = value, exact = false } of expected) {
+    const hasCopy = (lines, copy) => lines.some((line) =>
+      exact ? line === compactText(copy) : line.includes(compactText(copy)));
+    if (!hasCopy(htmlLines, value) || !hasCopy(textLines, textValue)) {
+      throw new Error("Personal email rendered copy does not match its validated candidate.");
+    }
+  }
+  return true;
+}
+
 /**
  * Convert one validated free candidate into a static, email-client-safe paper.
  * Dynamic editorial and source strings are escaped before entering the HTML.
@@ -773,14 +861,7 @@ export function renderPersonalEditionEmail(candidate, { feedbackLinks } = {}) {
           ? "Slim edition"
           : "Quiet edition";
   const storyCountLabel = `${selectedStoryCount} ${selectedStoryCount === 1 ? "story" : "stories"}`;
-  const readerFrontPageNote = allSourceBriefs
-    ? `${selectedStoryCount} primary-source ${selectedStoryCount === 1 ? "brief" : "briefs"} made today’s paper. ` +
-      "Each primary-source brief links to the publisher and is clearly marked when independent reporting was not available before press time."
-    : mixedSourceEdition
-      ? `${corroboratedStoryCount} independently corroborated ${corroboratedStoryCount === 1 ? "article" : "articles"} and ` +
-        `${sourceBriefStoryCount} clearly labeled primary-source ${sourceBriefStoryCount === 1 ? "brief" : "briefs"} made today’s paper. ` +
-        "Each primary-source brief links to the publisher and is clearly marked when independent reporting was not available before press time."
-    : candidate.frontPage.note;
+  const readerFrontPageNote = readerFrontNote(candidate);
   const newsroomCheckLabel =
     `Newsroom check: ${research.successfulFeedSourceCount} of ${research.feedSourceCount} reviewed sources available`;
   const webDiscoveryLabel = research.webSearch
@@ -897,7 +978,9 @@ export function renderPersonalEditionEmail(candidate, { feedbackLinks } = {}) {
     "Your private, quality-gated First Fold. No public edition was created.",
   ].join("\n");
 
-  return { subject, html, text };
+  const rendered = { subject, html, text };
+  assertRenderedPersonalEmailCopy(candidate, rendered);
+  return rendered;
 }
 
 export function personalEditionIdempotencyKey(editionDate) {
@@ -1076,6 +1159,7 @@ async function sendPersonalEmail(candidate, {
     rendered.html = rendered.html.replace(/(<body[^>]*>)/u,
       `$1<div style="padding:16px;text-align:center;font:14px/1.5 Arial,sans-serif;">${notice}</div>`);
   }
+  assertRenderedPersonalEmailCopy(candidate, rendered);
   const normalizedKey = requireApiKey(apiKey);
   const normalizedRecipient = requireRecipient(recipient);
   const normalizedTimeout = requireTimeout(timeoutMs);

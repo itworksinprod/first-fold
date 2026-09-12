@@ -40,11 +40,12 @@ try {
     story.evidence.length > 0 && story.evidence.every((claim) => claim.id.startsWith(`${story.id}-grounded-`))).length;
   const mode = candidate.provenance.personalFreeResearch.draftingMode;
   const webSearch = candidate.provenance.personalFreeResearch.webSearch;
-  console.info(`::notice title=Quality result::${JSON.stringify({ status: "validated-and-rendered", stories, checkedStories, mode,
-    ...(isValidWebSearchReceipt(webSearch) ? { webSearch } : {}),
-    emailSent: false, repeatHistory: "isolated-test-empty-ledger", maxModelRequests: PERSONAL_FREE_MAX_MODEL_REQUESTS })}`);
   assert.ok(stories > 0 && checkedStories === stories && mode === "source-grounded-summary",
     "Not every live story received a model-checked summary.");
+  console.info(`::notice title=Quality result::${JSON.stringify({ status: "validated-and-rendered", stories, checkedStories, mode,
+    ...(isValidWebSearchReceipt(webSearch) ? { webSearch } : {}),
+    renderedCopyChecked: true,
+    emailSent: false, repeatHistory: "isolated-test-empty-ledger", maxModelRequests: PERSONAL_FREE_MAX_MODEL_REQUESTS })}`);
 } catch (error) {
   // Only stable codes/counts enter public workflow logs, never copy, URLs or tokens.
   console.error(`::error title=Quality failure::${/^[A-Z_]+$/.test(error?.code ?? "") ? error.code : "QUALITY_CHECK_FAILED"}`);

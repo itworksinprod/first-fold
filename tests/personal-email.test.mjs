@@ -14,11 +14,13 @@ import {
   PERSONAL_EMAIL_FROM,
   RESEND_EMAIL_ENDPOINT,
   assertPersonalEmailCandidate,
+  assertRenderedPersonalEmailCopy,
   personalEditionIdempotencyKey,
   renderPersonalEditionEmail,
   sendPersonalEditionEmail,
   sendPersonalEditionPreview,
 } from "../scripts/automation/personal-email.mjs";
+import { malformedEmailStories } from "./fixtures/malformed-email-2026-09-11.mjs";
 
 const baseEdition = JSON.parse(
   await readFile(new URL("../content/editions/2026-08-19.json", import.meta.url), "utf8"),
@@ -767,6 +769,82 @@ function updatedPreviewCandidate() {
   }
   return candidate;
 }
+
+test("the exact malformed September 11 prose cannot be rendered or sent despite grounded provenance", async () => {
+  let calls = 0;
+  for (const malformed of malformedEmailStories) {
+    const candidate = updatedPreviewCandidate();
+    const story = candidate.desks.ai.story;
+    for (const field of ["headline", "deck", "whatHappened", "whyItMatters", "whatToDoOrWatch"]) {
+      story[field] = malformed[field];
+    }
+    assert.equal(candidate.provenance.personalFreeResearch.draftingMode, "source-grounded-summary");
+    assert.equal(story.evidence.every((claim) => claim.id.startsWith(`${story.id}-grounded-`)), true);
+    assert.throws(() => assertPersonalEmailCandidate(candidate), /validated adaptive source-checked candidate/);
+    assert.throws(() => renderPersonalEditionEmail(candidate), /validated adaptive source-checked candidate/);
+    await assert.rejects(sendPersonalEditionEmail(candidate, {
+      apiKey: API_KEY, recipient: RECIPIENT,
+      fetchImpl: async () => { calls++; return successResponse(); },
+    }), /validated adaptive source-checked candidate/);
+    await assert.rejects(sendPersonalEditionPreview(candidate, {
+      ...updatedPreviewOptions,
+      fetchImpl: async () => { calls++; return successResponse(); },
+    }), /validated adaptive source-checked candidate/);
+  }
+  assert.equal(calls, 0);
+});
+
+test("grounded paragraphs reject truncation while legacy escaped source copy remains supported", () => {
+  for (const field of ["whatHappened", "whyItMatters", "whatToDoOrWatch"]) {
+    const candidate = updatedPreviewCandidate();
+    candidate.desks.ai.story[field] += " Watch the publisher for updates and";
+    assert.throws(() => renderPersonalEditionEmail(candidate));
+  }
+  assert.doesNotThrow(() => renderPersonalEditionEmail(personalCandidate()));
+  assert.doesNotThrow(() => renderPersonalEditionEmail(updatedPreviewCandidate()));
+});
+
+test("JSON field spillover is rejected in every dynamic reader-facing field", () => {
+  const suffix = '.”, “whatToDoOrWatch”: “This is leaked model output.”}], “stories”:[{';
+  for (const mutate of [
+    c => { c.masthead.name += suffix; },
+    c => { c.masthead.tagline += suffix; },
+    c => { c.frontPage.note += suffix; },
+    c => { c.desks.ai.story.headline += suffix; },
+    c => { c.desks.ai.story.deck += suffix; },
+    c => { c.desks.ai.story.sources[0].publisher += suffix; },
+    c => { c.desks.ai.story.sources[0].title += suffix; },
+    c => { leaveDeskQuiet(c, "ai"); c.desks.ai.emptyReason += suffix; },
+  ]) {
+    const candidate = personalCandidate();
+    mutate(candidate);
+    assert.throws(() => renderPersonalEditionEmail(candidate));
+  }
+});
+
+test("final HTML visible prose and plaintext must both retain the validated paragraphs", () => {
+  const candidate = updatedPreviewCandidate();
+  const baseline = renderPersonalEditionEmail(candidate);
+  const story = candidate.desks.ai.story;
+  assert.equal(assertRenderedPersonalEmailCopy(candidate, baseline), true);
+  const escapedWhy = story.whyItMatters.replace(/[&<>"']/g, character => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[character]);
+  for (const mutate of [
+    r => { r.text = r.text.replace(story.whyItMatters, "An incomplete replacement"); },
+    r => { r.html = r.html.replace(escapedWhy, "A changed paragraph."); },
+    r => { r.text += '\n“whyItMatters”: “Leaked serialized output.”'; },
+    r => { r.html = r.html.replace("</body>", '<p>&quot;whatToDoOrWatch&quot;: &quot;Leaked output.&quot;}]}</p></body>'); },
+    r => { r.html = r.html.replace("</body>", "<script>alert(1)</script></body>"); },
+  ]) {
+    const rendered = structuredClone(baseline);
+    mutate(rendered);
+    assert.throws(() => assertRenderedPersonalEmailCopy(candidate, rendered), /rendered copy/);
+  }
+  const cssOnly = { ...baseline, html: baseline.html.replace('style="margin:0;',
+    'style="--non-prose-debug:whyItMatters; margin:0;') };
+  assert.equal(assertRenderedPersonalEmailCopy(candidate, cssOnly), true);
+});
 
 const updatedPreviewOptions = {
   apiKey: API_KEY, recipient: RECIPIENT, previewRevision: "web-search-upgrade-2026-09-11",

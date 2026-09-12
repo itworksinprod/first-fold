@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import { countReaderFacingStoryWords, MIN_PRIVATE_GROUNDED_STORY_WORDS } from "../../edition-content.mjs";
+import { readerProseErrors } from "../../reader-prose.mjs";
+import { claimCaveatErrors } from "./claim-caveats.mjs";
 import { DEFAULT_CLOUDFLARE_AI_MODEL, requestWorkersAiEditorial } from "./workers-ai.mjs";
 
 export const GROUNDED_DIGEST_MODE = "source-grounded-summary";
@@ -19,7 +21,9 @@ const SUPPORT_SCHEMA = objectSchema({ evidenceId: textSchema });
 const CLAIM_SCHEMA = objectSchema({ text: { type: "string", minLength: 150, maxLength: 270 },
   supports: { ...arraySchema(SUPPORT_SCHEMA), maxItems: 2 } });
 export const GROUNDED_DRAFT_SCHEMA = objectSchema({ stories: arraySchema(objectSchema({
-  candidateId: textSchema, headline: textSchema, deck: textSchema,
+  candidateId: { type: "string", minLength: 1 },
+  headline: { type: "string", minLength: 1, maxLength: 180 },
+  deck: { type: "string", minLength: 1, maxLength: 280 },
   claims: { ...arraySchema(CLAIM_SCHEMA), minItems: 2, maxItems: 2 },
   whyItMatters: { type: "string", minLength: 240, maxLength: 400 },
   whatToDoOrWatch: { type: "string", minLength: 220, maxLength: 350 },
@@ -56,25 +60,47 @@ export function groundedDossiers(candidates) {
 function safeProse(value, max = 1_500) {
   return typeof value === "string" && value.trim() === value && value.length > 0 && value.length <= max &&
     !/[<>\p{Cc}\p{Cf}]/u.test(value) && !/(?:https?:|www\.|```|\]\(|\*\*)/iu.test(value) &&
-    !/\b(?:ignore (?:previous|prior)|system prompt|api key|access token|disable\s+(?:your\s+)?(?:security|antivirus|firewall)|run (?:this|the following) command)\b/iu.test(value);
+    !/\b(?:ignore (?:previous|prior)|system prompt|api key|access token|(?:disable|turn off)\s+(?:your\s+)?(?:security|antivirus|firewall|secure boot)|run (?:this|the following) command)\b/iu.test(value);
+}
+
+// Enforce the very same bounds sent to the provider. Valid outer JSON and a
+// provider's schema mode are not evidence that the nested copy is publishable.
+function withinTextSchema(value, schema) {
+  return safeProse(value, schema.maxLength) && value.length >= (schema.minLength ?? 1);
 }
 
 export function validateGroundedStory(draft, dossier, onFailure = () => {}) {
   const reject = (code) => { onFailure(code); return false; };
+  const fields = GROUNDED_DRAFT_SCHEMA.properties.stories.items.properties;
   if (!keys(draft, ["candidateId", "headline", "deck", "claims", "whyItMatters", "whatToDoOrWatch"]) ||
       draft.candidateId !== dossier.candidateId || !safeProse(draft.headline, 180) ||
-      !safeProse(draft.deck, 280) || !safeProse(draft.whyItMatters) || !safeProse(draft.whatToDoOrWatch) ||
-      !Array.isArray(draft.claims) || draft.claims.length < 2 || draft.claims.length > 4) return reject("SHAPE");
+      !safeProse(draft.deck, 280) || !withinTextSchema(draft.whyItMatters, fields.whyItMatters) ||
+      !withinTextSchema(draft.whatToDoOrWatch, fields.whatToDoOrWatch) ||
+      !Array.isArray(draft.claims) || draft.claims.length !== 2) return reject("SHAPE");
+  for (const field of ["headline", "deck", "whyItMatters", "whatToDoOrWatch"]) {
+    if (readerProseErrors(draft[field], { paragraph: ["whyItMatters", "whatToDoOrWatch"].includes(field) }).length) {
+      return reject("READER_COPY");
+    }
+  }
   const sourceByEvidenceId = new Map(dossier.sources.flatMap((source) =>
     source.passages.map((passage) => [passage.evidenceId, source])));
   const cited = new Set();
   for (const claim of draft.claims) {
-    if (!keys(claim, ["text", "supports"]) || !safeProse(claim.text, 700) ||
+    if (!keys(claim, ["text", "supports"]) || !withinTextSchema(claim.text, CLAIM_SCHEMA.properties.text) ||
         !Array.isArray(claim.supports) || claim.supports.length < 1 || claim.supports.length > 2) return reject("CLAIM_SHAPE");
+    if (readerProseErrors(claim.text, { paragraph: true }).length) return reject("READER_COPY");
+    const supportingSources = new Set();
     for (const support of claim.supports) {
       const source = sourceByEvidenceId.get(support?.evidenceId);
       if (!keys(support, ["evidenceId"]) || !source) return reject("CITATION_UNKNOWN");
       cited.add(source.publisherKey);
+      supportingSources.add(source);
+    }
+    // Include neighboring source sentences: a cited impact passage can depend
+    // on a condition in the preceding sentence. A valid passage ID alone is
+    // never permission to omit that condition.
+    if (claimCaveatErrors(claim.text, [...supportingSources].map((source) => source.text).join(" ")).length) {
+      return reject("SOURCE_CAVEAT");
     }
   }
   if (dossier.evidenceTier === "corroborated" && cited.size < 2) return reject("CORROBORATION");
@@ -84,6 +110,8 @@ export function validateGroundedStory(draft, dossier, onFailure = () => {}) {
   const copy = [draft.headline, draft.deck, story.whatHappened, draft.whyItMatters, draft.whatToDoOrWatch].join(" ");
   if (/\b(?:new development|reviewed development|editorial threshold|deterministic|bounded evidence|cleared the bar)\b/iu.test(copy)) return reject("GENERIC_COPY");
   const evidence = evidenceText(dossier);
+  if ([draft.headline, draft.deck, draft.whyItMatters, draft.whatToDoOrWatch]
+    .some((text) => claimCaveatErrors(text, evidence).length)) return reject("SOURCE_CAVEAT");
   // Exact numeric/version anchors, plus a separate semantic review below.
   const knownNumbers = new Set(numericTokens(evidence).map((value) => value.toLowerCase()));
   if (numericTokens(copy).some((value) => !knownNumbers.has(value.toLowerCase()))) return reject("NUMERIC_ANCHOR");
@@ -108,6 +136,10 @@ Return JSON matching the schema. 100–225 body words per story across claims.te
 whyItMatters and whatToDoOrWatch (headline/deck do NOT count); aim for 150. No filler, policy explanations or vague development headlines.
 Write two factual claims of 25–35 words each, a whyItMatters paragraph of 35–50 words and a
 whatToDoOrWatch paragraph of 30–45 words. This gives a concise, substantive 115–165 word body.
+Respect every field's character bounds as well as the overall word range. Each body field must
+contain complete sentences with terminal punctuation. Never embed JSON, schema keys, a second
+story, quoted field assignments or partial sentences INSIDE a prose string. Finish each field
+before moving to the next; shorter complete wording is preferable to a truncated sentence.
 Each claim must cite one or two supplied evidenceId values (such as S1P2) in supports.
 These IDs identify exact publisher passages already stored locally. Do not write or invent quotes.
 The cited passages must substantiate the entire claim, including caveats. Paraphrase the facts;
@@ -119,6 +151,10 @@ That list is a constraint, not evidence for a claim: use a figure only when its 
 Do not introduce extra numbered examples, counts, versions or percentages in the analysis paragraphs.
 For single-source items name the publisher in the factual text and attribute its claims. A vendor claim
 is not independent confirmation. Distinguish conditional implications from observed outcomes.
+Keep any prerequisite in the SAME claim or paragraph as its consequence, including headlines.
+For example, if pre-OS execution depends on Secure Boot being disabled, do not assert that
+impact without the condition. A local-access flaw is not a remote attack. Unknown exploitation
+or an unnamed fixed version must not become an active-attack claim or an available patch.
 Why it matters: explain the concrete consequence of THIS change. What to watch: a specific next signal
 or proportionate check tied to THIS news. Do not give commands or tell readers to weaken security controls.
 Do not invent URLs, facts or source IDs. If a detail is absent, leave that detail out and explain a
@@ -148,6 +184,10 @@ spell an unsupported figure in words to evade the check. Recheck the headline an
 For CLAIM_SHAPE, each claim must have only text and supports. Keep text a single plain paragraph
 without Markdown, HTML, URLs or instructions. Each supports array must contain one or two objects,
 each with only an evidenceId. Do not include extra keys, quotations or citation text.
+For READER_COPY, rewrite the affected fields as complete plain sentences. Remove all serialized
+field spillover, duplicated JSON and unfinished wording by writing a fresh grounded paragraph.
+For SOURCE_CAVEAT, retain the source's prerequisites, qualifications and negations in the same
+field as the dependent claim, or leave out that impact. Do not turn uncertainty into certainty.
 Correct the indicated problem while preserving every source caveat. The revised draft still faces
 the same local checks and a separate factual review; do not try to evade those checks.`;
 
