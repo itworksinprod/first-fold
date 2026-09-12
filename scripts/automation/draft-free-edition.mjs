@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { GROUNDED_DIGEST_MODE, synthesizeGroundedEditorial } from "./free/grounded-draft.mjs";
 import { createNewsworthinessReview } from "./free/newsworthiness.mjs";
+import { createTavilyDiscovery } from "./free/web-search.mjs";
+import { isValidWebSearchReceipt } from "./free/search-receipt.mjs";
 import {
   MAX_READER_FACING_STORY_WORDS,
   MIN_READER_FACING_STORY_WORDS,
@@ -20,6 +22,7 @@ import {
   EDITORIAL_SCORECARD_MAXIMUMS,
   FREE_DESKS,
   collectFreeResearchSnapshot,
+  createReviewedArticlePageFetcher,
 } from "./free/feed-engine.mjs";
 import { FREE_FEED_SOURCES } from "./free/feed-sources.mjs";
 import {
@@ -714,6 +717,9 @@ export function assertFreeResearchCoverage(
   }
   if (research.sourceTextTrust !== "untrusted") {
     throw new Error("Free feed research did not preserve the untrusted-source boundary.");
+  }
+  if (Object.hasOwn(research.diagnostics, "webSearch") && !isValidWebSearchReceipt(research.diagnostics.webSearch)) {
+    throw new Error("Free research returned an invalid web-discovery receipt.");
   }
   const candidateUrls = [...new Set(research.candidates.flatMap((candidate) =>
     Array.isArray(candidate?.sources) ? candidate.sources.map((source) => source?.url) : []))].sort();
@@ -2223,6 +2229,9 @@ export function validateFreePilotProvenance(
   }
   const expectedRun = requireGitHubRun(automation ?? {});
   const freePilot = candidate.provenance?.freePilot;
+  if (Object.hasOwn(freePilot ?? {}, "webSearch") && !isValidWebSearchReceipt(freePilot.webSearch)) {
+    throw new Error("Free candidate has an invalid web discovery receipt.");
+  }
   if (
     !isObject(freePilot) ||
     freePilot.workflow !== FREE_AUTOMATION_WORKFLOW ||
@@ -2432,6 +2441,7 @@ async function draftFreeEditionCore({
   summarizeSelectedSlate = false,
   trustedEvidenceDigestOnly = false,
   groundedSummaries = false,
+  tavilyApiKey,
   onFreeDiagnostic = () => {},
   maxResearchAttempts = 1,
   researchRetryBelowStoryCount = 0,
@@ -2565,6 +2575,12 @@ async function draftFreeEditionCore({
 
   const researchOptions = {
     enrichArticles: groundedSummaries,
+    ...(groundedSummaries ? {
+      discoverWebArticles: createTavilyDiscovery({ apiKey: tavilyApiKey, fetchImpl,
+        onDiagnostic: onFreeDiagnostic }),
+      articlePageFetcher: createReviewedArticlePageFetcher({ requestImpl: feedRequestImpl, lookupImpl: feedLookupImpl }),
+      onSearchDiagnostic: onFreeDiagnostic,
+    } : {}),
     ...(groundedSummaries ? { reviewNewsworthiness: createNewsworthinessReview({
       accountId, apiToken, aiRequestImpl, fetchImpl,
       onDiagnostic: onFreeDiagnostic,
@@ -3070,6 +3086,7 @@ async function draftFreeEditionCore({
     provenance: {
       ...scaffold.provenance,
       freePilot: {
+        ...(research.diagnostics.webSearch ? { webSearch: structuredClone(research.diagnostics.webSearch) } : {}),
         workflow: FREE_AUTOMATION_WORKFLOW,
         provider: inference.provider,
         model: inference.model,

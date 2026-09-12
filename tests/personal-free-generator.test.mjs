@@ -482,6 +482,63 @@ function boundedSummaryWords(prefix = "", count = 55) {
   ].join(" ");
 }
 
+test("private free conversion carries web discovery receipts without persisting its optional key", async (t) => {
+  const projectRoot = await createProject(t);
+  const tavilyApiKey = "tvly-test-private-key-never-in-receipts";
+  for (const admittedArticles of [0, 4]) {
+    const receipt = { provider: "tavily", queriesUsed: 12, creditsReserved: 24, admittedArticles };
+    const sourceCandidate = freeCandidate({ draftingMode: TRUSTED_EVIDENCE_DIGEST_MODE });
+    sourceCandidate.provenance.freePilot.webSearch = receipt;
+    const candidate = await generatePersonalFreeEdition({
+      editionDate: "2026-08-20",
+      projectRoot,
+      env: { ...automationEnv, TAVILY_API_KEY: tavilyApiKey },
+      now: GENERATED_AT,
+      feedSources,
+      personalStoryLedger: createEmptyPersonalStoryLedger({
+        fingerprintKey: automationEnv.CLOUDFLARE_AI_API_TOKEN,
+      }),
+      draftFreeEditionImpl: async (options) => {
+        assert.equal(options.tavilyApiKey, tavilyApiKey);
+        return sourceCandidate;
+      },
+    });
+    const research = candidate.provenance.personalFreeResearch;
+    assert.deepEqual(research.webSearch, receipt);
+    assert.notEqual(research.webSearch, receipt);
+    assert.equal(research.researchMethod, admittedArticles > 0
+      ? "curated-live-feeds-and-web-search"
+      : "curated-live-feeds");
+    assert.equal(validatePersonalFreeCandidate(candidate), true);
+    assert.equal(assertPersonalEmailCandidate(candidate).valid, true);
+    assert.equal(JSON.stringify(candidate).includes(tavilyApiKey), false);
+    assert.equal(Object.hasOwn(sourceCandidate.provenance, "freePilot"), true);
+  }
+});
+
+test("private free conversion rejects extra or invalid fields in search receipts", async (t) => {
+  const projectRoot = await createProject(t);
+  for (const receipt of [
+    { provider: "tavily", queriesUsed: 0, creditsReserved: 0, admittedArticles: 0 },
+    { provider: "tavily", queriesUsed: 12, creditsReserved: 24, admittedArticles: 25 },
+    { provider: "tavily", queriesUsed: 12, creditsReserved: 24, admittedArticles: 4, apiKey: "private" },
+  ]) {
+    const sourceCandidate = freeCandidate({ draftingMode: TRUSTED_EVIDENCE_DIGEST_MODE });
+    sourceCandidate.provenance.freePilot.webSearch = receipt;
+    await assert.rejects(generatePersonalFreeEdition({
+      editionDate: "2026-08-20",
+      projectRoot,
+      env: automationEnv,
+      now: GENERATED_AT,
+      feedSources,
+      personalStoryLedger: createEmptyPersonalStoryLedger({
+        fingerprintKey: automationEnv.CLOUDFLARE_AI_API_TOKEN,
+      }),
+      draftFreeEditionImpl: async () => sourceCandidate,
+    }), (error) => personalFreeFailureCode(error) === "PERSONAL_FREE_ADAPTATION_FAILED");
+  }
+});
+
 test("private free generation fixes the zero-model deterministic evidence contract", async (t) => {
   const projectRoot = await createProject(t);
   let draftOptions;
@@ -549,6 +606,7 @@ test("private free generation fixes the zero-model deterministic evidence contra
   assert.match(candidate.provenance.personalFreeResearch.repeatStateSha256, /^[a-f0-9]{64}$/);
   assert.equal(draftOptions.accountId, ACCOUNT_ID);
   assert.equal(draftOptions.apiToken, automationEnv.CLOUDFLARE_AI_API_TOKEN);
+  assert.equal(Object.hasOwn(draftOptions, "tavilyApiKey"), false);
   assert.equal(draftOptions.model, "@cf/meta/llama-3.3-70b-instruct-fp8-fast");
   assert.equal(draftOptions.evidencePolicy, PERSONAL_FREE_EVIDENCE_POLICY);
   assert.equal(draftOptions.requireComplete, false);

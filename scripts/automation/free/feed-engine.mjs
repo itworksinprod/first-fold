@@ -10,6 +10,9 @@ import {
   fingerprintFeedCandidate,
 } from "../personal-story-ledger.mjs";
 import { FREE_FEED_SOURCES } from "./feed-sources.mjs";
+import { reviewedSearchPublisher } from "./publisher-registry.mjs";
+import { admitSearchArticles } from "./search-articles.mjs";
+import { isValidWebSearchReceipt } from "./search-receipt.mjs";
 
 export const FREE_DESKS = Object.freeze([
   "ai",
@@ -867,15 +870,33 @@ export async function fetchFeedSource(source, options = {}) {
 // Article requests inherit the feed transport's public-DNS pinning, HTTPS,
 // redirect-host, timeout and body limits. No URLs supplied by a model are used.
 export async function fetchReviewedArticle(item, options = {}) {
-  const reviewed = FREE_FEED_SOURCES.find((source) =>
-    source.publisherKey === item.publisherKey &&
-    source.itemHosts.includes(new URL(item.url).hostname));
-  if (!reviewed) throw new Error("Article is not on the reviewed source manifest.");
-  const response = await fetchReviewedText({
-    ...reviewed, url: item.url, feedHosts: reviewed.itemHosts,
+  const response = await fetchReviewedArticlePage(item, options);
+  return extractArticleEvidence(response.body);
+}
+
+export async function fetchReviewedArticlePage(item, options = {}) {
+  const reviewed = reviewedSearchPublisher(item?.url, item?.publisherKey);
+  if (!reviewed || !item?.publisherKey) throw new Error("Article is not on the reviewed source manifest.");
+  return fetchReviewedText({
+    ...reviewed.source, url: reviewed.url, feedHosts: reviewed.source.itemHosts,
   }, { ...options, maxBytes: 600_000, maxRedirects: 1 },
   new Set(["text/html", "application/xhtml+xml"]), true);
-  return extractArticleEvidence(response.body);
+}
+
+/** One edition shares this cache across search admission, feed enrichment and
+ * the research retry. Failed/redirecting fetches consume a slot too. */
+export function createReviewedArticlePageFetcher(options = {}) {
+  const cache = new Map();
+  return (item) => {
+    const reviewed = reviewedSearchPublisher(item?.url, item?.publisherKey);
+    if (!reviewed || !item?.publisherKey) return Promise.reject(new Error("Article is not reviewed."));
+    const key = `${reviewed.source.publisherKey}:${reviewed.url}`;
+    if (cache.has(key)) return cache.get(key);
+    if (cache.size >= 24) return Promise.reject(new Error("The edition article-fetch budget is exhausted."));
+    const pending = fetchReviewedArticlePage({ url: reviewed.url, publisherKey: item.publisherKey }, options);
+    cache.set(key, pending);
+    return pending;
+  };
 }
 
 async function fetchReviewedText(source, options, allowedTypes, allowCompression = false) {
@@ -2861,13 +2882,14 @@ function candidateSource(item, index) {
   };
 }
 
-function feedEndpointSource(item, index) {
+function discoveryContextSource(item, index) {
+  const isSearch = item.discoveryKind === "web-search";
   return {
-    id: `source-${index + 1}-${item.sourceId}-feed`,
-    title: `${item.publisher} feed index`,
+    id: `source-${index + 1}-${item.sourceId}-${isSearch ? "website" : "feed"}`,
+    title: isSearch ? item.contextTitle : `${item.publisher} feed index`,
     publisher: item.publisher,
     publisherKey: item.publisherKey,
-    url: item.feedUrl,
+    url: isSearch ? item.contextUrl : item.feedUrl,
     relationship: "context",
     publishedAt: null,
     retrievedAt: item.retrievedAt,
@@ -2884,9 +2906,10 @@ function groupToCandidate(group, reportingWindow) {
     if (seenUrls.has(item.url)) continue;
     seenUrls.add(item.url);
     sources.push(candidateSource(item, sources.length));
-    if (sources.length < 8 && !seenUrls.has(item.feedUrl)) {
-      seenUrls.add(item.feedUrl);
-      sources.push(feedEndpointSource(item, sources.length));
+    const contextUrl = item.discoveryKind === "web-search" ? item.contextUrl : item.feedUrl;
+    if (sources.length < 8 && contextUrl && !seenUrls.has(contextUrl)) {
+      seenUrls.add(contextUrl);
+      sources.push(discoveryContextSource(item, sources.length));
     }
   }
   const firstPublishedAt = group.items.map((item) => item.publishedAt).sort()[0];
@@ -2898,7 +2921,7 @@ function groupToCandidate(group, reportingWindow) {
   const publisherKeys = [...new Set(emittedFactualSources.map((source) => source.publisherKey))].sort();
   const facts = group.items.slice(0, 4).map((item) => {
     const detail = item.summary ? ` ${item.summary}` : "";
-    return `${item.publisher}'s feed reports: ${item.title}.${detail}`.slice(0, 900);
+    return `${item.publisher}'s ${item.discoveryKind === "web-search" ? "article" : "feed"} reports: ${item.title}.${detail}`.slice(0, 900);
   });
   const feedEvidence = [];
   const seenEvidenceSourceIds = new Set();
@@ -3453,13 +3476,58 @@ export async function collectFreeResearchSnapshot(options = {}) {
   // The production entry point always uses the reviewed, checked-in manifest.
   // Tests can exercise custom fixtures through ingestCuratedFeeds directly.
   const ingestion = await ingestCuratedFeeds({ ...runtimeOptions, sources: FREE_FEED_SOURCES });
+  const fetchArticlePage = options.articlePageFetcher ?? createReviewedArticlePageFetcher({
+    requestImpl: options.requestImpl, lookupImpl: options.lookupImpl,
+  });
+  let webSearch;
+  if (options.enrichArticles === true && typeof options.discoverWebArticles === "function") {
+    try {
+      const assessed = assessFeedCandidates({ ...options, items: ingestion.items,
+        reportingWindow: ingestion.reportingWindow, evidencePolicy: normalizedEvidencePolicy });
+      const followupQueries = FREE_DESKS.flatMap((desk) => {
+        const lead = assessed.filter((entry) => entry.candidate?.suggestedDesk === desk &&
+          entry.rejectionReasons.every((reason) => ["BELOW_EDITORIAL_THRESHOLD", "AUTHORITATIVE_SINGLE_COMPONENT_FLOOR", "INSUFFICIENT_SOURCE_EVIDENCE"].includes(reason.code)))
+          .sort((a, b) => b.candidate.ranking.score - a.candidate.ranking.score)[0]?.candidate;
+        return lead ? [{ desk, query: `${lead.title.slice(0, 170)} original announcement independent reporting` }] : [];
+      });
+      const discovered = await options.discoverWebArticles({ reportingWindow: ingestion.reportingWindow, followupQueries });
+      const queriesUsed = discovered.diagnostics.searchRequests;
+      const receipt = { provider: "tavily", queriesUsed,
+        creditsReserved: discovered.diagnostics.creditsReserved, admittedArticles: 0 };
+      if (queriesUsed === 0) {
+        if (discovered.diagnostics.creditsReserved !== 0 || !Array.isArray(discovered.results) || discovered.results.length) {
+          throw new Error("Search returned results without a valid request receipt.");
+        }
+      } else if (!isValidWebSearchReceipt(receipt)) throw new Error("Search returned an invalid receipt.");
+      const admission = await admitSearchArticles({ results: discovered.results,
+        reportingWindow: ingestion.reportingWindow, retrievedAt: ingestion.retrievedAt, fetchArticlePage,
+        maxFetches: 16 }); // Reserve eight of the shared twenty-four page reads for feed leads.
+      if (queriesUsed > 0) {
+        webSearch = { ...receipt, admittedArticles: admission.items.length };
+      }
+      // A URL already in a feed retains its feed timestamp and ownership.
+      // Only verified article text augments it; it never earns a duplicate vote.
+      const merged = new Map(ingestion.items.map((item) => [item.url, item]));
+      for (const item of admission.items) {
+        const existing = merged.get(item.url);
+        if (existing && existing.publisherKey === item.publisherKey) {
+          merged.set(item.url, { ...existing, articleExcerpt: item.articleExcerpt, summary: item.summary });
+        } else if (!existing) merged.set(item.url, item);
+      }
+      ingestion.items = [...merged.values()]; // <=320 feed items plus16 admitted pages.
+      options.onSearchDiagnostic?.({ stage: "web-search-admission", queriesUsed,
+        fetched: admission.diagnostics.fetched, admitted: admission.items.length,
+        rejectionCounts: admission.diagnostics.rejected });
+    } catch {
+      options.onSearchDiagnostic?.({ stage: "web-search-admission", status: "unavailable" });
+      // Search is optional; an unavailable service never weakens feed gates.
+    }
+  }
   if (options.enrichArticles === true) {
     ingestion.items = await enrichShortlist(ingestion.items, {
       assess: (items) => assessFeedCandidates({ ...options, items,
         reportingWindow: ingestion.reportingWindow, evidencePolicy: normalizedEvidencePolicy }),
-      fetchArticle: (item) => fetchReviewedArticle(item, {
-        requestImpl: options.requestImpl, lookupImpl: options.lookupImpl,
-      }),
+      fetchArticle: async (item) => item.articleExcerpt ?? extractArticleEvidence((await fetchArticlePage(item)).body),
     });
   }
   let assessments = assessFeedCandidates({
@@ -3500,6 +3568,7 @@ export async function collectFreeResearchSnapshot(options = {}) {
     candidates,
     ...selection,
     diagnostics: {
+      ...(webSearch ? { webSearch } : {}),
       sourceResults: ingestion.sourceResults,
       parsedItemCount: ingestion.parsedItemCount,
       eligibleItemCount: ingestion.eligibleItemCount,

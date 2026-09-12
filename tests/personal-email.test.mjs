@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { validateCanonicalEdition } from "../scripts/edition-content.mjs";
 import { buildPersonalFeedbackLinkMap } from "../scripts/automation/personal-feedback.mjs";
+import { validatePersonalFreeCandidate } from "../scripts/automation/personal-free-edition.mjs";
 import { TRUSTED_EVIDENCE_DIGEST_MODE } from
   "../scripts/automation/free/evidence-digest.mjs";
 import { MODEL_ASSISTED_DIGEST_MODE } from
@@ -165,6 +166,57 @@ function useWorkersAiProvenance(candidate, draftingMode = MODEL_ASSISTED_DIGEST_
   research.maxModelRequests = 1;
   return candidate;
 }
+
+test("private paper validators and renderers preserve bounded optional web discovery receipts", () => {
+  for (const [queriesUsed, admittedArticles] of [[1, 0], [1, 1], [12, 24]]) {
+    const candidate = personalCandidate();
+    const research = candidate.provenance.personalFreeResearch;
+    research.maxModelRequests = 4;
+    research.webSearch = { provider: "tavily", queriesUsed, creditsReserved: queriesUsed * 2, admittedArticles };
+    research.researchMethod = admittedArticles > 0
+      ? "curated-live-feeds-and-web-search"
+      : "curated-live-feeds";
+    assert.equal(validatePersonalFreeCandidate(candidate), true);
+    assert.equal(assertPersonalEmailCandidate(candidate).valid, true);
+    const email = renderPersonalEditionEmail(candidate);
+    const expected = `Web discovery: ${queriesUsed} ${queriesUsed === 1 ? "search" : "searches"} · ` +
+      `${admittedArticles} publisher ${admittedArticles === 1 ? "article" : "articles"} verified`;
+    assert.ok(email.html.includes(expected));
+    assert.ok(email.text.includes(expected));
+    assert.doesNotMatch(email.html, /creditsReserved|TAVILY_API_KEY/);
+  }
+  const feedsOnly = renderPersonalEditionEmail(personalCandidate());
+  assert.doesNotMatch(feedsOnly.html, /Web discovery:/);
+  assert.doesNotMatch(feedsOnly.text, /Web discovery:/);
+});
+
+test("private generation and delivery reject forged or mismatched web discovery receipts", () => {
+  for (const mutate of [
+    (research) => { research.webSearch = null; },
+    (research) => { research.webSearch = undefined; },
+    (research) => { research.webSearch = []; },
+    (research) => { research.webSearch.provider = "other"; },
+    (research) => { research.webSearch.queriesUsed = 13; research.webSearch.creditsReserved = 26; },
+    (research) => { research.webSearch.queriesUsed = "12"; },
+    (research) => { research.webSearch.creditsReserved = 23; },
+    (research) => { research.webSearch.admittedArticles = 25; },
+    (research) => { research.webSearch.url = "https://attacker.invalid"; },
+    (research) => { research.webSearch.status = "success"; },
+    (research) => { delete research.webSearch; },
+    (research) => { research.researchMethod = "curated-live-feeds"; },
+    (research) => { research.webSearch.admittedArticles = 0; },
+  ]) {
+    const candidate = personalCandidate();
+    const research = candidate.provenance.personalFreeResearch;
+    research.maxModelRequests = 4;
+    research.researchMethod = "curated-live-feeds-and-web-search";
+    research.webSearch = { provider: "tavily", queriesUsed: 12, creditsReserved: 24, admittedArticles: 24 };
+    mutate(research);
+    assert.throws(() => validatePersonalFreeCandidate(candidate), /provenance contract/);
+    assert.throws(() => assertPersonalEmailCandidate(candidate));
+    assert.throws(() => renderPersonalEditionEmail(candidate));
+  }
+});
 
 function leaveDeskQuiet(candidate, desk) {
   const removedStory = candidate.desks[desk].story;

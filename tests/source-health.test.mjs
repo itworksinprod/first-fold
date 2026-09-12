@@ -96,6 +96,28 @@ function buildSnapshot(overrides = {}) {
   });
 }
 
+function searchResearchFixture({ failedSourceIds = [] } = {}) {
+  const research = researchFixture({ failedSourceIds });
+  for (const source of research.diagnostics.sourceResults) source.eligibleItemCount = 0;
+  research.candidates = FREE_DESKS.map((desk) => ({ candidateId: `private-${desk}` }));
+  research.selectedCandidates = research.candidates;
+  research.desks = Object.fromEntries(FREE_DESKS.map((desk, index) => [desk, {
+    desk,
+    candidates: [research.candidates[index]],
+    selectedCandidate: research.candidates[index],
+  }]));
+  Object.assign(research.diagnostics, {
+    eligibleItemCount: 0,
+    candidateCount: 4,
+    rankedCandidateCount: 4,
+    rejectedCandidateCount: 0,
+    rejectionCounts: {},
+    selectedCount: 4,
+    webSearch: { provider: "tavily", queriesUsed: 8, creditsReserved: 16, admittedArticles: 4 },
+  });
+  return research;
+}
+
 test("builds a strict source-health snapshot using only checked-in source metadata", () => {
   const snapshot = buildSnapshot();
   assert.equal(snapshot.schemaVersion, SOURCE_HEALTH_SCHEMA_VERSION);
@@ -121,6 +143,72 @@ test("builds a strict source-health snapshot using only checked-in source metada
   }
   assert.ok(Buffer.byteLength(serialized) < SOURCE_HEALTH_MAX_JSON_BYTES);
   assert.equal(validateSourceHealthSnapshot(snapshot), snapshot);
+  assert.equal(Object.hasOwn(snapshot.attempts[0], "webSearch"), false);
+});
+
+test("counts admitted search articles separately from healthy but empty feed eligibility", () => {
+  const research = searchResearchFixture();
+  const snapshot = buildSnapshot({ attempts: [{ research }] });
+  const attempt = snapshot.attempts[0];
+  assert.equal(attempt.status, "healthy");
+  assert.equal(attempt.aggregate.eligibleItemCount, 0);
+  assert.equal(attempt.aggregate.parsedItemCount, FREE_FEED_SOURCES.length * 2);
+  assert.equal(attempt.aggregate.candidateCount, 4);
+  assert.equal(attempt.aggregate.selectedCount, 4);
+  assert.equal(attempt.aggregate.configuredSourceCount, FREE_FEED_SOURCES.length);
+  assert.ok(attempt.sources.every((source) => source.eligibleItemCount === 0));
+  assert.deepEqual(attempt.webSearch, research.diagnostics.webSearch);
+  assert.notEqual(attempt.webSearch, research.diagnostics.webSearch);
+  assert.equal(validateSourceHealthSnapshot(snapshot), snapshot);
+  assert.match(renderSourceHealthMarkdown(snapshot), /Feed items: \d+ parsed, 0 eligible/);
+  assert.match(renderSourceHealthMarkdown(snapshot), /8 queries, 16 credits reserved, 4 verified articles admitted/);
+  assert.match(renderSourceHealthHtml(snapshot), /Search does not count toward feed coverage/);
+  assert.doesNotMatch(JSON.stringify(snapshot), /private-ai|private\.invalid|untrusted headline/);
+});
+
+test("search receipts cannot inflate feed totals, candidate bounds, or expose private data", () => {
+  const validResearch = searchResearchFixture();
+  for (const invalidReceipt of [
+    null,
+    undefined,
+    { ...validResearch.diagnostics.webSearch, queriesUsed: 13, creditsReserved: 26 },
+    { ...validResearch.diagnostics.webSearch, creditsReserved: 15 },
+    { ...validResearch.diagnostics.webSearch, admittedArticles: 25 },
+    { ...validResearch.diagnostics.webSearch, query: "private untrusted query" },
+  ]) {
+    const research = structuredClone(validResearch);
+    research.diagnostics.webSearch = invalidReceipt;
+    assert.throws(() => buildSnapshot({ attempts: [{ research }] }), /invalid web search receipt/);
+    const snapshot = buildSnapshot({ attempts: [{ research: validResearch }] });
+    snapshot.attempts[0].webSearch = invalidReceipt;
+    assert.throws(() => validateSourceHealthSnapshot(snapshot), /invalid web search receipt/);
+  }
+  const undercounted = structuredClone(validResearch);
+  undercounted.diagnostics.webSearch.admittedArticles = 3;
+  assert.throws(() => buildSnapshot({ attempts: [{ research: undercounted }] }), /aggregate candidate counts/);
+  const missing = structuredClone(validResearch);
+  delete missing.diagnostics.webSearch;
+  assert.throws(() => buildSnapshot({ attempts: [{ research: missing }] }), /aggregate candidate counts/);
+  const inflatedFeedTotal = structuredClone(validResearch);
+  inflatedFeedTotal.diagnostics.eligibleItemCount = 4;
+  assert.throws(() => buildSnapshot({ attempts: [{ research: inflatedFeedTotal }] }), /eligible count does not match/);
+  const removedReceipt = buildSnapshot({ attempts: [{ research: validResearch }] });
+  delete removedReceipt.attempts[0].webSearch;
+  assert.throws(() => validateSourceHealthSnapshot(removedReceipt), /aggregate totals/);
+});
+
+test("search results cannot conceal failed feed coverage or attach to unobserved research", () => {
+  const research = searchResearchFixture({ failedSourceIds: FREE_FEED_SOURCES.map((source) => source.id) });
+  const snapshot = buildSnapshot({ attempts: [{ research }], selectedAttempt: null, outcome: "failed" });
+  assert.equal(snapshot.attempts[0].status, "ingestion-failure");
+  assert.equal(snapshot.attempts[0].aggregate.successfulSourceCount, 0);
+  assert.ok(snapshot.attempts[0].desks.every((desk) =>
+    desk.successfulPublisherCount === 0 && desk.coverageStatus === "insufficient-corroboration"));
+  assert.throws(() => buildSnapshot({ attempts: [{ research }] }), /cannot select a failed research attempt/);
+
+  const unobserved = buildSnapshot({ attempts: [{ error: {} }], selectedAttempt: null, outcome: "failed" });
+  unobserved.attempts[0].webSearch = { provider: "tavily", queriesUsed: 8, creditsReserved: 16, admittedArticles: 0 };
+  assert.throws(() => validateSourceHealthSnapshot(unobserved), /cannot attach search observations/);
 });
 
 test("distinguishes healthy quiet, degraded quiet, and ingestion failure", () => {

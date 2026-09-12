@@ -12,6 +12,11 @@ import {
 } from "./draft-free-edition.mjs";
 import { FREE_FEED_SOURCES } from "./free/feed-sources.mjs";
 import {
+  hasValidWebSearchResearchMethod,
+  isValidWebSearchReceipt,
+  researchMethodForWebSearch,
+} from "./free/search-receipt.mjs";
+import {
   TRUSTED_EVIDENCE_DIGEST_MODE,
   TRUSTED_EVIDENCE_DIGEST_MODEL,
   TRUSTED_EVIDENCE_DIGEST_PROVIDER,
@@ -437,6 +442,7 @@ function buildPersonalCandidate(
   const inferenceIsValid = hasPersonalFreeInferenceTuple(freePilot, stories.length);
   if (
     freePilot?.workflow !== FREE_AUTOMATION_WORKFLOW ||
+    (Object.hasOwn(freePilot ?? {}, "webSearch") && !isValidWebSearchReceipt(freePilot.webSearch)) ||
     !inferenceIsValid ||
     freePilot?.coveredDeskCount !== PERSONAL_FREE_DESKS.length ||
     freePilot?.draftSelectedSlate !== true ||
@@ -462,7 +468,10 @@ function buildPersonalCandidate(
   candidate.provenance.personalFreeResearch = {
     workflow: PERSONAL_FREE_WORKFLOW,
     provider: freePilot.provider,
-    researchMethod: PERSONAL_FREE_RESEARCH_METHOD,
+    researchMethod: researchMethodForWebSearch(freePilot.webSearch),
+    ...(Object.hasOwn(freePilot, "webSearch")
+      ? { webSearch: structuredClone(freePilot.webSearch) }
+      : {}),
     model: freePilot.model,
     runId: automation.runId,
     runUrl: automation.runUrl,
@@ -535,7 +544,7 @@ export function validatePersonalFreeCandidate(
     Object.hasOwn(candidate.provenance ?? {}, "freePilot") ||
     Object.hasOwn(candidate.provenance ?? {}, "personalResearch") ||
     research?.workflow !== PERSONAL_FREE_WORKFLOW ||
-    research?.researchMethod !== PERSONAL_FREE_RESEARCH_METHOD ||
+    !hasValidWebSearchResearchMethod(research) ||
     research?.repository !== EXPECTED_REPOSITORY ||
     research?.runId !== expectedRun.runId ||
     research?.runUrl !== expectedRun.runUrl ||
@@ -662,6 +671,9 @@ async function generatePersonalFreeEditionWithHealth({
     automation,
     accountId,
     apiToken,
+    ...(typeof env.TAVILY_API_KEY === "string" && env.TAVILY_API_KEY.trim()
+      ? { tavilyApiKey: env.TAVILY_API_KEY }
+      : {}),
     model: DEFAULT_CLOUDFLARE_AI_MODEL,
     now,
     runMode,

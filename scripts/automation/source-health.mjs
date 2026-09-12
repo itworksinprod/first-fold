@@ -3,6 +3,7 @@ import { link, lstat, mkdir, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { FREE_DESKS } from "./free/feed-engine.mjs";
 import { FREE_FEED_SOURCES } from "./free/feed-sources.mjs";
+import { isValidWebSearchReceipt } from "./free/search-receipt.mjs";
 
 export const SOURCE_HEALTH_SCHEMA_VERSION = "first-fold-source-health-v1";
 export const SOURCE_HEALTH_MAX_JSON_BYTES = 256 * 1024;
@@ -388,6 +389,12 @@ function buildObservedAttempt(number, research) {
   });
   const parsedItemCount = sources.reduce((sum, source) => sum + source.parsedItemCount, 0);
   const eligibleItemCount = sources.reduce((sum, source) => sum + source.eligibleItemCount, 0);
+  const hasWebSearch = Object.hasOwn(research.diagnostics, "webSearch");
+  const webSearch = research.diagnostics.webSearch;
+  if (hasWebSearch && !isValidWebSearchReceipt(webSearch)) {
+    throw new Error(`Source health attempt ${number} contains an invalid web search receipt.`);
+  }
+  const admittedSearchArticles = hasWebSearch ? webSearch.admittedArticles : 0;
   const candidateCount = requireCount(
     research.diagnostics.candidateCount ?? research.candidates?.length ?? 0,
     "Source health candidateCount",
@@ -420,7 +427,8 @@ function buildObservedAttempt(number, research) {
   ) {
     throw new Error(`Source health attempt ${number} selected count does not match its desks.`);
   }
-  if (rankedCandidateCount < candidateCount || selectedCount > candidateCount || candidateCount > eligibleItemCount) {
+  if (rankedCandidateCount < candidateCount || selectedCount > candidateCount ||
+    candidateCount > eligibleItemCount + admittedSearchArticles) {
     throw new Error(`Source health attempt ${number} aggregate candidate counts are inconsistent.`);
   }
   const hasCoverageFailure = desks.some((desk) => desk.coverageStatus !== "covered");
@@ -434,6 +442,7 @@ function buildObservedAttempt(number, research) {
     number,
     status,
     code: hasCoverageFailure ? "DESK_COVERAGE_FAILED" : null,
+    ...(hasWebSearch ? { webSearch: { ...webSearch } } : {}),
     aggregate: {
       configuredSourceCount: sources.length,
       successfulSourceCount: sources.filter((source) => source.status === "ok").length,
@@ -538,7 +547,13 @@ function validateRejectionCounts(rejectionCounts, rejectedCandidateCount, attemp
 }
 
 function validateAttempt(attempt, expectedNumber) {
-  assertExactKeys(attempt, ATTEMPT_KEYS, `Source health attempt ${expectedNumber}`);
+  const hasWebSearch = isObject(attempt) && Object.hasOwn(attempt, "webSearch");
+  assertExactKeys(attempt, hasWebSearch ? [...ATTEMPT_KEYS, "webSearch"] : ATTEMPT_KEYS,
+    `Source health attempt ${expectedNumber}`);
+  if (hasWebSearch && !isValidWebSearchReceipt(attempt.webSearch)) {
+    throw new Error(`Source health attempt ${expectedNumber} contains an invalid web search receipt.`);
+  }
+  const admittedSearchArticles = hasWebSearch ? attempt.webSearch.admittedArticles : 0;
   if (attempt.number !== expectedNumber || !ATTEMPT_STATUSES.has(attempt.status)) {
     throw new Error(`Source health attempt ${expectedNumber} has invalid identity or status.`);
   }
@@ -571,7 +586,7 @@ function validateAttempt(attempt, expectedNumber) {
     aggregate.parsedItemCount !== parsedItemCount ||
     aggregate.eligibleItemCount !== eligibleItemCount ||
     aggregate.rankedCandidateCount < aggregate.candidateCount ||
-    aggregate.candidateCount > aggregate.eligibleItemCount ||
+    aggregate.candidateCount > aggregate.eligibleItemCount + admittedSearchArticles ||
     aggregate.selectedCount > aggregate.candidateCount
   ) {
     throw new Error(`Source health attempt ${expectedNumber} has inconsistent aggregate totals.`);
@@ -622,6 +637,9 @@ function validateAttempt(attempt, expectedNumber) {
   }
   const anyCoverageFailure = attempt.desks.some((desk) => desk.coverageStatus === "insufficient-corroboration");
   const allUnobserved = unobservedSourceCount === SOURCE_METADATA.length;
+  if (allUnobserved && hasWebSearch) {
+    throw new Error(`Source health attempt ${expectedNumber} cannot attach search observations to unobserved research.`);
+  }
   const expectedStatus = allUnobserved
     ? "research-failure"
     : anyCoverageFailure
@@ -723,7 +741,10 @@ export function renderSourceHealthMarkdown(snapshot) {
     lines.push(
       `## Attempt ${attempt.number}: ${statusLabel(attempt.status)}`,
       "",
-      `Sources: ${attempt.aggregate.successfulSourceCount} healthy, ${attempt.aggregate.failedSourceCount} failed, ${attempt.aggregate.unobservedSourceCount} not observed. Items: ${attempt.aggregate.parsedItemCount} parsed, ${attempt.aggregate.eligibleItemCount} eligible. Candidates: ${attempt.aggregate.candidateCount} shortlisted, ${attempt.aggregate.selectedCount} selected.`,
+      `Sources: ${attempt.aggregate.successfulSourceCount} healthy, ${attempt.aggregate.failedSourceCount} failed, ${attempt.aggregate.unobservedSourceCount} not observed. Feed items: ${attempt.aggregate.parsedItemCount} parsed, ${attempt.aggregate.eligibleItemCount} eligible. Candidates: ${attempt.aggregate.candidateCount} shortlisted, ${attempt.aggregate.selectedCount} selected.`,
+      ...(attempt.webSearch ? [
+        `Web discovery (Tavily): ${attempt.webSearch.queriesUsed} queries, ${attempt.webSearch.creditsReserved} credits reserved, ${attempt.webSearch.admittedArticles} verified articles admitted. Search does not count toward feed coverage.`,
+      ] : []),
       "",
       "| Desk | Coverage | Publishers | Sources | Shortlist | Selected |",
       "| --- | --- | ---: | ---: | ---: | ---: |",
@@ -749,7 +770,10 @@ export function renderSourceHealthHtml(snapshot) {
   const attempts = snapshot.attempts.map((attempt) => {
     const deskRows = attempt.desks.map((desk) => `<tr><td>${escapeHtml(DESK_LABELS[desk.desk])}</td><td><span class="status">${escapeHtml(desk.coverageStatus)}</span></td><td>${desk.successfulPublisherCount}/${desk.configuredPublisherCount}</td><td>${desk.successfulSourceCount}/${desk.configuredSourceCount}</td><td>${desk.shortlistCount}</td><td>${desk.selectedCount}</td></tr>`).join("");
     const sourceRows = attempt.sources.map((source) => `<tr><td><strong>${escapeHtml(source.publisher)}</strong><br><code>${escapeHtml(source.sourceId)}</code></td><td>${escapeHtml(source.desks.map((desk) => DESK_LABELS[desk]).join(", "))}</td><td><span class="status">${escapeHtml(source.status)}</span></td><td><code>${escapeHtml(source.code ?? "—")}</code></td><td>${source.parsedItemCount}</td><td>${source.eligibleItemCount}</td></tr>`).join("");
-    return `<section><h2>Attempt ${attempt.number}: ${escapeHtml(statusLabel(attempt.status))}</h2><p class="summary">Sources: ${attempt.aggregate.successfulSourceCount} healthy, ${attempt.aggregate.failedSourceCount} failed, ${attempt.aggregate.unobservedSourceCount} not observed. Items: ${attempt.aggregate.parsedItemCount} parsed, ${attempt.aggregate.eligibleItemCount} eligible. Candidates: ${attempt.aggregate.candidateCount} shortlisted, ${attempt.aggregate.selectedCount} selected.</p><h3>Desk coverage</h3><div class="scroll"><table><thead><tr><th>Desk</th><th>Coverage</th><th>Publishers</th><th>Sources</th><th>Shortlist</th><th>Selected</th></tr></thead><tbody>${deskRows}</tbody></table></div><h3>Checked-in sources</h3><div class="scroll"><table><thead><tr><th>Source</th><th>Desk coverage</th><th>Status</th><th>Code</th><th>Parsed</th><th>Eligible</th></tr></thead><tbody>${sourceRows}</tbody></table></div></section>`;
+    const searchSummary = attempt.webSearch
+      ? `<p>Web discovery (Tavily): ${attempt.webSearch.queriesUsed} queries, ${attempt.webSearch.creditsReserved} credits reserved, ${attempt.webSearch.admittedArticles} verified articles admitted. Search does not count toward feed coverage.</p>`
+      : "";
+    return `<section><h2>Attempt ${attempt.number}: ${escapeHtml(statusLabel(attempt.status))}</h2><p class="summary">Sources: ${attempt.aggregate.successfulSourceCount} healthy, ${attempt.aggregate.failedSourceCount} failed, ${attempt.aggregate.unobservedSourceCount} not observed. Feed items: ${attempt.aggregate.parsedItemCount} parsed, ${attempt.aggregate.eligibleItemCount} eligible. Candidates: ${attempt.aggregate.candidateCount} shortlisted, ${attempt.aggregate.selectedCount} selected.</p>${searchSummary}<h3>Desk coverage</h3><div class="scroll"><table><thead><tr><th>Desk</th><th>Coverage</th><th>Publishers</th><th>Sources</th><th>Shortlist</th><th>Selected</th></tr></thead><tbody>${deskRows}</tbody></table></div><h3>Checked-in sources</h3><div class="scroll"><table><thead><tr><th>Source</th><th>Desk coverage</th><th>Status</th><th>Code</th><th>Parsed</th><th>Eligible</th></tr></thead><tbody>${sourceRows}</tbody></table></div></section>`;
   }).join("");
   const selected = snapshot.selectedAttempt === null ? "None" : `Attempt ${snapshot.selectedAttempt}`;
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"><title>First Fold source health — ${escapeHtml(snapshot.editionDate)}</title><style>:root{color-scheme:light;--ink:#171512;--paper:#f5f0e6;--muted:#6d665c;--rule:#aaa08e;--accent:#712b27}*{box-sizing:border-box}body{margin:0;background:#ded8cc;color:var(--ink);font:15px/1.5 Georgia,'Times New Roman',serif}.page{width:min(1120px,calc(100% - 24px));margin:24px auto;padding:32px;background:var(--paper);border:1px solid var(--rule)}h1,h2,h3{line-height:1.1}h1{font-size:clamp(32px,6vw,60px);margin:0}h2{margin-top:36px;border-top:4px double var(--ink);padding-top:24px}h3{margin-top:24px}.kicker,.meta,.note{font-family:Arial,Helvetica,sans-serif}.kicker{color:var(--accent);font-weight:700;letter-spacing:.12em;text-transform:uppercase}.meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px 20px;padding:16px 0;border-bottom:1px solid var(--rule)}a{color:var(--accent)}.summary{font-size:18px}.scroll{overflow-x:auto}table{width:100%;border-collapse:collapse;font-family:Arial,Helvetica,sans-serif;font-size:13px}th,td{padding:9px 8px;border-bottom:1px solid var(--rule);text-align:left;vertical-align:top}th{letter-spacing:.05em;text-transform:uppercase}.status{font-weight:700}.note{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);color:var(--muted);font-size:13px}code{font-size:12px}@media(max-width:600px){.page{width:100%;margin:0;padding:20px 14px;border:0}}</style></head><body><main class="page"><p class="kicker">Operations view</p><h1>Source health</h1><div class="meta"><span>Edition <strong>${escapeHtml(snapshot.editionDate)}</strong></span><span>Mode <strong>${escapeHtml(snapshot.run.mode)}</strong></span><span>Outcome <strong>${escapeHtml(snapshot.outcome)}</strong></span><span>Selected <strong>${escapeHtml(selected)}</strong></span><span>Run <a href="${escapeHtml(snapshot.run.runUrl)}">${escapeHtml(snapshot.run.runId)}</a></span><span>Policy <strong>${escapeHtml(snapshot.settings.evidencePolicy)}</strong></span></div>${attempts}<p class="note">Observational only. This file contains no feed URLs, article text, story identifiers, recipient data, provider responses, hashes, or secrets, and it cannot change editorial policy.</p></main></body></html>`;

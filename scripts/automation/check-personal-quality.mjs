@@ -5,6 +5,7 @@ import { generatePersonalFreeEdition, PERSONAL_FREE_MAX_MODEL_REQUESTS } from ".
 import { createEmptyPersonalStoryLedger } from "./personal-story-ledger.mjs";
 import { collectFreeResearchSnapshot } from "./free/feed-engine.mjs";
 import { assertPersonalEmailCandidate, renderPersonalEditionEmail } from "./personal-email.mjs";
+import { isValidWebSearchReceipt } from "./free/search-receipt.mjs";
 
 const now = new Date();
 const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York",
@@ -14,9 +15,22 @@ const editionDate = `${parts.year}-${parts.month}-${parts.day}`;
 const runMode = Number(parts.hour) >= 5 ? "same_day_backfill" : "on_time";
 let snapshot;
 try {
+  const args = process.argv.slice(2);
+  assert.ok(args.length === 0 || args.length === 1 && args[0] === "--require-web-search");
+  const requireWebSearch = args.includes("--require-web-search");
+  if (requireWebSearch && !process.env.TAVILY_API_KEY?.trim()) {
+    throw Object.assign(new Error("Search credentials are not configured."), { code: "SEARCH_KEY_REQUIRED" });
+  }
   const candidate = await generatePersonalFreeEdition({ editionDate, runMode,
     personalStoryLedger: createEmptyPersonalStoryLedger({ fingerprintKey: process.env.CLOUDFLARE_AI_API_TOKEN }),
-    researchImpl: async (options) => snapshot ??= await collectFreeResearchSnapshot(options),
+    researchImpl: async (options) => {
+      snapshot ??= await collectFreeResearchSnapshot(options);
+      if (requireWebSearch && (!isValidWebSearchReceipt(snapshot.diagnostics?.webSearch) ||
+          snapshot.diagnostics.webSearch.admittedArticles < 1)) {
+        throw Object.assign(new Error("No search-discovered publisher articles were verified."), { code: "SEARCH_ADMISSION_REQUIRED" });
+      }
+      return snapshot;
+    },
   });
   assertPersonalEmailCandidate(candidate);
   const rendered = renderPersonalEditionEmail(candidate);
@@ -25,7 +39,9 @@ try {
   const checkedStories = Object.values(candidate.desks).filter(({ story }) => story &&
     story.evidence.length > 0 && story.evidence.every((claim) => claim.id.startsWith(`${story.id}-grounded-`))).length;
   const mode = candidate.provenance.personalFreeResearch.draftingMode;
+  const webSearch = candidate.provenance.personalFreeResearch.webSearch;
   console.info(`::notice title=Quality result::${JSON.stringify({ status: "validated-and-rendered", stories, checkedStories, mode,
+    ...(isValidWebSearchReceipt(webSearch) ? { webSearch } : {}),
     emailSent: false, repeatHistory: "isolated-test-empty-ledger", maxModelRequests: PERSONAL_FREE_MAX_MODEL_REQUESTS })}`);
   assert.ok(stories > 0 && checkedStories === stories && mode === "source-grounded-summary",
     "Not every live story received a model-checked summary.");

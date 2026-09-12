@@ -3,8 +3,9 @@
 The Personal Morning Paper is the repository's only automatically researched
 edition. At **5:05 AM `America/New_York` every calendar day, including
 weekends**, Cloudflare dispatches one owner-only GitHub Actions job. That job
-reads current items from the curated feed catalog and up to 24 shortlisted
-publisher articles per research pass. The fixed free-tier Cloudflare model
+reads current items from the curated feed catalog, optionally discovers more
+articles through Tavily web search, and attempts at most 24 distinct publisher pages
+across the edition's research attempts. The fixed free-tier Cloudflare model
 `@cf/meta/llama-3.3-70b-instruct-fp8-fast` gets at most four calls per edition:
 assess importance/usefulness, write specific source-grounded summaries, optionally
 revise locally rejected drafts once, and check the final summaries against the evidence.
@@ -13,8 +14,9 @@ address through Resend. The delivered paper adapts to
 the number of stories that clear the unchanged editorial gates: regular with
 two to four stories, slim with one, or quiet with zero.
 
-This automatic path does not call OpenAI, does not use general open-web search,
-and has no paid fallback. The separate OpenAI Morning Press generator remains
+This automatic path does not call OpenAI and has no paid fallback. Optional
+web discovery searches beyond the feed catalog, but admission remains restricted
+to the existing reviewed publishers and verified publisher pages. The separate OpenAI Morning Press generator remains
 available only as a deliberate manual, billable experiment. The separate Free
 Morning Press comparison also remains manual and keeps its stricter comparison
 rules.
@@ -31,6 +33,12 @@ calls and this pipeline keeps its local fallback. A Workers Paid account can
 incur overages from account-wide use, so request caps alone are not a billing
 guarantee. No code here enables a paid plan or calls OpenAI.
 
+Tavily search is optional and disabled without its dedicated key. Before search,
+the adapter checks `/usage` for the free Researcher plan, no pay-as-you-go limit
+or usage, and a provider-enforced key limit no greater than 900 monthly credits.
+If any check or provider call fails, feed research remains available; no paid
+search, extraction, crawl, or research fallback is invoked.
+
 The owner-only **Check free paper quality (no email)** workflow performs live
 research, writing, evidence review and rendering using the existing credentials.
 It does not send mail, change the repeat ledger, publish a paper, or archive
@@ -43,7 +51,7 @@ trusted `main`, providing a live integration check for its initial rollout.
 | --- | --- |
 | Schedule | 5:05 AM `America/New_York` every day, including weekends |
 | Reporting window | The 72 elapsed hours ending at 5:00 AM New York time on the edition date; start inclusive and end exclusive |
-| Discovery | Live allowlisted feeds plus up to six shortlisted articles per desk per pass; no general web search or paid search API |
+| Discovery | Live allowlisted feeds plus optional free Tavily searches beyond feeds. At most 16 search-page fetches share the existing 24-article budget across the edition. Only reviewed publisher pages with verified dates, identity, and article text enter the unchanged selection gates |
 | Drafting | Up to four fixed-model calls: editorial assessment, concrete factual writing, one optional revision of locally rejected drafts, and a separate evidence-checking prompt. No transport retries or repeated revision loop. Rejected or unavailable synthesis retains the local baseline |
 | Completion rule | Deliver a regular edition with two to four validated stories, a slim edition with one, or a healthy quiet edition with zero; every edition keeps all four desks and no desk receives more than one story |
 | Recipient | Exactly the one address stored in `PERSONAL_PAPER_EMAIL` |
@@ -96,7 +104,14 @@ At the matching 5:05 AM event on every day:
    healthy coverage from the configured publisher set. It considers only items
    first published inside the bounded 72-hour lookback ending at the edition's
    5:00 AM New York cutoff. Feed text is treated as untrusted data, not
-   instructions.
+   instructions. With a configured free Tavily key, eight fixed news searches
+   plus up to four event follow-ups can discover pages missing from the feeds.
+   The query slate and results are cached across the optional research retry.
+   Search titles, snippets, and dates are discovery hints, never factual evidence.
+   Admission requires an existing reviewed publisher, a directly fetched page,
+   consistent page/canonical identity, publication metadata inside the same
+   reporting window, and usable article text. Unknown publishers do not enter
+   automatically, and a feed/search duplicate earns no second source vote.
 5. The deterministic selector first applies hard vetoes for promotional or deal
    content, reviews and lifestyle copy, rumors or speculation, routine or minor
    announcements, insufficient topicality, weak evidence, and recent repeats.
@@ -108,9 +123,13 @@ At the matching 5:05 AM event on every day:
    must stay explicitly attributed and cannot be presented as independently
    confirmed or critical. Independent allegations and critical claims still
    require independent evidence.
-6. Each research pass can read 24 shortlisted articles over pinned public DNS,
+6. The edition can attempt 24 distinct shortlisted publisher pages over pinned public DNS,
    with reviewed exact hosts, bounded redirects, deadlines, and 600 KB compressed
-   and decompressed limits. Only article regions are extracted. The importance
+   and decompressed limits. Search admission can consume at most 16 of those
+   shared slots, leaving at least eight available for feed enrichment. Each page
+   operation allows at most one redirect, so the 24-page cap permits at most 48
+   HTTP hops, not unlimited redirect chains. Feed enrichment and research retries
+   reuse the same bounded fetch cache. Only article regions are extracted. The importance
    and usefulness assessment uses one bounded model request shared across both
    research attempts; any cached assessment is tied to an exact evidence digest.
    It cannot rescue hard vetoes, weak source evidence, repeats or insufficient
@@ -178,7 +197,12 @@ The private provenance records the fixed provider and model, reporting run,
 generation time and mode, bounded feed/inference hashes, coverage counts,
 research-attempt count and outcome, evidence policy, validation receipts,
 repeat-ledger digest and counts, and zero through four selected stories. It
-contains no recipient or API credential. The
+contains no recipient or API credential. An optional `webSearch` receipt records
+only the provider, query count, conservative `creditsReserved`, and admitted
+article count. Reservations are upper bounds, not billing claims. The research
+method becomes `curated-live-feeds-and-web-search` only when a publisher article
+was admitted, not merely because search was attempted. The email shows a short
+web-discovery count without adding snippets or provider responses. The
 distinction is intentional: a file prepared for a private email must never
 become a public publication candidate merely because its shape is similar.
 
@@ -218,7 +242,8 @@ remains a hard failure.
 
 GitHub-hosted runners are ephemeral, but the complete transaction is not
 retention-free. GitHub retains workflow metadata and logs; Cloudflare processes
-the bounded research request and response; Resend processes the recipient and
+the bounded research request and response; optional Tavily discovery processes
+public news queries; Resend processes the recipient and
 message; and the mailbox provider stores the delivered email. If feedback is
 enabled, Cloudflare also processes the form request and D1 stores its minimized
 review record. The workflow must
@@ -293,7 +318,7 @@ is unavailable and the valid paper continues.
 ## One-time owner setup
 
 The automatic lane uses one required repository variable and three required
-repository secrets. Private feedback adds one optional secret; its reviewed
+repository secrets. Web discovery and private feedback each add one optional secret; the feedback
 Worker URL is fixed in the final email step:
 
 | Name | GitHub type | Purpose |
@@ -302,6 +327,7 @@ Worker URL is fixed in the final email step:
 | `CLOUDFLARE_AI_API_TOKEN` | Actions secret | Narrow token allowed to call Workers AI and the HMAC key for repeat identities |
 | `RESEND_API_KEY` | Actions secret | Sending-only Resend credential |
 | `PERSONAL_PAPER_EMAIL` | Actions secret | One self-only recipient address |
+| `TAVILY_API_KEY` | Actions secret, optional | Dedicated free-search key with a provider-enforced monthly cap of 900 credits |
 | `PERSONAL_FEEDBACK_SIGNING_KEY` | Actions secret, optional | Dedicated 32-byte-or-longer key shared only with the feedback Worker |
 
 `OPENAI_API_KEY` is not required and is never read by this automatic workflow.
@@ -397,6 +423,40 @@ After the workflow and dispatcher changes are on `main`:
 The dispatcher stores only secret-free structured status such as the Cron time,
 sanitized stage or HTTP status, dispatch name, and returned GitHub run ID. It
 must not log a token, recipient, provider body, or paper content.
+
+### 5. Optionally enable free web discovery
+
+This integration is not enabled merely by adding its code. Complete account
+setup and a live no-email check before describing search as operational:
+
+1. Use a Tavily **Researcher** account with the monthly free allocation. Keep
+   pay-as-you-go disabled; the adapter requires both `paygo_limit` and
+   `paygo_usage` to be zero.
+2. Create a dedicated **First Fold** API key and set its provider-enforced
+   monthly usage limit to **900 credits**. An unlimited key is rejected even on
+   a free account. Do not reuse this key for another application.
+3. Store the value in **GitHub → Settings → Secrets and variables → Actions →
+   Secrets** as `TAVILY_API_KEY`. Do not paste it into chat, logs, or repository
+   files. The adapter checks account and key limits through Tavily's
+   [usage endpoint](https://docs.tavily.com/documentation/api-reference/endpoint/usage)
+   before making a search request.
+4. Run the owner-only, manual `.github/workflows/web-search-quality-check.yml`
+   workflow on `main` to test discovery, page admission, drafting, validation,
+   and rendering without sending email. It does not change the recipient,
+   schedule, repeat ledger, or public paper. Review its safe counts rather than
+   treating a passing feeds-only run as proof that search worked.
+
+Tavily currently includes **1,000 free credits per month**; advanced search uses
+two credits per query. Eight base queries and up to four follow-ups reserve at
+most **24 credits per run**, or **744 credits for 31 daily runs**. Manual tests
+and extra runs share the dedicated key's 900-credit monthly cap. The provider
+limit, rather than an in-memory counter alone, constrains repeated runs. See
+[Tavily's current credit pricing](https://docs.tavily.com/documentation/api-credits).
+
+A missing key, changed/unverifiable plan, exhausted allowance, or provider error
+leaves the feed pipeline available with its existing quality gates. Search does
+not authorize adding unreviewed publishers, accepting snippets as evidence,
+lowering the score threshold, or increasing the four-call Cloudflare budget.
 
 ## Manual run and same-day recovery
 

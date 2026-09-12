@@ -11,6 +11,7 @@ import {
 } from "./free/evidence-digest.mjs";
 import { PERSONAL_STORY_LEDGER_SCHEMA_VERSION } from "./personal-story-ledger.mjs";
 import { DEFAULT_CLOUDFLARE_AI_MODEL, WORKERS_AI_PROVIDER } from "./free/workers-ai.mjs";
+import { hasValidWebSearchResearchMethod } from "./free/search-receipt.mjs";
 
 export const RESEND_EMAIL_ENDPOINT = "https://api.resend.com/emails";
 export const PERSONAL_EMAIL_FROM = "First Fold <onboarding@resend.dev>";
@@ -22,7 +23,6 @@ export const MAX_RESEND_RESPONSE_BYTES = 64 * 1024;
 const MAX_CANDIDATE_FILE_BYTES = 1024 * 1024;
 const EXPECTED_PERSONAL_REPOSITORY = "itworksinprod/first-fold";
 const PERSONAL_RESEARCH_WORKFLOW = "personal-morning-paper";
-const PERSONAL_RESEARCH_METHOD = "curated-live-feeds";
 const PERSONAL_RESEARCH_EVIDENCE_POLICY = "authoritative-or-corroborated";
 const PERSONAL_RESEARCH_MAX_MODEL_REQUESTS = 4;
 const PERSONAL_RESEARCH_LOOKBACK_HOURS = 72;
@@ -505,7 +505,7 @@ export function assertPersonalEmailCandidate(candidate) {
     !research ||
     typeof research !== "object" ||
     research.workflow !== PERSONAL_RESEARCH_WORKFLOW ||
-    research.researchMethod !== PERSONAL_RESEARCH_METHOD ||
+    !hasValidWebSearchResearchMethod(research) ||
     research.repository !== EXPECTED_PERSONAL_REPOSITORY ||
     research.runUrl !== expectedRunUrl ||
     !/^[1-9]\d*$/.test(runId) ||
@@ -783,6 +783,10 @@ export function renderPersonalEditionEmail(candidate, { feedbackLinks } = {}) {
     : candidate.frontPage.note;
   const newsroomCheckLabel =
     `Newsroom check: ${research.successfulFeedSourceCount} of ${research.feedSourceCount} reviewed sources available`;
+  const webDiscoveryLabel = research.webSearch
+    ? `Web discovery: ${research.webSearch.queriesUsed} ${research.webSearch.queriesUsed === 1 ? "search" : "searches"} · ` +
+      `${research.webSearch.admittedArticles} publisher ${research.webSearch.admittedArticles === 1 ? "article" : "articles"} verified`
+    : null;
   const deliveryCheckLabel = selectedStoryCount === 0
     ? "Curated-feed research completed · Quality threshold unchanged"
     : allSourceBriefs
@@ -855,6 +859,7 @@ export function renderPersonalEditionEmail(candidate, { feedbackLinks } = {}) {
             <p style="margin:0;color:#24211d;font:22px/1.35 Georgia,Times New Roman,serif;">${escapeHtml(readerFrontPageNote)}</p>
             <p style="margin:14px 0 0;color:#6d665c;font:13px/1.4 Arial,Helvetica,sans-serif;">${escapeHtml(String(candidate.frontPage.estimatedMinutes))} minute read · ${escapeHtml(storyCountLabel)} · ${escapeHtml(deliveryCheckLabel)}</p>
             <p style="margin:8px 0 0;color:#6d665c;font:12px/1.4 Arial,Helvetica,sans-serif;">${escapeHtml(newsroomCheckLabel)}</p>
+            ${webDiscoveryLabel === null ? "" : `<p style="margin:8px 0 0;color:#6d665c;font:12px/1.4 Arial,Helvetica,sans-serif;">${escapeHtml(webDiscoveryLabel)}</p>`}
           </td>
         </tr>${pilotHtml}${deskHtml}${feedbackHtml}
         <tr>
@@ -878,6 +883,7 @@ export function renderPersonalEditionEmail(candidate, { feedbackLinks } = {}) {
     compactText(readerFrontPageNote),
     `${candidate.frontPage.estimatedMinutes} minute read · ${storyCountLabel} · ${deliveryCheckLabel}`,
     newsroomCheckLabel,
+    ...(webDiscoveryLabel === null ? [] : [webDiscoveryLabel]),
     "",
     ...pilotText,
     "========================================",
