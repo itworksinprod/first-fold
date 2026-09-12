@@ -9,7 +9,7 @@ import { generatePersonalFreeEdition, validatePersonalFreeCandidate,
   PERSONAL_FREE_RUN_MODES } from "../scripts/automation/personal-free-edition.mjs";
 import { FREE_FEED_SOURCES } from "../scripts/automation/free/feed-sources.mjs";
 import { createEmptyPersonalStoryLedger } from "../scripts/automation/personal-story-ledger.mjs";
-import { validateNewsroomDraft } from "../scripts/automation/newsroom-qa.mjs";
+import { runNewsroomQa, validateNewsroomDraft } from "../scripts/automation/newsroom-qa.mjs";
 import { validateSourceHealthSnapshot } from "../scripts/automation/source-health.mjs";
 
 const NOW = "2026-09-12T05:00:00.000Z";
@@ -94,6 +94,27 @@ test("authorized personal research records the real next-day clock and keeps the
     { checkedAt: EXPIRED }, { temporalMode: undefined }]) {
     assert.ok(validateNewsroomDraft(candidate, { ...options, ...alteration }).issues.some((issue) => issue.code === "HISTORICAL_PREVIEW_UNAUTHORIZED"));
   }
+  const previous = JSON.parse(await readFile(new URL("../content/editions/2026-08-19.json", import.meta.url), "utf8"));
+  const withStory = structuredClone(candidate);
+  const story = structuredClone(previous.desks.ai.story);
+  story.status = "new-development";
+  story.selection.materialDelta = null;
+  story.timing = { eventAt: null, firstPublishedAt: "2026-09-10T12:00:00.000Z", materiallyUpdatedAt: null };
+  for (const source of story.sources) {
+    source.retrievedAt = NOW;
+    source.publishedAt = source.relationship === "context" ? null : "2026-09-10T12:00:00.000Z";
+  }
+  withStory.desks.ai = { desk: "ai", story, emptyReason: null };
+  const sourceOptions = { ...options, allowedSourceUrls: story.sources.map((source) => source.url) };
+  const withStoryQa = validateNewsroomDraft(withStory, sourceOptions);
+  assert.equal(withStoryQa.status, "passed", JSON.stringify(withStoryQa.issues));
+  withStory.desks.ai.story.sources[0].retrievedAt = "2026-09-12T05:00:01.000Z";
+  assert.ok(validateNewsroomDraft(withStory, sourceOptions).issues.some((issue) => issue.code === "SOURCE_RETRIEVED_AFTER_GENERATION"));
+  let requests = 0;
+  await runNewsroomQa(withStory, { ...sourceOptions, historicalPreviewAuthorization: {}, checkLinks: true,
+    requestImpl: async () => { requests++; throw new Error("Unauthorized QA must not request links"); },
+    lookupImpl: async () => { requests++; throw new Error("Unauthorized QA must not resolve links"); } });
+  assert.equal(requests, 0);
   for (const mutate of [
     (draft) => { draft.provenance.personalFreeResearch.historicalPreview.revision = "other"; },
     (draft) => { delete draft.provenance.personalFreeResearch.historicalPreview; },

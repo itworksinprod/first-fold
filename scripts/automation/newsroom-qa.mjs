@@ -1575,6 +1575,9 @@ function issueForReachability(result, candidate) {
 export async function runNewsroomQa(edition, options = {}) {
   const safeOptions = isObject(options) ? options : {};
   const analysis = analyzeNewsroomDraft(edition, options);
+  if (analysis.issues.some((issue) => issue.code === "HISTORICAL_PREVIEW_UNAUTHORIZED")) {
+    return { sourceCheck: finalizeSourceCheck(analysis) };
+  }
 
   if (safeOptions.checkLinks === true) {
     const timeoutMs = Number.isInteger(safeOptions.timeoutMs) && safeOptions.timeoutMs > 0
