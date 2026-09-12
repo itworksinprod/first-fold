@@ -72,6 +72,19 @@ function freeBudget(payload) {
   return Math.max(0, Math.min(key.limit - key.usage, account.plan_limit - account.plan_usage));
 }
 
+function billingStates(payload) {
+  const numericState = (value) => value === 0 ? "zero" : value === null ? "null" :
+    value === undefined ? "missing" : nonnegativeInteger(value) ? "positive" : "invalid";
+  const plan = typeof payload?.account?.current_plan === "string" ? payload.account.current_plan.toLowerCase() : "";
+  return {
+    plan: ["researcher", "free"].includes(plan) ? plan : "other",
+    freeAllowance: payload?.account?.plan_limit === 1_000,
+    paygoLimit: numericState(payload?.account?.paygo_limit),
+    paygoUsage: numericState(payload?.account?.paygo_usage),
+    dedicatedKeyCap: payload?.key?.limit === TAVILY_MONTHLY_CREDIT_CAP,
+  };
+}
+
 function safeHint(result, desk) {
   if (!object(result) || typeof result.url !== "string" || result.url.length > 2_048 ||
       /[\s\\\u0000-\u001f\u007f]/u.test(result.url) || typeof result.title !== "string") return null;
@@ -167,7 +180,11 @@ export function createTavilyDiscovery({ apiKey, fetchImpl = globalThis.fetch, on
       const dates = searchDateWindow(reportingWindow);
       const queries = [...DISCOVERY_QUERIES, ...followups(followupQueries)];
       diagnostics.usageChecks++;
-      let creditsAvailable = freeBudget(await request(USAGE_URL));
+      const usage = await request(USAGE_URL);
+      // Only fixed enums/booleans, never an account response or a credential,
+      // may explain a failed billing preflight in public diagnostics.
+      diagnostics.billing = billingStates(usage);
+      let creditsAvailable = freeBudget(usage);
       const seen = new Set();
       for (const { query, desk } of queries.slice(0, TAVILY_MAX_SEARCH_REQUESTS)) {
         if (creditsAvailable < CREDIT_COST) fail("quota_exhausted");

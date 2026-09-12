@@ -120,6 +120,17 @@ test("unknown billing, paid plans, PAYGO and absent key cap all fail closed befo
   }
 });
 
+test("billing diagnostics distinguish unknown plan state without publishing provider data", async () => {
+  const output = await createTavilyDiscovery({ apiKey, fetchImpl: async () => json({
+    ...usage(), account: { ...usage().account, current_plan: `secret-${apiKey}`, paygo_limit: null,
+      paygo_usage: "unknown-private-value", account_email: "private@example.com" },
+  }) })({ reportingWindow });
+  assert.equal(output.diagnostics.status, "free_plan_required");
+  assert.deepEqual(output.diagnostics.billing, { plan: "other", freeAllowance: true,
+    paygoLimit: "null", paygoUsage: "invalid", dedicatedKeyCap: true });
+  assert.doesNotMatch(JSON.stringify(output), /secret-|tvly-|private|example.com/);
+});
+
 test("monthly remaining credits are reserved across requests and provider errors stop all retries", async () => {
   let calls = 0;
   const discovery = createTavilyDiscovery({ apiKey, fetchImpl: async (url) => {
