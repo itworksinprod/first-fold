@@ -267,3 +267,76 @@ test("a known Secure Boot prerequisite cannot be dropped from a claim or headlin
     assert.deepEqual(reasons, ["SOURCE_CAVEAT"], field);
   }
 });
+
+function formatFailure() {
+  return Object.assign(new Error("Provider editorial format invalid."), {
+    code: "WORKERS_AI_EDITORIAL_FORMAT_INVALID", attemptCount: 1,
+    inference: { ...response(null), editorialPayload: undefined },
+  });
+}
+
+test("invalid outer JSON uses the existing single repair slot and still requires checked prose", async () => {
+  const calls = [];
+  const diagnostics = [];
+  const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
+    onDiagnostic: (event) => diagnostics.push(event), aiRequestImpl: async (options) => {
+      calls.push(options);
+      if (calls.length === 1) throw formatFailure();
+      if (calls.length === 2) {
+        assert.equal(options.maxTokens, 3_000);
+        assert.deepEqual(JSON.parse(options.messages[1].content).dossiers.length, 1);
+        return response({ stories: [groundedDraft] });
+      }
+      return response({ reviews: [review] });
+    } });
+  assert.equal(calls.length, 3);
+  assert.equal(result.editorial.desks["security-and-privacy"].story.headline, groundedDraft.headline);
+  assert.equal(result.inference.requestSha256, hash(Array(3).fill("a".repeat(64))));
+  assert.ok(diagnostics.some((event) => event.stage === "draft-format-repair" && event.repairBudgetRemaining === 0));
+});
+
+test("format repair cannot create another repair, accept damaged prose, or bypass semantic review", async () => {
+  const damaged = { ...structuredClone(groundedDraft), whyItMatters: malformedEmailStories[0].whyItMatters };
+  for (const repair of [null, damaged, groundedDraft]) {
+    let calls = 0;
+    const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
+      aiRequestImpl: async () => {
+        if (++calls === 1 || repair === null) throw formatFailure();
+        if (calls === 2) return response({ stories: [repair] });
+        return response({ reviews: [{ ...review, factsSupported: false }] });
+      } });
+    assert.equal(result, null);
+    assert.equal(calls, repair === groundedDraft ? 3 : 2);
+  }
+});
+
+test("unknown format provenance and quota/auth failures never authorize a repair request", async () => {
+  for (const error of [
+    Object.assign(formatFailure(), { attemptCount: 2 }),
+    Object.assign(formatFailure(), { inference: { provider: "other" } }),
+    Object.assign(formatFailure(), { code: "WORKERS_AI_EDITORIAL_UNAVAILABLE" }),
+    new Error("Cloudflare Workers AI request failed with HTTP 429."),
+    new Error("Cloudflare Workers AI request failed with HTTP 401."),
+  ]) {
+    let calls = 0;
+    assert.equal(await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
+      aiRequestImpl: async () => { calls++; throw error; } }), null);
+    assert.equal(calls, 1);
+  }
+});
+
+test("the real Workers AI adapter carries safe format provenance into bounded recovery", async () => {
+  const requests = [];
+  const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
+    accountId: "0".repeat(32), apiToken: "synthetic-token", fetchImpl: async (_url, options) => {
+      requests.push(JSON.parse(options.body));
+      const payload = requests.length === 1 ? '{"stories":broken' : requests.length === 2
+        ? { stories: [groundedDraft] } : { reviews: [review] };
+      return new Response(JSON.stringify({ success: true, result: { response: payload }, errors: [] }),
+        { status: 200, headers: { "content-type": "application/json", "cf-ray": "synthetic-ray" } });
+    } });
+  assert.equal(requests.length, 3);
+  assert.deepEqual(requests.map((request) => request.max_tokens), [4_000, 3_000, 800]);
+  assert.equal(result.editorial.desks["security-and-privacy"].story.headline, groundedDraft.headline);
+  assert.ok(!JSON.stringify(result).includes("synthetic-token"));
+});

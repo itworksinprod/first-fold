@@ -592,6 +592,10 @@ does not use an OpenAI API key or OpenAI API billing account.
 One edition permits at most four model requests: editorial assessment (2,000
 output tokens / 65 KB request), writing (4,000 tokens / 70 KB), one optional
 revision (3,000 tokens / 70 KB), and checking (800 tokens / 70 KB).
+If the initial writer returns a recognized invalid editorial format, the same
+single revision slot can request a fresh complete JSON response. This consumes
+the slot: it never permits a further local-copy repair, retries quota/authentication
+errors, or skips the final checks. Invalid output itself is never salvaged.
 Revisions preserve the same source, numeric, attribution, originality and length
 checks, and only the final, hashed draft can pass the separate semantic review.
 The September 11 malformed-email regression runs without contacting any provider.

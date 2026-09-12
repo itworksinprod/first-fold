@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 import { countReaderFacingStoryWords, MIN_PRIVATE_GROUNDED_STORY_WORDS } from "../../edition-content.mjs";
 import { readerProseErrors } from "../../reader-prose.mjs";
 import { claimCaveatErrors } from "./claim-caveats.mjs";
-import { DEFAULT_CLOUDFLARE_AI_MODEL, requestWorkersAiEditorial } from "./workers-ai.mjs";
+import { DEFAULT_CLOUDFLARE_AI_MODEL, WORKERS_AI_EDITORIAL_FORMAT_INVALID,
+  requestWorkersAiEditorial } from "./workers-ai.mjs";
 
 export const GROUNDED_DIGEST_MODE = "source-grounded-summary";
 export const GROUNDED_MAX_REQUESTS = 3;
@@ -67,6 +68,13 @@ function safeProse(value, max = 1_500) {
 // provider's schema mode are not evidence that the nested copy is publishable.
 function withinTextSchema(value, schema) {
   return safeProse(value, schema.maxLength) && value.length >= (schema.minLength ?? 1);
+}
+
+function isBoundedFormatFailure(error) {
+  return error?.code === WORKERS_AI_EDITORIAL_FORMAT_INVALID && error.attemptCount === 1 &&
+    error.inference?.provider === "cloudflare-workers-ai" && error.inference.model === DEFAULT_CLOUDFLARE_AI_MODEL &&
+    /^[a-f0-9]{64}$/u.test(error.inference.requestSha256 ?? "") &&
+    /^[a-f0-9]{64}$/u.test(error.inference.responseSha256 ?? "");
 }
 
 export function validateGroundedStory(draft, dossier, onFailure = () => {}) {
@@ -235,8 +243,25 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
     const writerSchema = structuredClone(GROUNDED_DRAFT_SCHEMA);
     writerSchema.properties.stories.minItems = dossiers.length;
     writerSchema.properties.stories.maxItems = dossiers.length;
-    const written = await ask(WRITER_PROMPT, { dossiers: promptDossiers }, writerSchema, 4_000);
-    const inferenceTrail = [written];
+    const inferenceTrail = [];
+    let written;
+    let repairUsed = false;
+    try {
+      written = await ask(WRITER_PROMPT, { dossiers: promptDossiers }, writerSchema, 4_000);
+    } catch (error) {
+      if (!isBoundedFormatFailure(error)) throw error;
+      // Spend the existing single revision slot on a fresh complete response.
+      // Never extract fragments from broken JSON, retry a quota/auth/transport
+      // error, or grant a second repair after this one.
+      repairUsed = true;
+      inferenceTrail.push(error.inference);
+      onDiagnostic({ stage: "draft-format-repair", rejectionCode: "EDITORIAL_FORMAT", repairBudgetRemaining: 0 });
+      written = await ask(`${WRITER_PROMPT}\nYour previous response could not be parsed as the required object.
+Write a fresh complete JSON object with exactly one stories array. Do not reproduce the failed
+response, add Markdown fences or serialize another object inside any reader-facing string.`,
+      { dossiers: promptDossiers }, writerSchema, 3_000);
+    }
+    inferenceTrail.push(written);
     if (!keys(written.editorialPayload, ["stories"]) || !Array.isArray(written.editorialPayload.stories) ||
         written.editorialPayload.stories.length > 4) return null;
     const drafts = structuredClone(written.editorialPayload.stories);
@@ -258,7 +283,7 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
     onDiagnostic({ stage: "local-evidence-check", submitted: drafts.length, accepted: valid.length, rejectionCodes,
       wordCounts: drafts.map((draft) => countReaderFacingStoryWords({ ...draft,
         whatHappened: Array.isArray(draft?.claims) ? draft.claims.map((claim) => claim?.text ?? "").join(" ") : "" })) });
-    if (rejected.length) {
+    if (rejected.length && !repairUsed) {
       const repairIds = new Set(rejected.map(({ draft }) => draft.candidateId));
       const repairSchema = structuredClone(GROUNDED_DRAFT_SCHEMA);
       repairSchema.properties.stories.minItems = repairIds.size;
