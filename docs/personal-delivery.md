@@ -34,8 +34,11 @@ incur overages from account-wide use, so request caps alone are not a billing
 guarantee. No code here enables a paid plan or calls OpenAI.
 
 Tavily search is optional and disabled without its dedicated key. Before search,
-the adapter checks `/usage` for the free Researcher plan, no pay-as-you-go limit
-or usage, and a provider-enforced key limit no greater than 900 monthly credits.
+the adapter checks `/usage` for the free Researcher plan, no pay-as-you-go usage,
+and a provider-enforced key limit no greater than 900 monthly credits. A zero
+pay-as-you-go limit is accepted. An explicit `null` limit is accepted only with
+the operator verification described below and exactly 1,000 free plan credits;
+missing, positive or malformed limits remain rejected.
 If any check or provider call fails, feed research remains available; no paid
 search, extraction, crawl, or research fallback is invoked.
 
@@ -328,6 +331,7 @@ Worker URL is fixed in the final email step:
 | `RESEND_API_KEY` | Actions secret | Sending-only Resend credential |
 | `PERSONAL_PAPER_EMAIL` | Actions secret | One self-only recipient address |
 | `TAVILY_API_KEY` | Actions secret, optional | Dedicated free-search key with a provider-enforced monthly cap of 900 credits |
+| `TAVILY_PAYGO_DISABLED_VERIFIED` | Actions variable, optional | Exact `true` records an operator's verification that the Tavily billing dashboard says PAYGO is disabled; required only when `/usage` reports a null PAYGO limit |
 | `PERSONAL_FEEDBACK_SIGNING_KEY` | Actions secret, optional | Dedicated 32-byte-or-longer key shared only with the feedback Worker |
 
 `OPENAI_API_KEY` is not required and is never read by this automatic workflow.
@@ -430,8 +434,13 @@ This integration is not enabled merely by adding its code. Complete account
 setup and a live no-email check before describing search as operational:
 
 1. Use a Tavily **Researcher** account with the monthly free allocation. Keep
-   pay-as-you-go disabled; the adapter requires both `paygo_limit` and
-   `paygo_usage` to be zero.
+   pay-as-you-go disabled. Verify the billing dashboard explicitly says
+   **Pay as you go: Disabled**. When `/usage` reports `paygo_limit: null`, set
+   repository Actions variable `TAVILY_PAYGO_DISABLED_VERIFIED` to exact `true`
+   to record that verified setting. Null alone is not proof that billing is off;
+   this compatibility path still requires exactly 1,000 plan credits, zero
+   `paygo_usage`, the dedicated key cap, and sufficient remaining free credits.
+   Recheck or clear the attestation after any account, key or billing change.
 2. Create a dedicated **First Fold** API key and set its provider-enforced
    monthly usage limit to **900 credits**. An unlimited key is rejected even on
    a free account. Do not reuse this key for another application.
@@ -452,6 +461,11 @@ most **24 credits per run**, or **744 credits for 31 daily runs**. Manual tests
 and extra runs share the dedicated key's 900-credit monthly cap. The provider
 limit, rather than an in-memory counter alone, constrains repeated runs. See
 [Tavily's current credit pricing](https://docs.tavily.com/documentation/api-credits).
+
+The verification variable is an operator attestation, not a live provider
+guarantee. `/usage` does not document null as disabled PAYGO. Other applications
+share the free allowance, so do not enable PAYGO: a key cap alone cannot prevent
+charges if account billing is later enabled and other keys consume free credits.
 
 A missing key, changed/unverifiable plan, exhausted allowance, or provider error
 leaves the feed pipeline available with its existing quality gates. Search does

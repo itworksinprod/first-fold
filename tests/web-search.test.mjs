@@ -131,6 +131,88 @@ test("billing diagnostics distinguish unknown plan state without publishing prov
   assert.doesNotMatch(JSON.stringify(output), /secret-|tvly-|private|example.com/);
 });
 
+test("null PAYGO limit requires explicit operator verification and the exact free allocation", async () => {
+  const payload = { ...usage(), account: { ...usage().account, paygo_limit: null } };
+  for (const paygoDisabledVerified of [undefined, false, true]) {
+    let calls = 0;
+    const output = await createTavilyDiscovery({ apiKey, paygoDisabledVerified,
+      fetchImpl: async (url) => {
+        calls++;
+        return json(url.endsWith("/usage") ? payload : searches());
+      } })({ reportingWindow });
+    assert.equal(calls, paygoDisabledVerified === true ? 9 : 1);
+    assert.equal(output.diagnostics.status, paygoDisabledVerified === true ? "complete" : "free_plan_required");
+    assert.equal(output.diagnostics.searchRequests, paygoDisabledVerified === true ? 8 : 0);
+    assert.equal(output.diagnostics.creditsReserved, paygoDisabledVerified === true ? 16 : 0);
+    assert.equal(output.diagnostics.billing.paygoLimit, "null");
+  }
+});
+
+test("invalid operator-verification values cannot authorize requests or leak their contents", async () => {
+  for (const paygoDisabledVerified of [null, "true", "false", 1, 0, [], { private: apiKey }]) {
+    let calls = 0;
+    const output = await createTavilyDiscovery({ apiKey, paygoDisabledVerified,
+      fetchImpl: async () => { calls++; return json(usage()); } })({ reportingWindow });
+    assert.equal(calls, 0);
+    assert.equal(output.diagnostics.status, "invalid_request");
+    assert.deepEqual(output.results, []);
+    assert.doesNotMatch(JSON.stringify(output), /private|tvly-|fixture-secret/);
+  }
+});
+
+test("operator verification does not bypass plan, PAYGO, quota or dedicated-key guards", async () => {
+  const nullPaygo = () => ({ ...usage(), account: { ...usage().account, paygo_limit: null } });
+  const cases = [
+    [{ ...nullPaygo(), account: { ...nullPaygo().account, paygo_limit: undefined } }, "free_plan_required"],
+    [{ ...nullPaygo(), account: { ...nullPaygo().account, paygo_limit: "0" } }, "free_plan_required"],
+    [{ ...nullPaygo(), account: { ...nullPaygo().account, paygo_limit: 100 } }, "free_plan_required"],
+    [{ ...nullPaygo(), account: { ...nullPaygo().account, paygo_usage: 1 } }, "free_plan_required"],
+    [{ ...nullPaygo(), account: { ...nullPaygo().account, paygo_usage: null } }, "free_plan_required"],
+    [{ ...nullPaygo(), account: { ...nullPaygo().account, current_plan: "Project" } }, "free_plan_required"],
+    [{ ...nullPaygo(), account: { ...nullPaygo().account, current_plan: "Free" } }, "free_plan_required"],
+    [{ ...nullPaygo(), account: { ...nullPaygo().account, plan_limit: 500 } }, "free_plan_required"],
+    [{ ...nullPaygo(), account: { ...nullPaygo().account, plan_limit: 1_001 } }, "free_plan_required"],
+    [{ ...nullPaygo(), account: { ...nullPaygo().account, plan_limit: "1000" } }, "free_plan_required"],
+    [{ ...nullPaygo(), account: { ...nullPaygo().account, plan_usage: "0" } }, "usage_unverified"],
+    [{ ...nullPaygo(), key: { usage: 0, limit: null } }, "key_limit_required"],
+    [{ ...nullPaygo(), key: { usage: 0, limit: 901 } }, "key_limit_required"],
+    [{ ...nullPaygo(), key: { usage: 0, limit: 0 } }, "key_limit_required"],
+    [{ ...nullPaygo(), key: { usage: -1, limit: 900 } }, "usage_unverified"],
+    [{ ...nullPaygo(), key: { usage: 900, limit: 900 } }, "quota_exhausted"],
+    [{ ...nullPaygo(), account: { ...nullPaygo().account, plan_usage: 1_000 } }, "quota_exhausted"],
+  ];
+  for (const [payload, status] of cases) {
+    let calls = 0;
+    const output = await createTavilyDiscovery({ apiKey, paygoDisabledVerified: true,
+      fetchImpl: async () => { calls++; return json(payload); } })({ reportingWindow });
+    assert.equal(calls, 1);
+    assert.equal(output.diagnostics.status, status);
+    assert.equal(output.diagnostics.searchRequests, 0);
+    assert.equal(output.diagnostics.creditsReserved, 0);
+  }
+});
+
+test("verified-null accounts still reserve remaining free credits and cache exhausted results", async () => {
+  for (const payload of [
+    { ...usage(), account: { ...usage().account, paygo_limit: null }, key: { usage: 897, limit: 900 } },
+    { ...usage(), account: { ...usage().account, paygo_limit: null, plan_usage: 997 } },
+  ]) {
+    let calls = 0;
+    const discovery = createTavilyDiscovery({ apiKey, paygoDisabledVerified: true,
+      fetchImpl: async (url) => {
+        calls++;
+        return json(url.endsWith("/usage") ? payload : searches());
+      } });
+    const output = await discovery({ reportingWindow });
+    assert.equal(calls, 2);
+    assert.equal(output.diagnostics.status, "quota_exhausted");
+    assert.equal(output.diagnostics.searchRequests, 1);
+    assert.equal(output.diagnostics.creditsReserved, 2);
+    assert.deepEqual(await discovery({ reportingWindow }), output);
+    assert.equal(calls, 2);
+  }
+});
+
 test("monthly remaining credits are reserved across requests and provider errors stop all retries", async () => {
   let calls = 0;
   const discovery = createTavilyDiscovery({ apiKey, fetchImpl: async (url) => {

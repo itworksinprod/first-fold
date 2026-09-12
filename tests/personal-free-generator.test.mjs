@@ -492,7 +492,7 @@ test("private free conversion carries web discovery receipts without persisting 
     const candidate = await generatePersonalFreeEdition({
       editionDate: "2026-08-20",
       projectRoot,
-      env: { ...automationEnv, TAVILY_API_KEY: tavilyApiKey },
+      env: { ...automationEnv, TAVILY_API_KEY: tavilyApiKey, TAVILY_PAYGO_DISABLED_VERIFIED: "true" },
       now: GENERATED_AT,
       feedSources,
       personalStoryLedger: createEmptyPersonalStoryLedger({
@@ -500,6 +500,7 @@ test("private free conversion carries web discovery receipts without persisting 
       }),
       draftFreeEditionImpl: async (options) => {
         assert.equal(options.tavilyApiKey, tavilyApiKey);
+        assert.equal(options.tavilyPaygoDisabledVerified, true);
         return sourceCandidate;
       },
     });

@@ -685,6 +685,7 @@ jobs:
           CLOUDFLARE_AI_API_TOKEN: ${{ secrets.CLOUDFLARE_AI_API_TOKEN }}
           CLOUDFLARE_AI_MODEL: '@cf/meta/llama-3.3-70b-instruct-fp8-fast'
           TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+          TAVILY_PAYGO_DISABLED_VERIFIED: ${{ vars.TAVILY_PAYGO_DISABLED_VERIFIED }}
           EDITION_DATE: ${{ steps.gate.outputs.edition_date }}
           PERSONAL_SOURCE_HEALTH_ROOT: ${{ runner.temp }}/first-fold-source-health
           PERSONAL_STORY_LEDGER_PATH: ${{ runner.temp }}/first-fold-ledger/repeat-ledger.json

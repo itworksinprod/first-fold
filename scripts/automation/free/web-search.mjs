@@ -55,11 +55,16 @@ function followups(value) {
   });
 }
 
-function freeBudget(payload) {
+function freeBudget(payload, paygoDisabledVerified) {
   if (!object(payload?.key) || !object(payload?.account)) fail("usage_unverified");
   const { key, account } = payload;
+  // A null PAYGO limit is not proof that paid billing is disabled. Permit
+  // this provider representation only after an operator has verified the
+  // account's disabled PAYGO setting, with its exact free allocation intact.
+  const verifiedNullPaygoLimit = account.paygo_limit === null &&
+    paygoDisabledVerified === true && account.plan_limit === 1_000;
   if (typeof account.current_plan !== "string" || account.current_plan.toLowerCase() !== "researcher" ||
-      account.paygo_limit !== 0 || account.paygo_usage !== 0 ||
+      (account.paygo_limit !== 0 && !verifiedNullPaygoLimit) || account.paygo_usage !== 0 ||
       !nonnegativeInteger(account.plan_limit) || account.plan_limit < 1 || account.plan_limit > 1_000) {
     fail("free_plan_required");
   }
@@ -134,7 +139,8 @@ async function readBoundedJson(response) {
  * retries and concurrent callers receive cached hints without spending again.
  * No key, unsafe billing state or provider trouble gracefully disables search.
  */
-export function createTavilyDiscovery({ apiKey, fetchImpl = globalThis.fetch, onDiagnostic = () => {} } = {}) {
+export function createTavilyDiscovery({ apiKey, paygoDisabledVerified = false,
+  fetchImpl = globalThis.fetch, onDiagnostic = () => {} } = {}) {
   let editionPromise;
   async function discover({ reportingWindow, followupQueries = [] } = {}) {
     const diagnostics = { status: "complete", usageChecks: 0, searchRequests: 0, creditsReserved: 0,
@@ -152,6 +158,10 @@ export function createTavilyDiscovery({ apiKey, fetchImpl = globalThis.fetch, on
     }
     if (!/^tvly-[A-Za-z0-9_-]{8,200}$/u.test(apiKey)) {
       diagnostics.status = "invalid_key";
+      return finish();
+    }
+    if (typeof paygoDisabledVerified !== "boolean") {
+      diagnostics.status = "invalid_request";
       return finish();
     }
     async function request(url, body) {
@@ -184,7 +194,7 @@ export function createTavilyDiscovery({ apiKey, fetchImpl = globalThis.fetch, on
       // Only fixed enums/booleans, never an account response or a credential,
       // may explain a failed billing preflight in public diagnostics.
       diagnostics.billing = billingStates(usage);
-      let creditsAvailable = freeBudget(usage);
+      let creditsAvailable = freeBudget(usage, paygoDisabledVerified);
       const seen = new Set();
       for (const { query, desk } of queries.slice(0, TAVILY_MAX_SEARCH_REQUESTS)) {
         if (creditsAvailable < CREDIT_COST) fail("quota_exhausted");

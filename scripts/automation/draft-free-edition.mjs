@@ -2442,6 +2442,7 @@ async function draftFreeEditionCore({
   trustedEvidenceDigestOnly = false,
   groundedSummaries = false,
   tavilyApiKey,
+  tavilyPaygoDisabledVerified = false,
   onFreeDiagnostic = () => {},
   maxResearchAttempts = 1,
   researchRetryBelowStoryCount = 0,
@@ -2577,6 +2578,7 @@ async function draftFreeEditionCore({
     enrichArticles: groundedSummaries,
     ...(groundedSummaries ? {
       discoverWebArticles: createTavilyDiscovery({ apiKey: tavilyApiKey, fetchImpl,
+        paygoDisabledVerified: tavilyPaygoDisabledVerified,
         onDiagnostic: onFreeDiagnostic }),
       articlePageFetcher: createReviewedArticlePageFetcher({ requestImpl: feedRequestImpl, lookupImpl: feedLookupImpl }),
       onSearchDiagnostic: onFreeDiagnostic,

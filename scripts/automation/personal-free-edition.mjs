@@ -672,7 +672,8 @@ async function generatePersonalFreeEditionWithHealth({
     accountId,
     apiToken,
     ...(typeof env.TAVILY_API_KEY === "string" && env.TAVILY_API_KEY.trim()
-      ? { tavilyApiKey: env.TAVILY_API_KEY }
+      ? { tavilyApiKey: env.TAVILY_API_KEY,
+        tavilyPaygoDisabledVerified: env.TAVILY_PAYGO_DISABLED_VERIFIED === "true" }
       : {}),
     model: DEFAULT_CLOUDFLARE_AI_MODEL,
     now,

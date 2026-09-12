@@ -50,6 +50,7 @@ test("web discovery quality checks have read-only permissions and no delivery or
     qualityWorkflow.indexOf("      - name: Search, verify publishers and check summaries without sending"),
   );
   assert.match(credentialStep, /TAVILY_API_KEY: \$\{\{ secrets\.TAVILY_API_KEY \}\}/);
+  assert.match(credentialStep, /TAVILY_PAYGO_DISABLED_VERIFIED: \$\{\{ vars\.TAVILY_PAYGO_DISABLED_VERIFIED \}\}/);
   assert.match(credentialStep, /run: node scripts\/automation\/check-personal-quality\.mjs --require-web-search/);
   assert.ok(qualityWorkflow.indexOf("run: npm test") < qualityWorkflow.indexOf("TAVILY_API_KEY:"));
   assert.doesNotMatch(qualityWorkflow.slice(0, qualityWorkflow.indexOf(credentialStep)),
@@ -61,6 +62,7 @@ test("the daily paper exposes the optional search secret only to its generation 
     "      - name: Generate the private source-checked candidate",
     "      - name: Probe the advisory source-health report");
   assert.match(generation, /^          TAVILY_API_KEY: \$\{\{ secrets\.TAVILY_API_KEY \}\}$/m);
+  assert.match(generation, /^          TAVILY_PAYGO_DISABLED_VERIFIED: \$\{\{ vars\.TAVILY_PAYGO_DISABLED_VERIFIED \}\}$/m);
   assert.match(generation, /steps\.dedupe\.outputs\.should_send == 'true'/);
   assert.match(generation, /steps\.preflight\.outputs\.delivery_enabled == 'true'/);
   assert.equal(personalWorkflow.match(/secrets\.TAVILY_API_KEY/g)?.length, 1);
