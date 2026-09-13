@@ -11,7 +11,7 @@ import {
   TRUSTED_EVIDENCE_DIGEST_PROVIDER,
 } from "./free/evidence-digest.mjs";
 import { PERSONAL_STORY_LEDGER_SCHEMA_VERSION } from "./personal-story-ledger.mjs";
-import { DEFAULT_CLOUDFLARE_AI_MODEL, WORKERS_AI_PROVIDER } from "./free/workers-ai.mjs";
+import { FREE_CLOUDFLARE_AI_MODELS, WORKERS_AI_PROVIDER } from "./free/workers-ai.mjs";
 import { hasValidWebSearchResearchMethod, isValidWebSearchReceipt } from "./free/search-receipt.mjs";
 import { HISTORICAL_PREVIEW, assertHistoricalPreviewAuthorization, isHistoricalPreviewRecord,
   isHistoricalPreviewTiming } from "./historical-preview-policy.mjs";
@@ -275,7 +275,7 @@ function hasPersonalResearchInferenceTuple(research, storyCount) {
       research.responseId === "not-invoked";
   }
   if (research.draftingMode === "source-grounded-summary") {
-    return research.provider === WORKERS_AI_PROVIDER && research.model === DEFAULT_CLOUDFLARE_AI_MODEL &&
+    return research.provider === WORKERS_AI_PROVIDER && FREE_CLOUDFLARE_AI_MODELS.includes(research.model) &&
       research.inference === "workers-ai" && typeof research.responseId === "string" &&
       !["not-invoked", "local-digest"].includes(research.responseId);
   }

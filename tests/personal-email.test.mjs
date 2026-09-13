@@ -771,6 +771,18 @@ function updatedPreviewCandidate() {
   return candidate;
 }
 
+test("Qwen provenance can render checked summaries but cannot admit paid models or damaged prose", () => {
+  const candidate = updatedPreviewCandidate();
+  candidate.provenance.personalFreeResearch.model = "@cf/qwen/qwen3-30b-a3b-fp8";
+  assert.equal(validateCanonicalEdition(candidate).valid, true);
+  assert.doesNotThrow(() => renderPersonalEditionEmail(candidate));
+  const paid = structuredClone(candidate);
+  paid.provenance.personalFreeResearch.model = "@cf/zai-org/glm-5.3";
+  assert.throws(() => renderPersonalEditionEmail(paid));
+  candidate.desks.ai.story.whatHappened += " and";
+  assert.throws(() => renderPersonalEditionEmail(candidate));
+});
+
 test("the exact malformed September 11 prose cannot be rendered or sent despite grounded provenance", async () => {
   let calls = 0;
   for (const malformed of malformedEmailStories) {

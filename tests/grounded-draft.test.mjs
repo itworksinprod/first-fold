@@ -463,6 +463,8 @@ test("provider grammar and local bounds remain aligned while review binding cann
         assert.equal(fields.whyItMatters.minLength, 240);
         assert.equal(fields.whyItMatters.maxLength, 400);
         assert.equal(fields.claims.items.properties.text.minLength, 150);
+        assert.equal(fields.claims.items.properties.text.pattern, "[.!?]$");
+        assert.equal(fields.whyItMatters.pattern, "[.!?]$");
         assert.deepEqual(fields.candidateId.enum, [candidate.candidateId]);
         assert.equal(GROUNDED_DRAFT_SCHEMA.properties.stories.items.properties.whyItMatters.minLength, 240);
         return response({ stories: [groundedDraft] });

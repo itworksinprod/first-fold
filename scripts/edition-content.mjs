@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { readerProseErrors } from "./reader-prose.mjs";
+import { FREE_CLOUDFLARE_AI_MODELS } from "./automation/free/models.mjs";
 
 const DESKS = ["ai", "work-and-tools", "security-and-privacy", "platforms-and-power"];
 const DESK_PRESENTATION = {
@@ -35,7 +36,7 @@ export function isPrivateSourceBrief(edition, story) {
     research?.model === "not-invoked";
   const mixed = research?.draftingMode === "source-grounded-summary" &&
     research?.inference === "workers-ai" && research?.provider === "cloudflare-workers-ai" &&
-    research?.model === "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+    FREE_CLOUDFLARE_AI_MODELS.includes(research?.model);
   if (edition.status !== "validated" || edition.publication?.publishedAt !== null ||
       research?.privateSourceBriefs !== true || !(local || mixed) ||
       typeof story?.id !== "string" || !story.id.startsWith("trusted-evidence-brief-")) return false;

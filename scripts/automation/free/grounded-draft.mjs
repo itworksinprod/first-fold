@@ -47,6 +47,12 @@ function writerProviderSchema(candidateIds) {
   schema.properties.stories.minItems = candidateIds.length;
   schema.properties.stories.maxItems = candidateIds.length;
   schema.properties.stories.items.properties.candidateId.enum = candidateIds;
+  // Match the existing local sentence-ending gate during generation too;
+  // never append punctuation to, or salvage, an incomplete returned sentence.
+  const fields = schema.properties.stories.items.properties;
+  for (const field of [fields.claims.items.properties.text, fields.whyItMatters, fields.whatToDoOrWatch]) {
+    field.pattern = "[.!?]$";
+  }
   return schema;
 }
 

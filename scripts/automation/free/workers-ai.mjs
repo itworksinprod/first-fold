@@ -1,14 +1,13 @@
 import { createHash } from "node:crypto";
+import { DEFAULT_CLOUDFLARE_AI_MODEL, FREE_CLOUDFLARE_AI_MODELS } from "./models.mjs";
+export { DEFAULT_CLOUDFLARE_AI_MODEL, EXPERIMENTAL_FREE_WRITER_MODEL, FREE_CLOUDFLARE_AI_MODELS } from "./models.mjs";
 
 // This model is explicitly listed by Cloudflare as supporting Workers AI JSON
 // Mode. Keep the allowlist narrow so the hard-$0 lane cannot drift to a model
 // that ignores the editorial schema or requires a paid plan.
-export const DEFAULT_CLOUDFLARE_AI_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 // Opt-in no-email writer evaluation; not the production default. Cloudflare's
 // model/pricing pages list response_format and Free-plan neuron pricing.
-export const EXPERIMENTAL_FREE_WRITER_MODEL = "@cf/qwen/qwen3-30b-a3b-fp8";
 export const WORKERS_AI_PROVIDER = "cloudflare-workers-ai";
-export const FREE_CLOUDFLARE_AI_MODELS = Object.freeze([DEFAULT_CLOUDFLARE_AI_MODEL, EXPERIMENTAL_FREE_WRITER_MODEL]);
 export const DEFAULT_WORKERS_AI_MAX_TOKENS = 16_000;
 export const DEFAULT_WORKERS_AI_TEMPERATURE = 0.2;
 export const DEFAULT_WORKERS_AI_TIMEOUT_MS = 120_000;
