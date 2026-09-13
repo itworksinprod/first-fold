@@ -4,7 +4,7 @@ import { readerProseErrors } from "../../reader-prose.mjs";
 import { claimCaveatErrors } from "./claim-caveats.mjs";
 import { buildEvidencePacketSources } from "./evidence-packets.mjs";
 import { DEFAULT_CLOUDFLARE_AI_MODEL, WORKERS_AI_EDITORIAL_FORMAT_INVALID,
-  requestWorkersAiEditorial, workersAiFailureDiagnostic } from "./workers-ai.mjs";
+  requestWorkersAiEditorial, resolveCloudflareAiModel, workersAiFailureDiagnostic } from "./workers-ai.mjs";
 
 export const GROUNDED_DIGEST_MODE = "source-grounded-summary";
 export const GROUNDED_MAX_REQUESTS = 3;
@@ -70,9 +70,9 @@ function withinTextSchema(value, schema) {
   return safeProse(value, schema.maxLength) && value.length >= (schema.minLength ?? 1);
 }
 
-function isBoundedFormatFailure(error) {
+function isBoundedFormatFailure(error, model) {
   return error?.code === WORKERS_AI_EDITORIAL_FORMAT_INVALID && error.attemptCount === 1 &&
-    error.inference?.provider === "cloudflare-workers-ai" && error.inference.model === DEFAULT_CLOUDFLARE_AI_MODEL &&
+    error.inference?.provider === "cloudflare-workers-ai" && error.inference.model === model &&
     /^[a-f0-9]{64}$/u.test(error.inference.requestSha256 ?? "") &&
     /^[a-f0-9]{64}$/u.test(error.inference.responseSha256 ?? "");
 }
@@ -309,8 +309,10 @@ function completeClaimReview(review, draft) {
  * fallback. On Free Workers AI, quota exhaustion rejects; delivery still uses
  * the already validated digest. Each approved story is adopted independently. */
 export async function synthesizeGroundedEditorial({ editorial, candidates, accountId, apiToken,
+  model = DEFAULT_CLOUDFLARE_AI_MODEL,
   aiRequestImpl = requestWorkersAiEditorial, fetchImpl = globalThis.fetch,
   onDiagnostic = () => {} } = {}) {
+  model = resolveCloudflareAiModel(model);
   const dossiers = groundedDossiers(candidates);
   // The passage list already contains the evidence text; do not send a second
   // full-text copy that could exhaust the bounded request/context allowance.
@@ -318,7 +320,7 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
     supportedNumericTokens: [...new Set(numericTokens(evidenceText(dossier)).map((value) => value.toLowerCase()))],
     sources: dossier.sources.map(({ text: _text, ...source }) => source) }));
   const ask = (system, data, schema, maxTokens) => aiRequestImpl({ accountId, apiToken,
-    model: DEFAULT_CLOUDFLARE_AI_MODEL, messages: [{ role: "system", content: system },
+    model, messages: [{ role: "system", content: system },
       { role: "user", content: JSON.stringify(data) }], schema,
     responseFormat: "json_schema", validatePayload: (value) => Boolean(value && typeof value === "object"),
     maxTokens, maxAttempts: 1, maxRequestBytes: 70_000, maxResponseBytes: 100_000,
@@ -331,7 +333,7 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
     try {
       written = await ask(WRITER_PROMPT, { dossiers: promptDossiers }, writerSchema, 4_000);
     } catch (error) {
-      if (!isBoundedFormatFailure(error)) throw error;
+      if (!isBoundedFormatFailure(error, model)) throw error;
       // Spend the existing single revision slot on a fresh complete response.
       // Never extract fragments from broken JSON, retry a quota/auth/transport
       // error, or grant a second repair after this one.

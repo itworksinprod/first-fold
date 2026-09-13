@@ -27,6 +27,7 @@ jobs:
         run: npm test
       - name: Check real free writer and reviewer on synthetic sources only
         env:
+          FREE_WRITER_MODEL: '@cf/qwen/qwen3-30b-a3b-fp8'
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_AI_API_TOKEN: ${{ secrets.CLOUDFLARE_AI_API_TOKEN }}
         run: node scripts/automation/check-free-writer.mjs

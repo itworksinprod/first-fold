@@ -7,7 +7,7 @@ import { pathToFileURL } from "node:url";
 import { buildFreeEditorialBaselines } from "../../tests/fixtures/free-editorial-evals.mjs";
 import { GROUNDED_MAX_REQUESTS, synthesizeGroundedEditorial } from "./free/grounded-draft.mjs";
 import { DEFAULT_CLOUDFLARE_AI_MODEL, WORKERS_AI_PROVIDER, requestWorkersAiEditorial,
-  workersAiRunUrl, workersAiFailureDiagnostic } from "./free/workers-ai.mjs";
+  workersAiRunUrl, workersAiFailureDiagnostic, resolveCloudflareAiModel } from "./free/workers-ai.mjs";
 
 const SAFE_CODES = new Set([
   "SHAPE", "CLAIM_SHAPE", "READER_COPY", "CITATION_UNKNOWN", "NUMERIC_CITATION", "SOURCE_CAVEAT",
@@ -34,11 +34,13 @@ export function assertFreeWriterSmokeAuthority(env) {
 /** Test hooks replace only the provider request/transport. The CLI does not
  * expose those hooks: its writer, optional repair and semantic review are real. */
 export async function checkFreeWriter({ accountId, apiToken,
+  model = DEFAULT_CLOUDFLARE_AI_MODEL,
   aiRequestImpl = requestWorkersAiEditorial, fetchImpl = globalThis.fetch } = {}) {
   if (!/^[a-f0-9]{32}$/iu.test(accountId ?? "") || typeof apiToken !== "string" ||
       apiToken !== apiToken.trim() || !apiToken || apiToken.length > 4_096 || /[\p{Cc}\p{Cf}]/u.test(apiToken)) {
     throw failure("SMOKE_CONFIGURATION_INVALID");
   }
+  try { model = resolveCloudflareAiModel(model); } catch { throw failure("SMOKE_CONFIGURATION_INVALID"); }
   const fixtures = buildFreeEditorialBaselines();
   const candidates = fixtures.map(({ candidate }) => candidate);
   const baseline = {
@@ -52,7 +54,7 @@ export async function checkFreeWriter({ accountId, apiToken,
   let modelRequests = 0;
   let networkRequests = 0;
   const diagnostics = [];
-  const endpoint = workersAiRunUrl(accountId, DEFAULT_CLOUDFLARE_AI_MODEL);
+  const endpoint = workersAiRunUrl(accountId, model);
   const boundedFetch = async (url, options) => {
     if (url !== endpoint || options?.method !== "POST" || options?.redirect !== "error") {
       throw failure("SMOKE_ENDPOINT_REJECTED");
@@ -61,11 +63,11 @@ export async function checkFreeWriter({ accountId, apiToken,
     networkRequests++;
     return fetchImpl(url, options);
   };
-  const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates, accountId, apiToken,
+  const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates, accountId, apiToken, model,
     fetchImpl: boundedFetch,
     aiRequestImpl: async options => {
       if (modelRequests >= GROUNDED_MAX_REQUESTS) throw failure("SMOKE_REQUEST_BUDGET");
-      if (options.model !== DEFAULT_CLOUDFLARE_AI_MODEL || options.maxAttempts !== 1 ||
+      if (options.model !== model || options.maxAttempts !== 1 ||
           options.maxTokens > 4_000 || options.timeoutMs > 90_000 ||
           options.maxRequestBytes > 70_000 || options.maxResponseBytes > 100_000) {
         throw failure("SMOKE_REQUEST_CONTRACT");
@@ -97,12 +99,13 @@ export async function checkFreeWriter({ accountId, apiToken,
   }).length;
   const checkedStories = diagnostics.findLast(event => event.stage === "semantic-evidence-check")?.accepted ?? 0;
   const complete = acceptedStories === fixtures.length && checkedStories === fixtures.length &&
-    result?.inference?.provider === WORKERS_AI_PROVIDER && result.inference.model === DEFAULT_CLOUDFLARE_AI_MODEL;
+    result?.inference?.provider === WORKERS_AI_PROVIDER && result.inference.model === model;
   const codes = [...new Set(diagnostics.flatMap(event => event.codes ?? []))];
   if (acceptedStories !== fixtures.length) codes.push("SMOKE_GROUNDED_SUMMARIES_INCOMPLETE");
   if (checkedStories !== fixtures.length) codes.push("SMOKE_REVIEW_INCOMPLETE");
   return {
     mode: "synthetic-free-writer-only-not-current-news",
+    model,
     status: complete ? "passed" : "failed",
     stories: fixtures.length, acceptedStories, checkedStories,
     modelRequests, networkRequests, maxModelRequests: GROUNDED_MAX_REQUESTS,
@@ -116,7 +119,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     if (process.argv.length !== 2) throw failure("SMOKE_CONFIGURATION_INVALID");
     assertFreeWriterSmokeAuthority(process.env);
     const report = await checkFreeWriter({ accountId: process.env.CLOUDFLARE_ACCOUNT_ID,
-      apiToken: process.env.CLOUDFLARE_AI_API_TOKEN });
+      apiToken: process.env.CLOUDFLARE_AI_API_TOKEN, model: process.env.FREE_WRITER_MODEL });
     console.info(`::notice title=Synthetic free writer only::${JSON.stringify(report)}`);
     if (report.status !== "passed") {
       console.error("::error title=Synthetic writer quality failure::SMOKE_GROUNDED_SUMMARIES_INCOMPLETE");

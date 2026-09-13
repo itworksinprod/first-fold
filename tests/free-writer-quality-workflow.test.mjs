@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { assertFreeWriterSmokeAuthority, checkFreeWriter } from "../scripts/automation/check-free-writer.mjs";
 import { buildFreeEditorialBaselines } from "./fixtures/free-editorial-evals.mjs";
-import { DEFAULT_CLOUDFLARE_AI_MODEL, workersAiRunUrl } from "../scripts/automation/free/workers-ai.mjs";
+import { DEFAULT_CLOUDFLARE_AI_MODEL, EXPERIMENTAL_FREE_WRITER_MODEL, workersAiRunUrl } from "../scripts/automation/free/workers-ai.mjs";
 
 const workflow = await readFile(new URL("../.github/workflows/free-writer-quality-check.yml", import.meta.url), "utf8");
 const scriptUrl = new URL("../scripts/automation/check-free-writer.mjs", import.meta.url);
@@ -22,6 +22,26 @@ const reviews = options => JSON.parse(options.messages[1].content).drafts.map(({
   claimSupport: draft.claims.map(claim => claim.supports.map(({ evidenceId }) => evidenceId)),
   factsSupported: true, attributionAccurate: true, analysisSupported: true, usefulAndSpecific: true,
 }));
+
+test("alternate free model is opt-in, hash reviewed and cannot expand request limits", async () => {
+  assert.match(workflow, /FREE_WRITER_MODEL: '@cf\/qwen\/qwen3-30b-a3b-fp8'/);
+  let calls = 0;
+  const report = await checkFreeWriter({ accountId, apiToken, model: EXPERIMENTAL_FREE_WRITER_MODEL,
+    aiRequestImpl: async options => {
+      calls++;
+      assert.equal(options.model, EXPERIMENTAL_FREE_WRITER_MODEL);
+      assert.equal(options.maxAttempts, 1);
+      assert.ok(options.maxTokens <= 4_000);
+      return { ...response(options.schema.properties.reviews ? { reviews: reviews(options) }
+        : { stories: buildFreeEditorialBaselines().map(({ draft }) => draft) }), model: options.model };
+    } });
+  assert.equal(calls, 2);
+  assert.equal(report.status, "passed");
+  assert.equal(report.model, EXPERIMENTAL_FREE_WRITER_MODEL);
+  assert.equal(report.emailRequests, 0);
+  await assert.rejects(checkFreeWriter({ accountId, apiToken, model: "@cf/zai-org/glm-5.3",
+    aiRequestImpl: async () => { throw new Error("Must not call"); } }), /SMOKE_CONFIGURATION_INVALID/);
+});
 
 test("writer smoke is manual trusted-owner main-only, serialized with delivery, and read-only", () => {
   const trigger = workflow.slice(workflow.indexOf("on:"), workflow.indexOf("permissions:"));
