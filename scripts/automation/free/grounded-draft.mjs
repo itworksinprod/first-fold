@@ -42,21 +42,11 @@ export const GROUNDED_REVIEW_SCHEMA = objectSchema({ reviews: arraySchema(object
 
 // Provider grammar helps with shape/length; identical local checks remain
 // authoritative because schema mode alone does not guarantee valid prose.
-function writerProviderSchema(candidateIds, model) {
+function writerProviderSchema(candidateIds) {
   const schema = structuredClone(GROUNDED_DRAFT_SCHEMA);
   schema.properties.stories.minItems = candidateIds.length;
   schema.properties.stories.maxItems = candidateIds.length;
   schema.properties.stories.items.properties.candidateId.enum = candidateIds;
-  // Match the existing local sentence-ending gate during generation too;
-  // never append punctuation to, or salvage, an incomplete returned sentence.
-  if (model === EXPERIMENTAL_FREE_WRITER_MODEL) {
-    const fields = schema.properties.stories.items.properties;
-    for (const field of [fields.claims.items.properties.text, fields.whyItMatters, fields.whatToDoOrWatch]) {
-      // Cloudflare grammar treats a pattern as a complete generated string.
-      // Encode the entire length contract, not only a punctuation suffix.
-      field.pattern = `^.{${field.minLength - 1},${field.maxLength - 1}}[.!?]$`;
-    }
-  }
   return schema;
 }
 
@@ -335,13 +325,15 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
     supportedNumericTokens: [...new Set(numericTokens(evidenceText(dossier)).map((value) => value.toLowerCase()))],
     sources: dossier.sources.map(({ text: _text, ...source }) => source) }));
   const ask = (system, data, schema, maxTokens) => aiRequestImpl({ accountId, apiToken,
-    model, messages: [{ role: "system", content: model === EXPERIMENTAL_FREE_WRITER_MODEL ? `${system}\n/no_think` : system },
+    model, messages: [{ role: "system", content: model === EXPERIMENTAL_FREE_WRITER_MODEL
+      ? `${system}\nReturn one JSON object conforming to this schema:\n${JSON.stringify(schema)}\n/no_think` : system },
       { role: "user", content: JSON.stringify(data) }], schema,
-    responseFormat: "json_schema", validatePayload: (value) => Boolean(value && typeof value === "object"),
+    responseFormat: model === EXPERIMENTAL_FREE_WRITER_MODEL ? "json_object" : "json_schema",
+    validatePayload: (value) => Boolean(value && typeof value === "object"),
     maxTokens, maxAttempts: 1, maxRequestBytes: 70_000, maxResponseBytes: 100_000,
     timeoutMs: 90_000, temperature: model === EXPERIMENTAL_FREE_WRITER_MODEL ? 0.7 : 0.1, fetchImpl });
   try {
-    const writerSchema = writerProviderSchema(dossiers.map((dossier) => dossier.candidateId), model);
+    const writerSchema = writerProviderSchema(dossiers.map((dossier) => dossier.candidateId));
     const inferenceTrail = [];
     let written;
     let repairUsed = false;
@@ -392,7 +384,7 @@ response, add Markdown fences or serialize another object inside any reader-faci
         whatHappened: Array.isArray(draft?.claims) ? draft.claims.map((claim) => claim?.text ?? "").join(" ") : "" })) });
     if (rejected.length && !repairUsed) {
       const repairIds = new Set(rejected.map(({ draft }) => draft.candidateId));
-      const repairSchema = writerProviderSchema([...repairIds], model);
+      const repairSchema = writerProviderSchema([...repairIds]);
       const repaired = await ask(REPAIR_PROMPT, {
         dossiers: promptDossiers.filter((dossier) => repairIds.has(dossier.candidateId)),
         // Rebuild from source evidence, not a defective completion. Replaying

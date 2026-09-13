@@ -34,12 +34,8 @@ test("alternate free model is opt-in, hash reviewed and cannot expand request li
       assert.equal(options.model, EXPERIMENTAL_FREE_WRITER_MODEL);
       assert.equal(options.temperature, 0.7);
       assert.match(options.messages[0].content, /\/no_think$/);
-      if (options.schema.properties.stories) {
-        const fields = options.schema.properties.stories.items.properties;
-        assert.equal(fields.claims.items.properties.text.pattern, "^.{149,269}[.!?]$");
-        assert.equal(fields.whyItMatters.pattern, "^.{239,399}[.!?]$");
-        assert.equal(fields.whatToDoOrWatch.pattern, "^.{219,349}[.!?]$");
-      }
+      assert.equal(options.responseFormat, "json_object");
+      assert.ok(options.messages[0].content.includes(JSON.stringify(options.schema)));
       assert.equal(options.maxAttempts, 1);
       assert.ok(options.maxTokens <= 4_000);
       return { ...response(options.schema.properties.reviews ? { reviews: reviews(options) }
