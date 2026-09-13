@@ -6,6 +6,8 @@ import { createEmptyPersonalStoryLedger } from "./personal-story-ledger.mjs";
 import { collectFreeResearchSnapshot } from "./free/feed-engine.mjs";
 import { assertPersonalEmailCandidate, renderPersonalEditionEmail } from "./personal-email.mjs";
 import { isValidWebSearchReceipt } from "./free/search-receipt.mjs";
+import { draftFreeEditionWithHealth } from "./draft-free-edition.mjs";
+import { EXPERIMENTAL_FREE_WRITER_MODEL } from "./free/workers-ai.mjs";
 
 const now = new Date();
 const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York",
@@ -18,10 +20,14 @@ try {
   const args = process.argv.slice(2);
   assert.ok(args.length === 0 || args.length === 1 && args[0] === "--require-web-search");
   const requireWebSearch = args.includes("--require-web-search");
+  const alternateWriter = process.env.FREE_WRITER_MODEL;
+  assert.ok(!alternateWriter || alternateWriter === EXPERIMENTAL_FREE_WRITER_MODEL);
   if (requireWebSearch && !process.env.TAVILY_API_KEY?.trim()) {
     throw Object.assign(new Error("Search credentials are not configured."), { code: "SEARCH_KEY_REQUIRED" });
   }
   const candidate = await generatePersonalFreeEdition({ editionDate, runMode,
+    ...(alternateWriter ? { draftFreeEditionWithHealthImpl: options =>
+      draftFreeEditionWithHealth({ ...options, model: EXPERIMENTAL_FREE_WRITER_MODEL }) } : {}),
     personalStoryLedger: createEmptyPersonalStoryLedger({ fingerprintKey: process.env.CLOUDFLARE_AI_API_TOKEN }),
     researchImpl: async (options) => {
       snapshot ??= await collectFreeResearchSnapshot(options);
@@ -46,6 +52,7 @@ try {
     });
   }
   console.info(`::notice title=Quality result::${JSON.stringify({ status: "validated-and-rendered", stories, checkedStories, mode,
+    writerModel: candidate.provenance.personalFreeResearch.model,
     ...(isValidWebSearchReceipt(webSearch) ? { webSearch } : {}),
     renderedCopyChecked: true,
     emailSent: false, repeatHistory: "isolated-test-empty-ledger", maxModelRequests: PERSONAL_FREE_MAX_MODEL_REQUESTS })}`);

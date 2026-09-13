@@ -26,6 +26,7 @@ import {
 } from "./free/evidence-digest.mjs";
 import {
   DEFAULT_CLOUDFLARE_AI_MODEL,
+  FREE_CLOUDFLARE_AI_MODELS,
   WORKERS_AI_PROVIDER,
 } from "./free/workers-ai.mjs";
 import {
@@ -417,7 +418,7 @@ function hasPersonalFreeInferenceTuple(provenance, storyCount) {
       provenance.responseId === "not-invoked";
   }
   if (provenance.draftingMode === "source-grounded-summary") {
-    return provenance.provider === PERSONAL_FREE_PROVIDER && provenance.model === PERSONAL_FREE_MODEL &&
+    return provenance.provider === PERSONAL_FREE_PROVIDER && FREE_CLOUDFLARE_AI_MODELS.includes(provenance.model) &&
       provenance.inference === "workers-ai" && typeof provenance.responseId === "string" &&
       !["not-invoked", "local-digest"].includes(provenance.responseId);
   }

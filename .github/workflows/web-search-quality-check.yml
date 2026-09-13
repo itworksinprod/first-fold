@@ -27,6 +27,7 @@ jobs:
         run: npm test
       - name: Search, verify publishers and check summaries without sending
         env:
+          FREE_WRITER_MODEL: '@cf/qwen/qwen3-30b-a3b-fp8'
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_AI_API_TOKEN: ${{ secrets.CLOUDFLARE_AI_API_TOKEN }}
           TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}

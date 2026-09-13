@@ -3104,7 +3104,7 @@ async function draftFreeEditionCore({
 
   if (groundedSummaries && candidates.length > 0) {
     const grounded = await synthesizeGroundedEditorial({ editorial, candidates,
-      accountId, apiToken, aiRequestImpl, fetchImpl,
+      accountId, apiToken, model, aiRequestImpl, fetchImpl,
       onDiagnostic: onFreeDiagnostic });
     if (grounded) {
       editorial = grounded.editorial;

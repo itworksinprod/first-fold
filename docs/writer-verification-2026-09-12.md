@@ -31,6 +31,11 @@ its author's documented `/no_think` switch and recommended non-thinking temperat
 of 0.7, rather than Llama's 0.1. The 7,800-token total ceiling is redistributed as
 4,000 drafting, 2,000 revision and 1,800 review. This remains an experiment.
 See the [Qwen model card](https://huggingface.co/Qwen/Qwen3-30B-A3B#switching-between-thinking-and-non-thinking-mode).
+The documented-profile test
+[34735310999](https://github.com/itworksinprod/first-fold/actions/runs/34735310999)
+passed all four synthetic stories after one revision and a separate factual review,
+using three model calls and no email. The no-email current-news workflow now opts
+into this same profile. Daily production remains unchanged pending that check.
 The model is fixed and allowlisted, with the same three-request ceiling, token,
 timeout, response-size, citation, originality and factual-review checks. It is not
 an automatic provider fallback or permission to increase spending.
