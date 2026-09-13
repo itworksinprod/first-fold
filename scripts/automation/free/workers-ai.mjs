@@ -14,6 +14,26 @@ export const DEFAULT_WORKERS_AI_MAX_REQUEST_BYTES = 500_000;
 export const DEFAULT_WORKERS_AI_MAX_RESPONSE_BYTES = 1_000_000;
 export const WORKERS_AI_EDITORIAL_FORMAT_INVALID = "WORKERS_AI_EDITORIAL_FORMAT_INVALID";
 export const WORKERS_AI_EDITORIAL_UNAVAILABLE = "WORKERS_AI_EDITORIAL_UNAVAILABLE";
+// Only documented numeric provider codes may leave an error envelope. Never
+// log provider messages, response bodies, request headers, or model output.
+const DOCUMENTED_FAILURE_CODES = new Set([3003, 3006, 3007, 3008, 3023, 3036, 3039, 3040, 3041, 3042,
+  5004, 5005, 5007, 5016, 5018, 5019, 5035]);
+function attachFailureDetails(error, status, envelope) {
+  const codes = Array.isArray(envelope?.errors) ? envelope.errors.slice(0, 16)
+    .map((entry) => entry?.code).filter((code) => DOCUMENTED_FAILURE_CODES.has(code)) : [];
+  Object.defineProperties(error, {
+    httpStatus: { value: Number.isInteger(status) && status >= 100 && status <= 599 ? status : null },
+    providerCode: { value: new Set(codes).size === 1 ? codes[0] : null },
+  });
+  return error;
+}
+export function workersAiFailureDiagnostic(error) {
+  return {
+    httpStatus: Number.isInteger(error?.httpStatus) && error.httpStatus >= 100 && error.httpStatus <= 599
+      ? String(error.httpStatus) : /^Cloudflare Workers AI request failed with HTTP ([1-5]\d{2})\.$/.exec(error?.message ?? "")?.[1] ?? null,
+    providerCode: DOCUMENTED_FAILURE_CODES.has(error?.providerCode) ? error.providerCode : null,
+  };
+}
 
 const CLOUDFLARE_API_ORIGIN = "https://api.cloudflare.com";
 const CLOUDFLARE_JSON_MODE_NOT_MET_PATTERN = /(?:^|:\s*)JSON Mode couldn't be met\.?$/;
@@ -452,7 +472,8 @@ async function requestEnvelope({
           attemptCount: attempt,
         };
       }
-      throw new Error(`Cloudflare Workers AI request failed with HTTP ${result.status}.`);
+      throw attachFailureDetails(new Error(`Cloudflare Workers AI request failed with HTTP ${result.status}.`),
+        result.status, errorEnvelope);
     }
 
     let envelope;
@@ -610,11 +631,11 @@ export async function requestWorkersAiEditorial({
     );
   }
   if (editorialUnavailable) {
-    throw workersAiEditorialUnavailableError(
+    throw attachFailureDetails(workersAiEditorialUnavailableError(
       "Cloudflare Workers AI did not provide a usable editorial response.",
       attemptCount,
       inference,
-    );
+    ), response.status, envelope);
   }
   let editorialPayload;
   try {

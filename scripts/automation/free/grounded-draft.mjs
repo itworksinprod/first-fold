@@ -4,7 +4,7 @@ import { readerProseErrors } from "../../reader-prose.mjs";
 import { claimCaveatErrors } from "./claim-caveats.mjs";
 import { buildEvidencePacketSources } from "./evidence-packets.mjs";
 import { DEFAULT_CLOUDFLARE_AI_MODEL, WORKERS_AI_EDITORIAL_FORMAT_INVALID,
-  requestWorkersAiEditorial } from "./workers-ai.mjs";
+  requestWorkersAiEditorial, workersAiFailureDiagnostic } from "./workers-ai.mjs";
 
 export const GROUNDED_DIGEST_MODE = "source-grounded-summary";
 export const GROUNDED_MAX_REQUESTS = 3;
@@ -184,7 +184,14 @@ export function validateGroundedStory(draft, dossier, onFailure = () => {}) {
   const sourceTokens = words(normalized(evidence).toLowerCase());
   const copyTokens = words(normalized(copy).toLowerCase());
   for (let i = 0; i <= copyTokens.length - 12; i++) {
-    if (sourceTokens.join(" ").includes(copyTokens.slice(i, i + 12).join(" "))) return reject("ORIGINALITY");
+    const overlap = copyTokens.slice(i, i + 12).join(" ");
+    if (sourceTokens.join(" ").includes(overlap)) {
+      const fields = { headline: draft.headline, deck: draft.deck,
+        "claims[0].text": draft.claims[0].text, "claims[1].text": draft.claims[1].text,
+        whyItMatters: draft.whyItMatters, whatToDoOrWatch: draft.whatToDoOrWatch };
+      const field = Object.keys(fields).find((key) => normalized(fields[key]).toLowerCase().includes(overlap)) ?? "readerCopy";
+      return reject("ORIGINALITY", { field, expected: "Rewrite from the evidence in a different sentence structure; do not reuse the publisher headline or a twelve-word source sequence." });
+    }
   }
   return true;
 }
@@ -211,6 +218,7 @@ The cited passages must substantiate the entire claim, including caveats. Paraph
 never copy 12 consecutive source words into published prose.
 Draft from the meaning, not by continuing a publisher's sentence. Change the sentence structure
 and group related facts in a new order; retain exact product identifiers and necessary conditions.
+Write a short original headline and deck; do not paste the publisher's title as either field.
 Use specific named products and supported figures. Do not add missing versions, patches, dates, prices,
 exploitation, performance results, availability or legal conclusions. Say what is unknown where useful.
 Every numeric/version token must match supportedNumericTokens exactly, including punctuation and units.
@@ -368,7 +376,12 @@ response, add Markdown fences or serialize another object inside any reader-faci
       const repairIds = new Set(rejected.map(({ draft }) => draft.candidateId));
       const repairSchema = writerProviderSchema([...repairIds]);
       const repaired = await ask(REPAIR_PROMPT, {
-        dossiers: promptDossiers.filter((dossier) => repairIds.has(dossier.candidateId)), rejected,
+        dossiers: promptDossiers.filter((dossier) => repairIds.has(dossier.candidateId)),
+        // Rebuild from source evidence, not a defective completion. Replaying
+        // malformed prose can encourage the model to continue its fragments.
+        rejected: rejected.map(({ draft, rejectionCode, feedback }) => ({
+          draft: { candidateId: draft.candidateId }, rejectionCode, feedback,
+        })),
       }, repairSchema, 3_000);
       inferenceTrail.push(repaired);
       const revisions = structuredClone(repaired.editorialPayload?.stories);
@@ -397,6 +410,11 @@ response, add Markdown fences or serialize another object inside any reader-faci
     // The exact candidate/hash pair is still checked locally before adoption.
     reviewSchema.properties.reviews.items.properties.candidateId = { type: "string", enum: valid.map((draft) => draft.candidateId) };
     reviewSchema.properties.reviews.items.properties.draftSha256 = { type: "string", enum: valid.map(hash) };
+    // The reviewer can still return [] and every false verdict. Constrain only
+    // the spelling of evidence labels, never whether a claim is supported.
+    reviewSchema.properties.reviews.items.properties.claimSupport.items.items = {
+      type: "string", enum: [...new Set(valid.flatMap((draft) => draft.claims.flatMap((claim) => claim.supports.map((support) => support.evidenceId))))],
+    };
     const checked = await ask(REVIEW_PROMPT, { dossiers: promptDossiers.filter((dossier) => valid.some((draft) => draft.candidateId === dossier.candidateId)),
       drafts: valid.map((draft) => ({ draftSha256: hash(draft), draft })) }, reviewSchema, 800);
     inferenceTrail.push(checked);
@@ -453,7 +471,7 @@ response, add Markdown fences or serialize another object inside any reader-faci
   } catch (error) {
     onDiagnostic({ stage: "free-writer-unavailable",
       code: /^[A-Z_]{1,64}$/.test(error?.code ?? "") ? error.code : "PROVIDER_OR_FORMAT_ERROR",
-      httpStatus: /^Cloudflare Workers AI request failed with HTTP (\d{3})\.$/.exec(error?.message ?? "")?.[1] ?? null });
+      ...workersAiFailureDiagnostic(error) });
     return null; // Quota, authentication, transport, format and review failures are non-gating.
   }
 }

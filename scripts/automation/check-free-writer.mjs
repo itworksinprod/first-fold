@@ -7,7 +7,7 @@ import { pathToFileURL } from "node:url";
 import { buildFreeEditorialBaselines } from "../../tests/fixtures/free-editorial-evals.mjs";
 import { GROUNDED_MAX_REQUESTS, synthesizeGroundedEditorial } from "./free/grounded-draft.mjs";
 import { DEFAULT_CLOUDFLARE_AI_MODEL, WORKERS_AI_PROVIDER, requestWorkersAiEditorial,
-  workersAiRunUrl } from "./free/workers-ai.mjs";
+  workersAiRunUrl, workersAiFailureDiagnostic } from "./free/workers-ai.mjs";
 
 const SAFE_CODES = new Set([
   "SHAPE", "CLAIM_SHAPE", "READER_COPY", "CITATION_UNKNOWN", "NUMERIC_CITATION", "SOURCE_CAVEAT",
@@ -82,6 +82,8 @@ export async function checkFreeWriter({ accountId, apiToken,
           /^[1-5]\d{2}$/u.test(event.httpStatus)) {
         diagnostic.httpStatus = Number(event.httpStatus);
       }
+      const providerCode = workersAiFailureDiagnostic(event).providerCode;
+      if (event?.stage === "free-writer-unavailable" && providerCode !== null) diagnostic.providerCode = providerCode;
       const codes = [...(Array.isArray(event?.rejectionCodes) ? event.rejectionCodes : []),
         ...[event?.rejectionCode, event?.code].filter(Boolean)];
       if (codes.length) diagnostic.codes = [...new Set(codes.map(safeCode))].slice(0, 8);

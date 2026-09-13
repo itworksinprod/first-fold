@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { DEFAULT_CLOUDFLARE_AI_MODEL, requestWorkersAiEditorial } from "./workers-ai.mjs";
+import { DEFAULT_CLOUDFLARE_AI_MODEL, requestWorkersAiEditorial, workersAiFailureDiagnostic } from "./workers-ai.mjs";
 const SOFT_REASONS = new Set(["BELOW_EDITORIAL_THRESHOLD", "AUTHORITATIVE_SINGLE_COMPONENT_FLOOR"]);
 const digest = (value) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const object = (properties) => ({ type: "object", additionalProperties: false, properties,
@@ -72,7 +72,7 @@ export function createNewsworthinessReview({ accountId, apiToken,
       } catch (error) {
         onDiagnostic({ stage: "newsworthiness-unavailable",
           code: /^[A-Z_]{1,64}$/.test(error?.code ?? "") ? error.code : "PROVIDER_OR_FORMAT_ERROR",
-          httpStatus: /^Cloudflare Workers AI request failed with HTTP (\d{3})\.$/.exec(error?.message ?? "")?.[1] ?? null });
+          ...workersAiFailureDiagnostic(error) });
       }
     }
     return assessments.map((entry) => {

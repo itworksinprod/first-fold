@@ -111,6 +111,9 @@ test("one originality revision is revalidated, hash-bound and separately checked
       if (calls.length === 2) {
         const data = JSON.parse(options.messages[1].content);
         assert.equal(data.rejected[0].rejectionCode, "ORIGINALITY");
+        assert.equal(data.rejected[0].feedback.field, "claims[0].text");
+        assert.deepEqual(data.rejected[0].draft, { candidateId: candidate.candidateId });
+        assert.equal(Object.hasOwn(data.rejected[0].draft, "claims"), false);
         assert.equal(options.maxTokens, 3_000);
         assert.equal(options.maxAttempts, 1);
         return response({ stories: [groundedDraft] });
@@ -469,6 +472,9 @@ test("provider grammar and local bounds remain aligned while review binding cann
       assert.deepEqual(properties.draftSha256.enum, [hash(groundedDraft)]);
       assert.equal(properties.factsSupported.type, "boolean");
       assert.equal(properties.factsSupported.enum, undefined, "Never force approval");
+      assert.equal(properties.claimSupport.items.minItems, 0, "Unsupported claims can still receive an empty list");
+      assert.deepEqual(properties.claimSupport.items.items.enum,
+        [...new Set(groundedDraft.claims.flatMap(claim => claim.supports.map(support => support.evidenceId)))]);
       return response({ reviews: [{ ...review, draftSha256: "wrong", analysisSupported: false }] });
     } });
   assert.equal(result, null);

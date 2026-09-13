@@ -10,6 +10,7 @@ import {
   requestWorkersAiEditorial,
   resolveCloudflareAiModel,
   workersAiRunUrl,
+  workersAiFailureDiagnostic,
 } from "../scripts/automation/free/workers-ai.mjs";
 
 const accountId = "6fd0b70bbeb0769801ddb19c8f1b4b10";
@@ -25,6 +26,28 @@ const schema = {
   required: ["headline"],
 };
 const payload = { headline: "A verified development" };
+
+test("unavailable responses retain only documented status/code diagnostics without provider text", async () => {
+  for (const [status, code] of [[429, 3036], [429, 3040], [403, 5035], [200, 3023]]) {
+    let calls = 0;
+    await assert.rejects(requestWorkersAiEditorial({ accountId, apiToken, messages, schema,
+      validatePayload: () => true, maxAttempts: 1, fetchImpl: async () => {
+        calls++;
+        return new Response(JSON.stringify({ success: false, result: null,
+          errors: [{ code, message: `sensitive provider text ${apiToken}` }] }),
+        { status, headers: { "content-type": "application/json" } });
+      } }), error => {
+        assert.deepEqual(workersAiFailureDiagnostic(error), { httpStatus: String(status), providerCode: code });
+        assert.doesNotMatch(JSON.stringify(error), /sensitive|cloudflare-test-token/);
+        assert.doesNotMatch(error.message, /sensitive|cloudflare-test-token/);
+        return true;
+      });
+    assert.equal(calls, 1);
+  }
+  for (const providerCode of ["3036", 999999, apiToken, null, undefined]) {
+    assert.equal(workersAiFailureDiagnostic({ providerCode }).providerCode, null);
+  }
+});
 
 function cloudflareResponse(resultResponse = payload, options = {}) {
   return new Response(JSON.stringify({
