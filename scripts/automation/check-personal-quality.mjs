@@ -8,13 +8,9 @@ import { assertPersonalEmailCandidate, renderPersonalEditionEmail } from "./pers
 import { isValidWebSearchReceipt } from "./free/search-receipt.mjs";
 import { draftFreeEditionWithHealth } from "./draft-free-edition.mjs";
 import { EXPERIMENTAL_FREE_WRITER_MODEL } from "./free/workers-ai.mjs";
+import { qualityCheckWindow } from "./quality-check-window.mjs";
 
 const now = new Date();
-const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York",
-  year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23" })
-  .formatToParts(now).map(({ type, value }) => [type, value]));
-const editionDate = `${parts.year}-${parts.month}-${parts.day}`;
-const runMode = Number(parts.hour) >= 5 ? "same_day_backfill" : "on_time";
 let snapshot;
 try {
   const args = process.argv.slice(2);
@@ -25,6 +21,7 @@ try {
   if (requireWebSearch && !process.env.TAVILY_API_KEY?.trim()) {
     throw Object.assign(new Error("Search credentials are not configured."), { code: "SEARCH_KEY_REQUIRED" });
   }
+  const { editionDate, runMode } = qualityCheckWindow(now);
   const candidate = await generatePersonalFreeEdition({ editionDate, runMode,
     ...(alternateWriter ? { draftFreeEditionWithHealthImpl: options =>
       draftFreeEditionWithHealth({ ...options, model: EXPERIMENTAL_FREE_WRITER_MODEL }) } : {}),
@@ -58,6 +55,7 @@ try {
     emailSent: false, repeatHistory: "isolated-test-empty-ledger", maxModelRequests: PERSONAL_FREE_MAX_MODEL_REQUESTS })}`);
 } catch (error) {
   // Only stable codes/counts enter public workflow logs, never copy, URLs or tokens.
-  console.error(`::error title=Quality failure::${/^[A-Z_]+$/.test(error?.code ?? "") ? error.code : "QUALITY_CHECK_FAILED"}`);
+  const code = error?.diagnosticCode ?? error?.code;
+  console.error(`::error title=Quality failure::${/^[A-Z_]+$/.test(code ?? "") ? code : "QUALITY_CHECK_FAILED"}`);
   process.exitCode = 1;
 }

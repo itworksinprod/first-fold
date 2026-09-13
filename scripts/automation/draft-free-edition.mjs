@@ -2235,9 +2235,10 @@ function assertCheckedAt({
     (isBackfill && localDate(checkedAt) !== editionDate) ||
     (!isBackfill && Date.parse(checkedAt) >= Date.parse(publishAt))
   ) {
-    throw new Error(isBackfill
+    throw freeEditorialDiagnosticError(isBackfill
       ? "The free backfill newsroom run must finish on its requested New York date at or after generation."
-      : "The free newsroom run did not complete inside the 05:00-06:00 comparison window.");
+      : "The free newsroom run did not complete inside the 05:00-06:00 comparison window.",
+    "FREE_CHECK_WINDOW_EXPIRED");
   }
 }
 

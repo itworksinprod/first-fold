@@ -36,6 +36,48 @@ The documented-profile test
 passed all four synthetic stories after one revision and a separate factual review,
 using three model calls and no email. The no-email current-news workflow now opts
 into this same profile. Daily production remains unchanged pending that check.
+The first real-news Qwen run
+[34735530774](https://github.com/itworksinprod/first-fold/actions/runs/34735530774)
+verified ten web articles and passed two of four summaries through factual review,
+then encountered validators with duplicated Llama-only checks. The model allowlist
+is now shared by inference, canonical validation and email acceptance. Paid-only
+or arbitrary models remain rejected. The next run
+[34735891197](https://github.com/itworksinprod/first-fold/actions/runs/34735891197)
+exposed a provider grammar regression from a suffix-only punctuation pattern;
+the daily path no longer uses that experiment. A full-string pattern in
+[34736158133](https://github.com/itworksinprod/first-fold/actions/runs/34736158133)
+also failed with output-token exhaustion. Both pattern experiments were removed.
+Qwen's isolated evaluation now requests plain `json_object` output with the full
+schema in its system instruction. All local bounds, originality, prose integrity,
+per-claim citations, hash binding and semantic review remain mandatory. Llama's
+production schema-mode request is unchanged.
+The plain-JSON current-news run
+[34736423743](https://github.com/itworksinprod/first-fold/actions/runs/34736423743)
+verified ten articles, passed two AI summaries through factual review, and reached
+canonical validation and email rendering. It still failed the strict all-stories
+AI check: one story retained the fallback after its originality repair failed
+shape validation. Qwen now repairs only the specifically identified copied field
+when originality is the sole defect. The reconstructed story must still pass
+every whole-story check and the separate factual review. Mixed defects retain
+full-story repair, and neither path adds a model call. Regression tests reject
+wrong-field edits, damaged prose, and a failed factual review.
+The final live run
+[34736791196](https://github.com/itworksinprod/first-fold/actions/runs/34736791196)
+verified nine publisher articles, then passed **all three** current-news drafts
+through local and semantic checks without revision (154, 153 and 151 words).
+It began at 23:59 EDT and finished after midnight. The next `assertCheckedAt`
+gate rejects a backfill finishing on a different local date, before source QA
+and rendering. A regression test reproduces that boundary. It now reports
+`FREE_CHECK_WINDOW_EXPIRED` instead of losing the diagnostic in the quality CLI.
+The no-email checker also checks its start window before making provider calls:
+05:00–05:39 or 06:00–23:39 America/New_York, reserving its twenty-minute timeout.
+Its 05:00-hour mode is corrected to `on_time`; backfill starts at 06:00.
+
+**Outcome:** free discovery and three current-news AI summaries were demonstrated,
+but the full live pipeline did not complete successfully in this audit. The daily
+writer remains Llama; Qwen stays opted into the no-email checks only. Another full
+check must run within the valid window before claiming end-to-end acceptance or
+promoting Qwen. All 738 regression tests pass. No email was sent by the audit.
 The model is fixed and allowlisted, with the same three-request ceiling, token,
 timeout, response-size, citation, originality and factual-review checks. It is not
 an automatic provider fallback or permission to increase spending.

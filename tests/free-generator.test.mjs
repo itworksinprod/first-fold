@@ -1651,6 +1651,19 @@ test("same-day backfill keeps the real late generation time while on-time mode s
   assert.equal(candidate.provenance.freePilot.runMode, "same_day_backfill");
 });
 
+test("a backfill crossing local midnight fails with a safe timing diagnostic", async () => {
+  let clockReads = 0;
+  let sourceChecks = 0;
+  await assert.rejects(() => draftFreeEdition(draftOptions({
+    runMode: "same_day_backfill",
+    now: () => ++clockReads === 1 ? "2026-08-21T03:59:00.000Z" : "2026-08-21T04:02:00.000Z",
+    researchImpl: async options => ({ ...researchResult({ candidates: [] }),
+      reportingWindow: structuredClone(options.reportingWindow), retrievedAt: options.retrievedAt }),
+    sourceRequestImpl: async () => { sourceChecks++; return { status: 200, headers: {} }; },
+  })), error => error.diagnosticCode === "FREE_CHECK_WINDOW_EXPIRED");
+  assert.equal(sourceChecks, 0);
+});
+
 test("free provenance rejects inference/count conflicts and registry-count drift", async () => {
   const candidate = await draftFreeEdition(draftOptions());
   const conflicted = structuredClone(candidate);
