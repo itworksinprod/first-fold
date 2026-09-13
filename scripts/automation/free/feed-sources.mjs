@@ -459,6 +459,35 @@ export const FREE_FEED_SOURCES = Object.freeze([
     },
   },
   {
+    id: "ollama-blog",
+    publisher: "Ollama",
+    publisherKey: "ollama",
+    primaryEntity: "Ollama",
+    relationship: "originating",
+    format: "xml",
+    url: "https://ollama.com/blog/rss.xml",
+    feedHosts: ["ollama.com"],
+    itemHosts: ["ollama.com"],
+    coverageDesks: ["ai", "work-and-tools"],
+    deskPriors: { ai: 20, "work-and-tools": 8 },
+  },
+  {
+    id: "openrouter-blog",
+    publisher: "OpenRouter",
+    // An announced acquisition is not proof of closing. Recheck controlling
+    // ownership before adding Stripe sources; do not award separate votes to
+    // brands that have become one publisher or infer new trusted hosts here.
+    publisherKey: "openrouter",
+    primaryEntity: "OpenRouter",
+    relationship: "originating",
+    format: "xml",
+    url: "https://openrouter.ai/blog/feed.xml",
+    feedHosts: ["openrouter.ai"],
+    itemHosts: ["openrouter.ai"],
+    coverageDesks: ["ai", "work-and-tools"],
+    deskPriors: { ai: 4, "work-and-tools": 16 },
+  },
+  {
     id: "ars-technica",
     publisher: "Ars Technica",
     publisherKey: "advance-publications",

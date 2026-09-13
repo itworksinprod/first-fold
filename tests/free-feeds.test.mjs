@@ -8,6 +8,7 @@ import {
   collectFreeResearchSnapshot,
   DEFAULT_MAX_FEED_BYTES,
   DEFAULT_MAX_TOTAL_FEED_BYTES,
+  DEFAULT_MAX_TOTAL_ITEMS,
   deduplicateFeedItems,
   EDITORIAL_SCORECARD_MAXIMUMS,
   FREE_FEED_USER_AGENT,
@@ -20,6 +21,7 @@ import {
   selectFreeDeskCandidates,
 } from "../scripts/automation/free/feed-engine.mjs";
 import { FREE_FEED_SOURCES } from "../scripts/automation/free/feed-sources.mjs";
+import { reviewedSearchPublisher } from "../scripts/automation/free/publisher-registry.mjs";
 import { fingerprintFeedCandidate } from "../scripts/automation/personal-story-ledger.mjs";
 
 const REPEAT_FINGERPRINT_KEY = "cloudflare-workers-ai-test-token-that-is-long-enough";
@@ -137,18 +139,19 @@ test("editorial scoring recognizes inflections once without changing event ident
 });
 
 test("the reviewed manifest includes expanded bounded AI and work coverage", () => {
-  assert.equal(FREE_FEED_SOURCES.length, 46);
-  assert.equal(FREE_FEED_SOURCES.filter((item) => item.relationship === "originating").length, 33);
+  assert.equal(FREE_FEED_SOURCES.length, 48);
+  assert.equal(FREE_FEED_SOURCES.filter((item) => item.relationship === "originating").length, 35);
   assert.equal(FREE_FEED_SOURCES.filter((item) => item.relationship === "independent").length, 13);
-  assert.equal(FREE_FEED_SOURCES.filter((item) => item.coverageDesks.includes("ai")).length, 26);
+  assert.equal(FREE_FEED_SOURCES.filter((item) => item.coverageDesks.includes("ai")).length, 28);
   assert.equal(
     FREE_FEED_SOURCES.filter((item) => item.coverageDesks.includes("work-and-tools")).length,
-    21,
+    23,
   );
   assert.equal(FREE_FEED_SOURCES.some((item) => item.id === "uk-cma"), false);
   assert.equal(FREE_FEED_SOURCES.some((item) => item.id === "ftc-competition"), false);
   assert.equal(DEFAULT_MAX_TOTAL_FEED_BYTES, 10_000_000);
   assert.equal(DEFAULT_MAX_FEED_BYTES, 1_000_000);
+  assert.equal(DEFAULT_MAX_TOTAL_ITEMS, 320);
   assert.deepEqual(
     FREE_FEED_SOURCES.filter((item) => item.relationship === "independent").map((item) => item.id),
     [
@@ -357,6 +360,18 @@ test("the reviewed manifest includes expanded bounded AI and work coverage", () 
         "answers.netlify.com",
       ],
     },
+    "ollama-blog": {
+      publisherKey: "ollama",
+      url: "https://ollama.com/blog/rss.xml",
+      feedHosts: ["ollama.com"],
+      itemHosts: ["ollama.com"],
+    },
+    "openrouter-blog": {
+      publisherKey: "openrouter",
+      url: "https://openrouter.ai/blog/feed.xml",
+      feedHosts: ["openrouter.ai"],
+      itemHosts: ["openrouter.ai"],
+    },
     "mit-technology-review-ai": {
       publisherKey: "mit",
       url: "https://www.technologyreview.com/topic/artificial-intelligence/feed/",
@@ -391,6 +406,54 @@ test("the reviewed manifest includes expanded bounded AI and work coverage", () 
     assert.ok(feed.feedHosts.includes(feedUrl.hostname));
     assert.ok([...feed.feedHosts, ...feed.itemHosts].every((host) =>
       /^[a-z0-9.-]+$/.test(host) && !host.includes("*")));
+  }
+});
+
+test("new official AI tool feeds retain publisher identity and only accept dated exact-host articles", () => {
+  const additions = [
+    { id: "ollama-blog", publisher: "Ollama", publisherKey: "ollama",
+      priors: { ai: 20, "work-and-tools": 8 } },
+    { id: "openrouter-blog", publisher: "OpenRouter", publisherKey: "openrouter",
+      priors: { ai: 4, "work-and-tools": 16 } },
+  ];
+  assert.equal(new Set(additions.map((item) => item.publisherKey)).size, additions.length);
+  for (const addition of additions) {
+    const feedSource = FREE_FEED_SOURCES.find((item) => item.id === addition.id);
+    const host = new URL(feedSource.url).hostname;
+    assert.equal(feedSource.relationship, "originating");
+    assert.equal(feedSource.primaryEntity, addition.publisher);
+    assert.deepEqual(feedSource.coverageDesks, ["ai", "work-and-tools"]);
+    assert.deepEqual(feedSource.deskPriors, addition.priors);
+    const entries = [
+      { id: "published", url: `https://${host}/blog/official-release`, date: "<pubDate>Fri, 21 Aug 2026 12:00:00 GMT</pubDate>" },
+      { id: "subdomain", url: `https://news.${host}/blog/official-release`, date: "<pubDate>Fri, 21 Aug 2026 12:00:00 GMT</pubDate>" },
+      { id: "lookalike", url: `https://${host}.example/blog/official-release`, date: "<pubDate>Fri, 21 Aug 2026 12:00:00 GMT</pubDate>" },
+      { id: "missing-date", url: `https://${host}/blog/missing-date`, date: "" },
+      { id: "updated-only", url: `https://${host}/blog/updated-only`, date: "<updated>2026-08-21T12:00:00Z</updated>" },
+    ];
+    const body = `<?xml version="1.0"?><rss><channel>${entries.map((entry) =>
+      `<item><guid>${entry.id}</guid><title>New AI developer tool release</title>` +
+      `<link>${entry.url}</link>${entry.date}<author>Untrusted claimed publisher</author>` +
+      `<description>A source-owned release for developers using AI tools.</description></item>`).join("")}</channel></rss>`;
+    const items = parseFeedPayload({ source: feedSource, body, retrievedAt });
+    assert.equal(items.length, 1, `${addition.id} does not infer publication dates or expand host trust`);
+    assert.equal(items[0].url, `https://${host}/blog/official-release`);
+    assert.equal(items[0].publishedAt, "2026-08-21T12:00:00.000Z");
+    assert.equal(items[0].publisher, addition.publisher);
+    assert.equal(items[0].publisherKey, addition.publisherKey);
+    assert.equal(items[0].relationship, "originating");
+    assert.equal(items[0].primaryEntity, addition.publisher);
+    assert.equal(items[0].feedUrl, feedSource.url);
+    assert.equal(items[0].deskPriors.ai, addition.priors.ai);
+    assert.equal(items[0].deskPriors["work-and-tools"], addition.priors["work-and-tools"]);
+  }
+  assert.equal(FREE_FEED_SOURCES.some((source) => source.itemHosts.includes("code.visualstudio.com")), false,
+    "An updated-only feed is not added by weakening publication-date validation");
+  assert.equal(FREE_FEED_SOURCES.some((source) => source.publisherKey === "stripe" ||
+    source.itemHosts.some((host) => host === "stripe.com" || host.endsWith(".stripe.com"))), false,
+    "An announced acquisition does not create a separate trusted corroborating publisher");
+  for (const host of ["stripe.com", "www.stripe.com", "docs.stripe.com"]) {
+    assert.equal(reviewedSearchPublisher(`https://${host}/news/acquisition`), null);
   }
 });
 
@@ -3253,18 +3316,22 @@ test("XML complexity, DTDs, body size, and aggregate item limits are bounded", a
   });
 });
 
-test("the aggregate item cap truncates the 46-by-7 production boundary source-fairly", async () => {
+test("the aggregate item cap truncates the current production boundary source-fairly", async () => {
   const sourceByUrl = new Map(FREE_FEED_SOURCES.map((item) => [item.url, item]));
   const lexicalSourceIds = FREE_FEED_SOURCES.map((item) => item.id).sort();
-  const finalMinuteBySourceId = new Map(lexicalSourceIds.map((sourceId, index) => [sourceId, index]));
+  const finalSecondBySourceId = new Map(lexicalSourceIds.map((sourceId, index) => [sourceId, index]));
+  const completeRounds = Math.floor(DEFAULT_MAX_TOTAL_ITEMS / FREE_FEED_SOURCES.length);
+  const finalRoundCount = DEFAULT_MAX_TOTAL_ITEMS % FREE_FEED_SOURCES.length;
+  const entriesPerSource = completeRounds + 1;
+  const truncatedSourceCount = FREE_FEED_SOURCES.length - finalRoundCount;
+  const publishedDate = (feedSource, index) => new Date(Date.UTC(2026, 7, 21, 10) +
+    (index === 0 ? finalSecondBySourceId.get(feedSource.id) * 1_000 : index * 3_600_000)).toUTCString();
   const bodyForSource = (feedSource) => `<?xml version="1.0"?><rss><channel>${
-    Array.from({ length: 7 }, (_, index) => `<item>` +
+    Array.from({ length: entriesPerSource }, (_, index) => `<item>` +
       `<guid>first-fold-limit-${feedSource.id}-${index}</guid>` +
       `<title>Security platform update ${feedSource.id} ${index}</title>` +
       `<link>https://${feedSource.itemHosts[0]}/first-fold-limit-${feedSource.id}-${index}</link>` +
-      `<pubDate>Fri, 21 Aug 2026 ${index === 0
-        ? `10:${String(finalMinuteBySourceId.get(feedSource.id)).padStart(2, "0")}`
-        : `${String(10 + index).padStart(2, "0")}:00`}:00 GMT</pubDate>` +
+      `<pubDate>${publishedDate(feedSource, index)}</pubDate>` +
       `<description>A bounded source-fair feed item for regression coverage.</description>` +
       `</item>`).join("")
   }</channel></rss>`;
@@ -3283,12 +3350,12 @@ test("the aggregate item cap truncates the 46-by-7 production boundary source-fa
 
   const serial = await run(1);
   const concurrent = await run(8);
-  assert.equal(serial.eligibleItemCount, 322);
-  assert.equal(serial.parsedItemCount, 322);
-  assert.equal(serial.items.length, 320);
+  assert.equal(serial.eligibleItemCount, FREE_FEED_SOURCES.length * entriesPerSource);
+  assert.equal(serial.parsedItemCount, FREE_FEED_SOURCES.length * entriesPerSource);
+  assert.equal(serial.items.length, DEFAULT_MAX_TOTAL_ITEMS);
   assert.equal(serial.sourceResults.length, FREE_FEED_SOURCES.length);
   assert.ok(serial.sourceResults.every((result) =>
-    result.status === "ok" && result.eligibleItemCount === 7));
+    result.status === "ok" && result.eligibleItemCount === entriesPerSource));
   assert.deepEqual(
     concurrent.items.map((item) => item.itemId),
     serial.items.map((item) => item.itemId),
@@ -3301,12 +3368,12 @@ test("the aggregate item cap truncates the 46-by-7 production boundary source-fa
   }
   assert.deepEqual(
     [...retainedBySource.values()].sort((left, right) => left - right),
-    [6, 6, ...Array(44).fill(7)],
-    "every source contributes six items before any source contributes a seventh",
+    [...Array(truncatedSourceCount).fill(completeRounds), ...Array(finalRoundCount).fill(entriesPerSource)],
+    "every source completes its fair share before any source enters the partial final round",
   );
-  assert.equal(retainedBySource.get(lexicalSourceIds[0]), 6);
-  assert.equal(retainedBySource.get(lexicalSourceIds[1]), 6);
-  assert.ok(lexicalSourceIds.slice(2).every((sourceId) => retainedBySource.get(sourceId) === 7),
+  assert.ok(lexicalSourceIds.slice(0, truncatedSourceCount).every((sourceId) =>
+    retainedBySource.get(sourceId) === completeRounds));
+  assert.ok(lexicalSourceIds.slice(truncatedSourceCount).every((sourceId) => retainedBySource.get(sourceId) === entriesPerSource),
     "the freshest items win the incomplete final round instead of lexicographic source order");
 });
 

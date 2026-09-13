@@ -67,7 +67,7 @@ test("follow-up queries prioritize missing evidence without rescuing vetoed cont
 test("wired discovery reads reviewed articles, retains factual provenance, and does not inflate feed coverage", async () => {
   const network = fixture();
   const snapshot = await collect(network);
-  assert.equal(snapshot.diagnostics.sourceResults.length, 46);
+  assert.equal(snapshot.diagnostics.sourceResults.length, FREE_FEED_SOURCES.length);
   assert.ok(snapshot.diagnostics.sourceResults.every((entry) => entry.status === "ok"));
   assert.equal(snapshot.diagnostics.eligibleItemCount, 0, "Web articles must not masquerade as eligible feed entries");
   assert.deepEqual(snapshot.diagnostics.webSearch,
@@ -122,7 +122,7 @@ test("a search outage preserves feed coverage and cannot invent a search receipt
   const snapshot = await collect(network, { discoverWebArticles: async () => { throw new Error("sensitive-key-value"); },
     onSearchDiagnostic: (event) => notices.push(event) });
   assert.equal(snapshot.diagnostics.webSearch, undefined);
-  assert.equal(snapshot.diagnostics.sourceResults.length, 46);
+  assert.equal(snapshot.diagnostics.sourceResults.length, FREE_FEED_SOURCES.length);
   assert.ok(snapshot.candidates.some((entry) => entry.sources.some((source) => source.url === articleUrl)));
   assert.doesNotMatch(JSON.stringify(notices), /sensitive-key-value/);
 });

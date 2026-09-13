@@ -113,6 +113,11 @@ At the matching 5:05 AM event on every day:
    cover unused broad angles, up to twelve searches total. No hard-vetoed
    promotion or rumor receives a follow-up. The bounded query plan and results
    are cached across the optional research retry, not spent again.
+   Every query uses Tavily's explicit `include_domains_mode: "filter"` with
+   the exact article hosts derived from the checked-in publisher registry.
+   All reviewed hosts remain available to every desk's query, including
+   independent reporting and cross-topic corroboration. This uses the same
+   request/credit budget; provider filtering never replaces local URL checks.
    Search titles, snippets, and dates are discovery hints, never factual evidence.
    Admission requires an existing reviewed publisher, a directly fetched page,
    consistent page/canonical identity, publication metadata inside the same
@@ -489,6 +494,15 @@ most **24 credits per run**, or **744 credits for 31 daily runs**. Manual tests
 and extra runs share the dedicated key's 900-credit monthly cap. The provider
 limit, rather than an in-memory counter alone, constrains repeated runs. See
 [Tavily's current credit pricing](https://docs.tavily.com/documentation/api-credits).
+
+Reviewed-domain targeting uses the documented `include_domains` filter, not
+an extra crawl, extract, or model request. The serialized search request is
+bounded to 4,096 bytes to fit the fixed host list and a maximum-length query.
+See [Tavily's search parameters](https://docs.tavily.com/documentation/api-reference/endpoint/search).
+The [September 12 source review](source-discovery-review-2026-09-12.md) records
+new feed checks and sources deliberately not admitted. Model availability is
+a separate dependency: better search does not fix a Workers AI quota or
+provider failure, and no paid fallback is enabled.
 
 The verification variable is an operator attestation, not a live provider
 guarantee. `/usage` does not document null as disabled PAYGO. Other applications

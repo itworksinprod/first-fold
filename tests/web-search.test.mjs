@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createTavilyDiscovery, TAVILY_MAX_RESPONSE_BYTES } from "../scripts/automation/free/web-search.mjs";
+import { createTavilyDiscovery, TAVILY_MAX_REQUEST_BYTES, TAVILY_MAX_RESPONSE_BYTES } from "../scripts/automation/free/web-search.mjs";
+import { REVIEWED_SEARCH_DOMAINS, reviewedSearchPublisher } from "../scripts/automation/free/publisher-registry.mjs";
+import { FREE_FEED_SOURCES } from "../scripts/automation/free/feed-sources.mjs";
+import { admitSearchArticles } from "../scripts/automation/free/search-articles.mjs";
 
 const apiKey = "tvly-dev-fixture-secret";
 const reportingWindow = { startInclusive: "2026-09-10T09:05:00Z", endExclusive: "2026-09-11T09:05:00Z" };
@@ -44,6 +47,8 @@ test("without candidate or reviewed search leads, eight broad searches cover eve
     assert.equal(body.include_answer, false);
     assert.equal(body.include_raw_content, false);
     assert.equal(body.include_images, false);
+    assert.deepEqual(body.include_domains, REVIEWED_SEARCH_DOMAINS);
+    assert.equal(body.include_domains_mode, "filter");
     assert.equal(body.filter_by_published_date, false);
     assert.equal(body.api_key, undefined);
   }
@@ -59,6 +64,79 @@ test("without candidate or reviewed search leads, eight broad searches cover eve
     { broad: 8, corroboration: 0, deskGap: 0, searchLead: 0, context: 0 });
   assert.equal(events.length, 1);
   assert.doesNotMatch(JSON.stringify(events), /fixture-secret|publisher|SNIPPET|concrete/);
+});
+
+test("query targeting is a frozen exact-host list aligned with reviewed publisher admission", () => {
+  assert.ok(REVIEWED_SEARCH_DOMAINS.length > 0 && REVIEWED_SEARCH_DOMAINS.length <= 300);
+  assert.ok(Object.isFrozen(REVIEWED_SEARCH_DOMAINS));
+  assert.deepEqual(REVIEWED_SEARCH_DOMAINS, [...new Set(REVIEWED_SEARCH_DOMAINS)].sort());
+  for (const source of FREE_FEED_SOURCES) {
+    for (const host of source.itemHosts) assert.ok(REVIEWED_SEARCH_DOMAINS.includes(host));
+  }
+  for (const host of REVIEWED_SEARCH_DOMAINS) {
+    assert.doesNotMatch(host, /[/*:@\s]/u);
+    assert.ok(reviewedSearchPublisher(`https://${host}/`));
+  }
+  assert.throws(() => REVIEWED_SEARCH_DOMAINS.push("unreviewed.example"), TypeError);
+});
+
+test("caller and result parameters cannot override the reviewed domain filter or its mode", async () => {
+  const requests = [];
+  const discovery = createTavilyDiscovery({ apiKey, include_domains: ["evil.example"], include_domains_mode: "boost",
+    fetchImpl: async (url, options) => {
+      if (url.endsWith("/usage")) return json(usage());
+      requests.push(JSON.parse(options.body));
+      return json({ ...searches(), include_domains: ["provider.example"], include_domains_mode: "boost" });
+    } });
+  const output = await discovery({ reportingWindow, include_domains: ["caller.example"],
+    followupQueries: [{ desk: "ai", query: "Find independent reporting on the reviewed model announcement",
+      priority: "corroboration", include_domains: ["feed.example"], include_domains_mode: "boost" }] });
+  assert.equal(output.diagnostics.status, "complete");
+  assert.ok(requests.length <= 12);
+  for (const request of requests) {
+    assert.deepEqual(request.include_domains, REVIEWED_SEARCH_DOMAINS);
+    assert.equal(request.include_domains_mode, "filter");
+    assert.equal(request.search_depth, "advanced");
+  }
+  assert.equal(output.diagnostics.creditsReserved, requests.length * 2);
+});
+
+test("maximum valid Unicode query plus the reviewed domain filter fits the fixed request bound", async () => {
+  const bodies = [];
+  const query = "界".repeat(300);
+  const output = await createTavilyDiscovery({ apiKey, fetchImpl: async (url, options) => {
+    if (url.endsWith("/usage")) return json(usage());
+    bodies.push(options.body);
+    return json(searches());
+  } })({ reportingWindow, followupQueries: [{ desk: "ai", query }] });
+  assert.equal(TAVILY_MAX_REQUEST_BYTES, 4_096);
+  assert.equal(output.diagnostics.status, "complete");
+  const longest = bodies.find((body) => JSON.parse(body).query === query);
+  assert.ok(longest);
+  assert.ok(Buffer.byteLength(longest) > 2_048, "Regression: the old bound rejected legitimate filtered queries");
+  assert.ok(bodies.every((body) => Buffer.byteLength(body) <= TAVILY_MAX_REQUEST_BYTES));
+  assert.ok(bodies.length <= 12);
+  assert.equal(output.diagnostics.creditsReserved, bodies.length * 2);
+});
+
+test("provider-side filtering never substitutes for exact-host article admission", async () => {
+  const discovery = createTavilyDiscovery({ apiKey, fetchImpl: async (url, options) => {
+    if (url.endsWith("/usage")) return json(usage());
+    assert.equal(JSON.parse(options.body).include_domains_mode, "filter");
+    return json(searches([
+      { ...result(), url: "https://unknown-publisher-news.net/article" },
+      { ...result(), url: "https://unreviewed.openai.com/article" },
+      { ...result(), url: "https://openai.com.unreviewed-publisher.net/article" },
+    ]));
+  } });
+  const discovered = await discovery({ reportingWindow });
+  assert.equal(discovered.results.length, 3);
+  let fetches = 0;
+  const admitted = await admitSearchArticles({ results: discovered.results, reportingWindow,
+    retrievedAt: "2026-09-11T09:10:00Z", fetchArticlePage: async () => { fetches++; throw new Error("Must not fetch"); } });
+  assert.equal(fetches, 0);
+  assert.deepEqual(admitted.items, []);
+  assert.equal(admitted.diagnostics.rejected.UNREVIEWED_OR_UNSAFE_URL, 3);
 });
 
 test("adaptive stage follows four broad desk searches and prioritizes corroboration and desk gaps", async () => {

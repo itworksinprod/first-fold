@@ -1,10 +1,13 @@
 import { isIP } from "node:net";
-import { reviewedSearchPublisher } from "./publisher-registry.mjs";
+import { REVIEWED_SEARCH_DOMAINS, reviewedSearchPublisher } from "./publisher-registry.mjs";
 
 // Search results are discovery hints, never source evidence. Article ingestion
 // must independently establish publisher identity, publication time and facts.
 export const TAVILY_MAX_SEARCH_REQUESTS = 12;
 export const TAVILY_MONTHLY_CREDIT_CAP = 900;
+// Includes the checked-in domain filter and a maximum-length UTF-8 query.
+// This serialization bound does not change the search/credit/result budgets.
+export const TAVILY_MAX_REQUEST_BYTES = 4_096;
 export const TAVILY_MAX_RESPONSE_BYTES = 96_000;
 const SEARCH_URL = "https://api.tavily.com/search";
 const USAGE_URL = "https://api.tavily.com/usage";
@@ -201,7 +204,7 @@ export function createTavilyDiscovery({ apiKey, paygoDisabledVerified = false,
       try {
         return await Promise.race([(async () => {
           const serialized = body === undefined ? undefined : JSON.stringify(body);
-          if (serialized && Buffer.byteLength(serialized) > 2_048) fail("invalid_request");
+          if (serialized && Buffer.byteLength(serialized) > TAVILY_MAX_REQUEST_BYTES) fail("invalid_request");
           const response = await fetchImpl(url, { method: body === undefined ? "GET" : "POST",
             headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json",
               ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
@@ -237,6 +240,11 @@ export function createTavilyDiscovery({ apiKey, paygoDisabledVerified = false,
           auto_parameters: false, max_results: 5, chunks_per_source: 1, include_answer: false,
           include_raw_content: false, include_images: false, include_image_descriptions: false,
           include_favicon: false, include_usage: true, include_published_date: true,
+          // Use the same reviewed hosts as article admission so the five result
+          // slots do not get spent primarily on publishers we cannot use. Never
+          // take domains/mode from a caller, model, feed or search result. A
+          // provider that ignores the filter still faces local exact-host QA.
+          include_domains: [...REVIEWED_SEARCH_DOMAINS], include_domains_mode: "filter",
           // Unknown index dates must not hide otherwise useful discovery
           // leads. Admission verifies the publisher's exact publication time;
           // neither a missing nor a present search date is factual evidence.
