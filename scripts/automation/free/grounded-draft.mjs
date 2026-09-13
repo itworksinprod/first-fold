@@ -40,6 +40,26 @@ export const GROUNDED_REVIEW_SCHEMA = objectSchema({ reviews: arraySchema(object
   analysisSupported: { type: "boolean" }, usefulAndSpecific: { type: "boolean" },
 })) });
 
+// Constrain JSON structure at the provider, but check prose lengths locally.
+// Decoder-enforced string lengths can force padding or unfinished sentences;
+// removing those grammar constraints does NOT relax validateGroundedStory.
+function writerProviderSchema(candidateIds) {
+  const schema = structuredClone(GROUNDED_DRAFT_SCHEMA);
+  const visit = (node) => {
+    if (!node || typeof node !== "object") return;
+    if (node.type === "string") { delete node.minLength; delete node.maxLength; }
+    for (const value of Object.values(node)) {
+      if (Array.isArray(value)) value.forEach(visit);
+      else if (value && typeof value === "object") visit(value);
+    }
+  };
+  visit(schema);
+  schema.properties.stories.minItems = candidateIds.length;
+  schema.properties.stories.maxItems = candidateIds.length;
+  schema.properties.stories.items.properties.candidateId.enum = candidateIds;
+  return schema;
+}
+
 export function groundedDossiers(candidates) {
   return candidates.map((candidate) => ({
     candidateId: candidate.candidateId, desk: candidate.suggestedDesk,
@@ -199,6 +219,8 @@ Each claim must cite one or two supplied evidenceId values (such as S1P2) in sup
 These IDs identify exact publisher passages already stored locally. Do not write or invent quotes.
 The cited passages must substantiate the entire claim, including caveats. Paraphrase the facts;
 never copy 12 consecutive source words into published prose.
+Draft from the meaning, not by continuing a publisher's sentence. Change the sentence structure
+and group related facts in a new order; retain exact product identifiers and necessary conditions.
 Use specific named products and supported figures. Do not add missing versions, patches, dates, prices,
 exploitation, performance results, availability or legal conclusions. Say what is unknown where useful.
 Every numeric/version token must match supportedNumericTokens exactly, including punctuation and units.
@@ -304,9 +326,7 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
     maxTokens, maxAttempts: 1, maxRequestBytes: 70_000, maxResponseBytes: 100_000,
     timeoutMs: 90_000, temperature: 0.1, fetchImpl });
   try {
-    const writerSchema = structuredClone(GROUNDED_DRAFT_SCHEMA);
-    writerSchema.properties.stories.minItems = dossiers.length;
-    writerSchema.properties.stories.maxItems = dossiers.length;
+    const writerSchema = writerProviderSchema(dossiers.map((dossier) => dossier.candidateId));
     const inferenceTrail = [];
     let written;
     let repairUsed = false;
@@ -356,9 +376,7 @@ response, add Markdown fences or serialize another object inside any reader-faci
         whatHappened: Array.isArray(draft?.claims) ? draft.claims.map((claim) => claim?.text ?? "").join(" ") : "" })) });
     if (rejected.length && !repairUsed) {
       const repairIds = new Set(rejected.map(({ draft }) => draft.candidateId));
-      const repairSchema = structuredClone(GROUNDED_DRAFT_SCHEMA);
-      repairSchema.properties.stories.minItems = repairIds.size;
-      repairSchema.properties.stories.maxItems = repairIds.size;
+      const repairSchema = writerProviderSchema([...repairIds]);
       const repaired = await ask(REPAIR_PROMPT, {
         dossiers: promptDossiers.filter((dossier) => repairIds.has(dossier.candidateId)), rejected,
       }, repairSchema, 3_000);
@@ -385,19 +403,35 @@ response, add Markdown fences or serialize another object inside any reader-faci
     const reviewSchema = structuredClone(GROUNDED_REVIEW_SCHEMA);
     reviewSchema.properties.reviews.minItems = valid.length;
     reviewSchema.properties.reviews.maxItems = valid.length;
+    // Identifiers are labels to copy, not facts for the reviewer to generate.
+    // The exact candidate/hash pair is still checked locally before adoption.
+    reviewSchema.properties.reviews.items.properties.candidateId = { type: "string", enum: valid.map((draft) => draft.candidateId) };
+    reviewSchema.properties.reviews.items.properties.draftSha256 = { type: "string", enum: valid.map(hash) };
     const checked = await ask(REVIEW_PROMPT, { dossiers: promptDossiers.filter((dossier) => valid.some((draft) => draft.candidateId === dossier.candidateId)),
       drafts: valid.map((draft) => ({ draftSha256: hash(draft), draft })) }, reviewSchema, 800);
     inferenceTrail.push(checked);
     const reviews = checked.editorialPayload?.reviews;
     if (!keys(checked.editorialPayload, ["reviews"]) || !Array.isArray(reviews) || reviews.length !== valid.length ||
-        new Set(reviews.map((review) => review?.candidateId)).size !== reviews.length) return null;
-    const approved = valid.filter((draft) => reviews.some((review) =>
-      keys(review, ["candidateId", "draftSha256", "claimSupport", "factsSupported", "attributionAccurate", "analysisSupported", "usefulAndSpecific"]) &&
-      review.candidateId === draft.candidateId && review.draftSha256 === hash(draft) &&
-      completeClaimReview(review, draft) &&
-      review.factsSupported === true && review.attributionAccurate === true &&
-      review.analysisSupported === true && review.usefulAndSpecific === true));
-    onDiagnostic({ stage: "semantic-evidence-check", submitted: valid.length, accepted: approved.length });
+        new Set(reviews.map((review) => review?.candidateId)).size !== reviews.length) {
+      onDiagnostic({ stage: "semantic-evidence-check", submitted: valid.length, accepted: 0, rejectionCodes: ["REVIEW_SHAPE"] });
+      return null;
+    }
+    const reviewRejections = [];
+    const approved = valid.filter((draft) => {
+      const review = reviews.find((value) => value?.candidateId === draft.candidateId);
+      const failures = [];
+      if (!keys(review, ["candidateId", "draftSha256", "claimSupport", "factsSupported", "attributionAccurate", "analysisSupported", "usefulAndSpecific"])) failures.push("REVIEW_SHAPE");
+      if (review?.draftSha256 !== hash(draft)) failures.push("REVIEW_BINDING");
+      if (!review || !completeClaimReview(review, draft)) failures.push("REVIEW_CLAIM_SUPPORT");
+      for (const [field, code] of [["factsSupported", "REVIEW_FACTS"], ["attributionAccurate", "REVIEW_ATTRIBUTION"],
+        ["analysisSupported", "REVIEW_ANALYSIS"], ["usefulAndSpecific", "REVIEW_USEFULNESS"]]) {
+        if (review?.[field] !== true) failures.push(code);
+      }
+      reviewRejections.push(...failures);
+      return failures.length === 0;
+    });
+    onDiagnostic({ stage: "semantic-evidence-check", submitted: valid.length, accepted: approved.length,
+      rejectionCodes: [...new Set(reviewRejections)] });
     if (!approved.length) return null;
     const result = structuredClone(editorial);
     for (const draft of approved) {

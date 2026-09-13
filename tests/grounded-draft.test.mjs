@@ -449,6 +449,36 @@ test("repair receives the exact failing field and measured bounds without extra 
   assert.ok(calls.every((call) => call.maxAttempts === 1 && call.maxRequestBytes === 70_000 && call.maxResponseBytes === 100_000));
 });
 
+test("provider grammar avoids prose-length forcing while local bounds and exact review binding remain mandatory", async () => {
+  const events = [];
+  const calls = [];
+  const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
+    onDiagnostic: event => events.push(event), aiRequestImpl: async options => {
+      calls.push(options);
+      if (calls.length === 1) {
+        const fields = options.schema.properties.stories.items.properties;
+        assert.equal(fields.whyItMatters.minLength, undefined);
+        assert.equal(fields.whyItMatters.maxLength, undefined);
+        assert.equal(fields.claims.items.properties.text.minLength, undefined);
+        assert.deepEqual(fields.candidateId.enum, [candidate.candidateId]);
+        assert.equal(GROUNDED_DRAFT_SCHEMA.properties.stories.items.properties.whyItMatters.minLength, 240);
+        return response({ stories: [groundedDraft] });
+      }
+      const properties = options.schema.properties.reviews.items.properties;
+      assert.deepEqual(properties.candidateId.enum, [candidate.candidateId]);
+      assert.deepEqual(properties.draftSha256.enum, [hash(groundedDraft)]);
+      assert.equal(properties.factsSupported.type, "boolean");
+      assert.equal(properties.factsSupported.enum, undefined, "Never force approval");
+      return response({ reviews: [{ ...review, draftSha256: "wrong", analysisSupported: false }] });
+    } });
+  assert.equal(result, null);
+  assert.equal(calls.length, 2);
+  const diagnostic = events.find(event => event.stage === "semantic-evidence-check");
+  assert.equal(diagnostic.accepted, 0);
+  assert.deepEqual(diagnostic.rejectionCodes, ["REVIEW_BINDING", "REVIEW_ANALYSIS"]);
+  assert.doesNotMatch(JSON.stringify(diagnostic), /draftSha256|wrong|headline|S1P/);
+});
+
 test("a missing draft can consume only the existing repair slot and still requires factual review", async () => {
   for (const approved of [false, true]) {
     let calls = 0;
