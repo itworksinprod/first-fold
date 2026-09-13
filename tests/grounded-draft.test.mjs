@@ -449,7 +449,7 @@ test("repair receives the exact failing field and measured bounds without extra 
   assert.ok(calls.every((call) => call.maxAttempts === 1 && call.maxRequestBytes === 70_000 && call.maxResponseBytes === 100_000));
 });
 
-test("provider grammar avoids prose-length forcing while local bounds and exact review binding remain mandatory", async () => {
+test("provider grammar and local bounds remain aligned while review binding cannot force approval", async () => {
   const events = [];
   const calls = [];
   const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
@@ -457,9 +457,9 @@ test("provider grammar avoids prose-length forcing while local bounds and exact 
       calls.push(options);
       if (calls.length === 1) {
         const fields = options.schema.properties.stories.items.properties;
-        assert.equal(fields.whyItMatters.minLength, undefined);
-        assert.equal(fields.whyItMatters.maxLength, undefined);
-        assert.equal(fields.claims.items.properties.text.minLength, undefined);
+        assert.equal(fields.whyItMatters.minLength, 240);
+        assert.equal(fields.whyItMatters.maxLength, 400);
+        assert.equal(fields.claims.items.properties.text.minLength, 150);
         assert.deepEqual(fields.candidateId.enum, [candidate.candidateId]);
         assert.equal(GROUNDED_DRAFT_SCHEMA.properties.stories.items.properties.whyItMatters.minLength, 240);
         return response({ stories: [groundedDraft] });

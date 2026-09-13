@@ -40,20 +40,10 @@ export const GROUNDED_REVIEW_SCHEMA = objectSchema({ reviews: arraySchema(object
   analysisSupported: { type: "boolean" }, usefulAndSpecific: { type: "boolean" },
 })) });
 
-// Constrain JSON structure at the provider, but check prose lengths locally.
-// Decoder-enforced string lengths can force padding or unfinished sentences;
-// removing those grammar constraints does NOT relax validateGroundedStory.
+// Provider grammar helps with shape/length; identical local checks remain
+// authoritative because schema mode alone does not guarantee valid prose.
 function writerProviderSchema(candidateIds) {
   const schema = structuredClone(GROUNDED_DRAFT_SCHEMA);
-  const visit = (node) => {
-    if (!node || typeof node !== "object") return;
-    if (node.type === "string") { delete node.minLength; delete node.maxLength; }
-    for (const value of Object.values(node)) {
-      if (Array.isArray(value)) value.forEach(visit);
-      else if (value && typeof value === "object") visit(value);
-    }
-  };
-  visit(schema);
   schema.properties.stories.minItems = candidateIds.length;
   schema.properties.stories.maxItems = candidateIds.length;
   schema.properties.stories.items.properties.candidateId.enum = candidateIds;
