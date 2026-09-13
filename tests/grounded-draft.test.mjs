@@ -5,7 +5,7 @@ import { groundedDraft, groundedEvidence } from "./fixtures/grounded-summary.mjs
 import { malformedEmailStories } from "./fixtures/malformed-email-2026-09-11.mjs";
 import { GROUNDED_DRAFT_SCHEMA, groundedDossiers, validateGroundedStory, synthesizeGroundedEditorial } from
   "../scripts/automation/free/grounded-draft.mjs";
-import { DEFAULT_CLOUDFLARE_AI_MODEL } from "../scripts/automation/free/workers-ai.mjs";
+import { DEFAULT_CLOUDFLARE_AI_MODEL, EXPERIMENTAL_FREE_WRITER_MODEL } from "../scripts/automation/free/workers-ai.mjs";
 
 const candidate = { candidateId: groundedDraft.candidateId, suggestedDesk: "security-and-privacy",
   ranking: { evidenceTier: "authoritative-single" }, feedEvidence: [groundedEvidence],
@@ -93,6 +93,35 @@ test("ambiguous drafts cannot replace stories", async () => {
     assert.equal(await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
       aiRequestImpl: async () => { calls++; return response({ stories }); } }), null);
     assert.equal(calls, 1);
+  }
+});
+
+test("Qwen originality repair edits only the rejected field and still requires full validation and review", async () => {
+  for (const scenario of ["valid", "wrong-field", "damaged-copy", "review-veto"]) {
+    let calls = 0;
+    const copied = structuredClone(groundedDraft);
+    copied.claims[0].text = copiedClaim;
+    const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
+      model: EXPERIMENTAL_FREE_WRITER_MODEL, aiRequestImpl: async options => {
+        calls++;
+        const wrap = payload => ({ ...response(payload), model: EXPERIMENTAL_FREE_WRITER_MODEL });
+        if (calls === 1) return wrap({ stories: [copied] });
+        if (calls === 2) {
+          assert.ok(options.schema.properties.repairs);
+          assert.equal(options.maxTokens, 2_000);
+          const data = JSON.parse(options.messages[1].content);
+          assert.equal(data.rejected[0].feedback.field, "claims[0].text");
+          assert.deepEqual(data.rejected[0].originalField.supports, groundedDraft.claims[0].supports);
+          return wrap({ repairs: [{ candidateId: candidate.candidateId,
+            field: scenario === "wrong-field" ? "whyItMatters" : "claims[0].text",
+            text: scenario === "damaged-copy" ? 'Broken JSON", "stories": [{' : groundedDraft.claims[0].text }] });
+        }
+        assert.equal(JSON.parse(options.messages[1].content).drafts[0].draftSha256, hash(groundedDraft));
+        return wrap({ reviews: [{ ...review, factsSupported: scenario !== "review-veto" }] });
+      } });
+    assert.equal(Boolean(result), scenario === "valid");
+    assert.ok(calls <= 3);
+    if (result) assert.equal(result.editorial.desks["security-and-privacy"].story.whyItMatters, groundedDraft.whyItMatters);
   }
 });
 
