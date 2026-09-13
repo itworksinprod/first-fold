@@ -325,11 +325,11 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
     supportedNumericTokens: [...new Set(numericTokens(evidenceText(dossier)).map((value) => value.toLowerCase()))],
     sources: dossier.sources.map(({ text: _text, ...source }) => source) }));
   const ask = (system, data, schema, maxTokens) => aiRequestImpl({ accountId, apiToken,
-    model, messages: [{ role: "system", content: system },
+    model, messages: [{ role: "system", content: model === EXPERIMENTAL_FREE_WRITER_MODEL ? `${system}\n/no_think` : system },
       { role: "user", content: JSON.stringify(data) }], schema,
     responseFormat: "json_schema", validatePayload: (value) => Boolean(value && typeof value === "object"),
     maxTokens, maxAttempts: 1, maxRequestBytes: 70_000, maxResponseBytes: 100_000,
-    timeoutMs: 90_000, temperature: 0.1, fetchImpl });
+    timeoutMs: 90_000, temperature: model === EXPERIMENTAL_FREE_WRITER_MODEL ? 0.7 : 0.1, fetchImpl });
   try {
     const writerSchema = writerProviderSchema(dossiers.map((dossier) => dossier.candidateId));
     const inferenceTrail = [];

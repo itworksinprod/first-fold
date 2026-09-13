@@ -32,6 +32,8 @@ test("alternate free model is opt-in, hash reviewed and cannot expand request li
       calls++;
       budgets.push(options.maxTokens);
       assert.equal(options.model, EXPERIMENTAL_FREE_WRITER_MODEL);
+      assert.equal(options.temperature, 0.7);
+      assert.match(options.messages[0].content, /\/no_think$/);
       assert.equal(options.maxAttempts, 1);
       assert.ok(options.maxTokens <= 4_000);
       return { ...response(options.schema.properties.reviews ? { reviews: reviews(options) }

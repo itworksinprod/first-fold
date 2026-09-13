@@ -23,6 +23,14 @@ response, credentials, or generated copy is logged.
 
 The synthetic-only workflow now evaluates `@cf/qwen/qwen3-30b-a3b-fp8` explicitly.
 Production still defaults to Llama until live evidence justifies changing it.
+The first Qwen trial [34734964858](https://github.com/itworksinprod/first-fold/actions/runs/34734964858)
+passed three drafts locally but failed review formatting. The next trial
+[34735168527](https://github.com/itworksinprod/first-fold/actions/runs/34735168527)
+identified incomplete sentences and repair output-token exhaustion. Qwen now uses
+its author's documented `/no_think` switch and recommended non-thinking temperature
+of 0.7, rather than Llama's 0.1. The 7,800-token total ceiling is redistributed as
+4,000 drafting, 2,000 revision and 1,800 review. This remains an experiment.
+See the [Qwen model card](https://huggingface.co/Qwen/Qwen3-30B-A3B#switching-between-thinking-and-non-thinking-mode).
 The model is fixed and allowlisted, with the same three-request ceiling, token,
 timeout, response-size, citation, originality and factual-review checks. It is not
 an automatic provider fallback or permission to increase spending.
