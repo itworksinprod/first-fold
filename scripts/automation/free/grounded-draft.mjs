@@ -3,7 +3,7 @@ import { countReaderFacingStoryWords, MIN_PRIVATE_GROUNDED_STORY_WORDS } from ".
 import { readerProseErrors } from "../../reader-prose.mjs";
 import { claimCaveatErrors } from "./claim-caveats.mjs";
 import { buildEvidencePacketSources } from "./evidence-packets.mjs";
-import { DEFAULT_CLOUDFLARE_AI_MODEL, WORKERS_AI_EDITORIAL_FORMAT_INVALID,
+import { DEFAULT_CLOUDFLARE_AI_MODEL, EXPERIMENTAL_FREE_WRITER_MODEL, WORKERS_AI_EDITORIAL_FORMAT_INVALID,
   requestWorkersAiEditorial, resolveCloudflareAiModel, workersAiFailureDiagnostic } from "./workers-ai.mjs";
 
 export const GROUNDED_DIGEST_MODE = "source-grounded-summary";
@@ -313,6 +313,11 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
   aiRequestImpl = requestWorkersAiEditorial, fetchImpl = globalThis.fetch,
   onDiagnostic = () => {} } = {}) {
   model = resolveCloudflareAiModel(model);
+  // Reasoning-capable Qwen needs more room for the review response. Reallocate
+  // the existing 7,800-token ceiling, never increase calls or the total cap.
+  const budgets = model === EXPERIMENTAL_FREE_WRITER_MODEL
+    ? { write: 4_000, repair: 2_000, review: 1_800 }
+    : { write: 4_000, repair: 3_000, review: 800 };
   const dossiers = groundedDossiers(candidates);
   // The passage list already contains the evidence text; do not send a second
   // full-text copy that could exhaust the bounded request/context allowance.
@@ -331,7 +336,7 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
     let written;
     let repairUsed = false;
     try {
-      written = await ask(WRITER_PROMPT, { dossiers: promptDossiers }, writerSchema, 4_000);
+      written = await ask(WRITER_PROMPT, { dossiers: promptDossiers }, writerSchema, budgets.write);
     } catch (error) {
       if (!isBoundedFormatFailure(error, model)) throw error;
       // Spend the existing single revision slot on a fresh complete response.
@@ -343,7 +348,7 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
       written = await ask(`${WRITER_PROMPT}\nYour previous response could not be parsed as the required object.
 Write a fresh complete JSON object with exactly one stories array. Do not reproduce the failed
 response, add Markdown fences or serialize another object inside any reader-facing string.`,
-      { dossiers: promptDossiers }, writerSchema, 3_000);
+      { dossiers: promptDossiers }, writerSchema, budgets.repair);
     }
     inferenceTrail.push(written);
     if (!keys(written.editorialPayload, ["stories"]) || !Array.isArray(written.editorialPayload.stories) ||
@@ -361,6 +366,7 @@ response, add Markdown fences or serialize another object inside any reader-faci
       const dossier = dossiers.find((value) => value.candidateId === draft?.candidateId);
       return validateGroundedStory(draft, dossier, (code, feedback) => {
         rejectionCodes.push(code);
+        rejectionCodes.push(...(feedback.reasons ?? []));
         rejected.push({ draft, rejectionCode: code, feedback });
       });
     });
@@ -384,7 +390,7 @@ response, add Markdown fences or serialize another object inside any reader-faci
         rejected: rejected.map(({ draft, rejectionCode, feedback }) => ({
           draft: { candidateId: draft.candidateId }, rejectionCode, feedback,
         })),
-      }, repairSchema, 3_000);
+      }, repairSchema, budgets.repair);
       inferenceTrail.push(repaired);
       const revisions = structuredClone(repaired.editorialPayload?.stories);
       const repairRejections = [];
@@ -396,7 +402,7 @@ response, add Markdown fences or serialize another object inside any reader-faci
         for (const draft of revisions) {
           const dossier = dossiers.find((value) => value.candidateId === draft.candidateId);
           bindAttribution(draft, dossier);
-          if (validateGroundedStory(draft, dossier, (code) => repairRejections.push(code))) {
+          if (validateGroundedStory(draft, dossier, (code, feedback) => repairRejections.push(code, ...(feedback.reasons ?? [])))) {
             valid.push(draft);
             accepted++;
           }
@@ -418,7 +424,7 @@ response, add Markdown fences or serialize another object inside any reader-faci
       type: "string", enum: [...new Set(valid.flatMap((draft) => draft.claims.flatMap((claim) => claim.supports.map((support) => support.evidenceId))))],
     };
     const checked = await ask(REVIEW_PROMPT, { dossiers: promptDossiers.filter((dossier) => valid.some((draft) => draft.candidateId === dossier.candidateId)),
-      drafts: valid.map((draft) => ({ draftSha256: hash(draft), draft })) }, reviewSchema, 800);
+      drafts: valid.map((draft) => ({ draftSha256: hash(draft), draft })) }, reviewSchema, budgets.review);
     inferenceTrail.push(checked);
     const reviews = checked.editorialPayload?.reviews;
     if (!keys(checked.editorialPayload, ["reviews"]) || !Array.isArray(reviews) || reviews.length !== valid.length ||

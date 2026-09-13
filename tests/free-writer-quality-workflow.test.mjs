@@ -26,9 +26,11 @@ const reviews = options => JSON.parse(options.messages[1].content).drafts.map(({
 test("alternate free model is opt-in, hash reviewed and cannot expand request limits", async () => {
   assert.match(workflow, /FREE_WRITER_MODEL: '@cf\/qwen\/qwen3-30b-a3b-fp8'/);
   let calls = 0;
+  const budgets = [];
   const report = await checkFreeWriter({ accountId, apiToken, model: EXPERIMENTAL_FREE_WRITER_MODEL,
     aiRequestImpl: async options => {
       calls++;
+      budgets.push(options.maxTokens);
       assert.equal(options.model, EXPERIMENTAL_FREE_WRITER_MODEL);
       assert.equal(options.maxAttempts, 1);
       assert.ok(options.maxTokens <= 4_000);
@@ -36,6 +38,7 @@ test("alternate free model is opt-in, hash reviewed and cannot expand request li
         : { stories: buildFreeEditorialBaselines().map(({ draft }) => draft) }), model: options.model };
     } });
   assert.equal(calls, 2);
+  assert.deepEqual(budgets, [4_000, 1_800]);
   assert.equal(report.status, "passed");
   assert.equal(report.model, EXPERIMENTAL_FREE_WRITER_MODEL);
   assert.equal(report.emailRequests, 0);

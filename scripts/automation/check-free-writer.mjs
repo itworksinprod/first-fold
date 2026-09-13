@@ -16,6 +16,8 @@ const SAFE_CODES = new Set([
   "PROVIDER_OR_FORMAT_ERROR", "SMOKE_REQUEST_BUDGET", "SMOKE_REQUEST_CONTRACT",
   "REVIEW_SHAPE", "REVIEW_BINDING", "REVIEW_CLAIM_SUPPORT", "REVIEW_FACTS", "REVIEW_ATTRIBUTION",
   "REVIEW_ANALYSIS", "REVIEW_USEFULNESS",
+  "READER_PROSE_TYPE", "READER_PROSE_EMPTY", "READER_PROSE_SCHEMA_FRAGMENT", "READER_PROSE_STRUCTURE",
+  "READER_PROSE_INCOMPLETE", "READER_PROSE_DANGLING_ENDING", "READER_PROSE_UNBALANCED_QUOTE",
   "SMOKE_ENDPOINT_REJECTED", "SMOKE_CONFIGURATION_INVALID", "SMOKE_AUTHORITY_REJECTED",
   "SMOKE_GROUNDED_SUMMARIES_INCOMPLETE", "SMOKE_REVIEW_INCOMPLETE", "SMOKE_UNCLASSIFIED_FAILURE",
 ]);
@@ -86,6 +88,8 @@ export async function checkFreeWriter({ accountId, apiToken,
       }
       const providerCode = workersAiFailureDiagnostic(event).providerCode;
       if (event?.stage === "free-writer-unavailable" && providerCode !== null) diagnostic.providerCode = providerCode;
+      const formatReason = workersAiFailureDiagnostic(event).formatReason;
+      if (event?.stage === "free-writer-unavailable" && formatReason) diagnostic.formatReason = formatReason;
       const codes = [...(Array.isArray(event?.rejectionCodes) ? event.rejectionCodes : []),
         ...[event?.rejectionCode, event?.code].filter(Boolean)];
       if (codes.length) diagnostic.codes = [...new Set(codes.map(safeCode))].slice(0, 8);

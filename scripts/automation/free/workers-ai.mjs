@@ -21,6 +21,7 @@ export const WORKERS_AI_EDITORIAL_UNAVAILABLE = "WORKERS_AI_EDITORIAL_UNAVAILABL
 // log provider messages, response bodies, request headers, or model output.
 const DOCUMENTED_FAILURE_CODES = new Set([3003, 3006, 3007, 3008, 3023, 3036, 3039, 3040, 3041, 3042,
   5004, 5005, 5007, 5016, 5018, 5019, 5035]);
+const FORMAT_REASONS = new Set(["OUTPUT_TOKEN_LIMIT", "PAYLOAD_MISSING", "PAYLOAD_JSON_INVALID"]);
 function attachFailureDetails(error, status, envelope) {
   const codes = Array.isArray(envelope?.errors) ? envelope.errors.slice(0, 16)
     .map((entry) => entry?.code).filter((code) => DOCUMENTED_FAILURE_CODES.has(code)) : [];
@@ -35,6 +36,7 @@ export function workersAiFailureDiagnostic(error) {
     httpStatus: Number.isInteger(error?.httpStatus) && error.httpStatus >= 100 && error.httpStatus <= 599
       ? String(error.httpStatus) : /^Cloudflare Workers AI request failed with HTTP ([1-5]\d{2})\.$/.exec(error?.message ?? "")?.[1] ?? null,
     providerCode: DOCUMENTED_FAILURE_CODES.has(error?.providerCode) ? error.providerCode : null,
+    ...(FORMAT_REASONS.has(error?.formatReason) ? { formatReason: error.formatReason } : {}),
   };
 }
 
@@ -648,7 +650,11 @@ export async function requestWorkersAiEditorial({
       error?.message === "Cloudflare Workers AI result did not contain an editorial payload." ||
       error?.message === "Cloudflare Workers AI editorial payload was not valid JSON."
     ) {
-      throw workersAiEditorialFormatError(error.message, attemptCount, inference);
+      const failure = workersAiEditorialFormatError(error.message, attemptCount, inference);
+      const limited = envelope?.result?.choices?.length === 1 && envelope.result.choices[0]?.finish_reason === "length";
+      Object.defineProperty(failure, "formatReason", { value: limited ? "OUTPUT_TOKEN_LIMIT"
+        : error.message === "Cloudflare Workers AI editorial payload was not valid JSON." ? "PAYLOAD_JSON_INVALID" : "PAYLOAD_MISSING" });
+      throw failure;
     }
     throw error;
   }

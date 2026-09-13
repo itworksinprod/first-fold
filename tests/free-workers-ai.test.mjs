@@ -483,7 +483,12 @@ test("Chat Completions extraction rejects ambiguous or non-final assistant outpu
         requestWorkersAiEditorial(requestOptions({
           fetchImpl: async () => cloudflareChatCompletion(JSON.stringify(payload), options),
         })),
-        /did not contain an editorial payload/,
+        error => {
+          assert.match(error.message, /did not contain an editorial payload/);
+          assert.equal(workersAiFailureDiagnostic(error).formatReason,
+            name === "truncated" ? "OUTPUT_TOKEN_LIMIT" : "PAYLOAD_MISSING");
+          return true;
+        },
       );
     });
   }
