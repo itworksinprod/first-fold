@@ -263,3 +263,23 @@ Acceptance remains 100–225 words, with no padding or additional writer call.
 Build and all 884 local tests pass. Independent review cleared the opt-in test
 path only. Neither live adversarial evaluation nor a full live paper has yet
 passed with this new reviewer; this is not an end-to-end repair claim.
+
+The first live reviewer evaluation,
+[34894559005](https://github.com/itworksinprod/first-fold/actions/runs/34894559005)
+on `eb2182f`, produced correctly bound responses and the expected claim verdicts
+for all four cases. It safely rejected the wrong facts, missing prerequisite,
+irrelevant citation, and invented benefits. However, it also rejected the
+supported control's analysis, and incorrectly marked the invented-benefit
+story's factual flag true while its analytical flag was false. The evaluation
+therefore failed; no production activation or full-paper test followed.
+
+Independent review confirms the original expected answers remain appropriate.
+The next narrow prompt correction clarifies that whole-story flags overlap:
+empirical assertions inside analytical prose still need factual support, while
+clearly conditional consequences drawn from supported features need not be
+quoted from the publisher. Hedging cannot excuse invented premises. The
+fixtures, acceptance conditions, source checks and budgets are unchanged.
+
+After that instruction-only correction, build and all 885 local tests pass.
+The synthetic evaluator now also regression-tests both exact label failures
+observed live. Production remains on the original reviewer pending evaluation.

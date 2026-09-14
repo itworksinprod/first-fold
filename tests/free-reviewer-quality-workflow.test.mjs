@@ -80,8 +80,10 @@ test("blanket approval, false rejection, missed prerequisite, invented promotion
       for (const field of ["factsSupported", "attributionAccurate", "analysisSupported", "usefulAndSpecific"]) review[field] = true;
     }),
     payload => { payload.reviews[0].claimVerdicts[0].allCitedPassagesSupport = false; },
+    payload => { payload.reviews[0].analysisSupported = false; },
     payload => { payload.reviews[1].claimVerdicts[1].allCitedPassagesSupport = true; },
     payload => { payload.reviews[2].analysisSupported = true; },
+    payload => { payload.reviews[2].factsSupported = true; },
     payload => { payload.reviews[3].claimVerdicts[0].allCitedPassagesSupport = true; },
   ];
   for (const mutate of mutateCases) {

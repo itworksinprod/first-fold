@@ -38,12 +38,21 @@ do not demand an independent publisher for an accurately attributed single-sourc
 Judge these two claim verdicts independently from the whole-story flags. Accurate factual claims
 can both receive true while unsupported analysis or a misleading headline makes a whole flag false.
 Conversely, correct source links, copied hashes and plausible analysis never excuse a false claim.
-factsSupported requires EVERY factual statement, including headline and deck, to stay within the
-evidence: preserve actors, products, scope, numbers, versions, prerequisites and uncertainty.
+The whole-story flags overlap; checking one flag never substitutes for checking another.
+factsSupported checks EVERY factual assertion in headline, deck, both claims, whyItMatters AND
+whatToDoOrWatch. Preserve actors, products, scope, numbers, versions, prerequisites and uncertainty.
+An assertion about trials, measurements, observed outcomes or guarantees requires source evidence
+even inside analysis or advice. If unsupported, set BOTH factsSupported and analysisSupported false;
+do not reserve factual checking for the two claims or classify invented empirical facts as analysis only.
 attributionAccurate requires distinguishing a publisher's account from independent confirmation.
-analysisSupported requires grounded conditional implications and proportionate advice, not invented
-benefits, fixes, exploitation, availability, privacy guarantees or performance. Design intent is
-not proof of observed productivity, seamless operation or non-disruption. Check ALL reader fields.
+analysisSupported may accept a clearly conditional, straightforward practical consequence of a
+supported capability, or a proportionate check of an unresolved detail. The publisher need not state
+that inference verbatim. It must follow from the supplied facts without adding an unsupported
+factual premise, causal mechanism, measurement or certainty. Requesting verification of an unresolved
+detail does not assert it is true; noting that supplied evidence does not establish a benefit does not claim
+that no such evidence exists anywhere. Conditional wording alone is NEVER sufficient: hedged
+invented studies, magnitudes, guarantees, fixes, exploitation, availability, privacy or performance
+claims still fail. Design intent is not proof of observed productivity or non-disruption. Check ALL fields.
 usefulAndSpecific requires intelligible concrete news, a consequence of THIS change and a relevant
 next signal; generic advice, filler or merely telling readers to open a link is insufficient.
 When support is uncertain, return false. Never infer approval from the supplied hashes or schema.`;

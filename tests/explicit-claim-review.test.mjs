@@ -94,6 +94,29 @@ test("false claim verdicts become empty support sets and whole-story false flags
   }
 });
 
+test("explicit review distinguishes grounded conditional analysis from invented empirical facts without changing any verdict gate", () => {
+  const bundle = buildExplicitClaimReview(inputs());
+  assert.match(bundle.prompt, /whole-story flags overlap/);
+  assert.match(bundle.prompt, /headline, deck, both claims, whyItMatters AND\nwhatToDoOrWatch/);
+  assert.match(bundle.prompt, /trials, measurements, observed outcomes or guarantees requires source evidence/);
+  assert.match(bundle.prompt, /set BOTH factsSupported and analysisSupported false/);
+  assert.match(bundle.prompt, /publisher need not state\nthat inference verbatim/);
+  assert.match(bundle.prompt, /without adding an unsupported\nfactual premise, causal mechanism, measurement or certainty/);
+  assert.match(bundle.prompt, /Conditional wording alone is NEVER sufficient/);
+  assert.match(bundle.prompt, /When support is uncertain, return false/);
+  // This asserts the prompt and protocol contract, not live model competence.
+  // A valid claim verdict cannot override either whole-story rejection flag.
+  const payload = explicitPayload(bundle.data);
+  payload.reviews[0].factsSupported = false;
+  payload.reviews[0].analysisSupported = false;
+  const result = validateExplicitClaimReview(payload, bundle);
+  assert.deepEqual(result.errors, []);
+  assert.equal(result.reviews[0].factsSupported, false);
+  assert.equal(result.reviews[0].analysisSupported, false);
+  assert.deepEqual(result.reviews[0].claimSupport, groundedDraft.claims.map(claim => claim.supports.map(support => support.evidenceId)));
+  for (const field of Object.keys(flags)) assert.deepEqual(bundle.schema.properties.reviews.items.properties[field], { type: "boolean" });
+});
+
 test("legacy payloads, malformed verdicts, duplicates and wrong hashes cannot use explicit canonicalization", () => {
   const bundle = buildExplicitClaimReview(inputs());
   assert.ok(validateExplicitClaimReview(legacyPayload(bundle.data), bundle).errors.length > 0);
