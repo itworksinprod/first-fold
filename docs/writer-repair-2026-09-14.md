@@ -212,3 +212,30 @@ mechanically padded to pass the minimum.
 After this targeted correction, the build and all 867 tests pass. Three new
 regressions cover canonical remaining-word arithmetic, final repaired-claim
 counts, and continued rejection of 84/87-word drafts without another call.
+
+The latest full live check,
+[34851578946](https://github.com/itworksinprod/first-fold/actions/runs/34851578946)
+on `27fd74d`, verified five publisher articles. Both foundations passed. The
+assembled stories were 95 and 106 words: one failed the unchanged 100-word
+minimum, and one reached the paired-evidence review. That review returned empty
+support arrays for both claims while all four whole-story flags were true.
+The collector records every failed flag, not only the first, so this is a
+contradictory review result; it is not proof that the story is accurate. The
+exact citation gate correctly rejected it. No email was sent.
+
+**Status: not fixed end to end.** The structural repairs are deployed and all
+867 tests pass, but no full daily-Llama live check in this repair session has
+passed the all-summaries assertion. The last observed Cloudflare dashboard
+usage was 9.26k of 10k daily free neurons. The allowance was not exhausted and
+this run did not fail with a provider quota error. Further speculative live
+runs were stopped to conserve it; billing and the daily schedule were not
+changed.
+
+A reviewed follow-up option is a default-only explicit per-claim verdict bound
+to the exact claim, support set and source passages, avoiding the citation-ID
+echo task. This is only a proposal, not implemented or approved output: hashes
+prove binding, not factual truth, and boolean verdicts may have different
+false-positive behavior. It needs negative/adversarial live evaluation before
+adoption, with all original full-source and whole-story vetoes retained. The
+separate short-copy problem also remains; neither can be solved by treating
+this failed run as a successful paper or lowering acceptance requirements.
