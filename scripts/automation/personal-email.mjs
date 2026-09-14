@@ -540,7 +540,7 @@ function assertLocalEmailContract(candidate, now) {
       research.coveredDeskCount !== DESKS.length || research.candidateCount !== ids.length ||
       research.selectedStoryCount !== ids.length || ids.length < 1 || ids.length > DESKS.length ||
       research.evidencePolicy !== PERSONAL_RESEARCH_EVIDENCE_POLICY || research.lookbackHours !== 72 ||
-      research.minimumScore !== 70 || research.minimumAuthoritativeScore !== 70 || research.maxModelRequests !== 12 ||
+      research.minimumScore !== 70 || research.minimumAuthoritativeScore !== 70 || research.maxModelRequests !== 16 ||
       research.ephemeral !== true || research.qualityPilotOrdinal !== null ||
       review?.provider !== LOCAL_PREVIEW.provider || review?.model !== LOCAL_PREVIEW.model ||
       !["requestSha256", "responseSha256"].every(key => /^[a-f0-9]{64}$/u.test(review?.[key] ?? "")) ||

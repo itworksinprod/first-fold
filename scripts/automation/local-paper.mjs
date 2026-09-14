@@ -24,6 +24,16 @@ function assertDate(now) {
   if (previewDay(now) !== LOCAL_PREVIEW.requestedOn) throw fail("LOCAL_PREVIEW_CLOSED");
 }
 
+export function localInferenceTask(request, input = {}) {
+  const properties = request?.schema?.properties ?? {};
+  if (properties.reviews) return "review";
+  if (properties.claims && properties.candidateId) return "claims-only-repair";
+  if (["headline", "deck", "whyItMatters", "whatToDoOrWatch"].every(key => Object.hasOwn(properties, key))) {
+    return "copy-refinement";
+  }
+  return input.rejected ? "repair" : "draft";
+}
+
 export async function researchLocalPaper({ now = new Date(), researchImpl = collectFreeResearchSnapshot } = {}) {
   assertDate(now);
   const reportingWindow = buildFreeReportingWindow(LOCAL_PREVIEW.editionDate, { lookbackHours: 72 });
@@ -89,7 +99,7 @@ export async function draftLocalPaper(snapshot, { now = () => new Date(),
       feedSourceCount: coverage.sourceCount, successfulFeedSourceCount: coverage.successfulSourceCount,
       coveredDeskCount: FREE_DESKS.length, candidateCount: stories.length, selectedStoryCount: stories.length,
       evidencePolicy: "authoritative-or-corroborated", lookbackHours: 72,
-      minimumScore: 70, minimumAuthoritativeScore: 70, maxModelRequests: 12,
+      minimumScore: 70, minimumAuthoritativeScore: 70, maxModelRequests: 16,
       ephemeral: true, qualityPilotOrdinal: null,
       localPreview: { editionDate: LOCAL_PREVIEW.editionDate, requestedOn: LOCAL_PREVIEW.requestedOn,
         revision: LOCAL_PREVIEW.revision }, semanticReview: { ...inference.semanticReview,
@@ -137,8 +147,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
               const call = { input: JSON.parse(request.messages[1].content) };
               calls.push(call);
               const callNumber = calls.length;
-              const task = request.schema.properties.reviews ? "review"
-                : call.input.rejected ? "repair" : "draft";
+              const task = localInferenceTask(request, call.input);
               const startedAt = Date.now();
               console.info(JSON.stringify({ stage: "local-inference-start", call: callNumber, task }));
               try {

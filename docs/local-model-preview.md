@@ -37,8 +37,9 @@ and the originating-source/independent-corroboration distinction.
 
 `scripts/automation/local-paper.mjs draft RESEARCH_JSON OUTPUT_JSON` requires a
 research snapshot less than one hour old. Each selected story receives an
-isolated local draft, at most one pre-review repair, and a separate semantic
-review. There is a maximum of 12 calls and 120,000 requested output tokens across
+isolated local draft, at most one claims-only repair, a four-field copy refinement
+that cannot change the checked claims, and one separate semantic review. There is
+a maximum of 16 calls and 192,000 requested output tokens across
 four stories, including the local model's reasoning. Only final structured
 answers are retained; model responses must finish normally and match the JSON
 contract. Each inference call has a five-minute deadline.

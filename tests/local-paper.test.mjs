@@ -1,6 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { researchLocalPaper, draftLocalPaper } from "../scripts/automation/local-paper.mjs";
+import { researchLocalPaper, draftLocalPaper, localInferenceTask } from "../scripts/automation/local-paper.mjs";
+
+test("local inference diagnostics name the actual native-schema stage", () => {
+  const request = properties => ({ schema: { properties } });
+  assert.equal(localInferenceTask(request({ stories: {} })), "draft");
+  assert.equal(localInferenceTask(request({ candidateId: {}, claims: {} })), "claims-only-repair");
+  assert.equal(localInferenceTask(request({ headline: {}, deck: {}, whyItMatters: {}, whatToDoOrWatch: {} })), "copy-refinement");
+  assert.equal(localInferenceTask(request({ reviews: {} })), "review");
+  assert.equal(localInferenceTask(request({}), { rejected: [{}] }), "repair");
+});
 
 test("local paper preview cannot research or infer outside the requested day", async () => {
   let calls = 0;

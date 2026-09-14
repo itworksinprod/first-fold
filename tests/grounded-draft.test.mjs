@@ -695,7 +695,7 @@ test("explicit local selection uses only loopback and truthful hash-bound review
       });
     } });
   assert.ok(result);
-  assert.deepEqual(requests.map(request => request.options.num_predict), [12_000, 12_000, 6_000]);
+  assert.deepEqual(requests.map(request => request.options.num_predict), [12_000, 12_000, 12_000]);
   assert.equal(result.inference.provider, LOCAL_AI_PROVIDER);
   assert.equal(result.inference.model, LOCAL_AI_MODEL);
   assert.equal(result.inference.kind, "local-ai");
@@ -711,7 +711,7 @@ test("explicit local selection uses only loopback and truthful hash-bound review
   assert.equal(baseline.desks["security-and-privacy"].story.headline, "old");
 });
 
-test("local reasoning drafts, isolated full-story repairs and reviews share the explicit 120000-token ceiling", async () => {
+test("local claims repair, immutable refinement and review share the explicit 16-call 192000-token ceiling", async () => {
   const desks = ["ai", "work-and-tools", "security-and-privacy", "platforms-and-power"];
   const slate = desks.map((suggestedDesk, index) => ({ ...structuredClone(candidate),
     candidateId: `candidate-local-${index}`, suggestedDesk }));
@@ -734,21 +734,24 @@ test("local reasoning drafts, isolated full-story repairs and reviews share the 
         assert.match(options.messages[0].content, /Local review checklist/);
         assert.match(options.messages[0].content, /No end-user\s+setting does not imply no Admin controls or setup/);
         assert.match(options.messages[0].content, /Keep mitigation configuration exclusions/);
-      } else {
+      } else if (options.schema.properties.stories || options.schema.properties.claims) {
         assert.match(options.messages[0].content, /write one supported fact per claim/);
         assert.match(options.messages[0].content, /Omit optional features when uncited/);
         assert.match(options.messages[0].content, /data-retention or data-boundary guarantees/);
         assert.match(options.messages[0].content, /Use conditional analysis/);
         assert.match(options.messages[0].content, /Evidence IDs belong ONLY in supports/);
         assert.match(options.messages[0].content, /derive headline, deck, analysis and advice from those claims' factual scope/);
-        const storySchema = options.schema.properties.stories.items;
-        assert.deepEqual(Object.keys(storySchema.properties), ["candidateId", "claims", "headline", "deck", "whyItMatters", "whatToDoOrWatch"]);
+        const storySchema = options.schema.properties.stories?.items ?? options.schema;
+        assert.deepEqual(Object.keys(storySchema.properties), options.schema.properties.claims ? ["candidateId", "claims"]
+          : ["candidateId", "claims", "headline", "deck", "whyItMatters", "whatToDoOrWatch"]);
         assert.deepEqual(storySchema.required, Object.keys(storySchema.properties));
         assert.deepEqual(Object.keys(storySchema.properties.claims.items.properties), ["supports", "text"]);
         assert.deepEqual(storySchema.properties.claims.items.required, ["supports", "text"]);
         const data = JSON.parse(options.messages[1].content);
         const passageIds = data.dossiers.flatMap(dossier => dossier.sources.flatMap(source => source.passages.map(passage => passage.evidenceId)));
         assert.deepEqual(storySchema.properties.claims.items.properties.supports.items.properties.evidenceId.enum, [...new Set(passageIds)]);
+      } else {
+        assert.deepEqual(Object.keys(options.schema.properties), ["headline", "deck", "whyItMatters", "whatToDoOrWatch"]);
       }
       assert.ok(options.messages[0].content.endsWith(JSON.stringify(options.schema)));
       const data = JSON.parse(options.messages[1].content);
@@ -759,20 +762,23 @@ test("local reasoning drafts, isolated full-story repairs and reviews share the 
           claims: calls.length <= slate.length ? [{ ...draft.claims[0], text: copiedClaim }, draft.claims[1]] : draft.claims,
         }] });
       }
+      if (options.schema.properties.claims) return localResponse({ candidateId: draft.candidateId, claims: draft.claims });
+      if (options.schema.properties.whyItMatters) return localResponse(localCopy(draft));
       assert.ok(options.schema.properties.reviews);
-      assert.equal(options.maxTokens, 6_000);
+      assert.equal(options.maxTokens, 12_000);
       assert.equal(data.drafts.length, 1);
-      assert.equal(data.drafts[0].draftSha256, hash(draft));
-      return localResponse({ reviews: [{ ...review, candidateId: draft.candidateId, draftSha256: hash(draft) }] });
+      assert.deepEqual(data.drafts[0].draft, draft);
+      assert.equal(data.drafts[0].draftSha256, hash(data.drafts[0].draft));
+      return localResponse({ reviews: [{ ...review, candidateId: draft.candidateId, draftSha256: data.drafts[0].draftSha256 }] });
     } });
   assert.ok(result);
-  assert.equal(groundedRequestBudget(LOCAL_AI_MODEL), 12);
-  assert.equal(calls.length, 12);
-  assert.deepEqual(calls.map(call => call.maxTokens), [12_000, 12_000, 12_000, 12_000, 12_000, 12_000, 12_000, 12_000, 6_000, 6_000, 6_000, 6_000]);
-  assert.equal(calls.reduce((total, call) => total + call.maxTokens, 0), 120_000);
+  assert.equal(groundedRequestBudget(LOCAL_AI_MODEL), 16);
+  assert.equal(calls.length, 16);
+  assert.deepEqual(calls.map(call => call.maxTokens), Array(16).fill(12_000));
+  assert.equal(calls.reduce((total, call) => total + call.maxTokens, 0), 192_000);
   assert.equal(result.inference.semanticReview.requestCount, 4);
   assert.deepEqual(new Set(result.inference.semanticReview.approvedCandidateIds), new Set(slate.map(item => item.candidateId)));
-  assert.equal(result.inference.requestSha256, hash(Array(12).fill("a".repeat(64))));
+  assert.equal(result.inference.requestSha256, hash(Array(16).fill("a".repeat(64))));
   assert.equal(result.inference.semanticReview.requestSha256, hash(Array(4).fill("a".repeat(64))));
 });
 
@@ -936,7 +942,8 @@ test("bad replaceable copy never hides immutable claim defects from local refine
     const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [conditional], model: LOCAL_AI_MODEL,
       aiRequestImpl: async options => {
         calls++;
-        assert.ok(options.schema.properties.stories, "A defective claim requires whole-story repair, not immutable-copy refinement");
+        assert.ok(calls === 1 ? options.schema.properties.stories : options.schema.properties.claims,
+          "A defective claim requires claims-only repair, not immutable-copy refinement");
         return localResponse({ stories: [bad] });
       } });
     assert.equal(result, null);
@@ -946,7 +953,7 @@ test("bad replaceable copy never hides immutable claim defects from local refine
   let calls = 0;
   assert.equal(await synthesizeGroundedEditorial({ editorial: baseline, candidates: [uncorroborated], model: LOCAL_AI_MODEL,
     aiRequestImpl: async options => {
-      calls++; assert.ok(options.schema.properties.stories);
+      calls++; assert.ok(calls === 1 ? options.schema.properties.stories : options.schema.properties.claims);
       return localResponse({ stories: [{ ...groundedDraft, whyItMatters: "Too short." }] });
     } }), null);
   assert.equal(calls, 2);
@@ -985,10 +992,12 @@ test("local format recovery needs local provenance and never changes providers o
     model: LOCAL_AI_MODEL, aiRequestImpl: async options => {
       assert.equal(options.model, LOCAL_AI_MODEL);
       if (++calls === 1) throw error();
-      return localResponse(calls === 2 ? { stories: [groundedDraft] } : { reviews: [review] });
+      return localResponse(calls === 2 ? { candidateId: groundedDraft.candidateId, claims: groundedDraft.claims }
+        : calls === 3 ? localCopy(groundedDraft) : { reviews: [{ ...review,
+          draftSha256: JSON.parse(options.messages[1].content).drafts[0].draftSha256 }] });
     } });
   assert.ok(fixed);
-  assert.equal(calls, 3);
+  assert.equal(calls, 4);
   for (const failure of [
     { ...localResponse({ stories: [groundedDraft] }), provider: "cloudflare-workers-ai" },
     { ...localResponse({ stories: [groundedDraft] }), model: "another-model" },

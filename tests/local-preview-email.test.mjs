@@ -99,7 +99,7 @@ test("local preview keeps semantic approval, source checks, original quality sco
     c => { c.provenance.personalFreeResearch.semanticReview.approvedCandidateIds = [c.desks.ai.story.id]; },
     c => { c.provenance.personalFreeResearch.semanticReview.responseSha256 = "bad"; },
     c => { c.provenance.personalFreeResearch.provider = "cloudflare-workers-ai"; },
-    c => { c.provenance.personalFreeResearch.maxModelRequests = 13; },
+    c => { c.provenance.personalFreeResearch.maxModelRequests = 17; },
     c => { c.provenance.personalFreeResearch.webSearch = {}; },
     c => { c.provenance.sourceCheck.status = "failed"; },
     c => { delete c.provenance.sourceCheck.checkedAt; },

@@ -53,7 +53,7 @@ export function localPreviewTestCandidate() {
     feedSnapshotSha256: "a".repeat(64), requestSha256: "b".repeat(64), responseSha256: "c".repeat(64),
     responseId: `local-${"d".repeat(64)}`, feedSourceCount: 48, successfulFeedSourceCount: 47,
     coveredDeskCount: 4, candidateCount: 1, selectedStoryCount: 1, evidencePolicy: "authoritative-or-corroborated",
-    lookbackHours: 72, minimumScore: 70, minimumAuthoritativeScore: 70, maxModelRequests: 12,
+    lookbackHours: 72, minimumScore: 70, minimumAuthoritativeScore: 70, maxModelRequests: 16,
     ephemeral: true, qualityPilotOrdinal: null,
     localPreview: { editionDate: LOCAL_PREVIEW.editionDate, requestedOn: LOCAL_PREVIEW.requestedOn, revision: LOCAL_PREVIEW.revision },
     semanticReview: { provider: LOCAL_PREVIEW.provider, model: LOCAL_PREVIEW.model,

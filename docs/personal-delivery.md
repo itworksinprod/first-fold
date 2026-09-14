@@ -29,7 +29,9 @@ succeeded end to end.
 
 Keep the Cloudflare account on **Workers Free** to enforce zero inference
 spending. Workers AI includes a daily free allowance; on Free, exhaustion rejects
-calls and this pipeline keeps its local fallback. A Workers Paid account can
+calls and this pipeline keeps its deterministic source-bound fallback. This is
+not Mac-local inference; the optional [Mac-local model preview](local-model-preview.md)
+is a separate manual workflow. A Workers Paid account can
 incur overages from account-wide use, so request caps alone are not a billing
 guarantee. No code here enables a paid plan or calls OpenAI.
 
@@ -55,7 +57,7 @@ trusted `main`, providing a live integration check for its initial rollout.
 | Schedule | 5:05 AM `America/New_York` every day, including weekends |
 | Reporting window | The 72 elapsed hours ending at 5:00 AM New York time on the edition date; start inclusive and end exclusive |
 | Discovery | Live allowlisted feeds plus optional free Tavily searches beyond feeds. At most 16 search-page fetches share the existing 24-article budget across the edition. Only reviewed publisher pages with verified dates, identity, and article text enter the unchanged selection gates |
-| Drafting | Up to four fixed-model calls: editorial assessment, concrete factual writing, one optional revision of locally rejected drafts, and a separate evidence-checking prompt. No transport retries or repeated revision loop. Rejected or unavailable synthesis retains the local baseline |
+| Drafting | Up to four fixed-model calls: editorial assessment, concrete factual writing, one optional revision of locally rejected drafts, and a separate evidence-checking prompt. No transport retries or repeated revision loop. Rejected or unavailable synthesis retains the deterministic source-bound fallback |
 | Completion rule | Deliver a regular edition with two to four validated stories, a slim edition with one, or a healthy quiet edition with zero; every edition keeps all four desks and no desk receives more than one story |
 | Recipient | Exactly the one address stored in `PERSONAL_PAPER_EMAIL` |
 | Sender | `First Fold <onboarding@resend.dev>`, Resend's self-only testing sender |
@@ -63,7 +65,7 @@ trusted `main`, providing a live integration check for its initial rollout.
 | Repository permissions | Read-only contents and Actions metadata; no pull-request, branch, commit, Pages, or public-content write permission; the workflow may download its bounded private-state ledger and upload only that ledger plus a separately validated public-safe diagnostic report |
 | Persistence | The candidate remains on the ephemeral runner; a keyed-HMAC-only ledger artifact retains bounded repeat state for 35 days, while an optional source-health artifact retains only public-safe operational counts for 14 days. Optional feedback stores one minimal response in D1, never the recipient, raw token, headline, story copy, or source URL |
 | Quiet edition | Healthy, internally consistent research with zero qualifying stories produces a deterministic all-quiet paper and research receipt without a model call; it is delivered and recorded in the ledger |
-| Failure | Feed coverage, repeat-ledger, source, canonical schema, rendering, required configuration, or send-precondition errors remain failed runs and send no email. Quota, transient provider, or model-output rejection uses the complete local factual edition. Missing or broken advisory feedback and source-health reporting do not block an otherwise valid delivery |
+| Failure | Feed coverage, repeat-ledger, source, canonical schema, rendering, required configuration, or send-precondition errors remain failed runs and send no email. Quota, transient provider, or model-output rejection uses the deterministic source-bound fallback. Missing or broken advisory feedback and source-health reporting do not block an otherwise valid delivery |
 | Feedback | Optional signed story and edition links accept one private, human-reviewed response for 14 days. Feedback never changes scores, thresholds, vetoes, desk assignment, sources, or automation by itself |
 | Duplicate control | Suppress an earlier successful same-day workflow, veto matching story fingerprints from the previous 30 calendar dates, then make at most one Resend request with `Idempotency-Key: first-fold-personal-YYYY-MM-DD`; no application-level send retry |
 | Paid fallback | None |
@@ -635,8 +637,9 @@ to prompts, candidate copy, or the recipient field.
 Keep the Cloudflare account on **Workers Free** and do not enable prepaid AI
 Gateway credits. Cloudflare currently includes **10,000 Workers AI neurons per
 account per day** at no charge. On Workers Free, exhausting that allocation
-makes the optional inference fail; this workflow then sends the complete local
-source-bound edition instead. It must not switch to a paid model or provider.
+makes the optional inference fail; this workflow then sends the deterministic
+source-bound fallback instead, not a Mac-local model edition. It must not switch
+to a paid model or provider.
 Other Workers AI activity on the same account shares the daily allocation, so
 no code can guarantee model-assisted guidance for the paper if another job
 consumes it first. Check Cloudflare's current

@@ -8,7 +8,7 @@ paid provider.
 
 | Path | Automatic personal paper | Manual free comparison | Manual paid pilot |
 | --- | --- | --- | --- |
-| Model | Up to four bounded Workers AI calls using `@cf/meta/llama-3.3-70b-instruct-fp8-fast`: editorial assessment, writing, optional repair, and evidence review; source-bound local fallback if synthesis is unavailable or rejected | Fixed Workers AI `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | OpenAI Responses model configured by the paid workflow |
+| Model | Up to four bounded Workers AI calls using `@cf/meta/llama-3.3-70b-instruct-fp8-fast`: editorial assessment, writing, optional repair, and evidence review; deterministic source-bound fallback if synthesis is unavailable or rejected | Fixed Workers AI `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | OpenAI Responses model configured by the paid workflow |
 | Discovery | Curated RSS, Atom, and JSON feeds plus optional free web search targeting reviewed publishers | Same bounded feed catalog | Model-assisted open-web research |
 | Start | Cloudflare at 5:05 AM New York every day | Manual GitHub Actions run only | Manual GitHub Actions run only |
 | Evidence policy | Score of at least 70 plus hard vetoes; corroborated events or explicitly attributed authoritative originating reports; unchanged evidence, freshness, repeat, source, and QA gates across regular (2–4 stories), slim (1), and quiet (0) editions | Strict two-publisher corroboration for every non-quiet story | Paid workflow's direct-source policy |
@@ -16,6 +16,10 @@ paid provider.
 | Output | Ephemeral `content/personal-candidates/` file, one private email, and a bounded keyed-HMAC-only repeat-ledger artifact; candidate and email are never uploaded | Comparison PR containing `content/free-candidates/YYYY-MM-DD.json` | Public, publication-shaped candidate PR |
 | Publication | Never | Never | Exact-SHA human review and merge required |
 | Paid fallback | None | None | This path is itself explicitly billable |
+
+The automatic paper's deterministic source-bound fallback does not call a local
+model. The optional [Mac-local model preview](local-model-preview.md) is a
+separate manual workflow and does not replace the daily cloud schedule.
 
 The comparison workflow lives in `.github/workflows/free-morning-research.yml`.
 It uses branch prefix `experiment/free-morning-press-`, label
@@ -100,8 +104,8 @@ This guarantee depends on the account remaining on Workers Free and on using a m
 The allocation is shared across the Cloudflare account. A manual comparison
 uses some of the same daily pool needed by the next automatic personal paper.
 If there is not enough free capacity, the manual comparison fails and produces
-no candidate. The automatic personal paper instead retains its complete local
-source-bound edition and sends without model-refined guidance. Neither path
+no candidate. The automatic personal paper instead retains its deterministic
+source-bound fallback and sends without model-refined guidance. Neither path
 charges a paid fallback. Avoid unnecessary manual comparisons when preserving
 capacity for the daily personal run matters.
 
