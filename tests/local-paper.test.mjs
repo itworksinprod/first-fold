@@ -5,20 +5,32 @@ import { researchLocalPaper, draftLocalPaper, localInferenceTask } from "../scri
 test("local inference diagnostics name the actual native-schema stage", () => {
   const request = properties => ({ schema: { properties } });
   assert.equal(localInferenceTask(request({ stories: {} })), "draft");
-  assert.equal(localInferenceTask(request({ candidateId: {}, claims: {} })), "claims-only-repair");
+  assert.equal(localInferenceTask(request({ candidateId: {}, claims: {} })), "claims-draft");
+  assert.equal(localInferenceTask(request({ candidateId: {}, claims: {} }), { rejectionCode: "NUMERIC_CITATION" }), "claims-only-repair");
+  assert.equal(localInferenceTask(request({ foundationSha256: {}, claimSupport: {} })), "claims-audit");
   assert.equal(localInferenceTask(request({ headline: {}, deck: {}, whyItMatters: {}, whatToDoOrWatch: {} })), "copy-refinement");
   assert.equal(localInferenceTask(request({ reviews: {} })), "review");
   assert.equal(localInferenceTask(request({}), { rejected: [{}] }), "repair");
 });
 
-test("local paper preview cannot research or infer outside the requested day", async () => {
+test("local paper preview cannot research or infer outside the extended one-time window", async () => {
   let calls = 0;
-  const now = new Date("2026-09-14T04:00:00.000Z");
+  const now = new Date("2026-09-15T04:00:00.000Z");
   await assert.rejects(researchLocalPaper({ now, researchImpl: async () => { calls++; } }),
     { code: "LOCAL_PREVIEW_CLOSED" });
   await assert.rejects(draftLocalPaper({}, { now: () => now, synthesizeImpl: async () => { calls++; } }),
     { code: "LOCAL_PREVIEW_CLOSED" });
   assert.equal(calls, 0);
+});
+
+test("September 14 continuation retains the original edition reporting cutoff", async () => {
+  let calls = 0;
+  await assert.rejects(researchLocalPaper({ now: new Date("2026-09-14T06:03:00.000Z"), researchImpl: async options => {
+    calls++;
+    assert.equal(options.reportingWindow.endExclusive, "2026-09-13T09:00:00.000Z");
+    throw new Error("Synthetic offline stop before fetching sources.");
+  } }), /Synthetic offline stop/u);
+  assert.equal(calls, 1);
 });
 
 test("local paper keeps reviewed-feed and coverage boundaries before inference", async () => {

@@ -156,7 +156,7 @@ test("deterministic newsroom QA returns a machine-readable pass", () => {
   });
 });
 
-test("local preview late QA requires exact private local provenance and same-day timing", () => {
+test("local preview late QA requires exact private local provenance and authorized-window timing", () => {
   const edition = JSON.parse(JSON.stringify(editionFixture()).replaceAll("2026-08-19", "2026-09-12")
     .replaceAll("2026-08-20", "2026-09-13"));
   const late = "2026-09-14T02:15:00.000Z";
@@ -181,7 +181,7 @@ test("local preview late QA requires exact private local provenance and same-day
   for (const change of [
     value => { value.status = "published"; },
     value => { value.provenance.personalFreeResearch.localPreview.revision = "forged"; },
-    value => { value.publication.generatedAt = "2026-09-14T04:01:00.000Z"; },
+    value => { value.publication.generatedAt = "2026-09-15T04:01:00.000Z"; },
   ]) {
     const changed = structuredClone(edition); change(changed);
     assert.ok(issueCodes(validateNewsroomDraft(changed, options)).includes("GENERATED_AFTER_PUBLICATION"));

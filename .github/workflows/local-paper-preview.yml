@@ -1,5 +1,6 @@
 name: Send requested local-model paper preview
-# One owner-requested September 13 preview. Expires at midnight Eastern.
+# Same owner-requested September 13 preview, extended through September 14 Eastern.
+# Exclusive expiry: September 15, 2026 at 04:00 UTC. No additional daily edition.
 # Only public-news JSON crosses from the Mac; all email credentials stay here.
 on:
   workflow_dispatch:

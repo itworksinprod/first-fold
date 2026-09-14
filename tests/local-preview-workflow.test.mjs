@@ -150,7 +150,7 @@ test("missing authority, candidate changes, failed QA and expiry never reach the
   await assert.rejects(runLocalPaperPreview({ ...options, qa: async value => {
     value.desks.ai.story.id = "changed"; return structuredClone(pass);
   } }), /authorization is closed/);
-  await assert.rejects(runLocalPaperPreview({ ...options, clock: () => new Date("2026-09-14T04:00:00.000Z") }),
+  await assert.rejects(runLocalPaperPreview({ ...options, clock: () => new Date(LOCAL_PREVIEW.expiresAt) }),
     /authorization is closed/);
   await assert.rejects(runLocalPaperPreview({ ...options, env: authority(candidate()) }), /LOCAL_PREVIEW_CONFIGURATION/);
   assert.equal(sends, 0);

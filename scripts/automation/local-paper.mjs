@@ -13,21 +13,20 @@ import { buildFreeReportingWindow, assertFreeResearchCoverage,
 import { buildTrustedEvidenceDigestPayload } from "./free/evidence-digest.mjs";
 import { synthesizeGroundedEditorial } from "./free/grounded-draft.mjs";
 import { LOCAL_AI_MODEL, requestLocalAiEditorial } from "./free/local-ai.mjs";
-import { LOCAL_PREVIEW } from "./local-preview-policy.mjs";
+import { LOCAL_PREVIEW, isLocalPreviewWindow } from "./local-preview-policy.mjs";
 import { buildSourceUrlAllowlist, runNewsroomQa } from "./newsroom-qa.mjs";
 
 const hash = value => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const fail = code => Object.assign(new Error(code), { code });
-const previewDay = now => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York",
-  year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
 function assertDate(now) {
-  if (previewDay(now) !== LOCAL_PREVIEW.requestedOn) throw fail("LOCAL_PREVIEW_CLOSED");
+  if (!isLocalPreviewWindow(now)) throw fail("LOCAL_PREVIEW_CLOSED");
 }
 
 export function localInferenceTask(request, input = {}) {
   const properties = request?.schema?.properties ?? {};
   if (properties.reviews) return "review";
-  if (properties.claims && properties.candidateId) return "claims-only-repair";
+  if (properties.foundationSha256 && properties.claimSupport) return "claims-audit";
+  if (properties.claims && properties.candidateId) return input.rejectionCode ? "claims-only-repair" : "claims-draft";
   if (["headline", "deck", "whyItMatters", "whatToDoOrWatch"].every(key => Object.hasOwn(properties, key))) {
     return "copy-refinement";
   }
@@ -99,7 +98,7 @@ export async function draftLocalPaper(snapshot, { now = () => new Date(),
       feedSourceCount: coverage.sourceCount, successfulFeedSourceCount: coverage.successfulSourceCount,
       coveredDeskCount: FREE_DESKS.length, candidateCount: stories.length, selectedStoryCount: stories.length,
       evidencePolicy: "authoritative-or-corroborated", lookbackHours: 72,
-      minimumScore: 70, minimumAuthoritativeScore: 70, maxModelRequests: 16,
+      minimumScore: 70, minimumAuthoritativeScore: 70, maxModelRequests: 20,
       ephemeral: true, qualityPilotOrdinal: null,
       localPreview: { editionDate: LOCAL_PREVIEW.editionDate, requestedOn: LOCAL_PREVIEW.requestedOn,
         revision: LOCAL_PREVIEW.revision }, semanticReview: { ...inference.semanticReview,

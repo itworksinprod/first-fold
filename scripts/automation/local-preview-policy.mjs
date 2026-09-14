@@ -4,17 +4,17 @@ export const LOCAL_PREVIEW = Object.freeze({
   editionDate: "2026-09-13", requestedOn: "2026-09-13", revision: "ollama-preview-2026-09-13",
   confirmation: "SEND LOCAL PREVIEW 2026-09-13", runMode: "requested_local_preview",
   provider: "ollama-local", model: "qwen3:30b-a3b", workflow: "local-paper-preview",
-  expiresAt: "2026-09-14T04:00:00.000Z",
+  startsAt: "2026-09-13T04:00:00.000Z",
+  expiresAt: "2026-09-15T04:00:00.000Z",
   idempotencyKey: "first-fold-personal-preview-ollama-2026-09-13",
 });
 const issued = new WeakMap();
 const recordKeys = ["editionDate", "requestedOn", "revision"];
-const localDate = value => {
-  const instant = new Date(value);
-  if (!Number.isFinite(instant.getTime())) return null;
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York",
-    year: "numeric", month: "2-digit", day: "2-digit" }).format(instant);
-};
+export function isLocalPreviewWindow(value) {
+  const instant = new Date(value).getTime();
+  return Number.isFinite(instant) && instant >= Date.parse(LOCAL_PREVIEW.startsAt) &&
+    instant < Date.parse(LOCAL_PREVIEW.expiresAt);
+}
 const closed = () => Object.assign(new Error("The requested local preview authorization is closed."),
   { code: "LOCAL_PREVIEW_CLOSED" });
 export const localPreviewCandidateSha256 = candidate => createHash("sha256")
@@ -29,13 +29,13 @@ export function isLocalPreviewRecord(value) {
 export function isLocalPreviewTiming({ editionDate, generatedAt, checkedAt = generatedAt, now } = {}) {
   return editionDate === LOCAL_PREVIEW.editionDate &&
     [generatedAt, checkedAt].every(value => typeof value === "string" &&
-      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/u.test(value) && localDate(value) === LOCAL_PREVIEW.requestedOn) &&
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/u.test(value) && isLocalPreviewWindow(value)) &&
     Date.parse(checkedAt) >= Date.parse(generatedAt) &&
     (now === undefined || Number.isFinite(new Date(now).getTime()) && Date.parse(checkedAt) <= new Date(now).getTime());
 }
 
 export function authorizeLocalPreview(env, candidate, now = new Date()) {
-  if (localDate(now) !== LOCAL_PREVIEW.requestedOn ||
+  if (!isLocalPreviewWindow(now) ||
       env?.LOCAL_PREVIEW_CONFIRMATION !== LOCAL_PREVIEW.confirmation ||
       !/^[a-f0-9]{64}$/u.test(env.CANDIDATE_SHA256 ?? "") ||
       localPreviewCandidateSha256(candidate) !== env.CANDIDATE_SHA256 ||
@@ -53,6 +53,6 @@ export function authorizeLocalPreview(env, candidate, now = new Date()) {
 export function assertLocalPreviewAuthorization(token, candidate, now = new Date()) {
   if (!token || typeof token !== "object" || !issued.has(token) ||
       issued.get(token) !== localPreviewCandidateSha256(candidate) ||
-      candidate?.editionDate !== LOCAL_PREVIEW.editionDate || localDate(now) !== LOCAL_PREVIEW.requestedOn) throw closed();
+      candidate?.editionDate !== LOCAL_PREVIEW.editionDate || !isLocalPreviewWindow(now)) throw closed();
   return true;
 }

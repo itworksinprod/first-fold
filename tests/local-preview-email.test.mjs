@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { gzipSync } from "node:zlib";
 import { validateCanonicalEdition } from "../scripts/edition-content.mjs";
 import { LOCAL_PREVIEW, authorizeLocalPreview, assertLocalPreviewAuthorization,
-  isLocalPreviewRecord, isLocalPreviewTiming } from "../scripts/automation/local-preview-policy.mjs";
+  isLocalPreviewRecord, isLocalPreviewTiming, isLocalPreviewWindow } from "../scripts/automation/local-preview-policy.mjs";
 import { encodeLocalPreviewPayload, decodeLocalPreviewPayload } from "../scripts/automation/local-preview-payload.mjs";
 import { assertPersonalEmailCandidate, renderPersonalEditionEmail, sendPersonalEditionEmail,
   sendPersonalEditionPreview } from "../scripts/automation/personal-email.mjs";
@@ -51,12 +51,31 @@ test("local authorization is issued only to the exact manual owner run and byte-
   const token = authorized(candidate);
   candidate.frontPage.note += " Changed.";
   assert.throws(() => assertLocalPreviewAuthorization(token, candidate, now), { code: "LOCAL_PREVIEW_CLOSED" });
-  for (const instant of ["2026-09-13T03:59:59.000Z", "2026-09-14T04:00:00.000Z"]) {
+  for (const instant of ["2026-09-13T03:59:59.999Z", LOCAL_PREVIEW.expiresAt]) {
     assert.throws(() => authorizeLocalPreview(localPreviewTestEnv(candidate), candidate, new Date(instant)), { code: "LOCAL_PREVIEW_CLOSED" });
   }
   assert.equal(isLocalPreviewRecord({ ...candidate.provenance.personalFreeResearch.localPreview, extra: true }), false);
   assert.equal(isLocalPreviewTiming({ editionDate: LOCAL_PREVIEW.editionDate, generatedAt: "2026-09-14T02:00:00.000Z",
     checkedAt: "2026-09-14T01:59:59.000Z" }), false);
+});
+
+test("the explicit continuation grant includes its start and September 14 but excludes its exact expiry", () => {
+  const candidate = localPreviewTestCandidate();
+  for (const instant of [LOCAL_PREVIEW.startsAt, "2026-09-14T04:00:00.000Z", "2026-09-14T06:03:00.000Z",
+    "2026-09-15T03:59:59.999Z"]) {
+    assert.equal(isLocalPreviewWindow(instant), true);
+    const approvedAt = new Date(instant);
+    const token = authorizeLocalPreview(localPreviewTestEnv(candidate), candidate, approvedAt);
+    assert.equal(assertLocalPreviewAuthorization(token, candidate, approvedAt), true);
+  }
+  for (const instant of ["invalid", "2026-09-13T03:59:59.999Z", LOCAL_PREVIEW.expiresAt, "2026-09-16T00:00:00.000Z"]) {
+    assert.equal(isLocalPreviewWindow(instant), false);
+  }
+  assert.equal(isLocalPreviewTiming({ editionDate: "2026-09-13", generatedAt: "2026-09-14T05:00:00.000Z",
+    checkedAt: "2026-09-14T06:00:00.000Z", now: "2026-09-14T06:03:00.000Z" }), true);
+  assert.equal(isLocalPreviewTiming({ editionDate: "2026-09-14", generatedAt: "2026-09-14T05:00:00.000Z" }), false);
+  assert.equal(isLocalPreviewTiming({ editionDate: "2026-09-13", generatedAt: "2026-09-15T03:00:00.000Z",
+    checkedAt: LOCAL_PREVIEW.expiresAt }), false);
 });
 
 test("the local renderer accepts truthful checked summaries only with private delivery authority", () => {
@@ -99,7 +118,7 @@ test("local preview keeps semantic approval, source checks, original quality sco
     c => { c.provenance.personalFreeResearch.semanticReview.approvedCandidateIds = [c.desks.ai.story.id]; },
     c => { c.provenance.personalFreeResearch.semanticReview.responseSha256 = "bad"; },
     c => { c.provenance.personalFreeResearch.provider = "cloudflare-workers-ai"; },
-    c => { c.provenance.personalFreeResearch.maxModelRequests = 17; },
+    c => { c.provenance.personalFreeResearch.maxModelRequests = 21; },
     c => { c.provenance.personalFreeResearch.webSearch = {}; },
     c => { c.provenance.sourceCheck.status = "failed"; },
     c => { delete c.provenance.sourceCheck.checkedAt; },
@@ -138,19 +157,38 @@ test("real trusted baseline IDs stay bound to raw local semantic approvals throu
   const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [selected], model: LOCAL_PREVIEW.model,
     aiRequestImpl: async request => {
       requests++;
-      const payload = requests === 1 ? { stories: [fixture.draft] }
-        : requests === 2 ? { headline: fixture.draft.headline, deck: fixture.draft.deck,
-          whyItMatters: fixture.draft.whyItMatters, whatToDoOrWatch: fixture.draft.whatToDoOrWatch }
-        : { reviews: [{ candidateId: selected.candidateId,
-        draftSha256: createHash("sha256").update(JSON.stringify(fixture.draft)).digest("hex"),
-        claimSupport: fixture.draft.claims.map(claim => claim.supports.map(support => support.evidenceId)),
-        factsSupported: true, attributionAccurate: true, analysisSupported: true, usefulAndSpecific: true }] };
+      const data = JSON.parse(request.messages[1].content);
+      const supportSets = fixture.draft.claims.map(claim => claim.supports.map(support => support.evidenceId));
+      let payload;
+      if (requests === 1) {
+        assert.ok(request.schema.properties.claims);
+        payload = { candidateId: selected.candidateId, claims: fixture.draft.claims };
+      } else if (requests === 2) {
+        assert.ok(request.schema.properties.foundationSha256);
+        assert.deepEqual(data.foundation, { candidateId: selected.candidateId, claims: fixture.draft.claims });
+        const foundationSha256 = createHash("sha256").update(JSON.stringify(data.foundation)).digest("hex");
+        assert.equal(data.foundationSha256, foundationSha256);
+        payload = { candidateId: selected.candidateId, foundationSha256, claimSupport: supportSets,
+          factsSupported: true, issues: [] };
+      } else if (requests === 3) {
+        assert.deepEqual(Object.keys(request.schema.properties).sort(), ["deck", "headline", "whatToDoOrWatch", "whyItMatters"]);
+        payload = { headline: fixture.draft.headline, deck: fixture.draft.deck,
+          whyItMatters: fixture.draft.whyItMatters, whatToDoOrWatch: fixture.draft.whatToDoOrWatch };
+      } else {
+        assert.equal(requests, 4);
+        assert.ok(request.schema.properties.reviews);
+        assert.deepEqual(data.drafts[0].draft, fixture.draft);
+        const draftSha256 = createHash("sha256").update(JSON.stringify(data.drafts[0].draft)).digest("hex");
+        assert.equal(data.drafts[0].draftSha256, draftSha256);
+        payload = { reviews: [{ candidateId: selected.candidateId, draftSha256, claimSupport: supportSets,
+          factsSupported: true, attributionAccurate: true, analysisSupported: true, usefulAndSpecific: true }] };
+      }
       return { provider: LOCAL_PREVIEW.provider, model: request.model, responseId: `local-${"d".repeat(64)}`,
         requestSha256: "a".repeat(64), responseSha256: "b".repeat(64), editorialPayload: payload };
     },
   });
   assert.ok(result);
-  assert.equal(requests, 3);
+  assert.equal(requests, 4);
   Object.assign(candidate, result.editorial);
   candidate.provenance.personalFreeResearch.semanticReview = { ...result.inference.semanticReview,
     approvedStoryIds: [candidate.desks.ai.story.id] };
@@ -185,7 +223,7 @@ test("authorized local preview sends one labeled email with its fixed key and un
   assert.equal(JSON.stringify(candidate), original);
 });
 
-test("local candidate cannot use daily or generic preview paths or send after midnight", async () => {
+test("local candidate cannot use daily or generic preview paths or send after the extended deadline", async () => {
   const candidate = localPreviewTestCandidate();
   let calls = 0;
   const opts = { apiKey: "re_local_preview_test_only", recipient: "owner@example.com",
@@ -198,4 +236,30 @@ test("local candidate cannot use daily or generic preview paths or send after mi
   await assert.rejects(sendPersonalEditionPreview(candidate, { ...opts, previewConfirmation: "SEND" }));
   await assert.rejects(sendPersonalEditionPreview(candidate, { ...opts, previewClock: () => new Date(LOCAL_PREVIEW.expiresAt) }));
   assert.equal(calls, 0);
+});
+
+test("after-midnight continuation keeps the September 13 identity and separate preview key", async () => {
+  const candidate = localPreviewTestCandidate();
+  const research = candidate.provenance.personalFreeResearch;
+  candidate.publication.generatedAt = research.generatedAt = "2026-09-14T05:30:00.000Z";
+  candidate.provenance.sourceCheck.checkedAt = "2026-09-14T05:50:00.000Z";
+  const sendAt = new Date("2026-09-14T06:03:00.000Z");
+  const authorization = authorizeLocalPreview(localPreviewTestEnv(candidate), candidate, sendAt);
+  let requests = 0;
+  const opts = { localPreviewAuthorization: authorization, previewNow: sendAt, previewClock: () => sendAt,
+    previewRevision: "ollama-preview-2026-09-13", previewConfirmation: "SEND LOCAL PREVIEW 2026-09-13",
+    apiKey: "re_local_preview_test_only", recipient: "owner@example.com", fetchImpl: async (_url, request) => {
+      requests++;
+      assert.equal(request.headers["Idempotency-Key"], "first-fold-personal-preview-ollama-2026-09-13");
+      const body = JSON.parse(request.body);
+      assert.deepEqual(body.to, ["owner@example.com"]);
+      assert.match(body.subject, /September 13, 2026/u);
+      assert.match(body.text, /authorized September 13–14 preview window/u);
+      assert.match(body.html, /not a September 14 daily edition/u);
+      return new Response(JSON.stringify({ id: "mock-extended-preview" }), { status: 200 });
+    } };
+  await assert.rejects(sendPersonalEditionEmail(candidate, opts), /cannot use daily/u);
+  await sendPersonalEditionPreview(candidate, opts);
+  await assert.rejects(sendPersonalEditionPreview(candidate, { ...opts, previewClock: () => new Date(LOCAL_PREVIEW.expiresAt) }));
+  assert.equal(requests, 1);
 });

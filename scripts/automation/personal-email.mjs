@@ -540,7 +540,7 @@ function assertLocalEmailContract(candidate, now) {
       research.coveredDeskCount !== DESKS.length || research.candidateCount !== ids.length ||
       research.selectedStoryCount !== ids.length || ids.length < 1 || ids.length > DESKS.length ||
       research.evidencePolicy !== PERSONAL_RESEARCH_EVIDENCE_POLICY || research.lookbackHours !== 72 ||
-      research.minimumScore !== 70 || research.minimumAuthoritativeScore !== 70 || research.maxModelRequests !== 16 ||
+      research.minimumScore !== 70 || research.minimumAuthoritativeScore !== 70 || research.maxModelRequests !== 20 ||
       research.ephemeral !== true || research.qualityPilotOrdinal !== null ||
       review?.provider !== LOCAL_PREVIEW.provider || review?.model !== LOCAL_PREVIEW.model ||
       !["requestSha256", "responseSha256"].every(key => /^[a-f0-9]{64}$/u.test(review?.[key] ?? "")) ||
@@ -1316,7 +1316,7 @@ async function sendPersonalEmail(candidate, {
   if (preview) {
     const updated = preview === "web-search-upgrade-2026-09-11" || preview === REQUESTED_PREVIEW_REVISION;
     const notice = local
-      ? "Requested September 13 local-model preview. Freshly researched from reviewed live feeds and drafted and checked on your Mac with Ollama and Qwen. This uses no paid research service and is not a full-web-search report. It does not replace your daily edition or publish a public paper."
+      ? "Requested September 13 local-model preview. Researched during the authorized September 13–14 preview window for the September 13 morning cutoff, then drafted and checked on your Mac with Ollama and Qwen. This uses reviewed live feeds, no paid research service, and is not a full-web-search report. It is not a September 14 daily edition and does not replace your daily delivery or publish a public paper."
       : historical
       ? "Requested September 11 preview. Researched on September 12, 2026 for the September 11, 2026 5:00 AM ET reporting cutoff. This is not your September 12 daily edition; isolated preview history is used and daily delivery is unchanged."
       : updated
@@ -1357,7 +1357,7 @@ async function sendPersonalEmail(candidate, {
   }
 
   // Everything between this real-clock check and the request is synchronous.
-  // An authorization that expires while preparing copy cannot send after midnight.
+  // An authorization that expires while preparing copy cannot send after its deadline.
   if (historical || local) historicalDeliveryGuard();
   const controller = new AbortController();
   let timeoutHandle;
