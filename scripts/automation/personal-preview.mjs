@@ -44,7 +44,8 @@ export function assertRequestedPreviewQuality(candidate) {
     story.evidence.every((claim) => typeof claim?.id === "string" &&
       claim.id.startsWith(`${story.id}-grounded-`))).length;
   if (!stories.length || checked !== stories.length || research.draftingMode !== "source-grounded-summary") {
-    throw new Error("Preview did not meet the checked-summary quality requirement.");
+    throw Object.assign(new Error("Preview did not meet the checked-summary quality requirement."),
+      { code: "CHECKED_SUMMARY_REQUIRED" });
   }
   return { stories: stories.length, checked, mode: research.draftingMode,
     webSearch: structuredClone(research.webSearch), repeatHistory: "isolated-preview" };

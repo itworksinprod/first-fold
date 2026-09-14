@@ -156,6 +156,42 @@ test("one originality revision is revalidated, hash-bound and separately checked
   assert.ok(diagnostics.some((event) => event.stage === "draft-repair" && event.accepted === 1));
 });
 
+test("Qwen repairs all measured field defects without regenerating clean story fields", async () => {
+  for (const scenario of ["valid", "extra-edit", "duplicate-edit", "unknown-citation", "review-veto"]) {
+    const defective = structuredClone(groundedDraft);
+    defective.whyItMatters += ` ${"An additional sentence adds needless padding. ".repeat(5).trim()}`;
+    defective.whatToDoOrWatch = "Check the advisory.";
+    defective.claims[0].text = defective.claims[0].text.replace("AOMEI Backupper", "AOMEI Backupper 9.9.9");
+    const calls = [];
+    const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
+      model: EXPERIMENTAL_FREE_WRITER_MODEL, aiRequestImpl: async options => {
+        calls.push(options);
+        const wrap = payload => ({ ...response(payload), model: EXPERIMENTAL_FREE_WRITER_MODEL });
+        if (calls.length === 1) return wrap({ stories: [defective] });
+        if (calls.length === 2) {
+          const data = JSON.parse(options.messages[1].content);
+          assert.deepEqual(data.requestedEdits[0].fields.map(item => item.field).sort(),
+            ["claims[0].text", "whatToDoOrWatch", "whyItMatters"]);
+          assert.equal(options.maxTokens, 2_000);
+          assert.ok(data.dossiers[0].sources[0].passages.every(passage => Array.isArray(passage.supportedNumericTokens)));
+          const edits = data.requestedEdits[0].fields.map(({ field }) => ({ candidateId: candidate.candidateId,
+            field, text: field === "claims[0].text" ? groundedDraft.claims[0].text : groundedDraft[field],
+            supports: field === "claims[0].text" ? structuredClone(groundedDraft.claims[0].supports) : [] }));
+          if (scenario === "extra-edit") edits.push({ candidateId: candidate.candidateId, field: "headline", text: "Injected", supports: [] });
+          if (scenario === "duplicate-edit") edits[1] = edits[0];
+          if (scenario === "unknown-citation") edits.find(item => item.field === "claims[0].text").supports = [{ evidenceId: "unknown" }];
+          return wrap({ edits });
+        }
+        assert.equal(JSON.parse(options.messages[1].content).drafts[0].draftSha256, hash(groundedDraft));
+        return wrap({ reviews: [{ ...review, factsSupported: scenario !== "review-veto" }] });
+      } });
+    assert.equal(Boolean(result), scenario === "valid");
+    assert.ok(calls.length <= 3);
+    assert.ok(calls.reduce((sum, call) => sum + call.maxTokens, 0) <= 7_800);
+    if (result) assert.equal(result.editorial.desks["security-and-privacy"].story.headline, groundedDraft.headline);
+  }
+});
+
 test("bad or unrequested revisions cannot bypass checks or trigger another revision", async () => {
   const copied = structuredClone(groundedDraft);
   copied.claims[0].text = copiedClaim;

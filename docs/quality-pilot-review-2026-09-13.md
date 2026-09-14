@@ -41,3 +41,13 @@ requests, one 2,000-token repair, and one 1,800-token factual review. The total
 output ceiling stays 7,800; the call ceiling is six for writing and seven including
 newsworthiness. A local counter enforces both bounds. Llama's three writing calls
 are unchanged, and existing four-call provenance remains readable.
+
+The second preview, [34792224210](https://github.com/itworksinprod/first-fold/actions/runs/34792224210),
+verified six search-discovered articles but sent no email. Its drafts failed field
+bounds and numeric citations; whole-story repair fixed none. The repair slot now
+accepts only an exact, locally requested set of field edits when the draft's
+structure is usable. It measures all field lengths together, identifies bad
+numeric citations and missing publisher coverage, and preserves clean fields.
+Malformed, extra, duplicate or unsupported edits remain rejected; every rebuilt
+story still needs full local and semantic approval. No extra call, output tokens,
+paid provider or loosened acceptance threshold is authorized by this repair.
