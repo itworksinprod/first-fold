@@ -5,7 +5,7 @@ import { groundedDraft, groundedEvidence } from "./fixtures/grounded-summary.mjs
 import { malformedEmailStories } from "./fixtures/malformed-email-2026-09-11.mjs";
 import { GROUNDED_DRAFT_SCHEMA, groundedDossiers, validateGroundedStory, synthesizeGroundedEditorial } from
   "../scripts/automation/free/grounded-draft.mjs";
-import { DEFAULT_CLOUDFLARE_AI_MODEL, EXPERIMENTAL_FREE_WRITER_MODEL } from "../scripts/automation/free/workers-ai.mjs";
+import { DEFAULT_CLOUDFLARE_AI_MODEL, EXPERIMENTAL_FREE_WRITER_MODEL, FREE_REASONING_WRITER_MODEL } from "../scripts/automation/free/workers-ai.mjs";
 
 const candidate = { candidateId: groundedDraft.candidateId, suggestedDesk: "security-and-privacy",
   ranking: { evidenceTier: "authoritative-single" }, feedEvidence: [groundedEvidence],
@@ -86,6 +86,26 @@ test("quota errors stop immediately with no provider fallback or retries", async
   assert.equal(await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
     aiRequestImpl: async () => { calls++; throw new Error("quota"); } }), null);
   assert.equal(calls, 1);
+});
+
+test("the Cloudflare open-weight reasoning writer retains the existing total budget and factual veto", async () => {
+  for (const accepted of [true, false]) {
+    const calls = [];
+    const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
+      model: FREE_REASONING_WRITER_MODEL, aiRequestImpl: async options => {
+        calls.push(options);
+        assert.equal(options.model, "@cf/openai/gpt-oss-120b");
+        assert.equal(options.responseFormat, "json_schema");
+        assert.match(options.messages[0].content, /^Reasoning: low\n/);
+        assert.equal(options.maxAttempts, 1);
+        return { ...response(calls.length === 1 ? { stories: [groundedDraft] }
+          : { reviews: [{ ...review, factsSupported: accepted }] }), model: FREE_REASONING_WRITER_MODEL };
+      } });
+    assert.equal(Boolean(result), accepted);
+    assert.deepEqual(calls.map(call => call.maxTokens), [3_800, 2_400]);
+    assert.equal(calls.reduce((total, call) => total + call.maxTokens, 0) + 1_600, 7_800);
+    if (result) assert.equal(result.inference.model, FREE_REASONING_WRITER_MODEL);
+  }
 });
 test("semantic reviewer veto, wrong draft hash and unavailable checker all keep the safe baseline", async () => {
   for (const badReview of [{ ...review, factsSupported: false }, { ...review, draftSha256: "wrong" },

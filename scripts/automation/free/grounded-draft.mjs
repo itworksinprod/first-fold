@@ -4,7 +4,7 @@ import { readerProseErrors } from "../../reader-prose.mjs";
 import { readerSummaryErrors } from "../../reader-summary.mjs";
 import { claimCaveatErrors } from "./claim-caveats.mjs";
 import { buildEvidencePacketSources } from "./evidence-packets.mjs";
-import { DEFAULT_CLOUDFLARE_AI_MODEL, EXPERIMENTAL_FREE_WRITER_MODEL, WORKERS_AI_EDITORIAL_FORMAT_INVALID,
+import { DEFAULT_CLOUDFLARE_AI_MODEL, EXPERIMENTAL_FREE_WRITER_MODEL, FREE_REASONING_WRITER_MODEL, WORKERS_AI_EDITORIAL_FORMAT_INVALID,
   requestWorkersAiEditorial, resolveCloudflareAiModel, workersAiFailureDiagnostic } from "./workers-ai.mjs";
 
 export const GROUNDED_DIGEST_MODE = "source-grounded-summary";
@@ -454,6 +454,7 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
   // the existing 7,800-token ceiling, never increase calls or the total cap.
   const budgets = model === EXPERIMENTAL_FREE_WRITER_MODEL
     ? { write: 1_000, repair: 2_000, review: 1_800 }
+    : model === FREE_REASONING_WRITER_MODEL ? { write: 3_800, repair: 1_600, review: 2_400 }
     : { write: 4_000, repair: 3_000, review: 800 };
   const dossiers = groundedDossiers(candidates);
   // The passage list already contains the evidence text; do not send a second
@@ -473,12 +474,14 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
     outputTokenBudgetUsed += maxTokens;
     return aiRequestImpl({ accountId, apiToken,
     model, messages: [{ role: "system", content: model === EXPERIMENTAL_FREE_WRITER_MODEL
-      ? `${system}\nReturn one JSON object conforming to this schema:\n${JSON.stringify(schema)}\n/no_think` : system },
+      ? `${system}\nReturn one JSON object conforming to this schema:\n${JSON.stringify(schema)}\n/no_think`
+      : model === FREE_REASONING_WRITER_MODEL ? `Reasoning: low\n${system}\nReturn only the final JSON object matching this schema:\n${JSON.stringify(schema)}` : system },
       { role: "user", content: JSON.stringify(data) }], schema,
     responseFormat: model === EXPERIMENTAL_FREE_WRITER_MODEL ? "json_object" : "json_schema",
     validatePayload: (value) => Boolean(value && typeof value === "object"),
     maxTokens, maxAttempts: 1, maxRequestBytes: 70_000, maxResponseBytes: 100_000,
-    timeoutMs: 90_000, temperature: model === EXPERIMENTAL_FREE_WRITER_MODEL ? 0.7 : 0.1, fetchImpl });
+    timeoutMs: 90_000, temperature: model === EXPERIMENTAL_FREE_WRITER_MODEL ? 0.7
+      : model === FREE_REASONING_WRITER_MODEL ? 0.6 : 0.1, fetchImpl });
   };
   try {
     const writerSchema = writerProviderSchema(dossiers.map((dossier) => dossier.candidateId));
@@ -568,9 +571,10 @@ response, add Markdown fences or serialize another object inside any reader-faci
         whatHappened: Array.isArray(draft?.claims) ? draft.claims.map((claim) => claim?.text ?? "").join(" ") : "" })) });
     if (rejected.length && !repairUsed) {
       const repairIds = new Set(rejected.map(({ draft }) => draft.candidateId));
-      const fieldOnly = model === EXPERIMENTAL_FREE_WRITER_MODEL && rejected.every(entry =>
+      const focusedWriter = [EXPERIMENTAL_FREE_WRITER_MODEL, FREE_REASONING_WRITER_MODEL].includes(model);
+      const fieldOnly = focusedWriter && rejected.every(entry =>
         entry.rejectionCode === "ORIGINALITY" && REPAIR_FIELDS.includes(entry.feedback.field));
-      const focused = model === EXPERIMENTAL_FREE_WRITER_MODEL && !fieldOnly ? focusedRepairPlan(rejected, dossiers) : null;
+      const focused = focusedWriter && !fieldOnly ? focusedRepairPlan(rejected, dossiers) : null;
       const rewriteIds = focused ? [...repairIds].filter(id => !focused.some(item => item.candidateId === id)) : [];
       const repairSchema = focused ? objectSchema({ edits: {
         type: "array", minItems: focused.reduce((sum, item) => sum + item.fields.length, 0),

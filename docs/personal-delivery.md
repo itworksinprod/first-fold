@@ -534,11 +534,13 @@ The workflow is manual-only; publishing its code does not send an email.
 It never changes daily duplicate protection,
 the private repeat ledger, the schedule, or any public edition. It has no cron
 trigger. No additional preview is authorized after the fixed date.
-This preview tests the allowlisted Qwen writer profile before changing the daily
+This preview tests the allowlisted Cloudflare-hosted GPT-OSS writer before changing the daily
 writer. The older September 11 and historical-preview grants remain expired.
-Qwen drafts one story at a time, with at most four 1,000-token requests, one
-2,000-token repair and one 1,800-token review. This preserves the 7,800-output-token
-ceiling with six writing calls, or seven including the editorial assessment.
+The profile permits one 3,800-token draft request, one optional 1,600-token repair,
+and one 2,400-token review, using low reasoning and JSON schema mode. This preserves
+the 7,800-output-token ceiling with three writing calls, or four including assessment.
+The Qwen experiment remains available only to the separate no-email checks; it
+did not pass the September 13 preview requirements and is not the daily writer.
 Both call count and total output allowance are locally enforced. It never retries
 a quota, credential or transport failure, or switches to a paid model.
 

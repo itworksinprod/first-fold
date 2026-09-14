@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { DEFAULT_CLOUDFLARE_AI_MODEL, FREE_CLOUDFLARE_AI_MODELS } from "./models.mjs";
-export { DEFAULT_CLOUDFLARE_AI_MODEL, EXPERIMENTAL_FREE_WRITER_MODEL, FREE_CLOUDFLARE_AI_MODELS } from "./models.mjs";
+export { DEFAULT_CLOUDFLARE_AI_MODEL, EXPERIMENTAL_FREE_WRITER_MODEL, FREE_REASONING_WRITER_MODEL, FREE_CLOUDFLARE_AI_MODELS } from "./models.mjs";
 
 // This model is explicitly listed by Cloudflare as supporting Workers AI JSON
 // Mode. Keep the allowlist narrow so the hard-$0 lane cannot drift to a model

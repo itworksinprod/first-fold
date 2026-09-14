@@ -68,3 +68,21 @@ was an appropriate length. Per-field bounds now permit natural balance: claims
 source caveats, originality, semantic approval, editorial scores and source
 requirements are unchanged. This is a deliberate layout tolerance change, not
 evidence that unreviewed prose is acceptable.
+
+The fourth preview, [34793373187](https://github.com/itworksinprod/first-fold/actions/runs/34793373187),
+sent nothing. Qwen's remaining failures were outer-object shape, incomplete
+sentences, one 98-word draft and a reviewer response that exhausted its output
+limit. It is not promoted. The next date-bound preview explicitly evaluates
+Cloudflare-hosted `@cf/openai/gpt-oss-120b`, not the paid OpenAI API. Its fixed
+profile uses low reasoning, JSON schema mode, 3,800 drafting / 1,600 optional
+repair / 2,400 review output tokens (the same 7,800 total), with no provider
+fallback or transport retry. Daily production remains Llama pending success.
+
+The [Cloudflare pricing page](https://developers.cloudflare.com/workers-ai/platform/pricing/)
+includes this model in the free-allocation pricing table and does not list it
+among paid-only models. Workers Free rejects allowance exhaustion; no account
+billing setting is changed. The
+[official model-format guidance](https://developers.openai.com/cookbook/articles/openai-harmony#reasoning)
+documents `Reasoning: low` in the system message. Reasoning text is never used as
+article evidence, logged or delivered; only a complete, validated final object
+can enter the existing review gates.

@@ -6,7 +6,7 @@ import { assertPersonalEmailCandidate, sendPersonalEditionPreview } from "./pers
 import { isValidWebSearchReceipt } from "./free/search-receipt.mjs";
 import { HISTORICAL_PREVIEW, authorizeHistoricalPreview } from "./historical-preview-policy.mjs";
 import { draftFreeEditionWithHealth } from "./draft-free-edition.mjs";
-import { EXPERIMENTAL_FREE_WRITER_MODEL } from "./free/models.mjs";
+import { FREE_REASONING_WRITER_MODEL } from "./free/models.mjs";
 import { REQUESTED_PREVIEW_DATE, REQUESTED_PREVIEW_REVISION, REQUESTED_PREVIEW_CONFIRMATION } from "./requested-preview-policy.mjs";
 
 export { REQUESTED_PREVIEW_DATE, REQUESTED_PREVIEW_REVISION };
@@ -65,7 +65,7 @@ export async function runRequestedPreview({ env = process.env, now = new Date(),
     runMode: historical ? HISTORICAL_PREVIEW.runMode : "same_day_backfill", env,
     now: () => clock(),
     ...(!historical ? { draftFreeEditionWithHealthImpl: options =>
-      draftFreeEditionWithHealth({ ...options, model: EXPERIMENTAL_FREE_WRITER_MODEL }) } : {}),
+      draftFreeEditionWithHealth({ ...options, model: FREE_REASONING_WRITER_MODEL }) } : {}),
     ...(historical ? { historicalPreviewAuthorization } : {}),
     personalStoryLedger: createEmptyPersonalStoryLedger({ fingerprintKey: env.CLOUDFLARE_AI_API_TOKEN }),
     researchImpl: async (options) => {
