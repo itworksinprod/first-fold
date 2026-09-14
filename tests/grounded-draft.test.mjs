@@ -668,6 +668,7 @@ test("a missing draft can consume only the existing repair slot and still requir
 function localResponse(payload) {
   return { ...response(payload), provider: LOCAL_AI_PROVIDER, model: LOCAL_AI_MODEL };
 }
+const localCopy = draft => Object.fromEntries(["headline", "deck", "whyItMatters", "whatToDoOrWatch"].map(field => [field, draft[field]]));
 
 test("explicit local selection uses only loopback and truthful hash-bound review provenance", async () => {
   assert.throws(() => resolveCloudflareAiModel(LOCAL_AI_MODEL), /Cloudflare-hosted/);
@@ -685,7 +686,8 @@ test("explicit local selection uses only loopback and truthful hash-bound review
       assert.equal(body.stream, false);
       assert.equal(body.options.num_ctx, LOCAL_AI_CONTEXT_TOKENS);
       assert.equal(body.options.temperature, 0.6);
-      const payload = requests.length === 1 ? { stories: [groundedDraft] } : { reviews: [review] };
+      const payload = requests.length === 1 ? { stories: [groundedDraft] }
+        : requests.length === 2 ? localCopy(groundedDraft) : { reviews: [review] };
       return new Response(JSON.stringify({ model: LOCAL_AI_MODEL, done: true, done_reason: "stop",
         prompt_eval_count: 1_200, eval_count: 400,
         message: { role: "assistant", content: JSON.stringify(payload) } }), {
@@ -693,7 +695,7 @@ test("explicit local selection uses only loopback and truthful hash-bound review
       });
     } });
   assert.ok(result);
-  assert.deepEqual(requests.map(request => request.options.num_predict), [12_000, 6_000]);
+  assert.deepEqual(requests.map(request => request.options.num_predict), [12_000, 12_000, 6_000]);
   assert.equal(result.inference.provider, LOCAL_AI_PROVIDER);
   assert.equal(result.inference.model, LOCAL_AI_MODEL);
   assert.equal(result.inference.kind, "local-ai");
@@ -783,9 +785,9 @@ test("local reviewer cannot approve unsupported claims, wrong binding or generic
     let calls = 0;
     const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
       model: LOCAL_AI_MODEL, aiRequestImpl: async () => localResponse(++calls === 1
-        ? { stories: [groundedDraft] } : { reviews: [bad] }) });
+        ? { stories: [groundedDraft] } : calls === 2 ? localCopy(groundedDraft) : { reviews: [bad] }) });
     assert.equal(result, null);
-    assert.equal(calls, 2);
+    assert.equal(calls, 3);
   }
 });
 
@@ -805,12 +807,77 @@ test("local evidence-first schema ordering never mutates the daily Cloudflare gr
           }
         }
         return (model === LOCAL_AI_MODEL ? localResponse : response)(calls === 1
-          ? { stories: [groundedDraft] } : { reviews: [review] });
+          ? { stories: [groundedDraft] } : model === LOCAL_AI_MODEL && calls === 2 ? localCopy(groundedDraft) : { reviews: [review] });
       } });
     assert.ok(result);
-    assert.equal(calls, 2);
+    assert.equal(calls, model === LOCAL_AI_MODEL ? 3 : 2);
   }
   assert.deepEqual(Object.keys(GROUNDED_DRAFT_SCHEMA.properties.stories.items.properties.claims.items.properties), ["text", "supports"]);
+});
+
+test("local numeric advice repair preserves facts and supplies only the immutable claims' cited evidence", async () => {
+  const expanded = structuredClone(candidate);
+  // The live September 13 failure borrowed an uncited R82.20 unaffected-release
+  // detail into advice; regenerating the whole story then broke valid claims.
+  expanded.feedEvidence[0].articleExcerpt = "A separate VPN version R82.20 is not affected by its reported flaws.";
+  const bad = { ...structuredClone(groundedDraft), whatToDoOrWatch: `${groundedDraft.whatToDoOrWatch} Version R82.20 is unaffected.` };
+  const events = [];
+  let calls = 0;
+  const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [expanded], model: LOCAL_AI_MODEL,
+    onDiagnostic: event => events.push(event), aiRequestImpl: async options => {
+      calls++;
+      assert.doesNotThrow(() => buildLocalAiRequest(options));
+      const data = JSON.parse(options.messages[1].content);
+      if (calls === 1) return localResponse({ stories: [bad] });
+      if (calls === 2) {
+        assert.deepEqual(Object.keys(options.schema.properties), ["headline", "deck", "whyItMatters", "whatToDoOrWatch"]);
+        assert.deepEqual(options.schema.required, ["headline", "deck", "whyItMatters", "whatToDoOrWatch"]);
+        assert.equal(options.schema.additionalProperties, false);
+        assert.equal(options.maxTokens, 12_000);
+        assert.deepEqual(data.fixed, { claims: groundedDraft.claims });
+        const ids = groundedDraft.claims.flatMap(claim => claim.supports.map(support => support.evidenceId));
+        assert.deepEqual(data.dossiers[0].sources.flatMap(source => source.passages.map(passage => passage.evidenceId)), ids);
+        assert.deepEqual(data.dossiers[0].supportedNumericTokens, []);
+        assert.doesNotMatch(JSON.stringify(data.dossiers), /82\.20|separate VPN/);
+        assert.match(options.messages[0].content, /The two fixed claims cannot change/);
+        return localResponse(localCopy(groundedDraft));
+      }
+      assert.ok(options.schema.properties.reviews);
+      assert.deepEqual(data.drafts[0].draft, groundedDraft);
+      assert.equal(data.drafts[0].draftSha256, hash(groundedDraft));
+      assert.match(JSON.stringify(data.dossiers), /82\.20/, "Final review still receives the complete original selected source packet");
+      return localResponse({ reviews: [review] });
+    } });
+  assert.ok(result);
+  assert.equal(calls, 3);
+  assert.equal(events.find(event => event.stage === "draft-repair").repairMode, "copy-refinement");
+  assert.equal(result.editorial.desks["security-and-privacy"].story.whatHappened, groundedDraft.claims.map(claim => claim.text).join(" "));
+});
+
+test("a local analysis repair cannot mutate claims, bypass vetoes or obtain a second repair", async () => {
+  const bad = { ...structuredClone(groundedDraft), whyItMatters: `${groundedDraft.whyItMatters} This involves port 4500.` };
+  const pair = localCopy(groundedDraft);
+  for (const repair of [
+    { ...pair, claims: groundedDraft.claims }, { ...pair, supports: [] },
+    { ...pair, candidateId: "another-candidate" }, { ...pair, whyItMatters: bad.whyItMatters },
+    { ...pair, whatToDoOrWatch: "Too short." },
+  ]) {
+    let calls = 0;
+    const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate], model: LOCAL_AI_MODEL,
+      aiRequestImpl: async options => {
+        calls++;
+        assert.equal(options.schema.properties.reviews, undefined, "Invalid repair never reaches a reviewer");
+        return localResponse(calls === 1 ? { stories: [bad] } : repair);
+      } });
+    assert.equal(result, null);
+    assert.equal(calls, 2, "No full-story reroll or second repair after an invalid pair");
+  }
+  let calls = 0;
+  const rejected = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate], model: LOCAL_AI_MODEL,
+    aiRequestImpl: async () => localResponse(++calls === 1 ? { stories: [bad] } : calls === 2 ? pair
+      : { reviews: [{ ...review, analysisSupported: false }] }) });
+  assert.equal(rejected, null);
+  assert.equal(calls, 3, "A valid pair still needs semantic approval, without approval retries");
 });
 
 test("local drafts keep numeric, citation, caveat, originality and reader-copy vetoes", async () => {
@@ -887,6 +954,11 @@ test("local compact packets retain late prerequisites, both publishers and origi
       assert.doesNotThrow(() => buildLocalAiRequest(options));
       const [packet] = JSON.parse(options.messages[1].content).dossiers;
       assert.equal(packet.sources.length, 2);
+      if (calls === 2) {
+        assert.deepEqual(packet.sources.flatMap(source => source.passages.map(passage => passage.evidenceId)),
+          draft.claims.flatMap(claim => claim.supports.map(support => support.evidenceId)));
+        return localResponse(localCopy(draft));
+      }
       for (const [index, source] of packet.sources.entries()) {
         const text = source.passages.map(passage => passage.text).join("\n");
         assert.ok(text.length <= 2_000);
@@ -896,12 +968,12 @@ test("local compact packets retain late prerequisites, both publishers and origi
         assert.ok(source.passages.some(passage => Number(passage.evidenceId.split("P")[1]) > 40));
         assert.equal(Object.hasOwn(source, "text"), false, "Do not send duplicated full source text");
       }
-      return localResponse(calls === 1 ? { stories: [draft] } : { reviews: [{ ...review,
+      return localResponse(calls === 1 ? { stories: [draft] } : calls === 2 ? localCopy(draft) : { reviews: [{ ...review,
         draftSha256: hash(draft), claimSupport: draft.claims.map(claim => claim.supports.map(support => support.evidenceId)),
       }] });
     } });
   assert.ok(result);
-  assert.equal(calls, 2);
+  assert.equal(calls, 3);
   assert.deepEqual(result.editorial.desks["security-and-privacy"].story.evidence[1].sourceIds, [secondEvidence.sourceId]);
 });
 

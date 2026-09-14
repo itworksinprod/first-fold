@@ -138,7 +138,10 @@ test("real trusted baseline IDs stay bound to raw local semantic approvals throu
   const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [selected], model: LOCAL_PREVIEW.model,
     aiRequestImpl: async request => {
       requests++;
-      const payload = requests === 1 ? { stories: [fixture.draft] } : { reviews: [{ candidateId: selected.candidateId,
+      const payload = requests === 1 ? { stories: [fixture.draft] }
+        : requests === 2 ? { headline: fixture.draft.headline, deck: fixture.draft.deck,
+          whyItMatters: fixture.draft.whyItMatters, whatToDoOrWatch: fixture.draft.whatToDoOrWatch }
+        : { reviews: [{ candidateId: selected.candidateId,
         draftSha256: createHash("sha256").update(JSON.stringify(fixture.draft)).digest("hex"),
         claimSupport: fixture.draft.claims.map(claim => claim.supports.map(support => support.evidenceId)),
         factsSupported: true, attributionAccurate: true, analysisSupported: true, usefulAndSpecific: true }] };
@@ -147,7 +150,7 @@ test("real trusted baseline IDs stay bound to raw local semantic approvals throu
     },
   });
   assert.ok(result);
-  assert.equal(requests, 2);
+  assert.equal(requests, 3);
   Object.assign(candidate, result.editorial);
   candidate.provenance.personalFreeResearch.semanticReview = { ...result.inference.semanticReview,
     approvedStoryIds: [candidate.desks.ai.story.id] };
