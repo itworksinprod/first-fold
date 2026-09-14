@@ -94,3 +94,26 @@ All 853 regression tests pass after the transport change. Real-adapter tests
 cover the full-story request, exact system schema, native-schema field repairs
 and review, one format recovery only, rejection of malformed/wrong objects,
 and rejection of broken reader prose inside otherwise valid JSON.
+
+The live transport check,
+[34843909930](https://github.com/itworksinprod/first-fold/actions/runs/34843909930)
+on `4fa09a5`, verified eight publisher articles and failed the all-summaries
+assertion. No writer checkpoint was recorded, so it does not establish which
+writer condition failed. Inspection found a logging/recovery gap: a parseable
+object with invalid outer story structure or candidate identities returned
+silently, bypassing the existing format-recovery slot. The follow-up routes
+that unusable response through the same single recovery, never adopts its
+contents, and records safe fixed reasons/counts. Missing known stories still
+use the existing focused repair path. Invalid candidate input is diagnosed
+without making an inference request. This does not relax any acceptance gate.
+
+The shared writer instruction also now explicitly says the body-word target is
+per story, not per multi-story response. The default full-story instruction
+distinguishes story data from the schema description. These remove instruction
+ambiguities without changing any local word count or shape requirement.
+
+All 857 tests pass, including one recovery from incorrect outer keys, reflected
+schema, non-array stories, excessive counts, duplicate IDs and unknown IDs.
+Repeated malformed responses stop after two calls; recovered drafts cannot
+obtain another field repair. Invalid inference provenance cannot authorize
+recovery, and successful recovery still requires exact-hash factual review.

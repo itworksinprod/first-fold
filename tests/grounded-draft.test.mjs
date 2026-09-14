@@ -142,12 +142,12 @@ test("semantic reviewer veto, wrong draft hash and unavailable checker all keep 
     assert.equal(calls, 2);
   }
 });
-test("ambiguous drafts cannot replace stories", async () => {
+test("ambiguous daily drafts cannot replace stories or exceed one shape recovery", async () => {
   for (const stories of [[groundedDraft, groundedDraft], [{ ...groundedDraft, candidateId: "injected" }]]) {
     let calls = 0;
     assert.equal(await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
       aiRequestImpl: async () => { calls++; return response({ stories }); } }), null);
-    assert.equal(calls, 1);
+    assert.equal(calls, 2);
   }
 });
 
@@ -1752,6 +1752,8 @@ test("daily full-story JSON-object transport carries the exact system schema whi
         assert.equal(options.responseFormat, "json_object");
         assert.ok(options.messages[0].content.endsWith(JSON.stringify(options.schema)),
           "The exact evidence-first bounded schema is present in SYSTEM, not merely its name");
+        assert.match(options.messages[0].content, /Each story[’']s body[\s\S]*100[–-]225/,
+          "The body budget applies to each story, not the complete batch");
         const fields = options.schema.properties.stories.items.properties;
         assert.equal(fields.claims.items.properties.text.minLength, 60);
         assert.equal(fields.claims.items.properties.text.maxLength, 480);
@@ -1816,6 +1818,7 @@ test("a daily mixed field-edit and missing-story repair remains native schema tr
   editorial.desks.ai = structuredClone(editorial.desks["security-and-privacy"]);
   editorial.desks.ai.story.id = "second-story";
   const calls = [];
+  const events = [];
   const result = await synthesizeGroundedEditorial({ editorial, candidates: [candidate, other], aiRequestImpl: async options => {
     calls.push(options);
     if (calls.length === 1) {
@@ -1829,9 +1832,11 @@ test("a daily mixed field-edit and missing-story repair remains native schema tr
       return response(dailyRepairPayload(options, [groundedDraft, secondDraft]));
     }
     return response({ reviews: [review, { ...review, candidateId: other.candidateId, draftSha256: hash(secondDraft) }] });
-  } });
+  }, onDiagnostic: event => events.push(event) });
   assert.ok(result);
   assert.deepEqual(calls.map(call => call.maxTokens), [4_000, 3_000, 800]);
+  assert.equal(events.some(event => event.stage === "draft-shape-repair"), false,
+    "A missing known candidate keeps the existing focused repair, not a fresh whole-batch attempt");
 });
 
 test("JSON-object drafting still rejects nested damaged prose and never retries a failed field repair", async () => {
@@ -1896,4 +1901,136 @@ test("daily JSON-object transport never accepts wrong outer objects or repairs m
     assert.equal(result, null, payload);
     assert.ok(calls.length >= 1 && calls.length <= 2);
   }
+});
+
+function malformedDailyShapeCases() {
+  return [
+    { reason: "OUTER_KEYS", payload: { type: "object", properties: { stories: { type: "array" } },
+      UNTRUSTED_OUTER_MARKER: "Do not disclose this provider text in diagnostics." }, reflected: true },
+    { reason: "OUTER_KEYS", payload: { stories: [groundedDraft], UNTRUSTED_OUTER_MARKER: true }, reflected: false },
+    { reason: "STORIES_NOT_ARRAY", payload: { stories: { UNTRUSTED_OUTER_MARKER: true } }, reflected: false },
+    { reason: "STORY_COUNT_INVALID", payload: { stories: Array.from({ length: 5 }, () => groundedDraft) }, reflected: false },
+    { reason: "UNKNOWN_CANDIDATE", payload: { stories: [{ ...groundedDraft, candidateId: "UNTRUSTED_CANDIDATE_MARKER" }] }, reflected: false },
+    { reason: "DUPLICATE_CANDIDATE", payload: { stories: [groundedDraft, structuredClone(groundedDraft)] }, reflected: false },
+  ];
+}
+
+test("daily parseable malformed story shapes spend one fresh recovery before exact-hash review", async () => {
+  for (const { payload, reason, reflected } of malformedDailyShapeCases()) {
+    const calls = [];
+    const events = [];
+    const originalBaseline = structuredClone(baseline);
+    const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
+      accountId: "0".repeat(32), apiToken: "synthetic-only", onDiagnostic: event => events.push(event),
+      aiRequestImpl: async options => {
+        calls.push(options);
+        assert.ok(calls.length <= 3);
+        if (calls.length === 2) {
+          assert.equal(options.responseFormat, "json_object");
+          assert.deepEqual(Object.keys(options.schema.properties), ["stories"]);
+          assert.deepEqual(options.schema.properties.stories.items.properties.candidateId.enum, [candidate.candidateId]);
+          assert.deepEqual(JSON.parse(options.messages[1].content).dossiers.map(item => item.candidateId), [candidate.candidateId]);
+          assert.doesNotMatch(JSON.stringify(options.messages), /UNTRUSTED_(?:OUTER|CANDIDATE)_MARKER/,
+            "Recovery starts from trusted dossiers, never failed model instructions or candidate IDs");
+        }
+        if (calls.length === 3) {
+          assert.deepEqual(JSON.parse(options.messages[1].content).drafts, [{ draftSha256: hash(groundedDraft), draft: groundedDraft }]);
+          assert.deepEqual(options.schema.properties.reviews.items.properties.draftSha256.enum, [hash(groundedDraft)]);
+          assert.equal(options.responseFormat, "json_schema");
+        }
+        const next = calls.length === 1 ? payload : calls.length === 2 ? { stories: [groundedDraft] } : { reviews: [review] };
+        return requestWorkersAiEditorial({ ...options, fetchImpl: async () => new Response(JSON.stringify({
+          success: true, result: { response: JSON.stringify(next) }, errors: [],
+        }), { status: 200, headers: { "content-type": "application/json" } }) });
+      } });
+    assert.ok(result, reason);
+    assert.deepEqual(calls.map(call => call.maxTokens), [4_000, 3_000, 800]);
+    assert.equal(result.editorial.desks["security-and-privacy"].story.headline, groundedDraft.headline);
+    assert.deepEqual(baseline, originalBaseline, "Rejected source objects and baseline are not mutated");
+    const checks = events.filter(event => event.stage === "draft-shape-check");
+    assert.equal(checks.length, 1, reason);
+    const check = checks[0];
+    assert.equal(check.phase, "initial");
+    assert.equal(check.reason, reason);
+    assert.equal(check.schemaReflected, reflected);
+    assert.equal(check.expectedStoryCount, 1);
+    assert.equal(check.storyCountExceeded, reason === "STORY_COUNT_INVALID");
+    assert.ok(check.storyCount === null || Number.isInteger(check.storyCount) && check.storyCount >= 0 && check.storyCount <= 4);
+    assert.deepEqual(Object.keys(check).sort(), ["stage", "phase", "reason", "exactOuterKeys", "storyCount",
+      "storyCountExceeded", "expectedStoryCount", "schemaReflected"].sort());
+    assert.doesNotMatch(JSON.stringify(check), /UNTRUSTED_|candidate-personal|CERT\/CC|amwrtdrv|S1P/);
+    const recoveries = events.filter(event => event.stage === "draft-shape-repair");
+    assert.deepEqual(recoveries, [{ stage: "draft-shape-repair", rejectionCode: "DRAFT_SHAPE", repairBudgetRemaining: 0 }]);
+    assert.equal(events.some(event => event.stage === "draft-format-repair" || event.stage === "draft-repair"), false);
+  }
+});
+
+test("repeated daily malformed story shapes stop after two calls without adopting extra or unknown drafts", async () => {
+  for (const { payload, reason } of malformedDailyShapeCases()) {
+    const calls = [];
+    const events = [];
+    const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
+      onDiagnostic: event => events.push(event), aiRequestImpl: async options => {
+        calls.push(options);
+        assert.ok(calls.length <= 2, "No third writer, field repair, or semantic review is permitted");
+        assert.equal(options.schema.properties.reviews, undefined);
+        return response(payload);
+      } });
+    assert.equal(result, null, reason);
+    assert.deepEqual(calls.map(call => call.maxTokens), [4_000, 3_000]);
+    assert.deepEqual(events.filter(event => event.stage === "draft-shape-check").map(event => [event.phase, event.reason]),
+      [["initial", reason], ["recovery", reason]]);
+    assert.equal(events.filter(event => event.stage === "draft-shape-repair").length, 1);
+    assert.equal(events.some(event => event.stage === "semantic-evidence-check" || event.stage === "draft-repair"), false);
+  }
+});
+
+test("parseable shape recovery shares the one repair allowance with format recovery and field correction", async () => {
+  const invalidShape = { stories: [groundedDraft], UNTRUSTED_OUTER_MARKER: true };
+  const copied = structuredClone(groundedDraft);
+  copied.claims[0].text = copiedClaim;
+  for (const scenario of ["shape-then-field-error", "format-then-shape-error", "shape-then-format-error"]) {
+    const events = [];
+    const calls = [];
+    const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
+      onDiagnostic: event => events.push(event), aiRequestImpl: async options => {
+        calls.push(options);
+        assert.ok(calls.length <= 2);
+        assert.equal(options.schema.properties.reviews, undefined);
+        if ((scenario === "format-then-shape-error" && calls.length === 1) ||
+            (scenario === "shape-then-format-error" && calls.length === 2)) throw formatFailure();
+        return response(calls.length === 1 || scenario === "format-then-shape-error"
+          ? invalidShape : { stories: [copied] });
+      } });
+    assert.equal(result, null, scenario);
+    assert.deepEqual(calls.map(call => call.maxTokens), [4_000, 3_000]);
+    assert.equal(events.filter(event => ["draft-shape-repair", "draft-format-repair"].includes(event.stage)).length, 1);
+    assert.equal(events.some(event => event.stage === "draft-repair" || event.stage === "semantic-evidence-check"), false);
+    if (scenario === "shape-then-field-error") {
+      assert.ok(events.find(event => event.stage === "local-evidence-check").rejectionCodes.includes("ORIGINALITY"));
+    }
+  }
+});
+
+test("daily shape recovery requires exact Cloudflare inference provenance and leaves OSS behavior unchanged", async () => {
+  const malformed = { stories: [groundedDraft], UNTRUSTED_OUTER_MARKER: true };
+  for (const altered of [
+    { provider: "untrusted-provider" }, { model: FREE_REASONING_WRITER_MODEL },
+    { requestSha256: "invalid" }, { responseSha256: "invalid" },
+  ]) {
+    let calls = 0;
+    const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate], aiRequestImpl: async () => {
+      calls++;
+      return { ...response(malformed), ...altered };
+    } });
+    assert.equal(result, null);
+    assert.equal(calls, 1, "Unbound model output cannot authorize a recovery request");
+  }
+  let ossCalls = 0;
+  assert.equal(await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate], model: FREE_REASONING_WRITER_MODEL,
+    aiRequestImpl: async () => {
+      ossCalls++;
+      return { ...response(malformed), model: FREE_REASONING_WRITER_MODEL };
+    } }), null);
+  assert.equal(ossCalls, 1, "This narrow recovery change applies only to the default daily model");
 });

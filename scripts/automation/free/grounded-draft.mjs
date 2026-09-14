@@ -205,9 +205,34 @@ function withinTextSchema(value, schema) {
 function isBoundedFormatFailure(error, model) {
   const local = model === LOCAL_AI_MODEL;
   return error?.code === (local ? LOCAL_AI_EDITORIAL_FORMAT_INVALID : WORKERS_AI_EDITORIAL_FORMAT_INVALID) && error.attemptCount === 1 &&
-    error.inference?.provider === (local ? LOCAL_AI_PROVIDER : "cloudflare-workers-ai") && error.inference.model === model &&
-    /^[a-f0-9]{64}$/u.test(error.inference.requestSha256 ?? "") &&
-    /^[a-f0-9]{64}$/u.test(error.inference.responseSha256 ?? "");
+    hasBoundedInference(error.inference, model);
+}
+
+function hasBoundedInference(inference, model) {
+  return inference?.provider === (model === LOCAL_AI_MODEL ? LOCAL_AI_PROVIDER : "cloudflare-workers-ai") &&
+    inference.model === model && /^[a-f0-9]{64}$/u.test(inference.requestSha256 ?? "") &&
+    /^[a-f0-9]{64}$/u.test(inference.responseSha256 ?? "");
+}
+
+function fullDraftShapeFailure(payload, dossiers) {
+  const exactOuterKeys = keys(payload, ["stories"]) === true;
+  const stories = payload?.stories;
+  const storyCount = Array.isArray(stories) && stories.length <= 4 ? stories.length : null;
+  const storyCountExceeded = Array.isArray(stories) && stories.length > 4;
+  const schemaReflected = Boolean(payload && typeof payload === "object" && !Array.isArray(payload) &&
+    Object.hasOwn(payload, "type") && payload.type === "object" && Object.hasOwn(payload, "properties") &&
+    payload.properties && typeof payload.properties === "object" && !Array.isArray(payload.properties) &&
+    Object.getPrototypeOf(payload.properties) === Object.prototype);
+  let reason;
+  if (!exactOuterKeys) reason = "OUTER_KEYS";
+  else if (!Array.isArray(stories)) reason = "STORIES_NOT_ARRAY";
+  else if (storyCountExceeded) reason = "STORY_COUNT_INVALID";
+  else if (stories.some(story => !dossiers.some(dossier => dossier.candidateId === story?.candidateId))) reason = "UNKNOWN_CANDIDATE";
+  else if (new Set(stories.map(story => story.candidateId)).size !== stories.length) reason = "DUPLICATE_CANDIDATE";
+  // Fewer known stories (including none) is not an ambiguous wrapper. The
+  // existing missing-story repair handles that case without a second slot.
+  return reason ? { reason, exactOuterKeys, storyCount, storyCountExceeded,
+    expectedStoryCount: dossiers.length, schemaReflected } : null;
 }
 
 function assertsIndependentConfirmation(copy) {
@@ -362,9 +387,9 @@ These stories have already passed editorial selection. Write ONE story for EVERY
 A primary-source announcement is sufficient to summarize what that publisher announced. Lack of
 independent reporting does NOT prevent a useful attributed summary. Do not return an empty stories array.
 Write concrete news: who did what, the actual change, affected product, and why a reader should care.
-Return JSON matching the schema. The whole body must have 100–225 words across the two claims.text,
+Return JSON matching the schema. Each story's body must have 100–225 words across the two claims.text,
 whyItMatters and whatToDoOrWatch; headline and deck do NOT count. Do not pad to a target length.
-Aim for about 140–170 body words using distinct facts, a specific consequence and a useful next signal.
+Aim for about 140–170 body words PER STORY using distinct facts, a specific consequence and a useful next signal.
 Use these outer character bounds: each claim 60–480; whyItMatters 120–650; whatToDoOrWatch 100–550;
 headline 1–180; deck 1–280. Prefer around 20–35 words per claim, 35–50 for whyItMatters,
 and 30–45 for whatToDoOrWatch, adjusting naturally to the facts. Character limits and the whole-body word range are the contract;
@@ -855,7 +880,12 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
   if (!local) model = resolveCloudflareAiModel(model);
   aiRequestImpl ??= local ? requestLocalAiEditorial : requestWorkersAiEditorial;
   const isolatedWriter = local || model === EXPERIMENTAL_FREE_WRITER_MODEL;
-  if (!Array.isArray(candidates) || candidates.length < 1 || candidates.length > 4) return null;
+  if (!Array.isArray(candidates) || candidates.length < 1 || candidates.length > 4) {
+    onDiagnostic({ stage: "draft-input-rejected", reason: "CANDIDATE_COUNT_INVALID",
+      candidateCount: Array.isArray(candidates) && candidates.length <= 4 ? candidates.length : null,
+      candidateCountExceeded: Array.isArray(candidates) && candidates.length > 4 });
+    return null;
+  }
   // Reasoning-capable Qwen needs more room for the review response. Reallocate
   // the existing 7,800-token ceiling, never increase calls or the total cap.
   const budgets = local ? { write: 12_000, repair: 12_000, review: 12_000 }
@@ -913,6 +943,7 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
     // Compact field repairs (including mixed repair objects) and final review
     // retain native json_schema; other providers keep their own profiles.
     const dailyJsonObject = model === DEFAULT_CLOUDFLARE_AI_MODEL && keys(schema.properties, ["stories"]);
+    if (dailyJsonObject) system = `${system}\nReturn story data, not the JSON Schema. The only top-level key is stories, containing the story array.`;
     if (local || dailyJsonObject) system = `${system}\nReturn only the final JSON object matching this schema:\n${JSON.stringify(schema)}`;
     const response = await aiRequestImpl({ ...(local ? {} : { accountId, apiToken }),
     model, messages: [{ role: "system", content: model === EXPERIMENTAL_FREE_WRITER_MODEL
@@ -940,6 +971,17 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
     const inferenceTrail = [];
     let written;
     let repairUsed = false;
+    const recoverFullDraft = async (previous, rejectionCode, diagnostic = {}) => {
+      repairUsed = true;
+      inferenceTrail.push(previous);
+      onDiagnostic({ stage: rejectionCode === "DRAFT_SHAPE" ? "draft-shape-repair" : "draft-format-repair",
+        rejectionCode, repairBudgetRemaining: 0, ...diagnostic });
+      return ask(`${WRITER_PROMPT}\nYour previous response was not the required story object.
+Write a fresh complete JSON object with exactly one stories array, not the schema itself.
+Use the exact supplied candidateId values once each. Do not reproduce the failed response,
+add Markdown fences or serialize another object inside any reader-facing string.`,
+      { dossiers: promptDossiers }, writerSchema, budgets.repair);
+    };
     try {
       if (isolatedWriter) {
         // Cloudflare Qwen keeps its existing isolated-draft allocation. Local
@@ -982,21 +1024,24 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
       // Spend the existing single revision slot on a fresh complete response.
       // Never extract fragments from broken JSON, retry a quota/auth/transport
       // error, or grant a second repair after this one.
-      repairUsed = true;
-      inferenceTrail.push(error.inference);
-      onDiagnostic({ stage: "draft-format-repair", rejectionCode: "EDITORIAL_FORMAT", repairBudgetRemaining: 0,
-        ...workersAiFailureDiagnostic(error) });
-      written = await ask(`${WRITER_PROMPT}\nYour previous response could not be parsed as the required object.
-Write a fresh complete JSON object with exactly one stories array. Do not reproduce the failed
-response, add Markdown fences or serialize another object inside any reader-facing string.`,
-      { dossiers: promptDossiers }, writerSchema, budgets.repair);
+      written = await recoverFullDraft(error.inference, "EDITORIAL_FORMAT", workersAiFailureDiagnostic(error));
+    }
+    let shapeFailure = fullDraftShapeFailure(written.editorialPayload, dossiers);
+    if (shapeFailure) {
+      onDiagnostic({ stage: "draft-shape-check", phase: repairUsed ? "recovery" : "initial", ...shapeFailure });
+      if (model !== DEFAULT_CLOUDFLARE_AI_MODEL || repairUsed || !hasBoundedInference(written, model)) return null;
+      // Parseable but ambiguous outer JSON is still not a draft. Spend the
+      // same one recovery slot as a syntax failure, never manufacture stories
+      // by extracting arbitrary nested objects or adopt unknown candidates.
+      written = await recoverFullDraft(written, "DRAFT_SHAPE");
+      shapeFailure = fullDraftShapeFailure(written.editorialPayload, dossiers);
+      if (shapeFailure) {
+        onDiagnostic({ stage: "draft-shape-check", phase: "recovery", ...shapeFailure });
+        return null;
+      }
     }
     inferenceTrail.push(written);
-    if (!keys(written.editorialPayload, ["stories"]) || !Array.isArray(written.editorialPayload.stories) ||
-        written.editorialPayload.stories.length > 4) return null;
     const drafts = structuredClone(written.editorialPayload.stories);
-    if (new Set(drafts.map((draft) => draft?.candidateId)).size !== drafts.length ||
-        drafts.some((draft) => !dossiers.some((dossier) => dossier.candidateId === draft?.candidateId))) return null;
     for (const draft of drafts) {
       const dossier = dossiers.find((value) => value.candidateId === draft?.candidateId);
       bindAttribution(draft, dossier);
