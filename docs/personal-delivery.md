@@ -536,7 +536,7 @@ the private repeat ledger, the schedule, or any public edition. It has no cron
 trigger. No additional preview is authorized after the fixed date.
 This preview tests the allowlisted Cloudflare-hosted GPT-OSS writer before changing the daily
 writer. The older September 11 and historical-preview grants remain expired.
-The profile permits one 3,800-token draft request, one optional 1,600-token repair,
+The profile permits one 3,000-token draft request, one optional 2,400-token repair,
 and one 2,400-token review, using low reasoning and JSON schema mode. This preserves
 the 7,800-output-token ceiling with three writing calls, or four including assessment.
 The Qwen experiment remains available only to the separate no-email checks; it

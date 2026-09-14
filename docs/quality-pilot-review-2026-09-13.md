@@ -86,3 +86,12 @@ billing setting is changed. The
 documents `Reasoning: low` in the system message. Reasoning text is never used as
 article evidence, logged or delivered; only a complete, validated final object
 can enter the existing review gates.
+
+The first GPT-OSS preview, [34793883894](https://github.com/itworksinprod/first-fold/actions/runs/34793883894),
+sent nothing: two numeric citation mismatches and short drafts required repair,
+which exhausted its response budget. The same 7,800-token total is now split
+3,000 drafting / 2,400 repair / 2,400 review. A short but structurally usable draft
+can repair only its analysis fields to reach the unchanged whole-story length;
+its factual claims are preserved and reviewed. This is the final planned live
+trial in this pass; free quota or persistent model failure must be reported, not
+converted into a weak test email or paid fallback.

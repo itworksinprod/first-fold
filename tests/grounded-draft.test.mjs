@@ -102,8 +102,8 @@ test("the Cloudflare open-weight reasoning writer retains the existing total bud
           : { reviews: [{ ...review, factsSupported: accepted }] }), model: FREE_REASONING_WRITER_MODEL };
       } });
     assert.equal(Boolean(result), accepted);
-    assert.deepEqual(calls.map(call => call.maxTokens), [3_800, 2_400]);
-    assert.equal(calls.reduce((total, call) => total + call.maxTokens, 0) + 1_600, 7_800);
+    assert.deepEqual(calls.map(call => call.maxTokens), [3_000, 2_400]);
+    assert.equal(calls.reduce((total, call) => total + call.maxTokens, 0) + 2_400, 7_800);
     if (result) assert.equal(result.inference.model, FREE_REASONING_WRITER_MODEL);
   }
 });
@@ -266,6 +266,33 @@ test("a missing Qwen story does not force complete regeneration of another story
   assert.ok(result);
   assert.equal(calls.length, 4);
   assert.ok(calls.reduce((total, call) => total + call.maxTokens, 0) <= 7_800);
+});
+
+test("short complete drafts can expand analysis within one focused repair without changing factual claims", async () => {
+  const short = structuredClone(groundedDraft);
+  short.claims[0].text = "CERT/CC describes a local disk-write flaw in the backup software's driver.";
+  short.claims[1].text = "The advisory names neither a corrected release nor observed attacks against users.";
+  short.whyItMatters = "If the affected driver is installed, unauthorized disk access could undermine the stored information that backups are meant to protect.";
+  short.whatToDoOrWatch = "Check the advisory for remediation and the vendor's affected-release guidance before choosing a response for your machines.";
+  const repaired = { ...structuredClone(short), whyItMatters: groundedDraft.whyItMatters, whatToDoOrWatch: groundedDraft.whatToDoOrWatch };
+  const calls = [];
+  const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
+    model: FREE_REASONING_WRITER_MODEL, aiRequestImpl: async options => {
+      calls.push(options);
+      const wrap = payload => ({ ...response(payload), model: FREE_REASONING_WRITER_MODEL });
+      if (calls.length === 1) return wrap({ stories: [short] });
+      if (calls.length === 2) {
+        const data = JSON.parse(options.messages[1].content);
+        assert.equal(data.rejected[0].rejectionCode, "WORD_COUNT");
+        assert.deepEqual(data.requestedEdits[0].fields.map(item => item.field), ["whyItMatters", "whatToDoOrWatch"]);
+        return wrap({ edits: ["whyItMatters", "whatToDoOrWatch"].map(field => ({ candidateId: candidate.candidateId,
+          field, text: repaired[field], supports: [] })) });
+      }
+      assert.deepEqual(JSON.parse(options.messages[1].content).drafts[0].draft.claims, short.claims);
+      return wrap({ reviews: [{ ...review, draftSha256: hash(repaired) }] });
+    } });
+  assert.ok(result);
+  assert.deepEqual(calls.map(call => call.maxTokens), [3_000, 2_400, 2_400]);
 });
 
 test("a repaired draft still needs semantic approval; repair quota errors stop immediately", async () => {
