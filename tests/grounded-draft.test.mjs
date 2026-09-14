@@ -30,6 +30,14 @@ const review = { candidateId: groundedDraft.candidateId, draftSha256: hash(groun
   claimSupport: groundedDraft.claims.map((claim) => claim.supports.map((support) => support.evidenceId)),
   factsSupported: true, attributionAccurate: true, analysisSupported: true, usefulAndSpecific: true };
 const copiedClaim = `CERT/CC says: ${groundedEvidence.summary.split(". ").slice(0, 2).join(". ")}.`;
+function dailyFoundations(drafts) {
+  return { foundations: drafts.map(({ candidateId, claims }) => ({ candidateId, claims: structuredClone(claims) })) };
+}
+function dailyCopies(drafts, claimRepairs = []) {
+  return { copies: drafts.map(draft => Object.fromEntries(
+    ["candidateId", "headline", "deck", "whyItMatters", "whatToDoOrWatch"].map(field => [field, draft[field]]))),
+    ...(claimRepairs.length ? { claimRepairs: structuredClone(claimRepairs) } : {}) };
+}
 function dailyRepairPayload(options, revised) {
   const plan = JSON.parse(options.messages[1].content).revisionPlan;
   const byId = new Map(revised.map(draft => [draft.candidateId, draft]));
@@ -86,9 +94,11 @@ test("writing and review are budgeted independently; only checked prose replaces
   const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
     accountId: "0".repeat(32), apiToken: "fixture", aiRequestImpl: async (options) => {
       calls.push(options);
-      return response(calls.length === 1 ? { stories: [groundedDraft] } : { reviews: [review] });
+      return response(calls.length === 1 ? dailyFoundations([groundedDraft])
+        : calls.length === 2 ? dailyCopies([groundedDraft]) : { reviews: [review] });
     } });
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 3);
+  assert.deepEqual(calls.map(call => call.maxTokens), [2_000, 4_000, 1_800]);
   for (const call of calls) {
     assert.equal(call.maxAttempts, 1);
     assert.equal(call.model, DEFAULT_CLOUDFLARE_AI_MODEL);
@@ -134,19 +144,20 @@ test("semantic reviewer veto, wrong draft hash and unavailable checker all keep 
     let calls = 0;
     const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
       aiRequestImpl: async () => {
-        if (++calls === 1) return response({ stories: [groundedDraft] });
+        if (++calls === 1) return response(dailyFoundations([groundedDraft]));
+        if (calls === 2) return response(dailyCopies([groundedDraft]));
         if (badReview === null) throw new Error("checker timeout");
         return response({ reviews: [badReview] });
       } });
     assert.equal(result, null);
-    assert.equal(calls, 2);
+    assert.equal(calls, 3);
   }
 });
 test("ambiguous daily drafts cannot replace stories or exceed one shape recovery", async () => {
   for (const stories of [[groundedDraft, groundedDraft], [{ ...groundedDraft, candidateId: "injected" }]]) {
     let calls = 0;
     assert.equal(await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
-      aiRequestImpl: async () => { calls++; return response({ stories }); } }), null);
+      aiRequestImpl: async () => { calls++; return response(dailyFoundations(stories)); } }), null);
     assert.equal(calls, 2);
   }
 });
@@ -191,17 +202,18 @@ test("one originality revision is revalidated, hash-bound and separately checked
   const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
     onDiagnostic: (event) => diagnostics.push(event), aiRequestImpl: async (options) => {
       calls.push(options);
-      if (calls.length === 1) return response({ stories: [copied] });
+      if (calls.length === 1) return response(dailyFoundations([copied]));
       if (calls.length === 2) {
         const data = JSON.parse(options.messages[1].content);
-        assert.deepEqual(data.revisionPlan.claimEdits, [{ candidateId: candidate.candidateId, claimIndex: 0, reasons: ["ORIGINALITY"],
-          bounds: { minCharacters: 60, maxCharacters: 480, actualCharacters: copied.claims[0].text.length } }]);
-        assert.deepEqual(data.revisionPlan.copyEdits, []);
-        assert.deepEqual(data.dossiers[0].claims[0].originalSupports, copied.claims[0].supports);
-        assert.equal(data.dossiers[0].claims[0].preserveSupports, true);
-        assert.equal(options.maxTokens, 3_000);
+        assert.equal(options.maxTokens, 4_000);
         assert.equal(options.maxAttempts, 1);
-        return response(dailyRepairPayload(options, [groundedDraft]));
+        assert.ok(options.schema.properties.claimRepairs);
+        assert.deepEqual(data.dossiers[0].requestedClaimRepairs, [{ claimIndex: 0,
+          reasons: ["ORIGINALITY"], preserveSupports: true, originalText: copiedClaim,
+          originalSupports: copied.claims[0].supports }]);
+        assert.deepEqual(data.dossiers[0].fixedClaims, [{ claimIndex: 1, ...groundedDraft.claims[1] }]);
+        return response(dailyCopies([groundedDraft], [{ candidateId: candidate.candidateId,
+          claimIndex: 0, supports: groundedDraft.claims[0].supports, text: groundedDraft.claims[0].text }]));
       }
       assert.equal(JSON.parse(options.messages[1].content).drafts[0].draftSha256, hash(groundedDraft));
       return response({ reviews: [review] });
@@ -209,7 +221,9 @@ test("one originality revision is revalidated, hash-bound and separately checked
   assert.equal(calls.length, 3);
   assert.equal(result.editorial.desks["security-and-privacy"].story.headline, groundedDraft.headline);
   assert.equal(result.inference.requestSha256, hash(Array(3).fill("a".repeat(64))));
-  assert.ok(diagnostics.some((event) => event.stage === "draft-repair" && event.accepted === 1));
+  assert.ok(diagnostics.some((event) => event.stage === "daily-foundation-check" &&
+    event.accepted === 0 && event.rejectionCodes.includes("ORIGINALITY")));
+  assert.ok(diagnostics.some((event) => event.stage === "daily-copy-composition" && event.accepted === 1));
 });
 
 test("Qwen repairs all measured field defects without regenerating clean story fields", async () => {
@@ -251,11 +265,20 @@ test("Qwen repairs all measured field defects without regenerating clean story f
 test("bad or unrequested revisions cannot bypass checks or trigger another revision", async () => {
   const copied = structuredClone(groundedDraft);
   copied.claims[0].text = copiedClaim;
-  for (const revisions of [[copied], [{ ...groundedDraft, candidateId: "injected" }],
-    [groundedDraft, groundedDraft], []]) {
+  const repair = { candidateId: candidate.candidateId, claimIndex: 0,
+    supports: groundedDraft.claims[0].supports, text: groundedDraft.claims[0].text };
+  for (const claimRepairs of [
+    [{ ...repair, text: copiedClaim }],
+    [{ ...repair, candidateId: "injected" }],
+    [repair, repair], [],
+    [{ ...repair, claimIndex: 1 }],
+    [{ ...repair, supports: [{ evidenceId: "S1P4" }] }],
+    [{ ...repair, text: 'Damaged prose", "stories": [{' }],
+  ]) {
     let calls = 0;
     const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
-      aiRequestImpl: async () => response({ stories: ++calls === 1 ? [copied] : revisions }) });
+      aiRequestImpl: async () => response(++calls === 1 ? dailyFoundations([copied])
+        : dailyCopies([groundedDraft], claimRepairs)) });
     assert.equal(result, null);
     assert.equal(calls, 2);
   }
@@ -323,10 +346,11 @@ test("a repaired draft still needs semantic approval; repair quota errors stop i
     let calls = 0;
     const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
       aiRequestImpl: async options => {
-        if (++calls === 1) return response({ stories: [copied] });
+        if (++calls === 1) return response(dailyFoundations([copied]));
         if (calls === 2) {
           if (quota) throw new Error("quota");
-          return response(dailyRepairPayload(options, [groundedDraft]));
+          return response(dailyCopies([groundedDraft], [{ candidateId: candidate.candidateId,
+            claimIndex: 0, supports: groundedDraft.claims[0].supports, text: groundedDraft.claims[0].text }]));
         }
         return response({ reviews: [{ ...review, factsSupported: false }] });
       } });
@@ -346,10 +370,17 @@ test("revision only replaces a rejected draft and preserves an already valid dra
   let calls = 0;
   const result = await synthesizeGroundedEditorial({ editorial: twoDesks, candidates: [candidate, secondCandidate],
     aiRequestImpl: async (options) => {
-      if (++calls === 1) return response({ stories: [groundedDraft, copied] });
+      if (++calls === 1) return response(dailyFoundations([groundedDraft, copied]));
       if (calls === 2) {
-        assert.deepEqual(JSON.parse(options.messages[1].content).dossiers.map((value) => value.candidateId), [secondCandidate.candidateId]);
-        return response(dailyRepairPayload(options, [secondDraft]));
+        assert.ok(options.schema.properties.claimRepairs);
+        const data = JSON.parse(options.messages[1].content);
+        assert.deepEqual(data.dossiers.find(item => item.candidateId === candidate.candidateId).fixedClaims,
+          groundedDraft.claims.map((claim, claimIndex) => ({ claimIndex, ...claim })));
+        assert.deepEqual(data.dossiers.find(item => item.candidateId === candidate.candidateId).requestedClaimRepairs, []);
+        assert.deepEqual(data.dossiers.find(item => item.candidateId === secondCandidate.candidateId)
+          .requestedClaimRepairs.map(item => item.claimIndex), [0]);
+        return response(dailyCopies([groundedDraft, secondDraft], [{ candidateId: secondCandidate.candidateId,
+          claimIndex: 0, supports: secondDraft.claims[0].supports, text: secondDraft.claims[0].text }]));
       }
       assert.deepEqual(JSON.parse(options.messages[1].content).drafts.map((value) => value.draft), [groundedDraft, secondDraft]);
       return response({ reviews: [review, { ...review, candidateId: secondCandidate.candidateId, draftSha256: hash(secondDraft) }] });
@@ -367,12 +398,13 @@ test("harmless JSON paragraph breaks normalize before validation and the final r
     aiRequestImpl: async (options) => {
       if (++calls === 1) {
         assert.ok(Array.isArray(JSON.parse(options.messages[1].content).dossiers[0].supportedNumericTokens));
-        return response({ stories: [lineBreaks] });
+        return response(dailyFoundations([lineBreaks]));
       }
+      if (calls === 2) return response(dailyCopies([groundedDraft]));
       assert.equal(JSON.parse(options.messages[1].content).drafts[0].draftSha256, hash(groundedDraft));
       return response({ reviews: [review] });
     } });
-  assert.equal(calls, 2);
+  assert.equal(calls, 3);
   assert.equal(result.editorial.desks["security-and-privacy"].story.whatHappened, groundedDraft.claims.map((claim) => claim.text).join(" "));
 });
 
@@ -388,10 +420,10 @@ test("September 11 email spillover is rejected before any approving AI review", 
           if (options.schema.properties.reviews) {
             return response({ reviews: [{ ...review, draftSha256: hash(draft) }] });
           }
-          return response({ stories: [draft] });
+          return response(calls.length === 1 ? dailyFoundations([draft]) : dailyCopies([draft]));
         } });
       assert.equal(result, null);
-      assert.equal(calls.length, 2, "only original draft plus existing bounded repair");
+      assert.equal(calls.length, 2, "only factual foundation and bounded copy; no post-copy repair");
       assert.ok(calls.every((call) => !call.schema.properties.reviews), "AI cannot override copy veto");
     }
   }
@@ -463,7 +495,7 @@ test("invalid outer JSON uses the existing single repair slot and still requires
       calls.push(options);
       if (calls.length === 1) throw formatFailure();
       if (calls.length === 2) {
-        assert.equal(options.maxTokens, 3_000);
+        assert.equal(options.maxTokens, 4_000);
         assert.deepEqual(JSON.parse(options.messages[1].content).dossiers.length, 1);
         return response({ stories: [groundedDraft] });
       }
@@ -472,7 +504,9 @@ test("invalid outer JSON uses the existing single repair slot and still requires
   assert.equal(calls.length, 3);
   assert.equal(result.editorial.desks["security-and-privacy"].story.headline, groundedDraft.headline);
   assert.equal(result.inference.requestSha256, hash(Array(3).fill("a".repeat(64))));
-  assert.ok(diagnostics.some((event) => event.stage === "draft-format-repair" && event.repairBudgetRemaining === 0));
+  assert.ok(diagnostics.some((event) => event.stage === "daily-foundation-check" &&
+    event.accepted === 0 && event.rejectionCodes.includes("EDITORIAL_FORMAT")));
+  assert.ok(diagnostics.some((event) => event.stage === "daily-copy-composition" && event.accepted === 1));
 });
 
 test("format repair cannot create another repair, accept damaged prose, or bypass semantic review", async () => {
@@ -516,7 +550,7 @@ test("the real Workers AI adapter carries safe format provenance into bounded re
         { status: 200, headers: { "content-type": "application/json", "cf-ray": "synthetic-ray" } });
     } });
   assert.equal(requests.length, 3);
-  assert.deepEqual(requests.map((request) => request.max_tokens), [4_000, 3_000, 800]);
+  assert.deepEqual(requests.map((request) => request.max_tokens), [2_000, 4_000, 1_800]);
   assert.equal(result.editorial.desks["security-and-privacy"].story.headline, groundedDraft.headline);
   assert.ok(!JSON.stringify(result).includes("synthetic-token"));
 });
@@ -583,16 +617,17 @@ test("a reviewer must explicitly cover each claim with its actual supporting pas
     [["unknown", "S1P3"], ["S1P4", "S1P5"]]]) {
     let calls = 0;
     const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
-      aiRequestImpl: async () => response(++calls === 1 ? { stories: [groundedDraft] }
-        : { reviews: [{ ...review, claimSupport }] }) });
+      aiRequestImpl: async () => response(++calls === 1 ? dailyFoundations([groundedDraft])
+        : calls === 2 ? dailyCopies([groundedDraft]) : { reviews: [{ ...review, claimSupport }] }) });
     assert.equal(result, null);
-    assert.equal(calls, 2);
+    assert.equal(calls, 3);
   }
   let calls = 0;
   const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
     aiRequestImpl: async (options) => {
-      if (++calls === 1) return response({ stories: [groundedDraft] });
-      assert.equal(options.maxTokens, 800);
+      if (++calls === 1) return response(dailyFoundations([groundedDraft]));
+      if (calls === 2) return response(dailyCopies([groundedDraft]));
+      assert.equal(options.maxTokens, 1_800);
       assert.equal(options.schema.properties.reviews.minItems, 1);
       assert.equal(options.schema.properties.reviews.maxItems, 1);
       assert.equal(Object.hasOwn(options.schema.properties.reviews.items.properties.claimSupport.items, "uniqueItems"), false);
@@ -601,41 +636,42 @@ test("a reviewer must explicitly cover each claim with its actual supporting pas
   assert.ok(result);
 });
 
-test("daily repair receives the exact failing field and bounded body plan without extra inference calls", async () => {
+test("daily copy receives bounded field requirements and bad copy cannot request another inference", async () => {
   const short = { ...structuredClone(groundedDraft), whyItMatters: "Backup software should protect recovery rather than create a new path to disk damage." };
   const measured = [];
   assert.equal(validateGroundedStory(short, dossier, (code, feedback) => measured.push({ code, feedback })), false);
   assert.equal(measured[0].code, "SHAPE");
   assert.equal(measured[0].feedback.actualCharacters, short.whyItMatters.length);
-  const calls = [];
-  const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
-    aiRequestImpl: async (options) => {
-      calls.push(options);
-      if (calls.length === 1) {
-        assert.match(options.messages[0].content, /there is no separate per-field word quota/);
-        assert.doesNotMatch(options.messages[0].content, /25–35 words|115–165/);
-        return response({ stories: [short] });
-      }
-      if (calls.length === 2) {
-        const data = JSON.parse(options.messages[1].content);
-        assert.equal(data.revisionPlan.copyEdits.length, 1);
-        assert.equal(data.revisionPlan.copyEdits[0].field, "whyItMatters");
-        assert.ok(data.revisionPlan.copyEdits[0].reasons.includes("CHARACTER_OR_PROSE_BOUNDS"));
-        assert.deepEqual(data.revisionPlan.copyEdits[0].bounds, { minCharacters: 120, maxCharacters: 650,
-          actualCharacters: short.whyItMatters.length });
-        assert.deepEqual(data.revisionPlan.claimEdits, []);
-        assert.match(options.messages[0].content, /whyItMatters 120–650/);
-        assert.equal(options.schema.properties.copyEdits.items.properties.text.maxLength, 650);
-        assert.equal(data.dossiers[0].copy.fixedBodyWords, countReaderFacingStoryWords({
-          whatHappened: short.claims.map(claim => claim.text).join(" "), whatToDoOrWatch: short.whatToDoOrWatch,
-        }));
-        return response(dailyRepairPayload(options, [groundedDraft]));
-      }
-      return response({ reviews: [review] });
-    } });
-  assert.ok(result);
-  assert.deepEqual(calls.map((call) => call.maxTokens), [4_000, 3_000, 800]);
-  assert.ok(calls.every((call) => call.maxAttempts === 1 && call.maxRequestBytes === 70_000 && call.maxResponseBytes === 100_000));
+  for (const drafted of [short, groundedDraft]) {
+    const calls = [];
+    const events = [];
+    const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
+      onDiagnostic: event => events.push(event), aiRequestImpl: async (options) => {
+        calls.push(options);
+        if (calls.length === 1) return response(dailyFoundations([groundedDraft]));
+        if (calls.length === 2) {
+          const data = JSON.parse(options.messages[1].content);
+          const fields = options.schema.properties.copies.items.properties;
+          assert.equal(fields.whyItMatters.minLength, 120);
+          assert.equal(fields.whyItMatters.maxLength, 650);
+          assert.equal(options.schema.properties.claimRepairs, undefined);
+          assert.deepEqual(data.dossiers[0].fixedClaims,
+            groundedDraft.claims.map((claim, claimIndex) => ({ claimIndex, ...claim })));
+          assert.equal(data.dossiers[0].fixedClaimWords, countReaderFacingStoryWords({
+            whatHappened: groundedDraft.claims.map(claim => claim.text).join(" "),
+          }));
+          assert.deepEqual(data.dossiers[0].bodyTarget, { min: 100, max: 225, aim: 145 });
+          assert.match(options.messages[0].content, /whyItMatters 120–650/);
+          return response(dailyCopies([drafted]));
+        }
+        return response({ reviews: [review] });
+      } });
+    assert.equal(Boolean(result), drafted === groundedDraft);
+    assert.deepEqual(calls.map((call) => call.maxTokens), drafted === groundedDraft
+      ? [2_000, 4_000, 1_800] : [2_000, 4_000]);
+    if (drafted === short) assert.ok(events.some(event => event.rejectionCodes?.includes("SHAPE")));
+    assert.ok(calls.every((call) => call.maxAttempts === 1 && call.maxRequestBytes === 70_000 && call.maxResponseBytes === 100_000));
+  }
 });
 
 test("provider grammar and local bounds remain aligned while review binding cannot force approval", async () => {
@@ -645,15 +681,21 @@ test("provider grammar and local bounds remain aligned while review binding cann
     onDiagnostic: event => events.push(event), aiRequestImpl: async options => {
       calls.push(options);
       if (calls.length === 1) {
-        const fields = options.schema.properties.stories.items.properties;
-        assert.equal(fields.whyItMatters.minLength, 120);
-        assert.equal(fields.whyItMatters.maxLength, 650);
+        const fields = options.schema.properties.foundations.items.properties;
         assert.equal(fields.claims.items.properties.text.minLength, 60);
         assert.equal(fields.claims.items.properties.text.pattern, undefined);
-        assert.equal(fields.whyItMatters.pattern, undefined);
+        assert.equal(fields.whyItMatters, undefined);
         assert.deepEqual(fields.candidateId.enum, [candidate.candidateId]);
         assert.equal(GROUNDED_DRAFT_SCHEMA.properties.stories.items.properties.whyItMatters.minLength, 120);
-        return response({ stories: [groundedDraft] });
+        return response(dailyFoundations([groundedDraft]));
+      }
+      if (calls.length === 2) {
+        const fields = options.schema.properties.copies.items.properties;
+        assert.equal(fields.whyItMatters.minLength, 120);
+        assert.equal(fields.whyItMatters.maxLength, 650);
+        assert.equal(fields.whyItMatters.pattern, undefined);
+        assert.deepEqual(fields.candidateId.enum, [candidate.candidateId]);
+        return response(dailyCopies([groundedDraft]));
       }
       const properties = options.schema.properties.reviews.items.properties;
       assert.deepEqual(properties.candidateId.enum, [candidate.candidateId]);
@@ -666,7 +708,7 @@ test("provider grammar and local bounds remain aligned while review binding cann
       return response({ reviews: [{ ...review, draftSha256: "wrong", analysisSupported: false }] });
     } });
   assert.equal(result, null);
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 3);
   const diagnostic = events.find(event => event.stage === "semantic-evidence-check");
   assert.equal(diagnostic.accepted, 0);
   assert.deepEqual(diagnostic.rejectionCodes, ["REVIEW_BINDING", "REVIEW_ANALYSIS"]);
@@ -678,11 +720,12 @@ test("a missing draft can consume only the existing repair slot and still requir
     let calls = 0;
     const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
       aiRequestImpl: async (options) => {
-        if (++calls === 1) return response({ stories: [] });
+        if (++calls === 1) return response(dailyFoundations([]));
         if (calls === 2) {
           const data = JSON.parse(options.messages[1].content);
-          assert.equal(data.rejected[0].draft.candidateId, candidate.candidateId);
-          assert.equal(data.rejected[0].feedback.field, "story");
+          assert.deepEqual(data.dossiers.map(value => value.candidateId), [candidate.candidateId]);
+          assert.equal(options.maxTokens, 4_000);
+          assert.ok(options.schema.properties.stories);
           return response({ stories: [groundedDraft] });
         }
         return response({ reviews: [{ ...review, factsSupported: approved }] });
@@ -851,9 +894,9 @@ test("provider-specific evidence-first ordering never mutates the shared grammar
         calls++;
         if (model !== LOCAL_AI_MODEL) {
           assert.doesNotMatch(options.messages[0].content, /Local writer citation discipline|Local review checklist/);
-          if (options.schema.properties.stories) {
-            const fields = options.schema.properties.stories.items.properties;
-            assert.deepEqual(Object.keys(fields), ["candidateId", "claims", "headline", "deck", "whyItMatters", "whatToDoOrWatch"]);
+          if (options.schema.properties.foundations) {
+            const fields = options.schema.properties.foundations.items.properties;
+            assert.deepEqual(Object.keys(fields), ["candidateId", "claims"]);
             assert.deepEqual(Object.keys(fields.claims.items.properties), ["supports", "text"]);
             const data = JSON.parse(options.messages[1].content);
             assert.deepEqual(fields.claims.items.properties.supports.items.properties.evidenceId, { type: "string",
@@ -862,10 +905,10 @@ test("provider-specific evidence-first ordering never mutates the shared grammar
         }
         if (model === LOCAL_AI_MODEL) return localResponse(calls === 1 ? localFoundation(groundedDraft)
           : calls === 2 ? localAudit(groundedDraft) : calls === 3 ? localCopy(groundedDraft) : { reviews: [localReview(groundedDraft)] });
-        return response(calls === 1 ? { stories: [groundedDraft] } : { reviews: [review] });
+        return response(calls === 1 ? dailyFoundations([groundedDraft]) : calls === 2 ? dailyCopies([groundedDraft]) : { reviews: [review] });
       } });
     assert.ok(result);
-    assert.equal(calls, model === LOCAL_AI_MODEL ? 4 : 2);
+    assert.equal(calls, model === LOCAL_AI_MODEL ? 4 : 3);
   }
   assert.deepEqual(Object.keys(GROUNDED_DRAFT_SCHEMA.properties.stories.items.properties.claims.items.properties), ["text", "supports"]);
 });
@@ -1435,7 +1478,10 @@ function dailySeptember14FailurePattern() {
   return { drafts, slate, editorial, revised };
 }
 
-test("daily valid-JSON 109/99/71 failure pattern revises five fields without rewriting clean copy", async t => {
+const dailyClaimRepair = (draft, claimIndex) => ({ candidateId: draft.candidateId, claimIndex,
+  supports: structuredClone(draft.claims[claimIndex].supports), text: draft.claims[claimIndex].text });
+
+test("daily foundations from the 109/99/71 pattern preserve accepted facts and write complete copy in one second stage", async t => {
   const { drafts, slate, editorial, revised } = dailySeptember14FailurePattern();
   const dossiers = groundedDossiers(slate);
   const counts = drafts.map(draft => countReaderFacingStoryWords({ ...draft, whatHappened: draft.claims.map(claim => claim.text).join(" ") }));
@@ -1451,82 +1497,81 @@ test("daily valid-JSON 109/99/71 failure pattern revises five fields without rew
   const calls = [];
   const result = await synthesizeGroundedEditorial({ editorial, candidates: slate, aiRequestImpl: async options => {
     calls.push(options);
-    if (calls.length === 1) return response({ stories: drafts });
+    if (calls.length === 1) return response(dailyFoundations([...drafts].reverse()));
     const data = JSON.parse(options.messages[1].content);
     if (calls.length === 2) {
       const requestBytes = Buffer.byteLength(JSON.stringify(buildWorkersAiRequest(options).body));
       assert.ok(requestBytes <= 70_000, `The bounded repair request is ${requestBytes} bytes.`);
-      t.diagnostic(`Three-story focused repair request: ${requestBytes} bytes (70,000-byte limit).`);
-      assert.ok(options.messages[0].content.startsWith(DAILY_REPAIR_PROMPT));
-      assert.doesNotMatch(options.messages[0].content, /Write ONE story for EVERY supplied dossier|Do not return an empty stories array/);
-      assert.deepEqual(Object.keys(options.schema.properties), ["copyEdits", "claimEdits"]);
-      assert.equal(options.schema.properties.copyEdits.minItems, 4);
-      assert.equal(options.schema.properties.copyEdits.maxItems, 4);
-      assert.equal(options.schema.properties.claimEdits.minItems, 1);
-      assert.equal(options.schema.properties.claimEdits.maxItems, 1);
-      assert.deepEqual(Object.keys(options.schema.properties.copyEdits.items.properties), ["candidateId", "field", "text"]);
-      assert.deepEqual(Object.keys(options.schema.properties.claimEdits.items.properties), ["candidateId", "claimIndex", "text", "supports"]);
-      assert.deepEqual(data.revisionPlan.rewriteCandidateIds, []);
-      assert.deepEqual(data.revisionPlan.copyEdits.map(edit => [edit.candidateId, edit.field]), [
-        [drafts[1].candidateId, "whyItMatters"], [drafts[1].candidateId, "whatToDoOrWatch"],
-        [drafts[2].candidateId, "whyItMatters"], [drafts[2].candidateId, "whatToDoOrWatch"],
-      ]);
-      assert.deepEqual(data.revisionPlan.claimEdits, [{ candidateId: drafts[0].candidateId, claimIndex: 0, reasons: ["ORIGINALITY"],
-        bounds: { minCharacters: 60, maxCharacters: 480, actualCharacters: drafts[0].claims[0].text.length } }]);
-      for (const [index, packet] of data.dossiers.entries()) {
+      t.diagnostic(`Three-story copy plus one rejected claim: ${requestBytes} bytes (70,000-byte limit).`);
+      assert.deepEqual(Object.keys(options.schema.properties), ["claimRepairs", "copies"]);
+      assert.equal(options.schema.properties.copies.minItems, 3);
+      assert.equal(options.schema.properties.copies.maxItems, 3);
+      assert.equal(options.schema.properties.claimRepairs.minItems, 1);
+      assert.equal(options.schema.properties.claimRepairs.maxItems, 1);
+      assert.deepEqual(Object.keys(options.schema.properties.copies.items.properties),
+        ["candidateId", "headline", "deck", "whyItMatters", "whatToDoOrWatch"]);
+      assert.deepEqual(Object.keys(options.schema.properties.claimRepairs.items.properties), ["candidateId", "claimIndex", "supports", "text"]);
+      assert.deepEqual(new Set(data.dossiers.map(packet => packet.candidateId)), new Set(slate.map(item => item.candidateId)));
+      for (const packet of data.dossiers) {
+        const index = drafts.findIndex(draft => draft.candidateId === packet.candidateId);
+        const acceptedIndexes = index === 0 ? [1] : [0, 1];
+        assert.deepEqual(packet.fixedClaims, acceptedIndexes.map(claimIndex => ({ claimIndex, ...drafts[index].claims[claimIndex] })));
+        assert.equal(packet.fixedClaimWords, countReaderFacingStoryWords({ whatHappened: acceptedIndexes.map(claimIndex => drafts[index].claims[claimIndex].text).join(" ") }));
+        assert.deepEqual(packet.bodyTarget, { min: 100, max: 225, aim: 145 });
+        assert.equal(packet.requestedClaimRepairs.length, index === 0 ? 1 : 0);
         if (index === 0) {
-          assert.equal(packet.copy, undefined);
-          assert.equal(packet.claims[0].preserveSupports, true);
-          assert.deepEqual(packet.claims[0].originalSupports, drafts[index].claims[0].supports);
+          assert.equal(packet.requestedClaimRepairs[0].claimIndex, 0);
+          assert.ok(packet.requestedClaimRepairs[0].reasons.includes("ORIGINALITY"));
+          assert.equal(packet.requestedClaimRepairs[0].preserveSupports, true);
+          assert.deepEqual(packet.requestedClaimRepairs[0].originalSupports, drafts[0].claims[0].supports);
         } else {
-          assert.deepEqual(packet.copy.fixedClaims, drafts[index].claims);
-          assert.equal(packet.copy.fixedBodyWords, countReaderFacingStoryWords({ whatHappened: drafts[index].claims.map(claim => claim.text).join(" ") }));
-          assert.deepEqual(packet.copy.bodyTarget, { min: 100, max: 225, aim: 145 });
-          assert.equal(packet.claims, undefined);
+          const expectedIds = new Set(drafts[index].claims.flatMap(claim => claim.supports.map(support => support.evidenceId)));
+          assert.deepEqual(new Set(packet.sources.flatMap(source => source.passages.map(passage => passage.evidenceId))), expectedIds);
         }
       }
-      return response(dailyRepairPayload(options, revised));
+      return response(dailyCopies([...revised].reverse(), [dailyClaimRepair(revised[0], 0)]));
     }
     assert.equal(calls.length, 3);
-    assert.deepEqual(data.drafts.map(item => item.draft), revised);
-    for (const [index, item] of data.drafts.entries()) {
+    assert.deepEqual(new Set(data.drafts.map(item => item.draft.candidateId)), new Set(revised.map(draft => draft.candidateId)));
+    for (const item of data.drafts) {
+      const index = drafts.findIndex(draft => draft.candidateId === item.draft.candidateId);
+      assert.deepEqual(item.draft, revised[index]);
       assert.equal(item.draftSha256, hash(revised[index]));
       assert.notEqual(item.draftSha256, hash(drafts[index]));
-      assert.equal(item.draft.headline, drafts[index].headline);
-      assert.equal(item.draft.deck, drafts[index].deck);
       if (index === 0) {
         assert.deepEqual(item.draft.claims[1], drafts[index].claims[1]);
-        assert.equal(item.draft.whyItMatters, drafts[index].whyItMatters);
-        assert.equal(item.draft.whatToDoOrWatch, drafts[index].whatToDoOrWatch);
       } else assert.deepEqual(item.draft.claims, drafts[index].claims);
     }
     return response({ reviews: revised.map(draft => ({ ...review, candidateId: draft.candidateId, draftSha256: hash(draft) })) });
   } });
   assert.ok(result);
-  assert.deepEqual(calls.map(call => call.maxTokens), [4_000, 3_000, 800]);
+  assert.deepEqual(calls.map(call => call.maxTokens), [2_000, 4_000, 1_800]);
   assert.ok(calls.every(call => call.maxAttempts === 1 && call.model === DEFAULT_CLOUDFLARE_AI_MODEL));
   assert.equal(calls.reduce((sum, call) => sum + call.maxTokens, 0), 7_800);
 });
 
-test("daily focused edits reject missing, duplicate, extra, wrong-candidate and cross-schema fields", async () => {
+test("daily copy composition rejects missing, duplicate, extra, wrong-candidate and unrequested claim fields", async () => {
   for (const mutate of [
-    payload => { payload.copyEdits.pop(); },
-    payload => { payload.copyEdits[1] = payload.copyEdits[0]; },
-    payload => { payload.copyEdits.push({ ...payload.copyEdits[0], field: "headline" }); },
-    payload => { payload.claimEdits[0].candidateId = "not-a-candidate"; },
-    payload => { payload.claimEdits[0].claimIndex = 1; },
-    payload => { payload.copyEdits[0].supports = []; },
-    payload => { payload.claimEdits[0].field = "claims[0].text"; },
+    payload => { payload.copies.pop(); },
+    payload => { payload.copies[1] = payload.copies[0]; },
+    payload => { payload.copies.push({ ...payload.copies[0], candidateId: "extra-copy" }); },
+    payload => { payload.claimRepairs[0].candidateId = "not-a-candidate"; },
+    payload => { payload.claimRepairs[0].claimIndex = 1; },
+    payload => { payload.copies[0].supports = []; },
+    payload => { payload.copies[0].claims = []; },
+    payload => { payload.claimRepairs[0].field = "claims[0].text"; },
+    payload => { delete payload.claimRepairs; },
+    payload => { payload.claimRepairs.push(payload.claimRepairs[0]); },
     payload => { payload.stories = []; },
-    payload => { payload.claimEdits[0].supports = [{ evidenceId: "S1P4" }]; },
+    payload => { payload.claimRepairs[0].supports = [{ evidenceId: "S1P4" }]; },
   ]) {
     const { drafts, slate, editorial, revised } = dailySeptember14FailurePattern();
     const calls = [];
     const result = await synthesizeGroundedEditorial({ editorial, candidates: slate, aiRequestImpl: async options => {
       calls.push(options);
-      if (calls.length === 1) return response({ stories: drafts });
+      if (calls.length === 1) return response(dailyFoundations(drafts));
       assert.equal(options.schema.properties.reviews, undefined);
-      const payload = dailyRepairPayload(options, revised);
+      const payload = dailyCopies(revised, [dailyClaimRepair(revised[0], 0)]);
       mutate(payload);
       return response(payload);
     } });
@@ -1547,10 +1592,10 @@ test("daily focused reconstruction still vetoes unsupported numbers, lost caveat
     const calls = [];
     const result = await synthesizeGroundedEditorial({ editorial, candidates: [slate[0]], aiRequestImpl: async options => {
       calls.push(options);
-      if (calls.length === 1) return response({ stories: [drafts[0]] });
+      if (calls.length === 1) return response(dailyFoundations([drafts[0]]));
       assert.equal(options.schema.properties.reviews, undefined, "Model approval cannot override a deterministic veto");
-      const payload = dailyRepairPayload(options, [revised[0]]);
-      payload.claimEdits[0].text = replacement;
+      const payload = dailyCopies([revised[0]], [dailyClaimRepair(revised[0], 0)]);
+      payload.claimRepairs[0].text = replacement;
       return response(payload);
     } });
     assert.equal(result, null);
@@ -1563,8 +1608,8 @@ test("daily repaired copy requires its new exact review hash and never retries f
     const { drafts, slate, editorial, revised } = dailySeptember14FailurePattern();
     let calls = 0;
     const result = await synthesizeGroundedEditorial({ editorial, candidates: [slate[0]], aiRequestImpl: async options => {
-      if (++calls === 1) return response({ stories: [drafts[0]] });
-      if (calls === 2) return response(dailyRepairPayload(options, [revised[0]]));
+      if (++calls === 1) return response(dailyFoundations([drafts[0]]));
+      if (calls === 2) return response(dailyCopies([revised[0]], [dailyClaimRepair(revised[0], 0)]));
       return response({ reviews: [{ ...review, candidateId: revised[0].candidateId,
         draftSha256: hash(staleHash ? drafts[0] : revised[0]), factsSupported: staleHash }] });
     } });
@@ -1589,11 +1634,11 @@ test("the actual daily failure order spends format recovery before 109/99/71 rej
       });
     } });
   assert.equal(result, null);
-  assert.deepEqual(requests.map(request => request.max_tokens), [4_000, 3_000]);
-  const recovery = events.findIndex(event => event.stage === "draft-format-repair");
-  const rejection = events.findIndex(event => event.stage === "local-evidence-check");
+  assert.deepEqual(requests.map(request => request.max_tokens), [2_000, 4_000]);
+  const recovery = events.findIndex(event => event.stage === "daily-foundation-format");
+  const rejection = events.findIndex(event => event.stage === "daily-copy-composition");
   assert.ok(recovery >= 0 && rejection > recovery);
-  assert.equal(events[recovery].repairBudgetRemaining, 0);
+  assert.deepEqual(events.find(event => event.stage === "daily-foundation-check").rejectionCodes, ["EDITORIAL_FORMAT"]);
   assert.deepEqual(events[rejection].wordCounts, [109, 99, 71]);
   assert.deepEqual(events[rejection].rejectionCodes, ["ORIGINALITY", "WORD_COUNT", "WORD_COUNT"]);
   assert.equal(events.some(event => event.stage === "draft-repair"), false);
@@ -1608,9 +1653,9 @@ test("daily writing selects minimal evidence before prose without changing share
         calls++;
         const wrap = payload => ({ ...response(payload), model });
         if (calls === 1) {
-          const story = options.schema.properties.stories.items;
+          const story = (model === DEFAULT_CLOUDFLARE_AI_MODEL ? options.schema.properties.foundations : options.schema.properties.stories).items;
           if (model === DEFAULT_CLOUDFLARE_AI_MODEL) {
-            assert.deepEqual(Object.keys(story.properties), ["candidateId", "claims", "headline", "deck", "whyItMatters", "whatToDoOrWatch"]);
+            assert.deepEqual(Object.keys(story.properties), ["candidateId", "claims"]);
             assert.deepEqual(story.required, Object.keys(story.properties));
             assert.deepEqual(Object.keys(story.properties.claims.items.properties), ["supports", "text"]);
             assert.deepEqual(story.properties.claims.items.required, ["supports", "text"]);
@@ -1618,15 +1663,17 @@ test("daily writing selects minimal evidence before prose without changing share
             assert.match(options.messages[0].content, /Use one evidenceId when one passage establishes the complete fact/);
             assert.match(options.messages[0].content, /Do not add a spare citation merely because its topic is related/);
             assert.match(options.messages[0].content, /retain the required coverage of both publishers/);
-            assert.equal(options.maxTokens, 4_000);
+            assert.equal(options.maxTokens, 2_000);
+            assert.equal(options.responseFormat, "json_schema");
           } else {
             assert.deepEqual(Object.keys(story.properties.claims.items.properties), ["text", "supports"]);
             assert.doesNotMatch(options.messages[0].content, /Choose the supporting passages BEFORE/);
           }
           assert.equal(story.properties.claims.items.properties.supports.minItems, 1);
           assert.equal(story.properties.claims.items.properties.supports.maxItems, 2);
-          return wrap({ stories: [groundedDraft] });
+          return wrap(model === DEFAULT_CLOUDFLARE_AI_MODEL ? dailyFoundations([groundedDraft]) : { stories: [groundedDraft] });
         }
+        if (model === DEFAULT_CLOUDFLARE_AI_MODEL && calls === 2) return wrap(dailyCopies([groundedDraft]));
         assert.match(options.messages[0].content, /Evaluate the submitted cited passages TOGETHER/);
         assert.match(options.messages[0].content, /Each passage need not prove the entire claim by itself/);
         assert.match(options.messages[0].content, /If any clause is unsupported or any submitted passage is irrelevant, return an empty array/);
@@ -1634,7 +1681,7 @@ test("daily writing selects minimal evidence before prose without changing share
         return wrap({ reviews: [review] });
       } });
     assert.ok(result);
-    assert.equal(calls, 2);
+    assert.equal(calls, model === DEFAULT_CLOUDFLARE_AI_MODEL ? 3 : 2);
     assert.equal(JSON.stringify(GROUNDED_DRAFT_SCHEMA), shared);
   }
 });
@@ -1649,12 +1696,13 @@ test("one sufficient citation and two complementary citations both need exact-se
   for (const draft of [onePassage, groundedDraft]) {
     let calls = 0;
     const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate], aiRequestImpl: async () => {
-      if (++calls === 1) return response({ stories: [draft] });
+      if (++calls === 1) return response(dailyFoundations([draft]));
+      if (calls === 2) return response(dailyCopies([draft]));
       return response({ reviews: [{ ...review, draftSha256: hash(draft),
         claimSupport: draft.claims.map(claim => claim.supports.map(support => support.evidenceId).reverse()) }] });
     } });
     assert.ok(result);
-    assert.equal(calls, 2);
+    assert.equal(calls, 3);
   }
   const cases = [
     { support: [], reason: "empty", reviewedCount: 0 },
@@ -1669,9 +1717,10 @@ test("one sufficient citation and two complementary citations both need exact-se
     const events = [];
     const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
       onDiagnostic: event => events.push(event), aiRequestImpl: async () => response(++calls === 1
-        ? { stories: [groundedDraft] } : { reviews: [{ ...review, claimSupport: [item.support, ["S1P4", "S1P5"]] }] }) });
+        ? dailyFoundations([groundedDraft]) : calls === 2 ? dailyCopies([groundedDraft])
+          : { reviews: [{ ...review, claimSupport: [item.support, ["S1P4", "S1P5"]] }] }) });
     assert.equal(result, null);
-    assert.equal(calls, 2, "No revision or reviewer retry is permitted after a semantic support failure");
+    assert.equal(calls, 3, "No revision or reviewer retry is permitted after a semantic support failure");
     const checked = events.find(event => event.stage === "semantic-evidence-check");
     assert.deepEqual(checked.rejectionCodes, ["REVIEW_CLAIM_SUPPORT"]);
     assert.deepEqual(checked.claimSupportFailures, [{ candidateId: candidate.candidateId, claimIndex: 0,
@@ -1680,7 +1729,7 @@ test("one sufficient citation and two complementary citations both need exact-se
   }
 });
 
-test("four repaired daily drafts retain only three approved stories when the last reviewer drops a citation", async () => {
+test("four daily foundations and completed copies retain only three stories when the last reviewer drops a citation", async () => {
   const desks = ["ai", "work-and-tools", "security-and-privacy", "platforms-and-power"];
   const slate = desks.map((suggestedDesk, index) => ({ ...structuredClone(candidate),
     candidateId: `candidate-four-review-${index}`, suggestedDesk }));
@@ -1693,14 +1742,14 @@ test("four repaired daily drafts retain only three approved stories when the las
   const result = await synthesizeGroundedEditorial({ editorial, candidates: slate,
     onDiagnostic: event => events.push(event), aiRequestImpl: async options => {
       requests.push(options);
-      if (requests.length === 1) return response({ stories: defective });
-      if (requests.length === 2) return response(dailyRepairPayload(options, revised));
+      if (requests.length === 1) return response(dailyFoundations(defective));
+      if (requests.length === 2) return response(dailyCopies(revised));
       return response({ reviews: revised.map((draft, index) => ({ ...review, candidateId: draft.candidateId,
         draftSha256: hash(draft), claimSupport: index === 3 ? [["S1P2"], ["S1P4", "S1P5"]] : review.claimSupport })) });
     } });
   assert.ok(result);
-  assert.deepEqual(requests.map(request => request.maxTokens), [4_000, 3_000, 800]);
-  assert.equal(events.find(event => event.stage === "draft-repair").accepted, 4);
+  assert.deepEqual(requests.map(request => request.maxTokens), [2_000, 4_000, 1_800]);
+  assert.equal(events.find(event => event.stage === "daily-copy-composition").accepted, 4);
   const checked = events.find(event => event.stage === "semantic-evidence-check");
   assert.equal(checked.submitted, 4);
   assert.equal(checked.accepted, 3);
@@ -1720,12 +1769,12 @@ test("support-failure diagnostics remain bounded for malformed model arrays and 
   const events = [];
   let calls = 0;
   const result = await synthesizeGroundedEditorial({ editorial, candidates: slate, onDiagnostic: event => events.push(event),
-    aiRequestImpl: async () => response(++calls === 1 ? { stories: drafts } : { reviews: drafts.map(draft => ({
+    aiRequestImpl: async () => response(++calls === 1 ? dailyFoundations(drafts) : calls === 2 ? dailyCopies(drafts) : { reviews: drafts.map(draft => ({
       ...review, candidateId: draft.candidateId, draftSha256: hash(draft),
       claimSupport: [Array(100).fill("UNTRUSTED_REVIEW_CONTENT"), []],
     })) }) });
   assert.equal(result, null);
-  assert.equal(calls, 2);
+  assert.equal(calls, 3);
   const checked = events.find(event => event.stage === "semantic-evidence-check");
   assert.equal(checked.claimSupportFailures.length, 8);
   for (const failure of checked.claimSupportFailures) {
@@ -1739,7 +1788,7 @@ test("support-failure diagnostics remain bounded for malformed model arrays and 
   assert.doesNotMatch(JSON.stringify(checked), /UNTRUSTED_REVIEW_CONTENT|S1P[2345]/);
 });
 
-test("daily full-story JSON-object transport carries the exact system schema while focused repair and review stay schema mode", async () => {
+test("daily foundations, exact copy plus rejected-claim edits, and full review use three bounded native requests", async () => {
   const copied = structuredClone(groundedDraft);
   copied.claims[0].text = copiedClaim;
   const calls = [];
@@ -1749,20 +1798,20 @@ test("daily full-story JSON-object transport carries the exact system schema whi
       calls.push(options);
       const index = calls.length;
       if (index === 1) {
-        assert.equal(options.responseFormat, "json_object");
-        assert.ok(options.messages[0].content.endsWith(JSON.stringify(options.schema)),
-          "The exact evidence-first bounded schema is present in SYSTEM, not merely its name");
-        assert.match(options.messages[0].content, /Each story[’']s body[\s\S]*100[–-]225/,
-          "The body budget applies to each story, not the complete batch");
-        const fields = options.schema.properties.stories.items.properties;
+        assert.equal(options.responseFormat, "json_schema");
+        const fields = options.schema.properties.foundations.items.properties;
+        assert.deepEqual(Object.keys(fields), ["candidateId", "claims"]);
         assert.equal(fields.claims.items.properties.text.minLength, 60);
         assert.equal(fields.claims.items.properties.text.maxLength, 480);
-        assert.equal(fields.whyItMatters.minLength, 120);
-        assert.equal(fields.whyItMatters.maxLength, 650);
         assert.deepEqual(Object.keys(fields.claims.items.properties), ["supports", "text"]);
-      } else assert.equal(options.responseFormat, "json_schema");
-      const payload = index === 1 ? { stories: [copied] }
-        : index === 2 ? dailyRepairPayload(options, [groundedDraft]) : { reviews: [review] };
+      } else if (index === 2) {
+        assert.deepEqual(Object.keys(options.schema.properties), ["claimRepairs", "copies"]);
+        assert.equal(options.schema.properties.copies.items.properties.whyItMatters.minLength, 120);
+        assert.equal(options.schema.properties.copies.items.properties.whyItMatters.maxLength, 650);
+      }
+      assert.equal(options.responseFormat, "json_schema");
+      const payload = index === 1 ? dailyFoundations([copied])
+        : index === 2 ? dailyCopies([groundedDraft], [dailyClaimRepair(groundedDraft, 0)]) : { reviews: [review] };
       return requestWorkersAiEditorial({ ...options, fetchImpl: async (_url, init) => {
         nativeBodies.push(JSON.parse(init.body));
         return new Response(JSON.stringify({ success: true, result: { response: JSON.stringify(payload) }, errors: [] }), {
@@ -1771,16 +1820,16 @@ test("daily full-story JSON-object transport carries the exact system schema whi
       } });
     } });
   assert.ok(result);
-  assert.deepEqual(nativeBodies.map(body => body.response_format.type), ["json_object", "json_schema", "json_schema"]);
-  assert.deepEqual(nativeBodies[0].response_format, { type: "json_object" });
+  assert.deepEqual(nativeBodies.map(body => body.response_format.type), ["json_schema", "json_schema", "json_schema"]);
+  assert.deepEqual(nativeBodies[0].response_format.json_schema, calls[0].schema);
   assert.deepEqual(nativeBodies[1].response_format.json_schema, calls[1].schema);
   assert.deepEqual(nativeBodies[2].response_format.json_schema, calls[2].schema);
-  assert.deepEqual(nativeBodies.map(body => body.max_tokens), [4_000, 3_000, 800]);
+  assert.deepEqual(nativeBodies.map(body => body.max_tokens), [2_000, 4_000, 1_800]);
   assert.ok(calls.every(call => call.maxAttempts === 1 && call.maxRequestBytes === 70_000 && call.maxResponseBytes === 100_000));
   assert.equal(result.editorial.desks["security-and-privacy"].story.headline, groundedDraft.headline);
 });
 
-test("daily full-story format recovery uses JSON-object once, with strict parsing and the original review budget", async () => {
+test("invalid daily foundation JSON spends the sole full-story recovery and retains full review budget", async () => {
   const calls = [];
   const events = [];
   const nativeBodies = [];
@@ -1788,7 +1837,10 @@ test("daily full-story format recovery uses JSON-object once, with strict parsin
     accountId: "0".repeat(32), apiToken: "synthetic-only", onDiagnostic: event => events.push(event),
     aiRequestImpl: async options => {
       calls.push(options);
-      if (calls.length <= 2) {
+      if (calls.length === 1) {
+        assert.equal(options.responseFormat, "json_schema");
+        assert.deepEqual(Object.keys(options.schema.properties), ["foundations"]);
+      } else if (calls.length === 2) {
         assert.equal(options.responseFormat, "json_object");
         assert.deepEqual(Object.keys(options.schema.properties), ["stories"]);
         assert.ok(options.messages[0].content.endsWith(JSON.stringify(options.schema)));
@@ -1803,15 +1855,15 @@ test("daily full-story format recovery uses JSON-object once, with strict parsin
       } });
     } });
   assert.ok(result);
-  assert.deepEqual(nativeBodies.map(body => body.response_format.type), ["json_object", "json_object", "json_schema"]);
-  assert.deepEqual(nativeBodies.map(body => body.max_tokens), [4_000, 3_000, 800]);
-  const recovery = events.find(event => event.stage === "draft-format-repair");
-  assert.equal(recovery.repairBudgetRemaining, 0);
+  assert.deepEqual(nativeBodies.map(body => body.response_format.type), ["json_schema", "json_object", "json_schema"]);
+  assert.deepEqual(nativeBodies.map(body => body.max_tokens), [2_000, 4_000, 1_800]);
+  const recovery = events.find(event => event.stage === "daily-foundation-format");
+  assert.deepEqual(events.find(event => event.stage === "daily-foundation-check").rejectionCodes, ["EDITORIAL_FORMAT"]);
   assert.equal(recovery.formatReason, "PAYLOAD_JSON_INVALID");
-  assert.equal(events.filter(event => event.stage === "draft-format-repair").length, 1);
+  assert.equal(events.filter(event => event.stage === "daily-foundation-format").length, 1);
 });
 
-test("a daily mixed field-edit and missing-story repair remains native schema transport", async () => {
+test("a missing daily foundation consumes full recovery without accepting unrequested candidates", async () => {
   const other = { ...structuredClone(candidate), candidateId: "candidate-mixed-transport", suggestedDesk: "ai" };
   const secondDraft = { ...structuredClone(groundedDraft), candidateId: other.candidateId };
   const editorial = structuredClone(baseline);
@@ -1822,24 +1874,26 @@ test("a daily mixed field-edit and missing-story repair remains native schema tr
   const result = await synthesizeGroundedEditorial({ editorial, candidates: [candidate, other], aiRequestImpl: async options => {
     calls.push(options);
     if (calls.length === 1) {
+      assert.equal(options.responseFormat, "json_schema");
+      return response(dailyFoundations([groundedDraft]));
+    }
+    if (calls.length === 2) {
       assert.equal(options.responseFormat, "json_object");
-      return response({ stories: [{ ...groundedDraft, whyItMatters: "Too short." }] });
+      assert.deepEqual(Object.keys(options.schema.properties), ["stories"]);
+      assert.deepEqual(new Set(options.schema.properties.stories.items.properties.candidateId.enum), new Set([candidate.candidateId, other.candidateId]));
+      return response({ stories: [groundedDraft, secondDraft] });
     }
     assert.equal(options.responseFormat, "json_schema");
-    if (calls.length === 2) {
-      assert.deepEqual(Object.keys(options.schema.properties), ["copyEdits", "stories"]);
-      assert.deepEqual(JSON.parse(options.messages[1].content).revisionPlan.rewriteCandidateIds, [other.candidateId]);
-      return response(dailyRepairPayload(options, [groundedDraft, secondDraft]));
-    }
     return response({ reviews: [review, { ...review, candidateId: other.candidateId, draftSha256: hash(secondDraft) }] });
   }, onDiagnostic: event => events.push(event) });
   assert.ok(result);
-  assert.deepEqual(calls.map(call => call.maxTokens), [4_000, 3_000, 800]);
-  assert.equal(events.some(event => event.stage === "draft-shape-repair"), false,
-    "A missing known candidate keeps the existing focused repair, not a fresh whole-batch attempt");
+  assert.deepEqual(calls.map(call => call.maxTokens), [2_000, 4_000, 1_800]);
+  assert.deepEqual(events.find(event => event.stage === "daily-foundation-check").rejectionCodes, ["FOUNDATION_COUNT"]);
+  assert.equal(events.filter(event => event.stage === "daily-copy-composition").length, 1,
+    "Full recovery replaces, rather than adds to, the sole second-stage allocation");
 });
 
-test("JSON-object drafting still rejects nested damaged prose and never retries a failed field repair", async () => {
+test("native copy composition rejects nested damaged prose without another repair", async () => {
   const bad = { ...structuredClone(groundedDraft), whyItMatters: malformedEmailStories[0].whyItMatters };
   const calls = [];
   const events = [];
@@ -1848,8 +1902,8 @@ test("JSON-object drafting still rejects nested damaged prose and never retries 
     aiRequestImpl: async options => {
       calls.push(options);
       assert.ok(calls.length <= 2, "Malformed reader copy cannot reach review or another repair");
-      const payload = calls.length === 1 ? { stories: [bad] } : dailyRepairPayload(options, [bad]);
-      assert.equal(options.responseFormat, calls.length === 1 ? "json_object" : "json_schema");
+      const payload = calls.length === 1 ? dailyFoundations([groundedDraft]) : dailyCopies([bad]);
+      assert.equal(options.responseFormat, "json_schema");
       return requestWorkersAiEditorial({ ...options, fetchImpl: async () => new Response(JSON.stringify({
         success: true, result: { response: JSON.stringify(payload) }, errors: [],
       }), { status: 200, headers: { "content-type": "application/json" } }) });
@@ -1859,7 +1913,7 @@ test("JSON-object drafting still rejects nested damaged prose and never retries 
   assert.equal(events.some(event => event.stage === "semantic-evidence-check"), false);
   assert.equal(events.some(event => event.stage === "draft-format-repair"), false,
     "A well-formed outer object does not hide the separate reader-copy failure");
-  assert.ok(events.find(event => event.stage === "draft-repair").rejectionCodes.includes("READER_COPY"));
+  assert.ok(events.find(event => event.stage === "daily-copy-composition").rejectionCodes.includes("READER_COPY"));
 });
 
 test("daily-only JSON-object change leaves Qwen, OSS and local stage formats unchanged", async () => {
@@ -1881,7 +1935,7 @@ test("daily-only JSON-object change leaves Qwen, OSS and local stage formats unc
   }
 });
 
-test("daily JSON-object transport never accepts wrong outer objects or repairs malformed output twice", async () => {
+test("daily foundation and recovery transports never accept wrong objects or repair malformed output twice", async () => {
   for (const payload of [
     '{"stories":broken', JSON.stringify([]), JSON.stringify(null),
     JSON.stringify({ edits: [] }), JSON.stringify({ stories: [groundedDraft], extra: true }),
@@ -1893,34 +1947,49 @@ test("daily JSON-object transport never accepts wrong outer objects or repairs m
         calls.push(options);
         assert.ok(calls.length <= 2);
         assert.equal(options.schema.properties.reviews, undefined);
-        assert.equal(options.responseFormat, "json_object");
+        assert.equal(options.responseFormat, calls.length === 1 ? "json_schema" : "json_object");
         return requestWorkersAiEditorial({ ...options, fetchImpl: async () => new Response(JSON.stringify({
           success: true, result: { response: payload }, errors: [],
         }), { status: 200, headers: { "content-type": "application/json" } }) });
       } });
     assert.equal(result, null, payload);
-    assert.ok(calls.length >= 1 && calls.length <= 2);
+    assert.equal(calls.length, 2);
   }
 });
 
 function malformedDailyShapeCases() {
+  const other = { ...structuredClone(candidate), candidateId: "candidate-shape-second", suggestedDesk: "ai" };
+  const drafts = [groundedDraft, { ...structuredClone(groundedDraft), candidateId: other.candidateId }];
+  const foundations = dailyFoundations(drafts).foundations;
+  const editorial = structuredClone(baseline);
+  editorial.desks.ai = structuredClone(editorial.desks["security-and-privacy"]);
+  editorial.desks.ai.story.id = "shape-second-story";
   return [
-    { reason: "OUTER_KEYS", payload: { type: "object", properties: { stories: { type: "array" } },
-      UNTRUSTED_OUTER_MARKER: "Do not disclose this provider text in diagnostics." }, reflected: true },
-    { reason: "OUTER_KEYS", payload: { stories: [groundedDraft], UNTRUSTED_OUTER_MARKER: true }, reflected: false },
-    { reason: "STORIES_NOT_ARRAY", payload: { stories: { UNTRUSTED_OUTER_MARKER: true } }, reflected: false },
-    { reason: "STORY_COUNT_INVALID", payload: { stories: Array.from({ length: 5 }, () => groundedDraft) }, reflected: false },
-    { reason: "UNKNOWN_CANDIDATE", payload: { stories: [{ ...groundedDraft, candidateId: "UNTRUSTED_CANDIDATE_MARKER" }] }, reflected: false },
-    { reason: "DUPLICATE_CANDIDATE", payload: { stories: [groundedDraft, structuredClone(groundedDraft)] }, reflected: false },
-  ];
+    { reason: "OUTER_KEYS", payload: { type: "object", properties: { foundations: { type: "array" } },
+      UNTRUSTED_OUTER_MARKER: "Do not disclose this provider text in diagnostics." }, recoveryReason: "OUTER_KEYS", recovery: {} },
+    { reason: "OUTER_KEYS", payload: { foundations, UNTRUSTED_OUTER_MARKER: true }, recoveryReason: "OUTER_KEYS", recovery: { stories: drafts, extra: true } },
+    { reason: "FOUNDATIONS_NOT_ARRAY", payload: { foundations: {} }, recoveryReason: "STORIES_NOT_ARRAY", recovery: { stories: {} } },
+    { reason: "FOUNDATION_COUNT", payload: { foundations: Array(5).fill(foundations[0]) }, recoveryReason: "STORY_COUNT_INVALID", recovery: { stories: Array(5).fill(groundedDraft) } },
+    { reason: "FOUNDATION_COUNT", payload: { foundations: [foundations[0]] }, recoveryReason: "STORY_COUNT_INVALID", recovery: { stories: [groundedDraft] } },
+    { reason: "FOUNDATION_COUNT", payload: { foundations: [] }, recoveryReason: "STORY_COUNT_INVALID", recovery: { stories: [] } },
+    { reason: "UNKNOWN_CANDIDATE", payload: { foundations: [{ ...foundations[0], candidateId: "UNTRUSTED_CANDIDATE_MARKER" }, foundations[1]] },
+      recoveryReason: "UNKNOWN_CANDIDATE", recovery: { stories: [{ ...groundedDraft, candidateId: "UNTRUSTED_CANDIDATE_MARKER" }, drafts[1]] } },
+    { reason: "DUPLICATE_CANDIDATE", payload: { foundations: [foundations[0], foundations[0]] },
+      recoveryReason: "DUPLICATE_CANDIDATE", recovery: { stories: [groundedDraft, groundedDraft] } },
+    ...[[], [groundedDraft.claims[0]], [...groundedDraft.claims, groundedDraft.claims[0]]].map(claims => ({
+      reason: "FOUNDATION_SHAPE", payload: { foundations: [{ ...foundations[0], claims }, foundations[1]] },
+      recoveryReason: "OUTER_KEYS", recovery: {},
+    })),
+    { reason: "FOUNDATION_SHAPE", payload: { foundations: [{ ...foundations[0], headline: "Premature reader copy" }, foundations[1]] }, recoveryReason: "OUTER_KEYS", recovery: {} },
+  ].map(item => ({ ...item, candidates: [candidate, other], drafts, editorial }));
 }
 
-test("daily parseable malformed story shapes spend one fresh recovery before exact-hash review", async () => {
-  for (const { payload, reason, reflected } of malformedDailyShapeCases()) {
+test("daily malformed foundation wrappers, coverage and claim counts spend one full recovery before exact-hash review", async () => {
+  for (const { payload, reason, candidates, drafts, editorial } of malformedDailyShapeCases()) {
     const calls = [];
     const events = [];
     const originalBaseline = structuredClone(baseline);
-    const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
+    const result = await synthesizeGroundedEditorial({ editorial, candidates,
       accountId: "0".repeat(32), apiToken: "synthetic-only", onDiagnostic: event => events.push(event),
       aiRequestImpl: async options => {
         calls.push(options);
@@ -1928,60 +1997,53 @@ test("daily parseable malformed story shapes spend one fresh recovery before exa
         if (calls.length === 2) {
           assert.equal(options.responseFormat, "json_object");
           assert.deepEqual(Object.keys(options.schema.properties), ["stories"]);
-          assert.deepEqual(options.schema.properties.stories.items.properties.candidateId.enum, [candidate.candidateId]);
-          assert.deepEqual(JSON.parse(options.messages[1].content).dossiers.map(item => item.candidateId), [candidate.candidateId]);
+          assert.deepEqual(options.schema.properties.stories.items.properties.candidateId.enum, candidates.map(item => item.candidateId));
+          assert.deepEqual(JSON.parse(options.messages[1].content).dossiers.map(item => item.candidateId), candidates.map(item => item.candidateId));
           assert.doesNotMatch(JSON.stringify(options.messages), /UNTRUSTED_(?:OUTER|CANDIDATE)_MARKER/,
             "Recovery starts from trusted dossiers, never failed model instructions or candidate IDs");
         }
         if (calls.length === 3) {
           assert.deepEqual(JSON.parse(options.messages[1].content).drafts.map(({ claimEvidence: _pairing, ...entry }) => entry),
-            [{ draftSha256: hash(groundedDraft), draft: groundedDraft }]);
-          assert.deepEqual(options.schema.properties.reviews.items.properties.draftSha256.enum, [hash(groundedDraft)]);
+            drafts.map(draft => ({ draftSha256: hash(draft), draft })));
+          assert.deepEqual(options.schema.properties.reviews.items.properties.draftSha256.enum, drafts.map(hash));
           assert.equal(options.responseFormat, "json_schema");
         }
-        const next = calls.length === 1 ? payload : calls.length === 2 ? { stories: [groundedDraft] } : { reviews: [review] };
+        const next = calls.length === 1 ? payload : calls.length === 2 ? { stories: drafts } : { reviews: drafts.map(draft => ({
+          ...review, candidateId: draft.candidateId, draftSha256: hash(draft),
+        })) };
         return requestWorkersAiEditorial({ ...options, fetchImpl: async () => new Response(JSON.stringify({
           success: true, result: { response: JSON.stringify(next) }, errors: [],
         }), { status: 200, headers: { "content-type": "application/json" } }) });
       } });
     assert.ok(result, reason);
-    assert.deepEqual(calls.map(call => call.maxTokens), [4_000, 3_000, 800]);
+    assert.deepEqual(calls.map(call => call.maxTokens), [2_000, 4_000, 1_800]);
     assert.equal(result.editorial.desks["security-and-privacy"].story.headline, groundedDraft.headline);
     assert.deepEqual(baseline, originalBaseline, "Rejected source objects and baseline are not mutated");
-    const checks = events.filter(event => event.stage === "draft-shape-check");
+    const checks = events.filter(event => event.stage === "daily-foundation-check");
     assert.equal(checks.length, 1, reason);
     const check = checks[0];
-    assert.equal(check.phase, "initial");
-    assert.equal(check.reason, reason);
-    assert.equal(check.schemaReflected, reflected);
-    assert.equal(check.expectedStoryCount, 1);
-    assert.equal(check.storyCountExceeded, reason === "STORY_COUNT_INVALID");
-    assert.ok(check.storyCount === null || Number.isInteger(check.storyCount) && check.storyCount >= 0 && check.storyCount <= 4);
-    assert.deepEqual(Object.keys(check).sort(), ["stage", "phase", "reason", "exactOuterKeys", "storyCount",
-      "storyCountExceeded", "expectedStoryCount", "schemaReflected"].sort());
+    assert.deepEqual(check, { stage: "daily-foundation-check", submitted: 2, accepted: 0, rejectionCodes: [reason] });
     assert.doesNotMatch(JSON.stringify(check), /UNTRUSTED_|candidate-personal|CERT\/CC|amwrtdrv|S1P/);
-    const recoveries = events.filter(event => event.stage === "draft-shape-repair");
-    assert.deepEqual(recoveries, [{ stage: "draft-shape-repair", rejectionCode: "DRAFT_SHAPE", repairBudgetRemaining: 0 }]);
+    assert.equal(events.filter(event => event.stage === "daily-copy-composition").length, 1);
     assert.equal(events.some(event => event.stage === "draft-format-repair" || event.stage === "draft-repair"), false);
   }
 });
 
 test("repeated daily malformed story shapes stop after two calls without adopting extra or unknown drafts", async () => {
-  for (const { payload, reason } of malformedDailyShapeCases()) {
+  for (const { payload, reason, recovery, recoveryReason, candidates, editorial } of malformedDailyShapeCases()) {
     const calls = [];
     const events = [];
-    const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
+    const result = await synthesizeGroundedEditorial({ editorial, candidates,
       onDiagnostic: event => events.push(event), aiRequestImpl: async options => {
         calls.push(options);
         assert.ok(calls.length <= 2, "No third writer, field repair, or semantic review is permitted");
         assert.equal(options.schema.properties.reviews, undefined);
-        return response(payload);
+        return response(calls.length === 1 ? payload : recovery);
       } });
     assert.equal(result, null, reason);
-    assert.deepEqual(calls.map(call => call.maxTokens), [4_000, 3_000]);
-    assert.deepEqual(events.filter(event => event.stage === "draft-shape-check").map(event => [event.phase, event.reason]),
-      [["initial", reason], ["recovery", reason]]);
-    assert.equal(events.filter(event => event.stage === "draft-shape-repair").length, 1);
+    assert.deepEqual(calls.map(call => call.maxTokens), [2_000, 4_000]);
+    assert.deepEqual(events.find(event => event.stage === "daily-foundation-check").rejectionCodes, [reason]);
+    assert.deepEqual(events.find(event => event.stage === "daily-copy-composition").rejectionCodes, [recoveryReason]);
     assert.equal(events.some(event => event.stage === "semantic-evidence-check" || event.stage === "draft-repair"), false);
   }
 });
@@ -2004,11 +2066,11 @@ test("parseable shape recovery shares the one repair allowance with format recov
           ? invalidShape : { stories: [copied] });
       } });
     assert.equal(result, null, scenario);
-    assert.deepEqual(calls.map(call => call.maxTokens), [4_000, 3_000]);
-    assert.equal(events.filter(event => ["draft-shape-repair", "draft-format-repair"].includes(event.stage)).length, 1);
+    assert.deepEqual(calls.map(call => call.maxTokens), [2_000, 4_000]);
+    assert.equal(events.filter(event => event.stage === "daily-foundation-check").length, 1);
     assert.equal(events.some(event => event.stage === "draft-repair" || event.stage === "semantic-evidence-check"), false);
     if (scenario === "shape-then-field-error") {
-      assert.ok(events.find(event => event.stage === "local-evidence-check").rejectionCodes.includes("ORIGINALITY"));
+      assert.ok(events.find(event => event.stage === "daily-copy-composition").rejectionCodes.includes("ORIGINALITY"));
     }
   }
 });
@@ -2067,8 +2129,8 @@ test("daily review pairs exact claim passages within each candidate despite coll
   const result = await synthesizeGroundedEditorial({ ...fixture, accountId: "0".repeat(32), apiToken: "synthetic-only",
     aiRequestImpl: async options => {
       calls.push(options);
-      const payload = calls.length === 1 ? { stories: [...fixture.drafts].reverse().map(draft => ({ ...draft, whyItMatters: "Too short." })) }
-        : calls.length === 2 ? dailyRepairPayload(options, fixture.drafts)
+      const payload = calls.length === 1 ? dailyFoundations([...fixture.drafts].reverse())
+        : calls.length === 2 ? dailyCopies([...fixture.drafts].reverse())
         : { reviews: fixture.drafts.map(draft => ({ ...review, candidateId: draft.candidateId,
           draftSha256: hash(draft), claimSupport: draft.claims.map(claim => claim.supports.map(support => support.evidenceId)) })) };
       return requestWorkersAiEditorial({ ...options, fetchImpl: async (_url, init) => {
@@ -2079,15 +2141,13 @@ test("daily review pairs exact claim passages within each candidate despite coll
       } });
     } });
   assert.ok(result);
-  assert.deepEqual(calls.map(call => call.maxTokens), [4_000, 3_000, 800]);
+  assert.deepEqual(calls.map(call => call.maxTokens), [2_000, 4_000, 1_800]);
   assert.equal(calls.reduce((total, call) => total + call.maxTokens, 0), 7_800);
-  for (const call of calls.slice(0, 2)) {
-    assert.equal(call.messages[0].content.split("Distinguish a publisher's intended benefit from an observed improvement in ALL fields.").length, 2,
-      "Default writer and focused repair get the benefit qualification exactly once");
-    assert.match(call.messages[0].content, /do not report seamless operation, improved productivity/);
-    assert.match(call.messages[0].content, /Attribute the intention or explain a conditional/);
-  }
-  assert.match(calls[1].messages[0].content, /Use conditional analysis, not invented measured benefits/);
+  assert.match(calls[0].messages[0].content, /State observed reported facts, not promised benefits/);
+  assert.equal(calls[1].messages[0].content.split("Distinguish a publisher's intended benefit from an observed improvement in ALL fields.").length, 2,
+    "The composition stage gets the benefit qualification exactly once");
+  assert.match(calls[1].messages[0].content, /do not report seamless operation, improved productivity/);
+  assert.match(calls[1].messages[0].content, /Attribute the intention or explain a conditional/);
   assert.match(calls[2].messages[0].content, /Judge each claimSupport independently from the whole-story flags/);
   assert.match(calls[2].messages[0].content, /supported claims do not excuse inaccurate reader copy/);
   assert.match(calls[2].messages[0].content, /design intent is not proof of an observed productivity gain/);
@@ -2119,7 +2179,7 @@ test("daily review pairs exact claim passages within each candidate despite coll
   assert.notEqual(checked.drafts[0].claimEvidence[0].citations[0].text, checked.drafts[1].claimEvidence[0].citations[0].text);
   assert.notEqual(checked.drafts[0].claimEvidence[0].citations[0].sourceId, checked.drafts[1].claimEvidence[0].citations[0].sourceId);
   assert.ok(Buffer.byteLength(JSON.stringify(nativeBodies[2]), "utf8") <= 70_000);
-  assert.deepEqual(nativeBodies.map(body => body.response_format.type), ["json_object", "json_schema", "json_schema"]);
+  assert.deepEqual(nativeBodies.map(body => body.response_format.type), ["json_schema", "json_schema", "json_schema"]);
 });
 
 test("paired-evidence review never turns correct citation IDs into approval of false or misleading claims", async () => {
@@ -2132,21 +2192,22 @@ test("paired-evidence review never turns correct citation IDs into approval of f
     const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
       onDiagnostic: event => events.push(event), aiRequestImpl: async options => {
         calls.push(options);
-        assert.ok(calls.length <= 2, "A factual veto cannot trigger another writer or reviewer");
-        return response(calls.length === 1 ? { stories: [groundedDraft] } : { reviews: [{ ...review, [field]: false }] });
+        assert.ok(calls.length <= 3, "A factual veto cannot trigger another writer or reviewer");
+        return response(calls.length === 1 ? dailyFoundations([groundedDraft]) : calls.length === 2 ? dailyCopies([groundedDraft])
+          : { reviews: [{ ...review, [field]: false }] });
       } });
     assert.equal(result, null, field);
-    assert.deepEqual(calls.map(call => call.maxTokens), [4_000, 800]);
+    assert.deepEqual(calls.map(call => call.maxTokens), [2_000, 4_000, 1_800]);
     assert.deepEqual(events.find(event => event.stage === "semantic-evidence-check").rejectionCodes, [expectedCode]);
   }
   let calls = 0;
   const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate], aiRequestImpl: async () => {
     calls++;
-    return response(calls === 1 ? { stories: [groundedDraft] }
+    return response(calls === 1 ? dailyFoundations([groundedDraft]) : calls === 2 ? dailyCopies([groundedDraft])
       : { reviews: [{ ...review, factsSupported: false, claimSupport: [[], []] }] });
   } });
   assert.equal(result, null, "The observed empty-support plus false-facts verdict remains a hard veto");
-  assert.equal(calls, 2);
+  assert.equal(calls, 3);
 });
 
 test("missing, corrupt, duplicate or unknown citations never reach paired semantic review", async () => {
@@ -2162,11 +2223,11 @@ test("missing, corrupt, duplicate or unknown citations never reach paired semant
         calls.push(options);
         assert.ok(calls.length <= 2);
         assert.equal(options.schema.properties.reviews, undefined);
-        if (calls.length === 1) return response({ stories: [draft] });
-        return response(dailyRepairPayload(options, [draft]));
+        if (calls.length === 1) return response(dailyFoundations([draft]));
+        return response(dailyCopies([draft], [dailyClaimRepair(draft, 0)]));
       } });
     assert.equal(result, null);
-    assert.deepEqual(calls.map(call => call.maxTokens), [4_000, 3_000]);
+    assert.deepEqual(calls.map(call => call.maxTokens), [2_000, 4_000]);
     assert.equal(events.some(event => event.stage === "semantic-evidence-check"), false,
       "The source-pairing projection does not invent or repair missing source support");
   }
@@ -2200,7 +2261,8 @@ test("an oversized optional pairing retains the entire original review dossier w
   const result = await synthesizeGroundedEditorial({ editorial, candidates: slate, accountId: "0".repeat(32), apiToken: "synthetic-only",
     onDiagnostic: event => events.push(event), aiRequestImpl: async options => {
       calls.push(options);
-      const payload = calls.length === 1 ? { stories: drafts } : { reviews: drafts.map(draft => ({ ...review,
+      const payload = calls.length === 1 ? dailyFoundations(drafts) : calls.length === 2 ? dailyCopies(drafts)
+        : { reviews: drafts.map(draft => ({ ...review,
         candidateId: draft.candidateId, draftSha256: hash(draft), factsSupported: false,
         claimSupport: draft.claims.map(claim => claim.supports.map(support => support.evidenceId)) })) };
       return requestWorkersAiEditorial({ ...options, fetchImpl: async (_url, init) => {
@@ -2211,10 +2273,10 @@ test("an oversized optional pairing retains the entire original review dossier w
       } });
     } });
   assert.equal(result, null, "Full-dossier fallback is not an approval fallback");
-  assert.deepEqual(calls.map(call => call.maxTokens), [4_000, 800]);
-  assert.equal(nativeBodies.length, 2, "Both original bounded requests fit the unchanged real adapter");
+  assert.deepEqual(calls.map(call => call.maxTokens), [2_000, 4_000, 1_800]);
+  assert.equal(nativeBodies.length, 3, "All three bounded requests fit the unchanged real adapter");
   const written = JSON.parse(calls[0].messages[1].content);
-  const checked = JSON.parse(calls[1].messages[1].content);
+  const checked = JSON.parse(calls[2].messages[1].content);
   assert.deepEqual(checked.dossiers, written.dossiers, "No source text or qualification is dropped to fit paired duplication");
   assert.deepEqual(checked.drafts, drafts.map(draft => ({ draftSha256: hash(draft), draft })));
   for (const sourceDossier of checked.dossiers) {
@@ -2224,14 +2286,82 @@ test("an oversized optional pairing retains the entire original review dossier w
       assert.match(source.passages.map(passage => passage.text).join(" "), /does not establish exploitation in the wild or identify a fixed version/);
     }
   }
-  const originalBytes = Buffer.byteLength(JSON.stringify(nativeBodies[1]), "utf8");
+  const originalBytes = Buffer.byteLength(JSON.stringify(nativeBodies[2]), "utf8");
   assert.ok(originalBytes < 70_000);
   assert.ok(originalBytes + Buffer.byteLength(summary, "utf8") * 8 > 70_000,
     "The eight required full cited passages alone would take the optional duplicate view over its byte limit");
   assert.deepEqual(events.find(event => event.stage === "semantic-evidence-pairing"), {
     stage: "semantic-evidence-pairing", submitted: 4, paired: 0, reason: "ORIGINAL_VIEW_REQUEST_BOUND",
   });
-  assert.doesNotMatch(calls[1].messages[0].content, /Each draft's claimEvidence/,
+  assert.doesNotMatch(calls[2].messages[0].content, /Each draft's claimEvidence/,
     "No dangling instruction refers to an omitted optional view");
   assert.deepEqual(events.find(event => event.stage === "semantic-evidence-check").rejectionCodes, ["REVIEW_FACTS"]);
+});
+
+test("repairing the sole attributed claim binds its trusted publisher without changing the fixed sibling", async () => {
+  const initial = structuredClone(groundedDraft);
+  initial.claims[0].text = initial.claims[0].text.replace("CERT/CC", "The advisory");
+  initial.claims[1].text = copiedClaim;
+  const expected = structuredClone(groundedDraft);
+  expected.claims[0] = structuredClone(initial.claims[0]);
+  expected.claims[1].text = `According to CERT/CC, ${expected.claims[1].text}`;
+  assert.equal(validateGroundedStory(expected, dossier), true);
+  const calls = [];
+  const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate], aiRequestImpl: async options => {
+    calls.push(options);
+    if (calls.length === 1) return response(dailyFoundations([initial]));
+    if (calls.length === 2) return response(dailyCopies([groundedDraft], [dailyClaimRepair(groundedDraft, 1)]));
+    return response({ reviews: [{ ...review, draftSha256: hash(expected) }] });
+  } });
+  assert.ok(result);
+  assert.deepEqual(calls.map(call => call.maxTokens), [2_000, 4_000, 1_800]);
+  const packet = JSON.parse(calls[1].messages[1].content).dossiers[0];
+  assert.deepEqual(packet.fixedClaims, [{ claimIndex: 0, ...initial.claims[0] }]);
+  assert.deepEqual(packet.requestedClaimRepairs.map(task => task.claimIndex), [1]);
+  assert.equal(packet.requestedClaimRepairs[0].preserveSupports, true);
+  const reviewed = JSON.parse(calls[2].messages[1].content).drafts[0];
+  assert.deepEqual(reviewed.draft, expected);
+  assert.equal(JSON.stringify(reviewed.draft.claims[0]), JSON.stringify(initial.claims[0]),
+    "The clean sibling's exact text and support order remain frozen");
+  assert.equal(reviewed.draftSha256, hash(expected));
+});
+
+test("missing corroboration is repaired on an already rejected claim while the supported sibling stays fixed", async () => {
+  const corroborated = structuredClone(candidate);
+  corroborated.ranking.evidenceTier = "corroborated";
+  const independent = { ...groundedEvidence, sourceId: "independent-context", publisher: "Example Observer",
+    title: "Independent report on the AOMEI backup driver advisory", summary: `CERT/CC reports: ${groundedEvidence.summary}` };
+  corroborated.feedEvidence.push(independent);
+  corroborated.sources.push({ id: independent.sourceId, publisher: independent.publisher, title: independent.title,
+    relationship: "independent", publishedAt: independent.publishedAt });
+  const sourceDossier = groundedDossiers([corroborated])[0];
+  for (const alreadyCopied of [true, false]) {
+    const initial = structuredClone(groundedDraft);
+    if (alreadyCopied) initial.claims[0].text = copiedClaim;
+    const repairedIndex = alreadyCopied ? 0 : 1;
+    const expected = structuredClone(groundedDraft);
+    expected.claims[repairedIndex].supports = expected.claims[repairedIndex].supports.map(support => ({ evidenceId: support.evidenceId.replace("S1", "S2") }));
+    assert.equal(validateGroundedStory(expected, sourceDossier), true);
+    const calls = [];
+    const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [corroborated], aiRequestImpl: async options => {
+      calls.push(options);
+      if (calls.length === 1) return response(dailyFoundations([initial]));
+      if (calls.length === 2) return response(dailyCopies([expected], [dailyClaimRepair(expected, repairedIndex)]));
+      return response({ reviews: [{ ...review, draftSha256: hash(expected),
+        claimSupport: expected.claims.map(claim => claim.supports.map(support => support.evidenceId)) }] });
+    } });
+    assert.ok(result, alreadyCopied ? "ORIGINALITY plus missing publisher coverage" : "Otherwise clean but missing publisher coverage");
+    assert.deepEqual(calls.map(call => call.maxTokens), [2_000, 4_000, 1_800]);
+    const packet = JSON.parse(calls[1].messages[1].content).dossiers[0];
+    assert.deepEqual(packet.requestedClaimRepairs.map(task => task.claimIndex), [repairedIndex]);
+    assert.equal(packet.requestedClaimRepairs[0].preserveSupports, false,
+      "The missing publisher can be added without pinning the defective one-publisher support set");
+    assert.ok(packet.requestedClaimRepairs[0].reasons.includes("CORROBORATION"));
+    assert.equal(packet.requestedClaimRepairs[0].reasons.includes("ORIGINALITY"), alreadyCopied);
+    assert.deepEqual(packet.fixedClaims, [{ claimIndex: 1 - repairedIndex, ...initial.claims[1 - repairedIndex] }]);
+    const reviewed = JSON.parse(calls[2].messages[1].content).drafts[0];
+    assert.deepEqual(reviewed.draft, expected);
+    assert.equal(JSON.stringify(reviewed.draft.claims[1 - repairedIndex]), JSON.stringify(initial.claims[1 - repairedIndex]));
+    assert.equal(reviewed.draftSha256, hash(expected));
+  }
 });

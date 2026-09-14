@@ -158,3 +158,39 @@ whole-article vetoes, and conditional-benefit instructions on initial writing
 and focused repairs. If the optional duplicated evidence view exceeds the
 existing 70KB request limit, the original complete review view is retained.
 Call and output-token limits are unchanged; pairing can add bounded input tokens.
+
+The subsequent full live check,
+[34848420909](https://github.com/itworksinprod/first-fold/actions/runs/34848420909)
+on `1656785`, verified ten publisher articles but still failed the strict quality
+assertion. Its first response contained two stories plus unrecognized outer
+fields. Structure recovery consumed the one revision slot; the resulting
+143/150-word drafts both failed originality in their first claim. Final review
+was not reached, so this run neither proves nor disproves the paired-evidence
+review change. No email was sent. Unknown outer fields are not being silently
+discarded: their meaning has not been established by these count-only logs.
+
+The next repair separates daily generation into cited claim foundations,
+focused reader-copy composition and claim repairs, then one final full-draft
+review. The allocation is 2,000 + 4,000 + 1,800 requested output tokens within
+the same three-call/7,800-token ceiling. The second call is also the only
+full-draft recovery if the foundation's structure is unusable. Accepted claims
+must remain frozen; the assembled story must pass all existing quality checks.
+This is a structural change under verification, not a successful live result.
+
+The implemented daily path uses native structured output for the smaller
+foundation and composition contracts. Good claims are normalized and frozen
+individually; only named rejected claims can change. Cross-publisher coverage
+and attribution repairs preserve an unaffected sibling claim. The final full
+story validator and exact-hash, full-source review remain mandatory. Other
+provider profiles and the daily delivery workflow are unchanged. Normal daily
+writing now always reserves all three stages rather than sometimes completing
+in two calls, but its maximum requested output allowance has not increased.
+
+The focused checks pass: 77 grounded-writer tests and 41 diagnostic/integration
+tests, including mixed originality/corroboration failures, immutable facts,
+unknown candidate/outer-field rejection, no fourth call, and every final review
+veto. An independent implementation review found no remaining blocker after
+the two attribution/corroboration repair cases were corrected. Live verification
+must still pass before the summary failure can be considered resolved.
+
+Final local build and complete regression suite pass: 864 tests, zero failures.

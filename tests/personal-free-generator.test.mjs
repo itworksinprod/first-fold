@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { groundedDraft, groundedEvidence } from "./fixtures/grounded-summary.mjs";
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -655,18 +654,21 @@ test("source-grounded personal summaries pass final canonical, source and email 
     env: automationEnv, now: GENERATED_AT, feedSources: FREE_FEED_SOURCES,
     personalStoryLedger: createEmptyPersonalStoryLedger({ fingerprintKey: automationEnv.CLOUDFLARE_AI_API_TOKEN }),
     researchImpl: async (options) => { assert.equal(options.enrichArticles, true); return research; },
-    aiRequestImpl: async () => ({ provider: PERSONAL_FREE_PROVIDER, model: PERSONAL_FREE_MODEL,
+    aiRequestImpl: async (options) => ({ provider: PERSONAL_FREE_PROVIDER, model: PERSONAL_FREE_MODEL,
       responseId: "grounded-fixture", requestSha256: "c".repeat(64), responseSha256: "d".repeat(64),
-      editorialPayload: ++calls === 1 ? { stories: [groundedDraft] } : { reviews: [{
+      editorialPayload: ++calls === 1 ? { foundations: [{ candidateId: groundedDraft.candidateId,
+        claims: groundedDraft.claims }] } : calls === 2 ? { copies: [{ candidateId: groundedDraft.candidateId,
+        headline: groundedDraft.headline, deck: groundedDraft.deck, whyItMatters: groundedDraft.whyItMatters,
+        whatToDoOrWatch: groundedDraft.whatToDoOrWatch }] } : { reviews: [{
         candidateId: groundedDraft.candidateId,
-        draftSha256: createHash("sha256").update(JSON.stringify(groundedDraft)).digest("hex"),
+        draftSha256: JSON.parse(options.messages[1].content).drafts[0].draftSha256,
         factsSupported: true, attributionAccurate: true, analysisSupported: true, usefulAndSpecific: true,
         claimSupport: groundedDraft.claims.map((claim) => claim.supports.map((support) => support.evidenceId)),
       }] } }),
     sourceLookupImpl: async () => [{ address: "93.184.216.34" }],
     sourceRequestImpl: async () => ({ status: 200, headers: {} }),
   });
-  assert.equal(calls, 2);
+  assert.equal(calls, 3);
   assert.equal(candidate.desks["security-and-privacy"].story.headline, groundedDraft.headline);
   assert.equal(candidate.provenance.personalFreeResearch.draftingMode, "source-grounded-summary");
   assert.equal(candidate.provenance.personalFreeResearch.inference, "workers-ai");

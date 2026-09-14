@@ -22,6 +22,10 @@ const reviews = options => JSON.parse(options.messages[1].content).drafts.map(({
   claimSupport: draft.claims.map(claim => claim.supports.map(({ evidenceId }) => evidenceId)),
   factsSupported: true, attributionAccurate: true, analysisSupported: true, usefulAndSpecific: true,
 }));
+const foundations = drafts => ({ foundations: drafts.map(({ candidateId, claims }) => ({ candidateId, claims })) });
+const copies = (drafts, claimRepairs = []) => ({ copies: drafts.map(({ candidateId, headline, deck, whyItMatters, whatToDoOrWatch }) => ({
+  candidateId, headline, deck, whyItMatters, whatToDoOrWatch,
+})), ...(claimRepairs.length ? { claimRepairs } : {}) });
 
 test("Qwen isolates each story and stays inside its shared output-token ceiling", async () => {
   assert.match(workflow, /FREE_WRITER_MODEL: '@cf\/qwen\/qwen3-30b-a3b-fp8'/);
@@ -96,10 +100,12 @@ test("all four synthetic stories need real synthesis-path local and semantic acc
     calls.push(options);
     return options.schema.properties.reviews
       ? response({ reviews: reviews(options) })
-      : response({ stories: buildFreeEditorialBaselines().map(({ draft }) => draft) });
+      : response(options.schema.properties.foundations ? foundations(buildFreeEditorialBaselines().map(({ draft }) => draft))
+        : copies(buildFreeEditorialBaselines().map(({ draft }) => draft)));
   } });
   assert.equal(report.status, "passed");
-  assert.deepEqual([report.stories, report.acceptedStories, report.checkedStories, report.modelRequests], [4, 4, 4, 2]);
+  assert.deepEqual([report.stories, report.acceptedStories, report.checkedStories, report.modelRequests], [4, 4, 4, 3]);
+  assert.deepEqual(calls.map(options => options.maxTokens), [2_000, 4_000, 1_800]);
   assert.deepEqual([report.networkRequests, report.researchQueries, report.emailRequests], [0, 0, 0]);
   assert.equal(report.maxModelRequests, 3);
   assert.ok(report.mode.includes("synthetic"));
@@ -124,25 +130,21 @@ test("one bounded repair is allowed but never a green result from partial semant
         return response({ reviews: verdicts });
       }
       if (calls === 1) {
-        drafts[0].headline = 'Model output”, “stories”: [{';
-        return response({ stories: drafts });
+        drafts[0].claims[0].text = 'Model output”, “stories”: [{';
+        return response(foundations(drafts));
       }
-      const { revisionPlan } = JSON.parse(options.messages[1].content);
-      assert.deepEqual(revisionPlan.claimEdits, []);
-      assert.deepEqual(revisionPlan.rewriteCandidateIds, []);
-      assert.deepEqual(revisionPlan.copyEdits.map(({ candidateId, field }) => ({ candidateId, field })), [
-        { candidateId: drafts[0].candidateId, field: "headline" },
-      ]);
-      assert.ok(options.schema.properties.copyEdits);
-      return response({ copyEdits: revisionPlan.copyEdits.map(({ candidateId, field }) => ({
-        candidateId, field, text: drafts.find(draft => draft.candidateId === candidateId)[field],
-      })) });
+      const { dossiers } = JSON.parse(options.messages[1].content);
+      assert.deepEqual(dossiers.flatMap(dossier => dossier.requestedClaimRepairs.map(({ claimIndex }) => ({
+        candidateId: dossier.candidateId, claimIndex,
+      }))), [{ candidateId: drafts[0].candidateId, claimIndex: 0 }]);
+      assert.deepEqual(Object.keys(options.schema.properties), ["claimRepairs", "copies"]);
+      return response(copies(drafts, [{ candidateId: drafts[0].candidateId, claimIndex: 0, ...drafts[0].claims[0] }]));
     } });
     assert.equal(calls, 3);
     assert.equal(report.modelRequests, 3);
     assert.equal(report.status, rejectOne ? "failed" : "passed");
     assert.equal(report.acceptedStories, rejectOne ? 3 : 4);
-    assert.ok(report.diagnostics.some(event => event.stage === "draft-repair" && event.accepted === 1));
+    assert.ok(report.diagnostics.some(event => event.stage === "daily-copy-composition" && event.accepted === 4));
     if (rejectOne) assert.ok(report.codes.includes("SMOKE_GROUNDED_SUMMARIES_INCOMPLETE"));
   }
 });

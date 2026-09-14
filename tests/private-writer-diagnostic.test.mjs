@@ -21,6 +21,16 @@ const base = { publicKey, accountId: "0".repeat(32), apiToken: "private-test-tok
 const response = editorialPayload => ({ editorialPayload, provider: "cloudflare-workers-ai",
   model: DEFAULT_CLOUDFLARE_AI_MODEL, requestSha256: "a".repeat(64), responseSha256: "b".repeat(64),
   reasoning: "NEVER CAPTURE REASONING", headers: { authorization: "NEVER CAPTURE HEADERS" } });
+const foundations = draft => ({ foundations: [{ candidateId: draft.candidateId, claims: draft.claims }] });
+const copies = (draft, claimRepairs = []) => ({ copies: [{ candidateId: draft.candidateId,
+  headline: draft.headline, deck: draft.deck, whyItMatters: draft.whyItMatters,
+  whatToDoOrWatch: draft.whatToDoOrWatch }], ...(claimRepairs.length ? { claimRepairs } : {}) });
+const reviewPayload = (request, overrides = {}) => ({ reviews: request.drafts.map(({ draft, draftSha256 }) => {
+  assert.equal(draftSha256, createHash("sha256").update(JSON.stringify(draft)).digest("hex"));
+  return { candidateId: draft.candidateId, draftSha256,
+    claimSupport: draft.claims.map(claim => claim.supports.map(support => support.evidenceId)),
+    factsSupported: true, attributionAccurate: true, analysisSupported: true, usefulAndSpecific: true, ...overrides };
+}) });
 
 test("encrypted diagnostic round-trips but rejects tampering, wrong keys and oversized plaintext", () => {
   const value = { exactDraft: groundedDraft };
@@ -59,23 +69,43 @@ test("one real-source diagnostic pins the daily Llama writer and reviewer, with 
       assert.equal(options.maxAttempts, 1);
       requests.push(JSON.parse(options.messages[1].content));
       if (++count === 1) {
-        assert.equal(options.maxTokens, 4_000);
-        assert.equal(options.responseFormat, "json_object");
+        assert.equal(options.maxTokens, 2_000);
+        assert.equal(options.responseFormat, "json_schema");
         assert.equal(requests[0].dossiers.length, 1);
-        payloads.push({ stories: [groundedDraft] });
+        assert.deepEqual(Object.keys(options.schema.properties), ["foundations"]);
+        payloads.push(foundations(groundedDraft));
         return response(payloads.at(-1));
       }
-      assert.equal(options.maxTokens, 800);
+      if (count === 2) {
+        assert.equal(options.maxTokens, 4_000);
+        assert.equal(options.responseFormat, "json_schema");
+        assert.deepEqual(Object.keys(options.schema.properties), ["copies"]);
+        assert.equal(requests[1].dossiers.length, 1);
+        assert.deepEqual(requests[1].dossiers[0].fixedClaims.map(({ claimIndex, ...claim }) => claim), groundedDraft.claims);
+        assert.deepEqual(requests[1].dossiers[0].requestedClaimRepairs, []);
+        assert.deepEqual(requests[1].dossiers[0].sources.flatMap(source => source.passages.map(passage => passage.evidenceId)).sort(),
+          [...new Set(groundedDraft.claims.flatMap(claim => claim.supports.map(support => support.evidenceId)))].sort());
+        payloads.push(copies(groundedDraft));
+        return response(payloads.at(-1));
+      }
+      assert.equal(options.maxTokens, 1_800);
       assert.equal(options.responseFormat, "json_schema");
-      payloads.push({ reviews: [{ candidateId: candidate.candidateId,
-        draftSha256: createHash("sha256").update(JSON.stringify(groundedDraft)).digest("hex"),
-        claimSupport: groundedDraft.claims.map(claim => claim.supports.map(support => support.evidenceId)),
-        factsSupported: true, attributionAccurate: true, analysisSupported: true, usefulAndSpecific: true }] });
+      assert.equal(requests[2].dossiers.length, 1);
+      assert.equal(requests[2].drafts.length, 1);
+      assert.deepEqual(requests[2].drafts[0].draft, groundedDraft);
+      assert.deepEqual(requests[2].dossiers[0].sources, requests[0].dossiers[0].sources,
+        "Final review retains full source context, not only the narrower copy packet");
+      assert.deepEqual(requests[2].drafts[0].claimEvidence.map(({ claimIndex, claimText, citations }) => ({
+        claimIndex, claimText, ids: citations.map(citation => citation.evidenceId),
+      })), groundedDraft.claims.map((claim, claimIndex) => ({
+        claimIndex, claimText: claim.text, ids: claim.supports.map(support => support.evidenceId),
+      })));
+      payloads.push(reviewPayload(requests[2]));
       return response(payloads.at(-1));
     } });
   assert.equal(report.status, "writer-and-review-passed");
-  assert.equal(report.modelRequests, 2);
-  assert.equal(report.outputBudget, 4_800);
+  assert.equal(report.modelRequests, 3);
+  assert.equal(report.outputBudget, 7_800);
   assert.equal(report.searchQueries, 0);
   assert.equal(report.emailSent, false);
   const opened = openDiagnostic(sealed, pair.privateKey);
@@ -88,13 +118,14 @@ test("one real-source diagnostic pins the daily Llama writer and reviewer, with 
   }
   const visible = JSON.stringify({ report, sealed });
   for (const privateText of [groundedDraft.headline, groundedDraft.claims[0].text,
-    requests[0].dossiers[0].sources[0].passages[0].text, "claimSupport", "dossiers", base.apiToken]) {
+    requests[0].dossiers[0].sources[0].passages[0].text, "claimSupport", "claimEvidence", "dossiers", base.apiToken]) {
     assert.ok(!visible.includes(privateText));
   }
 });
 
-test("daily Llama repair and failed semantic review remain inspectable only after decryption within three calls and 7800 tokens", async () => {
-  const invalid = { ...groundedDraft, whyItMatters: "Too short." };
+test("daily Llama claim repair and failed semantic review remain inspectable only after decryption within three calls and 7800 tokens", async () => {
+  const invalid = structuredClone(groundedDraft);
+  invalid.claims[0].text = "Too short.";
   const requests = [];
   const payloads = [];
   const budgets = [];
@@ -105,23 +136,21 @@ test("daily Llama repair and failed semantic review remain inspectable only afte
       const request = JSON.parse(options.messages[1].content);
       requests.push(request);
       budgets.push(options.maxTokens);
-      if (requests.length === 1) payloads.push({ stories: [invalid] });
+      if (requests.length === 1) payloads.push(foundations(invalid));
       else if (requests.length === 2) {
-        assert.deepEqual(request.revisionPlan.claimEdits, []);
-        assert.deepEqual(request.revisionPlan.rewriteCandidateIds, []);
-        payloads.push({ copyEdits: request.revisionPlan.copyEdits.map(({ candidateId, field }) => ({
-          candidateId, field, text: groundedDraft[field],
-        })) });
+        assert.equal(request.dossiers.length, 1);
+        assert.deepEqual(request.dossiers[0].fixedClaims, [{ claimIndex: 1, ...groundedDraft.claims[1] }]);
+        assert.deepEqual(request.dossiers[0].requestedClaimRepairs.map(task => task.claimIndex), [0]);
+        assert.deepEqual(Object.keys(options.schema.properties), ["claimRepairs", "copies"]);
+        payloads.push(copies(groundedDraft, [{ candidateId: candidate.candidateId, claimIndex: 0,
+          ...groundedDraft.claims[0] }]));
       } else {
         assert.equal(request.drafts.length, 1);
-        payloads.push({ reviews: [{ candidateId: candidate.candidateId,
-          draftSha256: createHash("sha256").update(JSON.stringify(groundedDraft)).digest("hex"),
-          claimSupport: [[], []], factsSupported: false,
-          attributionAccurate: true, analysisSupported: true, usefulAndSpecific: true }] });
+        payloads.push(reviewPayload(request, { claimSupport: [[], []], factsSupported: false }));
       }
       return response(payloads.at(-1));
     } });
-  assert.deepEqual(budgets, [4_000, 3_000, 800]);
+  assert.deepEqual(budgets, [2_000, 4_000, 1_800]);
   assert.equal(report.modelRequests, 3);
   assert.equal(report.outputBudget, 7_800);
   assert.equal(report.searchQueries, 0);
@@ -132,20 +161,21 @@ test("daily Llama repair and failed semantic review remain inspectable only afte
   assert.deepEqual(opened.calls.map(call => call.request), requests);
   assert.deepEqual(opened.calls.map(call => call.editorialPayload), payloads);
   assert.deepEqual(opened.calls[2].editorialPayload.reviews[0].claimSupport, [[], []]);
-  for (const privateText of ["Too short.", groundedDraft.whyItMatters, "revisionPlan", "claimSupport", "dossiers"]) {
+  for (const privateText of ["Too short.", groundedDraft.whyItMatters, "requestedClaimRepairs", "claimSupport", "dossiers"]) {
     assert.ok(!JSON.stringify({ report, sealed }).includes(privateText));
   }
 });
 
 test("rejected drafts remain inspectable, never become accepted copy, and use at most three calls", async () => {
   const invalid = { ...groundedDraft, headline: "Source reports a new development" };
+  let calls = 0;
   const { report, sealed } = await diagnoseOneWriter({ ...base,
-    aiRequestImpl: async () => response({ stories: [invalid] }) });
+    aiRequestImpl: async () => response(++calls === 1 ? foundations(groundedDraft) : copies(invalid)) });
   assert.equal(report.status, "failed");
   assert.ok(report.modelRequests <= 3);
   const opened = openDiagnostic(sealed, pair.privateKey);
   assert.equal(opened.result, null);
-  assert.equal(opened.calls[0].editorialPayload.stories[0].headline, invalid.headline);
+  assert.equal(opened.calls[1].editorialPayload.copies[0].headline, invalid.headline);
 });
 
 test("429 stops immediately and retains only explicitly supplied private diagnostics in ciphertext", async () => {

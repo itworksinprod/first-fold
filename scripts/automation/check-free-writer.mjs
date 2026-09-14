@@ -20,9 +20,12 @@ const SAFE_CODES = new Set([
   "READER_PROSE_INCOMPLETE", "READER_PROSE_DANGLING_ENDING", "READER_PROSE_UNBALANCED_QUOTE",
   "SMOKE_ENDPOINT_REJECTED", "SMOKE_CONFIGURATION_INVALID", "SMOKE_AUTHORITY_REJECTED",
   "SMOKE_GROUNDED_SUMMARIES_INCOMPLETE", "SMOKE_REVIEW_INCOMPLETE", "SMOKE_UNCLASSIFIED_FAILURE",
+  "OUTER_KEYS", "FOUNDATIONS_NOT_ARRAY", "FOUNDATION_COUNT", "UNKNOWN_CANDIDATE", "DUPLICATE_CANDIDATE",
+  "FOUNDATION_SHAPE", "STORY_COUNT_INVALID", "FIXED_CLAIM_CHANGED",
 ]);
 const SAFE_STAGES = new Set([
   "local-evidence-check", "draft-repair", "draft-format-repair", "semantic-evidence-check", "free-writer-unavailable",
+  "daily-foundation-check", "daily-foundation-format", "daily-copy-composition",
 ]);
 const safeCode = value => SAFE_CODES.has(value) ? value : "SMOKE_UNCLASSIFIED_FAILURE";
 const failure = code => Object.assign(new Error(code), { code });
