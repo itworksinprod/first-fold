@@ -51,3 +51,20 @@ numeric citations and missing publisher coverage, and preserves clean fields.
 Malformed, extra, duplicate or unsupported edits remain rejected; every rebuilt
 story still needs full local and semantic approval. No extra call, output tokens,
 paid provider or loosened acceptance threshold is authorized by this repair.
+
+The third preview, [34792755021](https://github.com/itworksinprod/first-fold/actions/runs/34792755021),
+approved one summary but again sent nothing: a missing draft forced whole-story
+repair for other candidates, and one final link check exceeded its redirect limit.
+Repair now combines exact field edits for usable drafts with a full rewrite only
+for a missing/structurally invalid story. A looping HEAD request gets a fresh GET
+with the same pinned public-address checks and redirect limit; unsafe redirects
+still fail immediately and a GET loop still fails.
+
+The live drafts also exposed an unnecessary layout constraint: a 101-character
+fact or a 448-character analysis could be rejected even when the complete story
+was an appropriate length. Per-field bounds now permit natural balance: claims
+60–480 characters, why 120–650, watch 100–550. The complete body must still have
+100–225 words and complete sentences. Specificity, factual and numeric support,
+source caveats, originality, semantic approval, editorial scores and source
+requirements are unchanged. This is a deliberate layout tolerance change, not
+evidence that unreviewed prose is acceptable.

@@ -29,6 +29,21 @@ const copiedClaim = `CERT/CC says: ${groundedEvidence.summary.split(". ").slice(
 test("grounded writer accepts concrete supported news including a driver filename", () => {
   assert.equal(validateGroundedStory(groundedDraft, dossier), true);
 });
+test("natural paragraph balance accepts a concise sourced fact without losing whole-story completeness", () => {
+  const draft = structuredClone(groundedDraft);
+  draft.claims[0].text = "CERT/CC reports that AOMEI Backupper’s amwrtdrv.sys driver exposes disk writes to a local user because its access checks are inadequate.";
+  draft.whyItMatters += " This is therefore a concern about recovery software becoming a route to data damage, not proof that a particular system has been attacked.";
+  assert.ok(draft.claims[0].text.length < 150);
+  assert.ok(draft.whyItMatters.length > 400);
+  assert.equal(validateGroundedStory(draft, dossier), true);
+  draft.claims[0].text = "CERT/CC describes a local disk-write flaw in the backup software's driver.";
+  draft.claims[1].text = "The advisory names neither a corrected release nor observed attacks against users.";
+  draft.whyItMatters = "If the affected driver is installed, unauthorized disk access could undermine the stored information that backups are meant to protect.";
+  draft.whatToDoOrWatch = "Check the advisory for remediation and the vendor's affected-release guidance before choosing a response for your machines.";
+  const codes = [];
+  assert.equal(validateGroundedStory(draft, dossier, code => codes.push(code)), false);
+  assert.deepEqual(codes, ["WORD_COUNT"]);
+});
 test("grounded writer rejects invented numbers, evidence, citations, generic prose and instructions", () => {
   const mutations = [
     (draft) => { draft.whatToDoOrWatch += " Install version 9.9 immediately."; },
@@ -159,7 +174,7 @@ test("one originality revision is revalidated, hash-bound and separately checked
 test("Qwen repairs all measured field defects without regenerating clean story fields", async () => {
   for (const scenario of ["valid", "extra-edit", "duplicate-edit", "unknown-citation", "review-veto"]) {
     const defective = structuredClone(groundedDraft);
-    defective.whyItMatters += ` ${"An additional sentence adds needless padding. ".repeat(5).trim()}`;
+    defective.whyItMatters += ` ${"An additional sentence adds needless padding. ".repeat(10).trim()}`;
     defective.whatToDoOrWatch = "Check the advisory.";
     defective.claims[0].text = defective.claims[0].text.replace("AOMEI Backupper", "AOMEI Backupper 9.9.9");
     const calls = [];
@@ -203,6 +218,34 @@ test("bad or unrequested revisions cannot bypass checks or trigger another revis
     assert.equal(result, null);
     assert.equal(calls, 2);
   }
+});
+
+test("a missing Qwen story does not force complete regeneration of another story's clean fields", async () => {
+  const secondCandidate = { ...structuredClone(candidate), candidateId: "candidate-second", suggestedDesk: "ai" };
+  const secondDraft = { ...structuredClone(groundedDraft), candidateId: secondCandidate.candidateId };
+  const twoDesks = structuredClone(baseline);
+  twoDesks.desks.ai = structuredClone(twoDesks.desks["security-and-privacy"]);
+  twoDesks.desks.ai.story.id = "s2";
+  const calls = [];
+  const result = await synthesizeGroundedEditorial({ editorial: twoDesks, candidates: [candidate, secondCandidate],
+    model: EXPERIMENTAL_FREE_WRITER_MODEL, aiRequestImpl: async options => {
+      calls.push(options);
+      const wrap = payload => ({ ...response(payload), model: EXPERIMENTAL_FREE_WRITER_MODEL });
+      if (calls.length === 1) return wrap({ stories: [{ ...groundedDraft, whyItMatters: "Too short." }] });
+      if (calls.length === 2) return wrap({ stories: [] });
+      if (calls.length === 3) {
+        const data = JSON.parse(options.messages[1].content);
+        assert.deepEqual(data.rewriteCandidateIds, [secondCandidate.candidateId]);
+        assert.deepEqual(data.requestedEdits.map(item => item.candidateId), [candidate.candidateId]);
+        assert.deepEqual(data.requestedEdits[0].fields.map(item => item.field), ["whyItMatters"]);
+        return wrap({ edits: [{ candidateId: candidate.candidateId, field: "whyItMatters", text: groundedDraft.whyItMatters, supports: [] }],
+          stories: [secondDraft] });
+      }
+      return wrap({ reviews: [review, { ...review, candidateId: secondCandidate.candidateId, draftSha256: hash(secondDraft) }] });
+    } });
+  assert.ok(result);
+  assert.equal(calls.length, 4);
+  assert.ok(calls.reduce((total, call) => total + call.maxTokens, 0) <= 7_800);
 });
 
 test("a repaired draft still needs semantic approval; repair quota errors stop immediately", async () => {
@@ -306,7 +349,7 @@ test("local shape checks enforce the same field bounds and claim count as the se
       assert.deepEqual(reasons, ["SHAPE"]);
     }
   }
-  for (const size of [149, 271]) {
+  for (const size of [fields.claims.items.properties.text.minLength - 1, fields.claims.items.properties.text.maxLength + 1]) {
     const draft = structuredClone(groundedDraft);
     draft.claims[0].text = `${"a".repeat(size - 1)}.`;
     const reasons = [];
@@ -505,8 +548,8 @@ test("repair receives the exact failing field and measured bounds without extra 
         const rejected = JSON.parse(options.messages[1].content).rejected[0];
         assert.equal(rejected.rejectionCode, "SHAPE");
         assert.equal(rejected.feedback.field, "whyItMatters");
-        assert.equal(rejected.feedback.minCharacters, 240);
-        assert.equal(rejected.feedback.maxCharacters, 400);
+        assert.equal(rejected.feedback.minCharacters, 120);
+        assert.equal(rejected.feedback.maxCharacters, 650);
         assert.equal(rejected.feedback.actualCharacters, short.whyItMatters.length);
         return response({ stories: [groundedDraft] });
       }
@@ -525,13 +568,13 @@ test("provider grammar and local bounds remain aligned while review binding cann
       calls.push(options);
       if (calls.length === 1) {
         const fields = options.schema.properties.stories.items.properties;
-        assert.equal(fields.whyItMatters.minLength, 240);
-        assert.equal(fields.whyItMatters.maxLength, 400);
-        assert.equal(fields.claims.items.properties.text.minLength, 150);
+        assert.equal(fields.whyItMatters.minLength, 120);
+        assert.equal(fields.whyItMatters.maxLength, 650);
+        assert.equal(fields.claims.items.properties.text.minLength, 60);
         assert.equal(fields.claims.items.properties.text.pattern, undefined);
         assert.equal(fields.whyItMatters.pattern, undefined);
         assert.deepEqual(fields.candidateId.enum, [candidate.candidateId]);
-        assert.equal(GROUNDED_DRAFT_SCHEMA.properties.stories.items.properties.whyItMatters.minLength, 240);
+        assert.equal(GROUNDED_DRAFT_SCHEMA.properties.stories.items.properties.whyItMatters.minLength, 120);
         return response({ stories: [groundedDraft] });
       }
       const properties = options.schema.properties.reviews.items.properties;

@@ -1505,7 +1505,7 @@ async function requestFollowingRedirects(startUrl, method, options) {
 }
 
 function fatalReachabilityResult(result) {
-  return ["unsafe", "redirect", "redirect-limit"].includes(result.kind);
+  return ["unsafe", "redirect"].includes(result.kind);
 }
 
 async function checkOneLink(url, options) {
@@ -1513,6 +1513,10 @@ async function checkOneLink(url, options) {
   if (head.ok && head.status >= 200 && head.status < 400) return head;
   if (!head.ok && fatalReachabilityResult(head)) return head;
 
+  // Some publishers loop HEAD requests while serving the article to GET.
+  // Start a fresh, fully pinned GET from the original URL, with the same hop
+  // limit and public-address checks. Never retry an unsafe or invalid redirect,
+  // and never treat the HEAD loop itself as a successful reachability check.
   return requestFollowingRedirects(url, "GET", options);
 }
 

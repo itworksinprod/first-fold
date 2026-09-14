@@ -1361,6 +1361,11 @@ async function runMandatoryFreeSourceQa(candidate, options) {
         code: /^[A-Z_]{1,64}$/.test(issue?.code ?? "") ? issue.code : "SOURCE_CHECK_FAILED",
         ...(Number.isInteger(issue?.httpStatus) && issue.httpStatus >= 100 && issue.httpStatus <= 599
           ? { httpStatus: issue.httpStatus } : {}),
+        // Only the public hostname, never the article path, query, draft or
+        // credential, is useful for diagnosing method-specific publisher errors.
+        ...(() => { try { const hostname = new URL(issue.url).hostname;
+          return /^[a-z0-9.-]{1,253}$/i.test(hostname) ? { publisherHost: hostname } : {};
+        } catch { return {}; } })(),
       })) });
     throw freeEditorialDiagnosticError(
       "Free candidate failed mandatory newsroom source QA.",

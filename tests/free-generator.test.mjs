@@ -3209,7 +3209,7 @@ test("free link QA rejects every redirect, including to another public host", as
       return true;
     },
   );
-  assert.equal(sourceRequests, 2);
+  assert.equal(sourceRequests, 4, "HEAD and GET each reject the redirect for both sources; no target is followed");
 });
 
 test("free link QA retries one complete pass after transient HTTP failures", async () => {

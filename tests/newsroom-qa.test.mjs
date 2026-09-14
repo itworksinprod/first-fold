@@ -523,6 +523,29 @@ test("link reachability falls back from HEAD to GET", async () => {
   assert.equal(calls[0][1].hostname, "openai.com");
 });
 
+test("a HEAD redirect loop gets one independently vetted GET with the same hop limit", async () => {
+  for (const mode of ["get-success", "get-loop", "get-unsafe"]) {
+    const calls = [];
+    const result = await runNewsroomQa(editionFixture(), {
+      checkLinks: true, maxRedirects: 1, lookupImpl: publicLookup,
+      requestImpl: async (url, options) => {
+        calls.push({ url, method: options.method });
+        assert.deepEqual(options.addresses, ["93.184.216.34"]);
+        if (options.method === "GET" && mode === "get-success") return new Response(null, { status: 200 });
+        return new Response(null, { status: 302, headers: {
+          location: options.method === "GET" && mode === "get-unsafe" ? "https://127.0.0.1/admin" : url,
+        } });
+      },
+    });
+    assert.equal(result.sourceCheck.status, mode === "get-success" ? "passed" : "failed");
+    assert.ok(calls.some(call => call.method === "GET"));
+    assert.ok(calls.length <= 8, "Each of two sources has at most two HEAD plus two GET requests");
+    assert.ok(!calls.some(call => call.url.includes("127.0.0.1")));
+    if (mode === "get-loop") assert.ok(issueCodes(result.sourceCheck).includes("LINK_REDIRECT_LIMIT"));
+    if (mode === "get-unsafe") assert.ok(issueCodes(result.sourceCheck).includes("LINK_UNSAFE_RESOLUTION"));
+  }
+});
+
 test("link reachability sends a stable identity and prefers vetted IPv4 addresses", async () => {
   const calls = [];
   const result = await runNewsroomQa(editionFixture(), {
