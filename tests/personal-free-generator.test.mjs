@@ -732,8 +732,10 @@ test("personal production preserves delivery when the bounded writer is unavaila
   assert.ok(countReaderFacingStoryWords(sourceBrief) >= 60 && countReaderFacingStoryWords(sourceBrief) < 150);
   assert.match(sourceBrief.id, /^trusted-evidence-brief-/);
   const sourceBriefRender = renderPersonalEditionEmail(candidate);
-  assert.match(sourceBriefRender.html, /Source digest/);
-  assert.match(sourceBriefRender.text, /SOURCE DIGEST/);
+  assert.match(sourceBriefRender.html, /Source links — summary unavailable/);
+  assert.match(sourceBriefRender.text, /SOURCE LINKS — SUMMARY UNAVAILABLE/);
+  assert.match(sourceBriefRender.text, /SOURCE-LINK FALLBACK EDITION/);
+  assert.doesNotMatch(sourceBriefRender.text, /WHY IT MATTERS|WHAT TO DO OR WATCH|VALIDATION RECEIPT/);
   const notPrivate = structuredClone(candidate);
   delete notPrivate.provenance.personalFreeResearch.privateSourceBriefs;
   assert.ok(validateCanonicalEdition(notPrivate).issues.some((issue) => issue.includes("150–225")));

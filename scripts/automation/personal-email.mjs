@@ -4,6 +4,8 @@ import { readFile, stat } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { isPrivateSourceBrief, validateCanonicalEdition } from "../edition-content.mjs";
 import { readerProseErrors } from "../reader-prose.mjs";
+import { readerSummaryErrors } from "../reader-summary.mjs";
+import { REQUESTED_PREVIEW_DATE, REQUESTED_PREVIEW_REVISION, REQUESTED_PREVIEW_CONFIRMATION } from "./requested-preview-policy.mjs";
 import { buildPersonalFeedbackLinkMap } from "./personal-feedback.mjs";
 import {
   TRUSTED_EVIDENCE_DIGEST_MODE,
@@ -319,6 +321,7 @@ function hasSafeDisplayFields(candidate) {
     const paragraph = groundedEdition && Array.isArray(story?.evidence) && story.evidence.length > 0 &&
       story.evidence.every((claim) => typeof claim?.id === "string" &&
         claim.id.startsWith(`${story.id}-grounded-`));
+    if (paragraph && readerSummaryErrors(story).length) return false;
     if (
       !story ||
       !isDisplayString(story.headline, 500) ||
@@ -434,7 +437,15 @@ function buildStoryValidationReceipt(story) {
     factualSources.length >= 2 &&
     trustedReceipt.publisherCount >= 2
   ) {
-    evidenceTier = "Independently corroborated";
+    // A matched event and two publishers are not proof that every printed claim
+    // was corroborated. Display the narrower, verifiable evidence relationship.
+    const checked = story.evidence.every(claim => claim.id.startsWith(`${story.id}-grounded-`));
+    const shared = checked && trustedReceipt.publisherCount === factualSources.length
+      ? story.evidence.filter(claim => new Set(factualSources.filter(source =>
+        claim.sourceIds.includes(source.id)).map(source => source.id)).size >= 2).length : 0;
+    evidenceTier = shared > 0
+      ? `${shared} of ${story.evidence.length} checked claims cite multiple publishers`
+      : "Related reporting from multiple publishers; shared claims not established";
   } else if (
     trustedReceipt.evidenceTier === "authoritative-single" &&
     factualSources.length === 1 &&
@@ -736,6 +747,16 @@ function shouldRenderSourceBrief(story, sourceBriefMode) {
     story?.selection?.validationReceipt?.evidenceTier === "authoritative-single";
 }
 
+const SOURCE_LINK_NOTICE = "A checked summary was not available at press time. These are reading links, not a finished story.";
+function renderSourceLinksHtml(story) {
+  return `<p style="margin:12px 0;color:#5b554c;font:15px/1.5 Georgia,serif;">${SOURCE_LINK_NOTICE}</p>` +
+    readerFacingSources(story).map(source => `<p style="margin:12px 0;font:18px/1.4 Georgia,serif;"><a href="${escapeHtml(requireSourceUrl(source.url))}" style="color:#712b27;">${escapeHtml(source.title)}</a><br><span style="font:13px Arial,sans-serif;">${escapeHtml(source.publisher)}</span></p>`).join("");
+}
+function renderSourceLinksText(story) {
+  return [SOURCE_LINK_NOTICE, ...readerFacingSources(story).map(source =>
+    `${compactText(source.title)}\n${compactText(source.publisher)}\n${requireSourceUrl(source.url)}`)].join("\n\n");
+}
+
 function renderDeskHtml(candidate, deskKey, deskLabel, feedbackLinks, sourceBriefMode) {
   const page = candidate.desks[deskKey];
   const isSourceBriefStory = shouldRenderSourceBrief(page.story, sourceBriefMode);
@@ -743,13 +764,15 @@ function renderDeskHtml(candidate, deskKey, deskLabel, feedbackLinks, sourceBrie
     ? `
       <p style="margin:10px 0 7px;color:#171512;font:700 24px/1.1 Georgia,Times New Roman,serif;">Nothing cleared the bar today.</p>
       <p style="margin:0;color:#5b554c;font:15px/1.55 Georgia,Times New Roman,serif;">${escapeHtml(page.emptyReason)}</p>`
+    : isPrivateSourceBrief(candidate, page.story)
+      ? renderSourceLinksHtml(page.story)
     : isSourceBriefStory
       ? renderSourceBriefHtml(page.story, feedbackLinks?.stories[page.story.id])
       : renderStoryHtml(page.story, feedbackLinks?.stories[page.story.id]);
   return `
   <tr>
     <td style="padding:30px 34px;border-top:2px solid #24211d;">
-      <p style="margin:0;color:#712b27;font:700 12px/1.2 Arial,Helvetica,sans-serif;letter-spacing:1.6px;text-transform:uppercase;">${deskLabel}${page.story === null ? " · Quiet desk" : isPrivateSourceBrief(candidate, page.story) ? " · Source digest" : ""}</p>${content}
+      <p style="margin:0;color:#712b27;font:700 12px/1.2 Arial,Helvetica,sans-serif;letter-spacing:1.6px;text-transform:uppercase;">${deskLabel}${page.story === null ? " · Quiet desk" : isPrivateSourceBrief(candidate, page.story) ? " · Source links — summary unavailable" : ""}</p>${content}
     </td>
   </tr>`;
 }
@@ -759,7 +782,9 @@ function renderDeskText(candidate, deskKey, deskLabel, feedbackLinks, sourceBrie
   const isSourceBriefStory = shouldRenderSourceBrief(page.story, sourceBriefMode);
   return page.story === null
     ? `${deskLabel.toUpperCase()} — QUIET DESK\nNothing cleared the bar today.\n${compactText(page.emptyReason)}`
-    : `${deskLabel.toUpperCase()}${isPrivateSourceBrief(candidate, page.story) ? " — SOURCE DIGEST" : ""}\n${isSourceBriefStory
+    : isPrivateSourceBrief(candidate, page.story)
+      ? `${deskLabel.toUpperCase()} — SOURCE LINKS — SUMMARY UNAVAILABLE\n${renderSourceLinksText(page.story)}`
+    : `${deskLabel.toUpperCase()}\n${isSourceBriefStory
       ? renderSourceBriefText(page.story, feedbackLinks?.stories[page.story.id])
       : renderStoryText(page.story, feedbackLinks?.stories[page.story.id])}`;
 }
@@ -768,6 +793,13 @@ function readerFrontNote(candidate) {
   const sourceBriefMode = candidate.provenance.personalFreeResearch.draftingMode ===
     "trusted-authoritative-source-alert";
   const stories = DESKS.map(([desk]) => candidate.desks[desk].story).filter(Boolean);
+  const links = stories.filter(story => isPrivateSourceBrief(candidate, story)).length;
+  if (links > 0) {
+    const summaries = stories.length - links;
+    return summaries === 0
+      ? "Checked summaries were not available today. This fallback edition contains source links, not finished news summaries."
+      : `${summaries} checked ${summaries === 1 ? "summary" : "summaries"} and ${links} source-link ${links === 1 ? "item" : "items"}. Source-link items are clearly marked and are not finished summaries.`;
+  }
   const briefCount = stories.filter((story) => shouldRenderSourceBrief(story, sourceBriefMode)).length;
   const corroboratedCount = stories.length - briefCount;
   if (briefCount === 0) return candidate.frontPage.note;
@@ -831,9 +863,13 @@ export function assertRenderedPersonalEmailCopy(candidate, rendered) {
       continue;
     }
     const brief = shouldRenderSourceBrief(story, sourceBriefMode);
-    if (!brief) expected.push({ value: story.headline, exact: true }, { value: story.deck, exact: true });
-    for (const field of ["whatHappened", "whyItMatters", "whatToDoOrWatch"]) {
-      expected.push({ value: story[field], exact: true });
+    if (isPrivateSourceBrief(candidate, story)) {
+      expected.push({ value: SOURCE_LINK_NOTICE, exact: true });
+    } else {
+      if (!brief) expected.push({ value: story.headline, exact: true }, { value: story.deck, exact: true });
+      for (const field of ["whatHappened", "whyItMatters", "whatToDoOrWatch"]) {
+        expected.push({ value: story[field], exact: true });
+      }
     }
     for (const source of readerFacingSources(story)) {
       expected.push({ value: source.publisher }, { value: source.title });
@@ -869,7 +905,10 @@ export function renderPersonalEditionEmail(candidate, { feedbackLinks } = {}) {
   const corroboratedStoryCount = selectedStoryCount - sourceBriefStoryCount;
   const allSourceBriefs = selectedStoryCount > 0 && sourceBriefStoryCount === selectedStoryCount;
   const mixedSourceEdition = sourceBriefStoryCount > 0 && corroboratedStoryCount > 0;
-  const editionLabel = allSourceBriefs
+  const sourceLinkCount = selectedStories.filter(story => isPrivateSourceBrief(candidate, story)).length;
+  const editionLabel = sourceLinkCount > 0
+    ? sourceLinkCount === selectedStoryCount ? "Source-link fallback edition" : "Mixed summary and source-link edition"
+    : allSourceBriefs
     ? "Source brief edition"
     : mixedSourceEdition
       ? "Mixed-source edition"
@@ -878,7 +917,9 @@ export function renderPersonalEditionEmail(candidate, { feedbackLinks } = {}) {
         : selectedStoryCount === 1
           ? "Slim edition"
           : "Quiet edition";
-  const storyCountLabel = `${selectedStoryCount} ${selectedStoryCount === 1 ? "story" : "stories"}`;
+  const storyCountLabel = sourceLinkCount > 0
+    ? `${selectedStoryCount - sourceLinkCount} summaries · ${sourceLinkCount} source-link ${sourceLinkCount === 1 ? "item" : "items"}`
+    : `${selectedStoryCount} ${selectedStoryCount === 1 ? "story" : "stories"}`;
   const readerFrontPageNote = readerFrontNote(candidate);
   const newsroomCheckLabel =
     `Newsroom check: ${research.successfulFeedSourceCount} of ${research.feedSourceCount} reviewed sources available`;
@@ -888,6 +929,8 @@ export function renderPersonalEditionEmail(candidate, { feedbackLinks } = {}) {
     : null;
   const deliveryCheckLabel = selectedStoryCount === 0
     ? "Curated-feed research completed · Quality threshold unchanged"
+    : sourceLinkCount > 0
+      ? "Publisher links checked before delivery"
     : allSourceBriefs
       ? "Primary links checked before delivery"
       : mixedSourceEdition
@@ -1150,13 +1193,16 @@ export async function sendPersonalEditionPreview(candidate, {
   const date = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York",
     year: "numeric", month: "2-digit", day: "2-digit" }).format(previewNow);
   const updated = previewRevision === "web-search-upgrade-2026-09-11";
-  const expectedConfirmation = updated ? "SEND WEB SEARCH PREVIEW 2026-09-11" : `SEND PREVIEW ${date}`;
+  const checkedUpgrade = previewRevision === REQUESTED_PREVIEW_REVISION;
+  const expectedConfirmation = checkedUpgrade ? REQUESTED_PREVIEW_CONFIRMATION
+    : updated ? "SEND WEB SEARCH PREVIEW 2026-09-11" : `SEND PREVIEW ${date}`;
   if (candidate?.editionDate !== date || previewConfirmation !== expectedConfirmation ||
-      (previewRevision !== undefined && !updated) || (updated && date !== "2026-09-11")) {
+      (previewRevision !== undefined && !updated && !checkedUpgrade) || (updated && date !== "2026-09-11") ||
+      (checkedUpgrade && date !== REQUESTED_PREVIEW_DATE)) {
     throw new Error("Personal preview requires explicit confirmation for today's edition.");
   }
-  if (updated) assertRequestedGroundedPreview(candidate);
-  return sendPersonalEmail(candidate, options, updated ? previewRevision : true);
+  if (updated || checkedUpgrade) assertRequestedGroundedPreview(candidate);
+  return sendPersonalEmail(candidate, options, updated || checkedUpgrade ? previewRevision : true);
 }
 
 function assertRequestedGroundedPreview(candidate) {
@@ -1195,7 +1241,7 @@ async function sendPersonalEmail(candidate, {
     feedbackLinks: resolvedFeedbackLinks,
   });
   if (preview) {
-    const updated = preview === "web-search-upgrade-2026-09-11";
+    const updated = preview === "web-search-upgrade-2026-09-11" || preview === REQUESTED_PREVIEW_REVISION;
     const notice = historical
       ? "Requested September 11 preview. Researched on September 12, 2026 for the September 11, 2026 5:00 AM ET reporting cutoff. This is not your September 12 daily edition; isolated preview history is used and daily delivery is unchanged."
       : updated
@@ -1219,6 +1265,8 @@ async function sendPersonalEmail(candidate, {
       ? "first-fold-personal-preview-free-quality-2026-09-11-requested-2026-09-12"
       : preview === "web-search-upgrade-2026-09-11"
       ? "first-fold-personal-preview-web-search-upgrade-2026-09-11"
+      : preview === REQUESTED_PREVIEW_REVISION
+      ? `first-fold-personal-preview-${REQUESTED_PREVIEW_REVISION}`
       : `first-fold-personal-preview-${candidate.editionDate}`
     : personalEditionIdempotencyKey(candidate.editionDate);
   const requestBody = JSON.stringify({

@@ -10,6 +10,7 @@ import {
   DEFAULT_MAX_TOTAL_FEED_BYTES,
   DEFAULT_MAX_TOTAL_ITEMS,
   deduplicateFeedItems,
+  deskClassification,
   EDITORIAL_SCORECARD_MAXIMUMS,
   FREE_FEED_USER_AGENT,
   fetchFeedSource,
@@ -1348,6 +1349,20 @@ test("desk classification requires topical evidence and rejects consumer/lifesty
     evidencePolicy: AUTHORITATIVE_FREE_EVIDENCE_POLICY,
   });
 
+  for (const [expectedDesk, entry] of [
+    ["platforms-and-power", {
+      title: "Sam Altman says OpenAI going public would be ill-advised",
+      summary: "The chief executive addressed the timing of an initial public offering.",
+      categories: ["AI"], deskPriors: { ai: 30 },
+    }],
+    ["work-and-tools", {
+      title: "Amazon OpenSearch Serverless is now available on v0 by Vercel",
+      summary: "The integration connects developer projects to the search service.",
+      categories: ["cloud"], deskPriors: { "platforms-and-power": 30 },
+    }],
+  ]) {
+    assert.equal(deskClassification([item(entry, expectedDesk)]).desk, expectedDesk);
+  }
   const topicalCases = [
     ["ai", {
       title: "Senate passes a critical AI safety law for foundation models",

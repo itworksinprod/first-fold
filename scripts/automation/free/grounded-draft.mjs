@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { countReaderFacingStoryWords, MIN_PRIVATE_GROUNDED_STORY_WORDS } from "../../edition-content.mjs";
 import { readerProseErrors } from "../../reader-prose.mjs";
+import { readerSummaryErrors } from "../../reader-summary.mjs";
 import { claimCaveatErrors } from "./claim-caveats.mjs";
 import { buildEvidencePacketSources } from "./evidence-packets.mjs";
 import { DEFAULT_CLOUDFLARE_AI_MODEL, EXPERIMENTAL_FREE_WRITER_MODEL, WORKERS_AI_EDITORIAL_FORMAT_INVALID,
@@ -160,7 +161,9 @@ export function validateGroundedStory(draft, dossier, onFailure = () => {}) {
     field: "body", minWords: MIN_PRIVATE_GROUNDED_STORY_WORDS, maxWords: 225, actualWords: count,
   });
   const copy = [draft.headline, draft.deck, story.whatHappened, draft.whyItMatters, draft.whatToDoOrWatch].join(" ");
-  if (/\b(?:new development|reviewed development|editorial threshold|deterministic|bounded evidence|cleared the bar)\b/iu.test(copy)) return reject("GENERIC_COPY");
+  if (readerSummaryErrors(story).length) return reject("GENERIC_COPY", {
+    field: "readerCopy", expected: "Name the actual subject and development. Explain a supported consequence and a specific next signal; no disconnected quotations or generic reading instructions.",
+  });
   const evidence = evidenceText(dossier);
   for (const field of ["headline", "deck", "whyItMatters", "whatToDoOrWatch"]) {
     if (claimCaveatErrors(draft[field], evidence).length) return reject("SOURCE_CAVEAT", {
@@ -251,6 +254,10 @@ than those supported claims. Do not let accurate body wording excuse a misleadin
 analysisSupported requires grounded, explicitly conditional implications and safe proportionate advice;
 no invented fix, exploitation, availability, scope, price, urgency or performance claim.
 usefulAndSpecific requires an actual intelligible news summary, not generic desk advice or filler.
+The headline must identify the actual subject and development without needing a source link to
+decode a pronoun or disconnected quotation. The lead must say who did what. Why it matters must
+explain a supported consequence of THIS development; what to watch must identify a specific next
+signal. Generic advice to read the original or check its date is not a substitute. Reject those drafts.
 When in doubt reject. Do not assume that a matching quote proves the paraphrase is accurate.`;
 const REPAIR_PROMPT = `${WRITER_PROMPT}
 You are revising ONLY the rejected drafts supplied here. Return exactly one corrected story per

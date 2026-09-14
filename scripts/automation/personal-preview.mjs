@@ -5,9 +5,11 @@ import { collectFreeResearchSnapshot } from "./free/feed-engine.mjs";
 import { assertPersonalEmailCandidate, sendPersonalEditionPreview } from "./personal-email.mjs";
 import { isValidWebSearchReceipt } from "./free/search-receipt.mjs";
 import { HISTORICAL_PREVIEW, authorizeHistoricalPreview } from "./historical-preview-policy.mjs";
+import { draftFreeEditionWithHealth } from "./draft-free-edition.mjs";
+import { EXPERIMENTAL_FREE_WRITER_MODEL } from "./free/models.mjs";
+import { REQUESTED_PREVIEW_DATE, REQUESTED_PREVIEW_REVISION, REQUESTED_PREVIEW_CONFIRMATION } from "./requested-preview-policy.mjs";
 
-export const REQUESTED_PREVIEW_DATE = "2026-09-11";
-export const REQUESTED_PREVIEW_REVISION = "web-search-upgrade-2026-09-11";
+export { REQUESTED_PREVIEW_DATE, REQUESTED_PREVIEW_REVISION };
 export function assertRequestedPreview(env, now = new Date()) {
   if (env.PREVIEW_CONFIRMATION === HISTORICAL_PREVIEW.confirmation) {
     return authorizeHistoricalPreview(env, now);
@@ -16,7 +18,7 @@ export function assertRequestedPreview(env, now = new Date()) {
     year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23" })
     .formatToParts(now).map(({ type, value }) => [type, value]));
   if (`${parts.year}-${parts.month}-${parts.day}` !== REQUESTED_PREVIEW_DATE || Number(parts.hour) < 6 ||
-      env.PREVIEW_CONFIRMATION !== `SEND WEB SEARCH PREVIEW ${REQUESTED_PREVIEW_DATE}` ||
+      env.PREVIEW_CONFIRMATION !== REQUESTED_PREVIEW_CONFIRMATION ||
       env.GITHUB_ACTIONS !== "true" || env.GITHUB_REPOSITORY !== "itworksinprod/first-fold" ||
       env.GITHUB_REF !== "refs/heads/main" || env.GITHUB_ACTOR !== "itworksinprod" ||
       env.GITHUB_TRIGGERING_ACTOR !== "itworksinprod" || env.GITHUB_RUN_ATTEMPT !== "1" ||
@@ -60,7 +62,9 @@ export async function runRequestedPreview({ env = process.env, now = new Date(),
   let snapshot;
   const candidate = await generate({ editionDate: historical ? HISTORICAL_PREVIEW.editionDate : REQUESTED_PREVIEW_DATE,
     runMode: historical ? HISTORICAL_PREVIEW.runMode : "same_day_backfill", env,
-    now: historical ? () => clock() : now,
+    now: () => clock(),
+    ...(!historical ? { draftFreeEditionWithHealthImpl: options =>
+      draftFreeEditionWithHealth({ ...options, model: EXPERIMENTAL_FREE_WRITER_MODEL }) } : {}),
     ...(historical ? { historicalPreviewAuthorization } : {}),
     personalStoryLedger: createEmptyPersonalStoryLedger({ fingerprintKey: env.CLOUDFLARE_AI_API_TOKEN }),
     researchImpl: async (options) => {
@@ -89,7 +93,8 @@ export async function runRequestedPreview({ env = process.env, now = new Date(),
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   runRequestedPreview().catch((error) => {
-    const code = /^[A-Z_]{1,64}$/.test(error?.code ?? "") ? error.code : "PREVIEW_FAILED";
+    const diagnostic = error?.diagnosticCode ?? error?.code;
+    const code = /^[A-Z_]{1,64}$/.test(diagnostic ?? "") ? diagnostic : "PREVIEW_FAILED";
     const resendStatus = /^Resend rejected personal email delivery with status (\d{3})\.$/.exec(error?.message ?? "")?.[1] ?? null;
     console.error(`::error title=Preview stopped::${JSON.stringify({ code, resendStatus, automaticSendRetry: false })}`);
     process.exitCode = 1;

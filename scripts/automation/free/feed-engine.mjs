@@ -195,6 +195,7 @@ const DESK_TERMS = {
     ["workspace", 6], ["gitlab", 6], ["devops", 7], ["ci cd", 7],
     ["layoff", 9], ["laying off", 9], ["job", 6], ["staff", 5],
     ["worker", 5], ["labor", 7], ["employment", 7],
+    ["integration", 7], ["vercel", 5],
   ],
   "security-and-privacy": [
     ["actively exploited", 10], ["zero-day", 9], ["vulnerability", 8],
@@ -211,6 +212,7 @@ const DESK_TERMS = {
     ["market access", 8], ["investigation", 6], ["merger", 7],
     ["cloud infrastructure", 9], ["cloud computing", 8], ["data center", 7],
     ["amazon ec2", 8], ["kubernetes", 6], ["serverless", 7], ["compute", 6],
+    ["ipo", 9], ["initial public offering", 9], ["going public", 9], ["go public", 9],
   ],
 };
 
@@ -2765,7 +2767,7 @@ function contentVetoReasons(items) {
   return reasons;
 }
 
-function deskClassification(items) {
+export function deskClassification(items) {
   const titleCategoryText = items
     .map((item) => `${item.title} ${item.categories.join(" ")}`.toLowerCase())
     .join(" ");
@@ -2787,7 +2789,14 @@ function deskClassification(items) {
     const summaryScore = termScore(summaryText, DESK_TERMS[desk], 0.55);
     return [desk, Math.round((prior + titleCategoryScore + summaryScore) * 100) / 100];
   }));
-  const desk = eligibleDesks.sort((left, right) =>
+  const titleText = items.map(item => item.title).join(" ");
+  // Route by the development, not just the company or its feed category.
+  // Only explicit headline events can take precedence; security stays first.
+  const eventDesk = signals["security-and-privacy"].titleCategoryTerms.length ? null
+    : /\b(?:ipo|initial public offering|go(?:ing)? public)\b/iu.test(titleText) ? "platforms-and-power"
+    : /\b(?:integration|integrates?|available (?:on|in))\b/iu.test(titleText) &&
+      /\b(?:vercel|developer|ide|editor)\b/iu.test(titleText) ? "work-and-tools" : null;
+  const desk = eventDesk && eligibleDesks.includes(eventDesk) ? eventDesk : eligibleDesks.sort((left, right) =>
     scores[right] - scores[left] || FREE_DESKS.indexOf(left) - FREE_DESKS.indexOf(right))[0];
   return { desk, scores, signals };
 }

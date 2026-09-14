@@ -340,7 +340,7 @@ test("the renderer produces a complete static newspaper with sources and text fa
   assert.match(rendered.text, /SOURCES/);
   assert.equal(rendered.text.match(/VALIDATION RECEIPT/g)?.length, 4);
   assert.equal(rendered.html.match(/Validation receipt/g)?.length, 4);
-  assert.match(rendered.text, /Evidence: Independently corroborated/);
+  assert.match(rendered.text, /Evidence: Related reporting from multiple publishers; shared claims not established/);
   assert.match(rendered.text, /Evidence: Reviewed originating source/);
   assert.match(rendered.text, /Factual sources: [12]/);
   assert.match(rendered.text, /Importance: \d+\/30/);
@@ -413,7 +413,7 @@ test("evidence labels come from the trusted receipt rather than display publishe
   const candidate = personalCandidate();
   for (const source of candidate.desks.ai.story.sources) source.publisher = "Same display label";
   const rendered = renderPersonalEditionEmail(candidate);
-  assert.match(rendered.text, /Evidence: Independently corroborated/);
+  assert.match(rendered.text, /Evidence: Related reporting from multiple publishers; shared claims not established/);
 });
 
 test("every rendered editorial and source field is HTML escaped", () => {
@@ -781,6 +781,51 @@ test("Qwen provenance can render checked summaries but cannot admit paid models 
   assert.throws(() => renderPersonalEditionEmail(paid));
   candidate.desks.ai.story.whatHappened += " and";
   assert.throws(() => renderPersonalEditionEmail(candidate));
+});
+
+test("a checked story cannot deliver a disconnected quote or generic source-lead paragraph", async () => {
+  for (const mutate of [
+    story => { story.headline = 'The Verge reports “And we don’t feel pressure on that”'; },
+    story => { story.whyItMatters = "Treat this as a source lead, not a full summary. " + story.whyItMatters; },
+  ]) {
+    const candidate = updatedPreviewCandidate();
+    mutate(candidate.desks.ai.story);
+    assert.equal(validateCanonicalEdition(candidate).valid, false);
+    let calls = 0;
+    await assert.rejects(sendPersonalEditionEmail(candidate, { apiKey: API_KEY, recipient: RECIPIENT,
+      fetchImpl: async () => { calls++; return successResponse(); } }));
+    assert.equal(calls, 0);
+  }
+});
+
+test("September 13 checked preview is date-bound, fully grounded and idempotent to the existing recipient", async () => {
+  const candidate = JSON.parse(JSON.stringify(updatedPreviewCandidate())
+    .replaceAll("2026-09-11", "2026-09-13").replaceAll("2026-09-10", "2026-09-12"));
+  candidate.provenance.personalFreeResearch.model = "@cf/qwen/qwen3-30b-a3b-fp8";
+  const options = { apiKey: API_KEY, recipient: RECIPIENT,
+    previewRevision: "checked-summary-upgrade-2026-09-13",
+    previewConfirmation: "SEND CHECKED SUMMARY PREVIEW 2026-09-13",
+    previewNow: new Date("2026-09-13T12:00:00Z") };
+  const sentKeys = [];
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await sendPersonalEditionPreview(candidate, { ...options, fetchImpl: async (_url, request) => {
+      sentKeys.push(request.headers["Idempotency-Key"]);
+      const message = JSON.parse(request.body);
+      assert.deepEqual(message.to, [RECIPIENT]);
+      assert.match(message.subject, /^\[Updated preview\]/);
+      return successResponse();
+    } });
+  }
+  assert.deepEqual(sentKeys, Array(2).fill("first-fold-personal-preview-checked-summary-upgrade-2026-09-13"));
+  for (const patch of [{ previewNow: new Date("2026-09-14T04:00:00Z") },
+    { previewConfirmation: "SEND CHECKED SUMMARY PREVIEW 2026-09-12" }]) {
+    await assert.rejects(sendPersonalEditionPreview(candidate, { ...options, ...patch,
+      fetchImpl: async () => { throw new Error("must not send"); } }), /explicit confirmation/);
+  }
+  const fallback = structuredClone(candidate);
+  fallback.desks.ai.story.evidence[0].id = "unchecked";
+  await assert.rejects(sendPersonalEditionPreview(fallback, { ...options,
+    fetchImpl: async () => { throw new Error("must not send"); } }), /checked summaries/);
 });
 
 test("the exact malformed September 11 prose cannot be rendered or sent despite grounded provenance", async () => {

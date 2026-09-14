@@ -10,9 +10,9 @@ const env = {
   GITHUB_ACTOR: "itworksinprod", GITHUB_TRIGGERING_ACTOR: "itworksinprod", GITHUB_RUN_ATTEMPT: "1",
   GITHUB_EVENT_NAME: "workflow_dispatch", GITHUB_RUN_ID: "1234", GITHUB_SHA: "a".repeat(40),
   GITHUB_WORKFLOW_REF: "itworksinprod/first-fold/.github/workflows/personal-preview.yml@refs/heads/main",
-  PREVIEW_CONFIRMATION: "SEND WEB SEARCH PREVIEW 2026-09-11",
+  PREVIEW_CONFIRMATION: "SEND CHECKED SUMMARY PREVIEW 2026-09-13",
 };
-const now = new Date("2026-09-11T22:00:00Z");
+const now = new Date("2026-09-13T22:00:00Z");
 const receipt = { provider: "tavily", queriesUsed: 12, creditsReserved: 24, admittedArticles: 2 };
 const configuredEnv = { ...env, RESEND_API_KEY: "test-resend-key", PERSONAL_PAPER_EMAIL: "owner@example.com",
   TAVILY_API_KEY: "test-search-key", CLOUDFLARE_AI_API_TOKEN: "test-cloudflare-key-with-sufficient-length" };
@@ -23,17 +23,17 @@ function qualityCandidate() {
 }
 test("the preview gate is owner-only, same-day, trusted-main and first-attempt only", () => {
   assert.doesNotThrow(() => assertRequestedPreview(env, now));
-  assert.doesNotThrow(() => assertRequestedPreview(env, new Date("2026-09-12T01:56:00Z")));
+  assert.doesNotThrow(() => assertRequestedPreview(env, new Date("2026-09-14T01:56:00Z")));
   for (const key of Object.keys(env)) {
     assert.throws(() => assertRequestedPreview({ ...env, [key]: "invalid" }, now), /gate is closed/);
   }
-  for (const date of ["2026-09-11T09:59:59Z", "2026-09-12T04:00:00Z", "2026-09-10T22:00:00Z"]) {
+  for (const date of ["2026-09-13T09:59:59Z", "2026-09-14T04:00:00Z", "2026-09-12T22:00:00Z"]) {
     assert.throws(() => assertRequestedPreview(env, new Date(date)), /gate is closed/);
   }
   for (const patch of [{ GITHUB_EVENT_NAME: "push" }, { PREVIEW_CONFIRMATION: "SEND PREVIEW 2026-09-11" }]) {
     assert.throws(() => assertRequestedPreview({ ...env, ...patch }, now), /gate is closed/);
   }
-  assert.equal(REQUESTED_PREVIEW_REVISION, "web-search-upgrade-2026-09-11");
+  assert.equal(REQUESTED_PREVIEW_REVISION, "checked-summary-upgrade-2026-09-13");
 });
 test("a closed preview gate prevents both model use and sending", async () => {
   let calls = 0;
@@ -107,7 +107,7 @@ test("the preview workflow is not scheduled and has no public or ledger artifact
   assert.match(workflow, /PERSONAL_PAPER_EMAIL: \$\{\{ secrets\.PERSONAL_PAPER_EMAIL \}\}/);
   assert.match(workflow, /TAVILY_API_KEY: \$\{\{ secrets\.TAVILY_API_KEY \}\}/);
   assert.match(workflow, /TAVILY_PAYGO_DISABLED_VERIFIED: \$\{\{ vars\.TAVILY_PAYGO_DISABLED_VERIFIED \}\}/);
-  assert.match(workflow, /PREVIEW_CONFIRMATION: SEND SEPTEMBER 11 PREVIEW 2026-09-12/);
+  assert.match(workflow, /PREVIEW_CONFIRMATION: SEND CHECKED SUMMARY PREVIEW 2026-09-13/);
   assert.match(workflow, /workflow_dispatch:/);
   assert.doesNotMatch(workflow, /push:|schedule:|upload-artifact|actions: write|contents: write|OPENAI_API_KEY/);
 });

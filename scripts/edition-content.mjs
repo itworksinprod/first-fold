@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { readerProseErrors } from "./reader-prose.mjs";
+import { readerSummaryErrors } from "./reader-summary.mjs";
 import { FREE_CLOUDFLARE_AI_MODELS } from "./automation/free/models.mjs";
 
 const DESKS = ["ai", "work-and-tools", "security-and-privacy", "platforms-and-power"];
@@ -206,6 +207,9 @@ export function validateCanonicalEdition(edition) {
       Array.isArray(story.evidence) && story.evidence.length > 0 && story.evidence.every((claim) =>
         typeof claim.id === "string" && claim.id.startsWith(`${story.id}-grounded-`));
     const privateSourceBrief = isPrivateSourceBrief(edition, story);
+    if (privateGroundedBrief && readerSummaryErrors(story).length) {
+      issues.push(`Story ${story.id} lacks a self-contained reader summary.`);
+    }
     const minimumWords = privateGroundedBrief ? MIN_PRIVATE_GROUNDED_STORY_WORDS
       : privateSourceBrief ? MIN_PRIVATE_SOURCE_BRIEF_WORDS : MIN_READER_FACING_STORY_WORDS;
     for (const field of ["headline", "deck", "whatHappened", "whyItMatters", "whatToDoOrWatch"]) {
