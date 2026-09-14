@@ -1,0 +1,42 @@
+name: Diagnose one free writer story (encrypted, no email)
+on:
+  workflow_dispatch:
+    inputs:
+      public_key:
+        description: Ephemeral RSA-3072 public key in base64 DER format (never a private key)
+        required: true
+        type: string
+permissions: {}
+concurrency:
+  group: personal-morning-paper
+  cancel-in-progress: false
+jobs:
+  diagnose:
+    if: github.repository == 'itworksinprod/first-fold' && github.ref == 'refs/heads/main' && github.actor == 'itworksinprod' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: '24'
+      - name: Test diagnostic boundaries before using credentials
+        run: node --test tests/private-writer-diagnostic.test.mjs tests/grounded-draft.test.mjs
+      - name: Inspect one real-source writer attempt without delivery
+        env:
+          DIAGNOSTIC_PUBLIC_KEY: ${{ inputs.public_key }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_AI_API_TOKEN: ${{ secrets.CLOUDFLARE_AI_API_TOKEN }}
+        run: node scripts/automation/private-writer-diagnostic.mjs run "$RUNNER_TEMP/writer-diagnostic.encrypted.json"
+      - name: Retain only encrypted diagnostic for one day
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: private-writer-diagnostic
+          path: ${{ runner.temp }}/writer-diagnostic.encrypted.json
+          retention-days: 1
+          if-no-files-found: ignore
