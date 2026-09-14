@@ -117,3 +117,19 @@ schema, non-array stories, excessive counts, duplicate IDs and unknown IDs.
 Repeated malformed responses stop after two calls; recovered drafts cannot
 obtain another field repair. Invalid inference provenance cannot authorize
 recovery, and successful recovery still requires exact-hash factual review.
+
+The next live check,
+[34845134497](https://github.com/itworksinprod/first-fold/actions/runs/34845134497)
+on `9d6cfac`, verified seven publisher articles. Two initial 145/134-word drafts
+needed originality repairs; both repaired drafts passed local checks. Final
+review rejected the factual support of both drafts, returning empty support for
+all four claims and false factual approval. No format recovery was needed on
+this run. The result remains a failed quality test, not a successful paper.
+
+The existing encrypted one-story diagnostic is now pinned to the daily Llama
+writer rather than the separate experimental reasoning model. It retains the
+same one-candidate, three-call/7,800-output-token ceiling and makes no search API,
+email or ledger writes. Its source, draft and review payloads are encrypted to
+an ephemeral public key; the private key stays on Carlos's Mac. The purpose is
+to compare rejected claims with their actual passages, not rerun a reviewer to
+obtain a more favorable verdict or publish rejected material.

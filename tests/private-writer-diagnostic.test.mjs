@@ -5,7 +5,7 @@ import { readFile } from "node:fs/promises";
 import { diagnoseOneWriter, sealDiagnostic, openDiagnostic, assertDiagnosticAuthority } from
   "../scripts/automation/private-writer-diagnostic.mjs";
 import { groundedDraft, groundedEvidence } from "./fixtures/grounded-summary.mjs";
-import { FREE_REASONING_WRITER_MODEL } from "../scripts/automation/free/models.mjs";
+import { DEFAULT_CLOUDFLARE_AI_MODEL } from "../scripts/automation/free/models.mjs";
 
 const pair = generateKeyPairSync("rsa", { modulusLength: 3072 });
 const publicKey = pair.publicKey.export({ type: "spki", format: "der" }).toString("base64");
@@ -19,7 +19,7 @@ const authority = { GITHUB_REPOSITORY: "itworksinprod/first-fold", GITHUB_REF: "
 const base = { publicKey, accountId: "0".repeat(32), apiToken: "private-test-token",
   now: new Date("2026-09-14T01:30:00.000Z"), researchImpl: async () => ({ candidates: [candidate] }) };
 const response = editorialPayload => ({ editorialPayload, provider: "cloudflare-workers-ai",
-  model: FREE_REASONING_WRITER_MODEL, requestSha256: "a".repeat(64), responseSha256: "b".repeat(64),
+  model: DEFAULT_CLOUDFLARE_AI_MODEL, requestSha256: "a".repeat(64), responseSha256: "b".repeat(64),
   reasoning: "NEVER CAPTURE REASONING", headers: { authorization: "NEVER CAPTURE HEADERS" } });
 
 test("encrypted diagnostic round-trips but rejects tampering, wrong keys and oversized plaintext", () => {
@@ -43,8 +43,10 @@ test("manual diagnostic authority rejects other actors, repos, refs, events, att
   }
 });
 
-test("one real-source diagnostic uses unchanged writer and reviewer, with no secrets in the capture", async () => {
+test("one real-source diagnostic pins the daily Llama writer and reviewer, with requests and payloads encrypted only", async () => {
   let count = 0;
+  const requests = [];
+  const payloads = [];
   const { report, sealed } = await diagnoseOneWriter({ ...base,
     researchImpl: async options => {
       assert.equal(options.minimumScore, 70);
@@ -53,29 +55,86 @@ test("one real-source diagnostic uses unchanged writer and reviewer, with no sec
       assert.equal(options.discoverWebArticles, undefined);
       return { candidates: [candidate, { ...candidate, candidateId: "must-not-be-drafted" }] };
     }, aiRequestImpl: async options => {
-      assert.equal(options.model, FREE_REASONING_WRITER_MODEL);
+      assert.equal(options.model, DEFAULT_CLOUDFLARE_AI_MODEL);
       assert.equal(options.maxAttempts, 1);
+      requests.push(JSON.parse(options.messages[1].content));
       if (++count === 1) {
-        assert.equal(JSON.parse(options.messages[1].content).dossiers.length, 1);
-        return response({ stories: [groundedDraft] });
+        assert.equal(options.maxTokens, 4_000);
+        assert.equal(options.responseFormat, "json_object");
+        assert.equal(requests[0].dossiers.length, 1);
+        payloads.push({ stories: [groundedDraft] });
+        return response(payloads.at(-1));
       }
-      const draft = JSON.parse(options.messages[1].content).drafts[0];
-      return response({ reviews: [{ candidateId: candidate.candidateId,
+      assert.equal(options.maxTokens, 800);
+      assert.equal(options.responseFormat, "json_schema");
+      payloads.push({ reviews: [{ candidateId: candidate.candidateId,
         draftSha256: createHash("sha256").update(JSON.stringify(groundedDraft)).digest("hex"),
         claimSupport: groundedDraft.claims.map(claim => claim.supports.map(support => support.evidenceId)),
         factsSupported: true, attributionAccurate: true, analysisSupported: true, usefulAndSpecific: true }] });
+      return response(payloads.at(-1));
     } });
   assert.equal(report.status, "writer-and-review-passed");
   assert.equal(report.modelRequests, 2);
-  assert.equal(report.outputBudget, 5_400);
+  assert.equal(report.outputBudget, 4_800);
+  assert.equal(report.searchQueries, 0);
   assert.equal(report.emailSent, false);
   const opened = openDiagnostic(sealed, pair.privateKey);
-  assert.deepEqual(opened.calls[0].editorialPayload.stories[0], groundedDraft);
+  assert.deepEqual(opened.calls.map(call => call.request), requests);
+  assert.deepEqual(opened.calls.map(call => call.editorialPayload), payloads);
+  for (const call of opened.calls) assert.deepEqual(Object.keys(call), ["request", "editorialPayload"]);
   const serialized = JSON.stringify(opened);
   for (const forbidden of [base.apiToken, "NEVER CAPTURE", "must-not-be-drafted"]) {
     assert.ok(!serialized.includes(forbidden));
   }
-  assert.ok(!JSON.stringify(report).includes(groundedDraft.headline));
+  const visible = JSON.stringify({ report, sealed });
+  for (const privateText of [groundedDraft.headline, groundedDraft.claims[0].text,
+    requests[0].dossiers[0].sources[0].passages[0].text, "claimSupport", "dossiers", base.apiToken]) {
+    assert.ok(!visible.includes(privateText));
+  }
+});
+
+test("daily Llama repair and failed semantic review remain inspectable only after decryption within three calls and 7800 tokens", async () => {
+  const invalid = { ...groundedDraft, whyItMatters: "Too short." };
+  const requests = [];
+  const payloads = [];
+  const budgets = [];
+  const { report, sealed } = await diagnoseOneWriter({ ...base,
+    aiRequestImpl: async options => {
+      assert.equal(options.model, DEFAULT_CLOUDFLARE_AI_MODEL);
+      assert.equal(options.maxAttempts, 1);
+      const request = JSON.parse(options.messages[1].content);
+      requests.push(request);
+      budgets.push(options.maxTokens);
+      if (requests.length === 1) payloads.push({ stories: [invalid] });
+      else if (requests.length === 2) {
+        assert.deepEqual(request.revisionPlan.claimEdits, []);
+        assert.deepEqual(request.revisionPlan.rewriteCandidateIds, []);
+        payloads.push({ copyEdits: request.revisionPlan.copyEdits.map(({ candidateId, field }) => ({
+          candidateId, field, text: groundedDraft[field],
+        })) });
+      } else {
+        assert.equal(request.drafts.length, 1);
+        payloads.push({ reviews: [{ candidateId: candidate.candidateId,
+          draftSha256: createHash("sha256").update(JSON.stringify(groundedDraft)).digest("hex"),
+          claimSupport: [[], []], factsSupported: false,
+          attributionAccurate: true, analysisSupported: true, usefulAndSpecific: true }] });
+      }
+      return response(payloads.at(-1));
+    } });
+  assert.deepEqual(budgets, [4_000, 3_000, 800]);
+  assert.equal(report.modelRequests, 3);
+  assert.equal(report.outputBudget, 7_800);
+  assert.equal(report.searchQueries, 0);
+  assert.equal(report.emailSent, false);
+  assert.equal(report.status, "failed");
+  const opened = openDiagnostic(sealed, pair.privateKey);
+  assert.equal(opened.result, null);
+  assert.deepEqual(opened.calls.map(call => call.request), requests);
+  assert.deepEqual(opened.calls.map(call => call.editorialPayload), payloads);
+  assert.deepEqual(opened.calls[2].editorialPayload.reviews[0].claimSupport, [[], []]);
+  for (const privateText of ["Too short.", groundedDraft.whyItMatters, "revisionPlan", "claimSupport", "dossiers"]) {
+    assert.ok(!JSON.stringify({ report, sealed }).includes(privateText));
+  }
 });
 
 test("rejected drafts remain inspectable, never become accepted copy, and use at most three calls", async () => {

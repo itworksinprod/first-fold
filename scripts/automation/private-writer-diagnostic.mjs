@@ -8,7 +8,7 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { collectFreeResearchSnapshot } from "./free/feed-engine.mjs";
 import { synthesizeGroundedEditorial } from "./free/grounded-draft.mjs";
-import { FREE_REASONING_WRITER_MODEL, requestWorkersAiEditorial, workersAiFailureDiagnostic,
+import { DEFAULT_CLOUDFLARE_AI_MODEL, requestWorkersAiEditorial, workersAiFailureDiagnostic,
   workersAiRunUrl } from "./free/workers-ai.mjs";
 
 const MAX_BYTES = 350_000;
@@ -68,7 +68,7 @@ export async function diagnoseOneWriter({ publicKey, accountId, apiToken, now = 
   fetchImpl = globalThis.fetch } = {}) {
   // Check encryption and credentials before research or inference, not afterwards.
   diagnosticPublicKey(publicKey);
-  const endpoint = workersAiRunUrl(accountId, FREE_REASONING_WRITER_MODEL);
+  const endpoint = workersAiRunUrl(accountId, DEFAULT_CLOUDFLARE_AI_MODEL);
   if (typeof apiToken !== "string" || !apiToken.trim()) throw failure("DIAGNOSTIC_CONFIGURATION_INVALID");
   const capture = { purpose: "one-real-source-writer-probe-not-an-edition", capturedAt: now.toISOString(),
     calls: [], diagnostics: [], emailSent: false };
@@ -93,7 +93,7 @@ export async function diagnoseOneWriter({ publicKey, accountId, apiToken, now = 
         evidence: [], selection: { score: candidate.ranking.score } } },
     } };
     result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
-      accountId, apiToken, model: FREE_REASONING_WRITER_MODEL,
+      accountId, apiToken, model: DEFAULT_CLOUDFLARE_AI_MODEL,
       fetchImpl: async (url, options) => {
         if (url !== endpoint || options.method !== "POST" || options.redirect !== "error" || networkRequests >= 3) {
           throw failure("DIAGNOSTIC_NETWORK_CONTRACT");
@@ -103,7 +103,7 @@ export async function diagnoseOneWriter({ publicKey, accountId, apiToken, now = 
       },
       aiRequestImpl: async options => {
         if (++modelRequests > 3 || (outputBudget += options.maxTokens) > 7_800 ||
-            options.model !== FREE_REASONING_WRITER_MODEL || options.maxAttempts !== 1) {
+            options.model !== DEFAULT_CLOUDFLARE_AI_MODEL || options.maxAttempts !== 1) {
           throw failure("DIAGNOSTIC_REQUEST_BUDGET");
         }
         // Only this encrypted probe opts into bounded, redacted provider errors.
