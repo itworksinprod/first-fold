@@ -880,6 +880,78 @@ test("a local analysis repair cannot mutate claims, bypass vetoes or obtain a se
   assert.equal(calls, 3, "A valid pair still needs semantic approval, without approval retries");
 });
 
+test("local refinement routing depends on immutable claim checks, not the first whole-story failure code", async () => {
+  const caveat = structuredClone(groundedDraft);
+  caveat.whatToDoOrWatch += " Attackers are exploiting the flaw in the wild.";
+  const short = structuredClone(groundedDraft);
+  short.claims[0].text = "CERT/CC describes a local disk-write flaw in the backup software's driver.";
+  short.claims[1].text = "The advisory names neither a corrected release nor observed attacks against users.";
+  short.whyItMatters = "If the affected driver is installed, unauthorized disk access could undermine the stored information that backups are meant to protect.";
+  short.whatToDoOrWatch = "Check the advisory for remediation and the vendor's affected-release guidance before choosing a response for your machines.";
+  for (const [bad, expected] of [[caveat, "SOURCE_CAVEAT"], [short, "WORD_COUNT"],
+    [{ ...structuredClone(groundedDraft), whyItMatters: "Too short." }, "SHAPE"]]) {
+    const failures = [];
+    assert.equal(validateGroundedStory(bad, dossier, code => failures.push(code)), false);
+    assert.deepEqual(failures, [expected]);
+    const final = { ...structuredClone(bad), ...localCopy(groundedDraft) };
+    assert.equal(validateGroundedStory(final, dossier), true);
+    let calls = 0;
+    const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate], model: LOCAL_AI_MODEL,
+      aiRequestImpl: async options => {
+        calls++;
+        assert.doesNotThrow(() => buildLocalAiRequest(options));
+        const data = JSON.parse(options.messages[1].content);
+        if (calls === 1) return localResponse({ stories: [bad] });
+        if (calls === 2) {
+          assert.deepEqual(Object.keys(options.schema.properties), ["headline", "deck", "whyItMatters", "whatToDoOrWatch"]);
+          assert.deepEqual(data.fixed.claims, bad.claims);
+          assert.equal(data.rejectionCode, expected);
+          return localResponse(localCopy(groundedDraft));
+        }
+        assert.deepEqual(data.drafts[0].draft.claims, bad.claims);
+        assert.equal(data.drafts[0].draftSha256, hash(final));
+        return localResponse({ reviews: [{ ...review, draftSha256: hash(final) }] });
+      } });
+    assert.ok(result);
+    assert.equal(calls, 3);
+    assert.equal(result.editorial.desks["security-and-privacy"].story.whatHappened, bad.claims.map(claim => claim.text).join(" "));
+  }
+});
+
+test("bad replaceable copy never hides immutable claim defects from local refinement routing", async () => {
+  const conditional = structuredClone(candidate);
+  conditional.feedEvidence[0].articleExcerpt = "When Secure Boot is disabled, disk modification can permit UEFI code execution before the operating system starts.";
+  const mutations = [
+    draft => { draft.claims[0].supports[0].evidenceId = "S1P999"; },
+    draft => { draft.claims[0].text = copiedClaim; },
+    draft => { draft.claims[0].text += " Version 9.9 is affected."; },
+    draft => { draft.claims[0].supports[1] = draft.claims[0].supports[0]; },
+    draft => { draft.claims[0].text = "CERT/CC reports that the AOMEI driver allows UEFI code execution before the operating system starts."; },
+    draft => { draft.claims[0].supports = []; },
+  ];
+  for (const mutate of mutations) {
+    const bad = structuredClone(groundedDraft);
+    mutate(bad); bad.whyItMatters = "Too short.";
+    let calls = 0;
+    const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [conditional], model: LOCAL_AI_MODEL,
+      aiRequestImpl: async options => {
+        calls++;
+        assert.ok(options.schema.properties.stories, "A defective claim requires whole-story repair, not immutable-copy refinement");
+        return localResponse({ stories: [bad] });
+      } });
+    assert.equal(result, null);
+    assert.equal(calls, 2);
+  }
+  const uncorroborated = { ...candidate, ranking: { evidenceTier: "corroborated" } };
+  let calls = 0;
+  assert.equal(await synthesizeGroundedEditorial({ editorial: baseline, candidates: [uncorroborated], model: LOCAL_AI_MODEL,
+    aiRequestImpl: async options => {
+      calls++; assert.ok(options.schema.properties.stories);
+      return localResponse({ stories: [{ ...groundedDraft, whyItMatters: "Too short." }] });
+    } }), null);
+  assert.equal(calls, 2);
+});
+
 test("local drafts keep numeric, citation, caveat, originality and reader-copy vetoes", async () => {
   const conditional = structuredClone(candidate);
   conditional.feedEvidence[0].articleExcerpt = "When Secure Boot is disabled, disk modification can permit UEFI code execution before the operating system starts.";

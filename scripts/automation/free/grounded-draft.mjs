@@ -152,23 +152,7 @@ function assertsIndependentConfirmation(copy) {
   return false;
 }
 
-export function validateGroundedStory(draft, dossier, onFailure = () => {}) {
-  const reject = (code, feedback = {}) => { onFailure(code, feedback); return false; };
-  const fields = GROUNDED_DRAFT_SCHEMA.properties.stories.items.properties;
-  if (!keys(draft, ["candidateId", "headline", "deck", "claims", "whyItMatters", "whatToDoOrWatch"]) ||
-      draft.candidateId !== dossier.candidateId) return reject("SHAPE", { field: "story", expected: "Exact story keys and supplied candidateId." });
-  if (!Array.isArray(draft.claims) || draft.claims.length !== 2) return reject("SHAPE", { field: "claims", expectedCount: 2 });
-  for (const field of ["headline", "deck", "whyItMatters", "whatToDoOrWatch"]) {
-    if (!withinTextSchema(draft[field], fields[field])) return reject("SHAPE", {
-      field, minCharacters: fields[field].minLength, maxCharacters: fields[field].maxLength,
-      actualCharacters: typeof draft[field] === "string" ? draft[field].length : null,
-      expected: "A plain prose string within the character bounds, without markup, links, controls or instructions.",
-    });
-    const reasons = readerProseErrors(draft[field], { paragraph: ["whyItMatters", "whatToDoOrWatch"].includes(field) });
-    if (reasons.length) {
-      return reject("READER_COPY", { field, reasons, expected: "Fresh, complete plain prose with no serialized field fragments." });
-    }
-  }
+function claimEvidenceContext(draft, dossier, reject) {
   const evidenceById = new Map(dossier.sources.flatMap((source) =>
     source.passages.map((passage) => [passage.evidenceId, { source, passage }])));
   const cited = new Set();
@@ -214,6 +198,52 @@ export function validateGroundedStory(draft, dossier, onFailure = () => {}) {
     }
   }
   if (dossier.evidenceTier === "corroborated" && cited.size < 2) return reject("CORROBORATION");
+  return { citedPassages };
+}
+
+function sourceOverlap(copy, evidence) {
+  const original = words(normalized(evidence).toLowerCase()).join(" ");
+  const tokens = words(normalized(copy).toLowerCase());
+  for (let index = 0; index <= tokens.length - 12; index++) {
+    const overlap = tokens.slice(index, index + 12).join(" ");
+    if (original.includes(overlap)) return overlap;
+  }
+  return null;
+}
+
+function canRefineLocalCopy(draft, dossier) {
+  // This is routing, never editorial approval. Reuse the exact claim gates
+  // even when a bad replaceable field made whole-story validation stop early.
+  // The final assembled story still needs every whole-story gate and review.
+  if (!keys(draft, ["candidateId", "headline", "deck", "claims", "whyItMatters", "whatToDoOrWatch"]) ||
+      draft.candidateId !== dossier.candidateId || !Array.isArray(draft.claims) || draft.claims.length !== 2 ||
+      !claimEvidenceContext(draft, dossier, () => false)) return false;
+  const claims = draft.claims.map(claim => claim.text).join(" ");
+  if (dossier.evidenceTier === "authoritative-single" && !claims.includes(dossier.sources[0].publisher)) return false;
+  if (dossier.sources.length === 1 && assertsIndependentConfirmation(claims)) return false;
+  return sourceOverlap(claims, evidenceText(dossier)) === null;
+}
+
+export function validateGroundedStory(draft, dossier, onFailure = () => {}) {
+  const reject = (code, feedback = {}) => { onFailure(code, feedback); return false; };
+  const fields = GROUNDED_DRAFT_SCHEMA.properties.stories.items.properties;
+  if (!keys(draft, ["candidateId", "headline", "deck", "claims", "whyItMatters", "whatToDoOrWatch"]) ||
+      draft.candidateId !== dossier.candidateId) return reject("SHAPE", { field: "story", expected: "Exact story keys and supplied candidateId." });
+  if (!Array.isArray(draft.claims) || draft.claims.length !== 2) return reject("SHAPE", { field: "claims", expectedCount: 2 });
+  for (const field of ["headline", "deck", "whyItMatters", "whatToDoOrWatch"]) {
+    if (!withinTextSchema(draft[field], fields[field])) return reject("SHAPE", {
+      field, minCharacters: fields[field].minLength, maxCharacters: fields[field].maxLength,
+      actualCharacters: typeof draft[field] === "string" ? draft[field].length : null,
+      expected: "A plain prose string within the character bounds, without markup, links, controls or instructions.",
+    });
+    const reasons = readerProseErrors(draft[field], { paragraph: ["whyItMatters", "whatToDoOrWatch"].includes(field) });
+    if (reasons.length) {
+      return reject("READER_COPY", { field, reasons, expected: "Fresh, complete plain prose with no serialized field fragments." });
+    }
+  }
+  const claimContext = claimEvidenceContext(draft, dossier, reject);
+  if (!claimContext) return false;
+  const { citedPassages } = claimContext;
   const story = { ...draft, whatHappened: draft.claims.map((claim) => claim.text).join(" ") };
   const count = countReaderFacingStoryWords(story);
   if (count < MIN_PRIVATE_GROUNDED_STORY_WORDS || count > 225) return reject("WORD_COUNT", {
@@ -243,17 +273,13 @@ export function validateGroundedStory(draft, dossier, onFailure = () => {}) {
     field: "readerCopy", expected: "Only one publisher supplies this evidence; do not claim independent confirmation.",
   });
   // Avoid copying long passages while permitting product/advisory identifiers.
-  const sourceTokens = words(normalized(evidence).toLowerCase());
-  const copyTokens = words(normalized(copy).toLowerCase());
-  for (let i = 0; i <= copyTokens.length - 12; i++) {
-    const overlap = copyTokens.slice(i, i + 12).join(" ");
-    if (sourceTokens.join(" ").includes(overlap)) {
+  const overlap = sourceOverlap(copy, evidence);
+  if (overlap !== null) {
       const fields = { headline: draft.headline, deck: draft.deck,
         "claims[0].text": draft.claims[0].text, "claims[1].text": draft.claims[1].text,
         whyItMatters: draft.whyItMatters, whatToDoOrWatch: draft.whatToDoOrWatch };
       const field = Object.keys(fields).find((key) => normalized(fields[key]).toLowerCase().includes(overlap)) ?? "readerCopy";
       return reject("ORIGINALITY", { field, expected: "Rewrite from the evidence in a different sentence structure; do not reuse the publisher headline or a twelve-word source sequence." });
-    }
   }
   return true;
 }
@@ -744,8 +770,8 @@ response, add Markdown fences or serialize another object inside any reader-faci
       const repairIds = new Set(rejected.map(({ draft }) => draft.candidateId));
       // Preserve valid factual claims while writing copy from ONLY their cited
       // passages. No full-story retry follows an invalid copy refinement.
-      const copyRefinement = local && rejected.length === 1 && (rejected[0].rejectionCode === "LOCAL_COPY_REFINEMENT" ||
-        rejected[0].rejectionCode === "NUMERIC_ANCHOR" && ["whyItMatters", "whatToDoOrWatch"].includes(rejected[0].feedback.field));
+      const copyRefinement = local && rejected.length === 1 &&
+        canRefineLocalCopy(rejected[0].draft, dossiers.find(dossier => repairIds.has(dossier.candidateId)));
       // Local reasoning revises the complete story using the same schema as
       // drafting. It can remove an uncited clause or correct its claim supports
       // without inventing a supports field on advice. No second repair follows.
