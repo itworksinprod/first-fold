@@ -6,7 +6,7 @@ import { malformedEmailStories } from "./fixtures/malformed-email-2026-09-11.mjs
 import { GROUNDED_DRAFT_SCHEMA, groundedDossiers, groundedRequestBudget, validateGroundedStory, synthesizeGroundedEditorial } from
   "../scripts/automation/free/grounded-draft.mjs";
 import { DEFAULT_CLOUDFLARE_AI_MODEL, EXPERIMENTAL_FREE_WRITER_MODEL, FREE_REASONING_WRITER_MODEL,
-  resolveCloudflareAiModel, buildWorkersAiRequest } from "../scripts/automation/free/workers-ai.mjs";
+  resolveCloudflareAiModel, buildWorkersAiRequest, requestWorkersAiEditorial } from "../scripts/automation/free/workers-ai.mjs";
 import { LOCAL_AI_PROVIDER, LOCAL_AI_MODEL, LOCAL_AI_URL, LOCAL_AI_EDITORIAL_FORMAT_INVALID,
   LOCAL_AI_CONTEXT_TOKENS, buildLocalAiRequest } from "../scripts/automation/free/local-ai.mjs";
 import { countReaderFacingStoryWords } from "../scripts/edition-content.mjs";
@@ -1737,4 +1737,163 @@ test("support-failure diagnostics remain bounded for malformed model arrays and 
     assert.equal(failure.reason, failure.claimIndex === 0 ? "invalid_shape" : "empty");
   }
   assert.doesNotMatch(JSON.stringify(checked), /UNTRUSTED_REVIEW_CONTENT|S1P[2345]/);
+});
+
+test("daily full-story JSON-object transport carries the exact system schema while focused repair and review stay schema mode", async () => {
+  const copied = structuredClone(groundedDraft);
+  copied.claims[0].text = copiedClaim;
+  const calls = [];
+  const nativeBodies = [];
+  const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
+    accountId: "0".repeat(32), apiToken: "synthetic-only", aiRequestImpl: async options => {
+      calls.push(options);
+      const index = calls.length;
+      if (index === 1) {
+        assert.equal(options.responseFormat, "json_object");
+        assert.ok(options.messages[0].content.endsWith(JSON.stringify(options.schema)),
+          "The exact evidence-first bounded schema is present in SYSTEM, not merely its name");
+        const fields = options.schema.properties.stories.items.properties;
+        assert.equal(fields.claims.items.properties.text.minLength, 60);
+        assert.equal(fields.claims.items.properties.text.maxLength, 480);
+        assert.equal(fields.whyItMatters.minLength, 120);
+        assert.equal(fields.whyItMatters.maxLength, 650);
+        assert.deepEqual(Object.keys(fields.claims.items.properties), ["supports", "text"]);
+      } else assert.equal(options.responseFormat, "json_schema");
+      const payload = index === 1 ? { stories: [copied] }
+        : index === 2 ? dailyRepairPayload(options, [groundedDraft]) : { reviews: [review] };
+      return requestWorkersAiEditorial({ ...options, fetchImpl: async (_url, init) => {
+        nativeBodies.push(JSON.parse(init.body));
+        return new Response(JSON.stringify({ success: true, result: { response: JSON.stringify(payload) }, errors: [] }), {
+          status: 200, headers: { "content-type": "application/json" },
+        });
+      } });
+    } });
+  assert.ok(result);
+  assert.deepEqual(nativeBodies.map(body => body.response_format.type), ["json_object", "json_schema", "json_schema"]);
+  assert.deepEqual(nativeBodies[0].response_format, { type: "json_object" });
+  assert.deepEqual(nativeBodies[1].response_format.json_schema, calls[1].schema);
+  assert.deepEqual(nativeBodies[2].response_format.json_schema, calls[2].schema);
+  assert.deepEqual(nativeBodies.map(body => body.max_tokens), [4_000, 3_000, 800]);
+  assert.ok(calls.every(call => call.maxAttempts === 1 && call.maxRequestBytes === 70_000 && call.maxResponseBytes === 100_000));
+  assert.equal(result.editorial.desks["security-and-privacy"].story.headline, groundedDraft.headline);
+});
+
+test("daily full-story format recovery uses JSON-object once, with strict parsing and the original review budget", async () => {
+  const calls = [];
+  const events = [];
+  const nativeBodies = [];
+  const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
+    accountId: "0".repeat(32), apiToken: "synthetic-only", onDiagnostic: event => events.push(event),
+    aiRequestImpl: async options => {
+      calls.push(options);
+      if (calls.length <= 2) {
+        assert.equal(options.responseFormat, "json_object");
+        assert.deepEqual(Object.keys(options.schema.properties), ["stories"]);
+        assert.ok(options.messages[0].content.endsWith(JSON.stringify(options.schema)));
+      } else assert.equal(options.responseFormat, "json_schema");
+      const payload = calls.length === 1 ? '{"stories":broken' : calls.length === 2
+        ? JSON.stringify({ stories: [groundedDraft] }) : JSON.stringify({ reviews: [review] });
+      return requestWorkersAiEditorial({ ...options, fetchImpl: async (_url, init) => {
+        nativeBodies.push(JSON.parse(init.body));
+        return new Response(JSON.stringify({ success: true, result: { response: payload }, errors: [] }), {
+          status: 200, headers: { "content-type": "application/json" },
+        });
+      } });
+    } });
+  assert.ok(result);
+  assert.deepEqual(nativeBodies.map(body => body.response_format.type), ["json_object", "json_object", "json_schema"]);
+  assert.deepEqual(nativeBodies.map(body => body.max_tokens), [4_000, 3_000, 800]);
+  const recovery = events.find(event => event.stage === "draft-format-repair");
+  assert.equal(recovery.repairBudgetRemaining, 0);
+  assert.equal(recovery.formatReason, "PAYLOAD_JSON_INVALID");
+  assert.equal(events.filter(event => event.stage === "draft-format-repair").length, 1);
+});
+
+test("a daily mixed field-edit and missing-story repair remains native schema transport", async () => {
+  const other = { ...structuredClone(candidate), candidateId: "candidate-mixed-transport", suggestedDesk: "ai" };
+  const secondDraft = { ...structuredClone(groundedDraft), candidateId: other.candidateId };
+  const editorial = structuredClone(baseline);
+  editorial.desks.ai = structuredClone(editorial.desks["security-and-privacy"]);
+  editorial.desks.ai.story.id = "second-story";
+  const calls = [];
+  const result = await synthesizeGroundedEditorial({ editorial, candidates: [candidate, other], aiRequestImpl: async options => {
+    calls.push(options);
+    if (calls.length === 1) {
+      assert.equal(options.responseFormat, "json_object");
+      return response({ stories: [{ ...groundedDraft, whyItMatters: "Too short." }] });
+    }
+    assert.equal(options.responseFormat, "json_schema");
+    if (calls.length === 2) {
+      assert.deepEqual(Object.keys(options.schema.properties), ["copyEdits", "stories"]);
+      assert.deepEqual(JSON.parse(options.messages[1].content).revisionPlan.rewriteCandidateIds, [other.candidateId]);
+      return response(dailyRepairPayload(options, [groundedDraft, secondDraft]));
+    }
+    return response({ reviews: [review, { ...review, candidateId: other.candidateId, draftSha256: hash(secondDraft) }] });
+  } });
+  assert.ok(result);
+  assert.deepEqual(calls.map(call => call.maxTokens), [4_000, 3_000, 800]);
+});
+
+test("JSON-object drafting still rejects nested damaged prose and never retries a failed field repair", async () => {
+  const bad = { ...structuredClone(groundedDraft), whyItMatters: malformedEmailStories[0].whyItMatters };
+  const calls = [];
+  const events = [];
+  const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
+    accountId: "0".repeat(32), apiToken: "synthetic-only", onDiagnostic: event => events.push(event),
+    aiRequestImpl: async options => {
+      calls.push(options);
+      assert.ok(calls.length <= 2, "Malformed reader copy cannot reach review or another repair");
+      const payload = calls.length === 1 ? { stories: [bad] } : dailyRepairPayload(options, [bad]);
+      assert.equal(options.responseFormat, calls.length === 1 ? "json_object" : "json_schema");
+      return requestWorkersAiEditorial({ ...options, fetchImpl: async () => new Response(JSON.stringify({
+        success: true, result: { response: JSON.stringify(payload) }, errors: [],
+      }), { status: 200, headers: { "content-type": "application/json" } }) });
+    } });
+  assert.equal(result, null);
+  assert.equal(calls.length, 2);
+  assert.equal(events.some(event => event.stage === "semantic-evidence-check"), false);
+  assert.equal(events.some(event => event.stage === "draft-format-repair"), false,
+    "A well-formed outer object does not hide the separate reader-copy failure");
+  assert.ok(events.find(event => event.stage === "draft-repair").rejectionCodes.includes("READER_COPY"));
+});
+
+test("daily-only JSON-object change leaves Qwen, OSS and local stage formats unchanged", async () => {
+  for (const model of [EXPERIMENTAL_FREE_WRITER_MODEL, FREE_REASONING_WRITER_MODEL, LOCAL_AI_MODEL]) {
+    const calls = [];
+    const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate], model,
+      aiRequestImpl: async options => {
+        calls.push(options);
+        assert.equal(options.responseFormat, model === EXPERIMENTAL_FREE_WRITER_MODEL ? "json_object" : "json_schema");
+        if (model === LOCAL_AI_MODEL) {
+          const stage = localStage(options);
+          return localResponse(stage === "claims" ? localFoundation(groundedDraft) : stage === "audit" ? localAudit(groundedDraft)
+            : stage === "copy" ? localCopy(groundedDraft) : { reviews: [localReview(groundedDraft)] });
+        }
+        return { ...response(calls.length === 1 ? { stories: [groundedDraft] } : { reviews: [review] }), model };
+      } });
+    assert.ok(result);
+    assert.equal(calls.length, model === LOCAL_AI_MODEL ? 4 : 2);
+  }
+});
+
+test("daily JSON-object transport never accepts wrong outer objects or repairs malformed output twice", async () => {
+  for (const payload of [
+    '{"stories":broken', JSON.stringify([]), JSON.stringify(null),
+    JSON.stringify({ edits: [] }), JSON.stringify({ stories: [groundedDraft], extra: true }),
+    JSON.stringify({ stories: [{ ...groundedDraft, candidateId: "unrequested-candidate" }] }),
+  ]) {
+    const calls = [];
+    const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
+      accountId: "0".repeat(32), apiToken: "synthetic-only", aiRequestImpl: async options => {
+        calls.push(options);
+        assert.ok(calls.length <= 2);
+        assert.equal(options.schema.properties.reviews, undefined);
+        assert.equal(options.responseFormat, "json_object");
+        return requestWorkersAiEditorial({ ...options, fetchImpl: async () => new Response(JSON.stringify({
+          success: true, result: { response: payload }, errors: [],
+        }), { status: 200, headers: { "content-type": "application/json" } }) });
+      } });
+    assert.equal(result, null, payload);
+    assert.ok(calls.length >= 1 && calls.length <= 2);
+  }
 });

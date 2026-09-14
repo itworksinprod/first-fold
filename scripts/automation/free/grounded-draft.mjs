@@ -906,13 +906,20 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
       schema = evidenceFirstWriterProviderSchema(schema, writerDossiers);
       system = `${system}\n${DAILY_CLAIM_GUIDANCE}`;
     }
-    if (local) system = `${system}\nReturn only the final JSON object matching this schema:\n${JSON.stringify(schema)}`;
+    // Llama's full-story json_schema path has returned unusable editorial JSON
+    // well below its output cap. Request an object and teach the exact schema
+    // in system text for this shape only. Strict parsing, every local field
+    // gate, the single repair slot and the hash-bound review stay unchanged.
+    // Compact field repairs (including mixed repair objects) and final review
+    // retain native json_schema; other providers keep their own profiles.
+    const dailyJsonObject = model === DEFAULT_CLOUDFLARE_AI_MODEL && keys(schema.properties, ["stories"]);
+    if (local || dailyJsonObject) system = `${system}\nReturn only the final JSON object matching this schema:\n${JSON.stringify(schema)}`;
     const response = await aiRequestImpl({ ...(local ? {} : { accountId, apiToken }),
     model, messages: [{ role: "system", content: model === EXPERIMENTAL_FREE_WRITER_MODEL
       ? `${system}\nReturn one JSON object conforming to this schema:\n${JSON.stringify(schema)}\n/no_think`
       : model === FREE_REASONING_WRITER_MODEL ? `Reasoning: low\n${system}\nReturn only the final JSON object matching this schema:\n${JSON.stringify(schema)}` : system },
       { role: "user", content: JSON.stringify(data) }], schema,
-    responseFormat: model === EXPERIMENTAL_FREE_WRITER_MODEL ? "json_object" : "json_schema",
+    responseFormat: model === EXPERIMENTAL_FREE_WRITER_MODEL || dailyJsonObject ? "json_object" : "json_schema",
     validatePayload: (value) => Boolean(value && typeof value === "object"),
     maxTokens, maxAttempts: 1, maxRequestBytes: 70_000, maxResponseBytes: 100_000,
     // Qwen's published thinking profile uses sampling at 0.6. Do not override

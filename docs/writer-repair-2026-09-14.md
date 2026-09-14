@@ -68,3 +68,29 @@ All 847 regression tests pass, including complementary-passage support, strict
 subset rejection, and the observed four-repaired/three-approved pattern. The
 precise reason for the first live review mismatch was not recorded; clarification
 of the contract is not evidence that the rejected claim was actually correct.
+
+The next live check,
+[34842958468](https://github.com/itworksinprod/first-fold/actions/runs/34842958468)
+on `50d969f`, verified ten search-discovered publisher articles but failed before
+semantic review. The initial full-story response was invalid JSON at 732 observed
+completion tokens against a 4,000-token cap. Its single format-recovery request
+returned four drafts that failed originality, length, numeric-citation or prose
+checks. This is not evidence of an output-token-cap failure. No email was sent.
+
+## Full-story transport follow-up
+
+The full-story Llama request moves to the documented `json_object` mode, with
+the exact evidence-first schema explicitly included in the system instructions.
+This removes complex provider grammar constraints from long multi-story prose;
+strict JSON parsing and all local shape, factual, originality and semantic
+checks remain mandatory. Smaller targeted-edit and reviewer contracts retain
+`json_schema`. The same single repair slot and output budget apply. This is a
+bounded compatibility change, not a claim that the provider's internal cause
+has been established or that JSON mode guarantees correct news.
+
+Reference: [Cloudflare JSON Mode](https://developers.cloudflare.com/workers-ai/features/json-mode/).
+
+All 853 regression tests pass after the transport change. Real-adapter tests
+cover the full-story request, exact system schema, native-schema field repairs
+and review, one format recovery only, rejection of malformed/wrong objects,
+and rejection of broken reader prose inside otherwise valid JSON.
