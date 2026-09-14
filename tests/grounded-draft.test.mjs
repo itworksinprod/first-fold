@@ -1934,7 +1934,8 @@ test("daily parseable malformed story shapes spend one fresh recovery before exa
             "Recovery starts from trusted dossiers, never failed model instructions or candidate IDs");
         }
         if (calls.length === 3) {
-          assert.deepEqual(JSON.parse(options.messages[1].content).drafts, [{ draftSha256: hash(groundedDraft), draft: groundedDraft }]);
+          assert.deepEqual(JSON.parse(options.messages[1].content).drafts.map(({ claimEvidence: _pairing, ...entry }) => entry),
+            [{ draftSha256: hash(groundedDraft), draft: groundedDraft }]);
           assert.deepEqual(options.schema.properties.reviews.items.properties.draftSha256.enum, [hash(groundedDraft)]);
           assert.equal(options.responseFormat, "json_schema");
         }
@@ -2033,4 +2034,204 @@ test("daily shape recovery requires exact Cloudflare inference provenance and le
       return { ...response(malformed), model: FREE_REASONING_WRITER_MODEL };
     } }), null);
   assert.equal(ossCalls, 1, "This narrow recovery change applies only to the default daily model");
+});
+
+function candidateScopedReviewFixture() {
+  // Entirely synthetic: no text from the private provider diagnostic is stored here.
+  const firstDraft = structuredClone(groundedDraft);
+  firstDraft.claims[0] = {
+    text: "CERT/CC identifies a weakness in the AOMEI Backupper driver that gives a local user disk-write access. The report concerns access to physical disks through the installed backup component, rather than evidence of a remotely triggered incident.",
+    supports: [{ evidenceId: "S1P1" }, { evidenceId: "S1P2" }],
+  };
+  const first = structuredClone(candidate);
+  first.feedEvidence[0].articleExcerpt = "The affected capability requires local access. The advisory does not establish exploitation in the wild or identify a fixed version.";
+  const substitute = value => JSON.parse(JSON.stringify(value)
+    .replaceAll("AOMEI Backupper", "Lantern Backups").replaceAll("AOMEI", "Lantern")
+    .replaceAll("amwrtdrv.sys", "lanterndrv.sys").replaceAll("CERT/CC", "Assurance Lab")
+    .replaceAll("cert-advisory", "lantern-advisory"));
+  const second = { ...substitute(first), candidateId: "candidate-independent-review-scope", suggestedDesk: "work-and-tools" };
+  const secondDraft = { ...substitute(firstDraft), candidateId: second.candidateId };
+  const editorial = structuredClone(baseline);
+  editorial.desks[second.suggestedDesk] = structuredClone(editorial.desks["security-and-privacy"]);
+  editorial.desks[second.suggestedDesk].story.id = "separate-synthetic-story";
+  return { candidates: [first, second], drafts: [firstDraft, secondDraft], editorial };
+}
+
+test("daily review pairs exact claim passages within each candidate despite colliding evidence IDs", async () => {
+  const fixture = candidateScopedReviewFixture();
+  for (const [index, item] of fixture.candidates.entries()) {
+    assert.equal(validateGroundedStory(fixture.drafts[index], groundedDossiers([item])[0]), true);
+  }
+  const calls = [];
+  const nativeBodies = [];
+  const result = await synthesizeGroundedEditorial({ ...fixture, accountId: "0".repeat(32), apiToken: "synthetic-only",
+    aiRequestImpl: async options => {
+      calls.push(options);
+      const payload = calls.length === 1 ? { stories: [...fixture.drafts].reverse().map(draft => ({ ...draft, whyItMatters: "Too short." })) }
+        : calls.length === 2 ? dailyRepairPayload(options, fixture.drafts)
+        : { reviews: fixture.drafts.map(draft => ({ ...review, candidateId: draft.candidateId,
+          draftSha256: hash(draft), claimSupport: draft.claims.map(claim => claim.supports.map(support => support.evidenceId)) })) };
+      return requestWorkersAiEditorial({ ...options, fetchImpl: async (_url, init) => {
+        nativeBodies.push(JSON.parse(init.body));
+        return new Response(JSON.stringify({ success: true, result: { response: JSON.stringify(payload) }, errors: [] }), {
+          status: 200, headers: { "content-type": "application/json" },
+        });
+      } });
+    } });
+  assert.ok(result);
+  assert.deepEqual(calls.map(call => call.maxTokens), [4_000, 3_000, 800]);
+  assert.equal(calls.reduce((total, call) => total + call.maxTokens, 0), 7_800);
+  for (const call of calls.slice(0, 2)) {
+    assert.equal(call.messages[0].content.split("Distinguish a publisher's intended benefit from an observed improvement in ALL fields.").length, 2,
+      "Default writer and focused repair get the benefit qualification exactly once");
+    assert.match(call.messages[0].content, /do not report seamless operation, improved productivity/);
+    assert.match(call.messages[0].content, /Attribute the intention or explain a conditional/);
+  }
+  assert.match(calls[1].messages[0].content, /Use conditional analysis, not invented measured benefits/);
+  assert.match(calls[2].messages[0].content, /Judge each claimSupport independently from the whole-story flags/);
+  assert.match(calls[2].messages[0].content, /supported claims do not excuse inaccurate reader copy/);
+  assert.match(calls[2].messages[0].content, /design intent is not proof of an observed productivity gain/);
+  const written = JSON.parse(calls[0].messages[1].content);
+  const checked = JSON.parse(calls[2].messages[1].content);
+  assert.deepEqual(checked.dossiers, written.dossiers, "The paired view retains every original source passage and caveat");
+  assert.deepEqual(checked.drafts.map(entry => entry.draft.candidateId), fixture.drafts.map(draft => draft.candidateId).reverse(),
+    "The test reverses draft order to catch accidental index-based candidate pairing");
+  for (const entry of checked.drafts) {
+    const expectedDraft = fixture.drafts.find(draft => draft.candidateId === entry.draft.candidateId);
+    const sourceDossier = written.dossiers.find(item => item.candidateId === entry.draft.candidateId);
+    assert.deepEqual(entry.draft, expectedDraft);
+    assert.equal(entry.draftSha256, hash(expectedDraft));
+    assert.deepEqual(entry.claimEvidence, expectedDraft.claims.map((claim, claimIndex) => ({
+      claimIndex, claimText: claim.text, citations: claim.supports.map(support => {
+        const source = sourceDossier.sources.find(item => item.passages.some(passage => passage.evidenceId === support.evidenceId));
+        const passage = source.passages.find(item => item.evidenceId === support.evidenceId);
+        return { evidenceId: support.evidenceId, sourceId: source.sourceId, publisher: source.publisher,
+          publisherKey: source.publisherKey, relationship: source.relationship, text: passage.text };
+      }),
+    })));
+    assert.equal(entry.claimEvidence[0].citations[0].evidenceId, "S1P1");
+    const allSourceText = sourceDossier.sources.flatMap(source => source.passages.map(passage => passage.text)).join(" ");
+    assert.match(allSourceText, /requires local access/);
+    assert.match(allSourceText, /does not establish exploitation in the wild or identify a fixed version/);
+    assert.equal(entry.claimEvidence[1].citations.some(passage => /does not establish exploitation/.test(passage.text)), true,
+      "Cited uncertainty is carried whole into the paired view");
+  }
+  assert.notEqual(checked.drafts[0].claimEvidence[0].citations[0].text, checked.drafts[1].claimEvidence[0].citations[0].text);
+  assert.notEqual(checked.drafts[0].claimEvidence[0].citations[0].sourceId, checked.drafts[1].claimEvidence[0].citations[0].sourceId);
+  assert.ok(Buffer.byteLength(JSON.stringify(nativeBodies[2]), "utf8") <= 70_000);
+  assert.deepEqual(nativeBodies.map(body => body.response_format.type), ["json_object", "json_schema", "json_schema"]);
+});
+
+test("paired-evidence review never turns correct citation IDs into approval of false or misleading claims", async () => {
+  for (const [field, expectedCode] of [
+    ["factsSupported", "REVIEW_FACTS"], ["attributionAccurate", "REVIEW_ATTRIBUTION"],
+    ["analysisSupported", "REVIEW_ANALYSIS"], ["usefulAndSpecific", "REVIEW_USEFULNESS"],
+  ]) {
+    const calls = [];
+    const events = [];
+    const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
+      onDiagnostic: event => events.push(event), aiRequestImpl: async options => {
+        calls.push(options);
+        assert.ok(calls.length <= 2, "A factual veto cannot trigger another writer or reviewer");
+        return response(calls.length === 1 ? { stories: [groundedDraft] } : { reviews: [{ ...review, [field]: false }] });
+      } });
+    assert.equal(result, null, field);
+    assert.deepEqual(calls.map(call => call.maxTokens), [4_000, 800]);
+    assert.deepEqual(events.find(event => event.stage === "semantic-evidence-check").rejectionCodes, [expectedCode]);
+  }
+  let calls = 0;
+  const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate], aiRequestImpl: async () => {
+    calls++;
+    return response(calls === 1 ? { stories: [groundedDraft] }
+      : { reviews: [{ ...review, factsSupported: false, claimSupport: [[], []] }] });
+  } });
+  assert.equal(result, null, "The observed empty-support plus false-facts verdict remains a hard veto");
+  assert.equal(calls, 2);
+});
+
+test("missing, corrupt, duplicate or unknown citations never reach paired semantic review", async () => {
+  for (const supports of [[], [{ evidenceId: "S1P999" }], [{ evidenceId: "S1P2", text: "untrusted added evidence" }],
+    [{ evidenceId: "S1P2" }, { evidenceId: "S1P2" }], [{ evidenceId: null }]]) {
+    const draft = structuredClone(groundedDraft);
+    draft.claims[0].supports = supports;
+    assert.equal(validateGroundedStory(draft, dossier), false);
+    const calls = [];
+    const events = [];
+    const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
+      onDiagnostic: event => events.push(event), aiRequestImpl: async options => {
+        calls.push(options);
+        assert.ok(calls.length <= 2);
+        assert.equal(options.schema.properties.reviews, undefined);
+        if (calls.length === 1) return response({ stories: [draft] });
+        return response(dailyRepairPayload(options, [draft]));
+      } });
+    assert.equal(result, null);
+    assert.deepEqual(calls.map(call => call.maxTokens), [4_000, 3_000]);
+    assert.equal(events.some(event => event.stage === "semantic-evidence-check"), false,
+      "The source-pairing projection does not invent or repair missing source support");
+  }
+});
+
+test("an oversized optional pairing retains the entire original review dossier without changing factual vetoes", async () => {
+  // Long but complete synthetic publisher sentences exercise the existing byte bound,
+  // without private production copy or artificially increasing any runtime limit.
+  const summary = groundedEvidence.summary.replaceAll(". ", "; ").replace(/\.$/u, "") + ", " +
+    Array.from({ length: 35 }, () => "the disclosure provides contextual material for administrators assessing backup driver access and the limitations of the originating account")
+      .join(", ") + ".";
+  assert.ok(summary.length > 5_000 && summary.length < 5_700);
+  const desks = ["ai", "work-and-tools", "security-and-privacy", "platforms-and-power"];
+  const slate = desks.map((suggestedDesk, index) => {
+    const feedEvidence = [{ ...groundedEvidence, summary }, { ...groundedEvidence, summary,
+      sourceId: "independent-synthetic-advisory", publisher: "Example Observer", title: "Independent backup-driver disclosure context" }];
+    return { candidateId: `candidate-large-paired-view-${index}`, suggestedDesk, ranking: { evidenceTier: "corroborated" },
+      feedEvidence, sources: feedEvidence.map((evidence, sourceIndex) => ({ id: evidence.sourceId, title: evidence.title,
+        publisher: evidence.publisher, publisherKey: evidence.publisher, relationship: sourceIndex ? "independent" : "originating",
+        publishedAt: evidence.publishedAt })) };
+  });
+  const drafts = slate.map(item => ({ ...structuredClone(groundedDraft), candidateId: item.candidateId,
+    claims: groundedDraft.claims.map((claim, index) => ({ ...claim, supports: [{ evidenceId: `S${index + 1}P2` }] })) }));
+  const editorial = { frontPage: { note: "old", estimatedMinutes: 1 }, desks: Object.fromEntries(desks.map((desk, index) =>
+    [desk, { story: { ...structuredClone(baseline.desks["security-and-privacy"].story), id: `large-synthetic-${index}`, sources: slate[index].sources } }])) };
+  const dossiers = groundedDossiers(slate);
+  for (const [index, draft] of drafts.entries()) assert.equal(validateGroundedStory(draft, dossiers[index]), true);
+  const calls = [];
+  const nativeBodies = [];
+  const events = [];
+  const result = await synthesizeGroundedEditorial({ editorial, candidates: slate, accountId: "0".repeat(32), apiToken: "synthetic-only",
+    onDiagnostic: event => events.push(event), aiRequestImpl: async options => {
+      calls.push(options);
+      const payload = calls.length === 1 ? { stories: drafts } : { reviews: drafts.map(draft => ({ ...review,
+        candidateId: draft.candidateId, draftSha256: hash(draft), factsSupported: false,
+        claimSupport: draft.claims.map(claim => claim.supports.map(support => support.evidenceId)) })) };
+      return requestWorkersAiEditorial({ ...options, fetchImpl: async (_url, init) => {
+        nativeBodies.push(JSON.parse(init.body));
+        return new Response(JSON.stringify({ success: true, result: { response: JSON.stringify(payload) }, errors: [] }), {
+          status: 200, headers: { "content-type": "application/json" },
+        });
+      } });
+    } });
+  assert.equal(result, null, "Full-dossier fallback is not an approval fallback");
+  assert.deepEqual(calls.map(call => call.maxTokens), [4_000, 800]);
+  assert.equal(nativeBodies.length, 2, "Both original bounded requests fit the unchanged real adapter");
+  const written = JSON.parse(calls[0].messages[1].content);
+  const checked = JSON.parse(calls[1].messages[1].content);
+  assert.deepEqual(checked.dossiers, written.dossiers, "No source text or qualification is dropped to fit paired duplication");
+  assert.deepEqual(checked.drafts, drafts.map(draft => ({ draftSha256: hash(draft), draft })));
+  for (const sourceDossier of checked.dossiers) {
+    assert.equal(sourceDossier.sources.length, 2);
+    for (const source of sourceDossier.sources) {
+      assert.equal(source.passages.find(passage => passage.evidenceId.endsWith("P2")).text, summary);
+      assert.match(source.passages.map(passage => passage.text).join(" "), /does not establish exploitation in the wild or identify a fixed version/);
+    }
+  }
+  const originalBytes = Buffer.byteLength(JSON.stringify(nativeBodies[1]), "utf8");
+  assert.ok(originalBytes < 70_000);
+  assert.ok(originalBytes + Buffer.byteLength(summary, "utf8") * 8 > 70_000,
+    "The eight required full cited passages alone would take the optional duplicate view over its byte limit");
+  assert.deepEqual(events.find(event => event.stage === "semantic-evidence-pairing"), {
+    stage: "semantic-evidence-pairing", submitted: 4, paired: 0, reason: "ORIGINAL_VIEW_REQUEST_BOUND",
+  });
+  assert.doesNotMatch(calls[1].messages[0].content, /Each draft's claimEvidence/,
+    "No dangling instruction refers to an omitted optional view");
+  assert.deepEqual(events.find(event => event.stage === "semantic-evidence-check").rejectionCodes, ["REVIEW_FACTS"]);
 });

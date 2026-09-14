@@ -133,3 +133,28 @@ email or ledger writes. Its source, draft and review payloads are encrypted to
 an ephemeral public key; the private key stays on Carlos's Mac. The purpose is
 to compare rejected claims with their actual passages, not rerun a reviewer to
 obtain a more favorable verdict or publish rejected material.
+
+The private diagnostic
+[34846133947](https://github.com/itworksinprod/first-fold/actions/runs/34846133947)
+used two requests and a 4,800-token output allowance, with no provider error.
+Its artifact digest matched GitHub before local decryption. The 132-word draft
+passed local checks but its final review returned empty support for both claims.
+Manual comparison found a directly supported operating-system compatibility
+claim among those rejections, alongside overly confident promotional-benefit
+wording elsewhere in the draft. That does not justify approving the whole draft
+or assuming the same cause for previous batches.
+
+The follow-up supplies each review claim alongside its exact, locally resolved
+cited passages and publisher identity, while retaining the full dossier for
+qualifications and the full draft for all-field review. Per-claim support and
+whole-article verdicts are explicitly separate: a supported claim cannot excuse
+an overbroad headline or unsupported analysis. Default-writer guidance also
+distinguishes advertised benefits from measured outcomes. No captured draft is
+hardcoded or republished, and no previous rejected review is retried for approval.
+
+All 862 tests pass. Synthetic regressions cover colliding passage IDs across
+different candidates, preserved full-source caveats, unchanged factual and
+whole-article vetoes, and conditional-benefit instructions on initial writing
+and focused repairs. If the optional duplicated evidence view exceeds the
+existing 70KB request limit, the original complete review view is retained.
+Call and output-token limits are unchanged; pairing can add bounded input tokens.
