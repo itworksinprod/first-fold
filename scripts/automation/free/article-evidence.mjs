@@ -8,10 +8,51 @@ function plain(value) {
   return value.replace(/<[^<>]*>/g, " ").replace(/&#(x[0-9a-f]+|[0-9]+);/gi, (_, code) => {
     const n = code[0].toLowerCase() === "x" ? parseInt(code.slice(1), 16) : Number(code);
     return n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : " ";
-  }).replace(/&(amp|lt|gt|quot|apos|nbsp|ndash|mdash|rsquo|lsquo);/g, (_, name) =>
+  }).replace(/&(amp|lt|gt|quot|apos|nbsp|ndash|mdash|rsquo|lsquo|ldquo|rdquo);/g, (_, name) =>
     ({ amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ",
-      ndash: "–", mdash: "—", rsquo: "’", lsquo: "‘" })[name])
+      ndash: "–", mdash: "—", rsquo: "’", lsquo: "‘", ldquo: "“", rdquo: "”" })[name])
     .replace(/[\p{Cc}\p{Cf}]/gu, " ").replace(/\s+/g, " ").trim();
+}
+
+// Publisher templates often put ads, recommendations and author widgets inside
+// <article>. Match the observed content containers with balanced div boundaries,
+// not a lazy regex that stops at an inner </div> and loses later caveats.
+function divRegions(html) {
+  const stack = [];
+  const regions = [];
+  for (const match of html.matchAll(/<\/?div\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi)) {
+    if (/^<\//.test(match[0])) {
+      const start = stack.pop();
+      if (start) regions.push({ ...start, end: match.index + match[0].length, innerEnd: match.index });
+    } else if (!/\/\s*>$/.test(match[0])) {
+      if (stack.length >= 128) return null;
+      const attributes = {};
+      for (const attr of match[0].matchAll(/\s(class|itemprop)\s*=\s*(["'])(.*?)\2/gi)) {
+        attributes[attr[1].toLowerCase()] = attr[3].toLowerCase().split(/\s+/u);
+      }
+      stack.push({ start: match.index, innerStart: match.index + match[0].length, attributes });
+    }
+  }
+  return regions.sort((a, b) => a.start - b.start);
+}
+
+function cleanArticleContainers(body) {
+  const regions = divRegions(body);
+  if (!regions) return "";
+  const dedicated = regions.find(({ attributes }) => attributes.itemprop?.includes("articlebody") ||
+    attributes.class?.some(name => ["articlebody", "zox-post-body"].includes(name)));
+  if (dedicated) body = body.slice(dedicated.innerStart, dedicated.innerEnd);
+  const inner = divRegions(body);
+  if (!inner) return "";
+  const noise = new Set(["article-callout", "cz-related-article-wrapp", "zox-post-ad-wrap"]);
+  let end = 0;
+  let cleaned = "";
+  for (const region of inner) {
+    if (region.start < end || !region.attributes.class?.some(name => noise.has(name))) continue;
+    cleaned += body.slice(end, region.start) + " ";
+    end = region.end;
+  }
+  return cleaned + body.slice(end);
 }
 
 export function extractArticleEvidence(html) {
@@ -28,18 +69,28 @@ export function extractArticleEvidence(html) {
     // CERT/CC's legacy template uses a named overview/solution region, not main.
     body.match(/<h3\b[^>]*id=["']overview["'][^>]*>([\s\S]*?)(?=<div\b[^>]*id=["']vendorinfo["'])/i)?.[1] ?? "";
   if (!body) return ""; // No confident article region: retain the feed evidence.
-  const blocks = [...body.matchAll(/<(p|h[1-4]|li)\b[^>]*>([\s\S]*?)<\/\1\s*>/gi)]
+  const title = plain(body.match(/<h1\b[^>]*>([\s\S]*?)<\/h1\s*>/i)?.[1] ?? "");
+  body = cleanArticleContainers(body);
+  // HTML permits omitted </p> and </li> tags. A new block closes the previous
+  // block; otherwise an entire article can collapse into one giant paragraph.
+  const blocks = [...body.matchAll(/<(p|h[1-4]|li)\b[^>]*>([\s\S]*?)(?=<(?:p|h[1-4]|li)\b|<\/(?:p|h[1-4]|li)\s*>|$)/gi)]
     .map((match) => plain(match[2]))
-    .filter((text) => text.length > 30 && !/^(?:subscribe|sign up|cookie|share this|all rights reserved)/i.test(text));
+    .filter((text) => text.length > 30 && !/^(?:subscribe|sign up|cookie|share this|all rights reserved|related\s*:)/i.test(text));
   // Read across the already size-bounded article, not just its introduction.
   // Keep complete factual/caveat blocks with their context inside the same
   // excerpt budget; no added fetches, model calls or clipped sentences.
-  const title = plain(body.match(/<h1\b[^>]*>([\s\S]*?)<\/h1\s*>/i)?.[1] ?? "");
   const kept = selectEvidencePassages(blocks, { title,
     maxChars: MAX_ARTICLE_EXCERPT_CHARS, minChars: 31 });
-  const text = kept.join(" ");
+  const text = kept.join("\n");
   if (text.length < 120) return "";
   return text;
+}
+
+export function articleScoringSummary(excerpt, title) {
+  if (typeof excerpt !== "string" || excerpt.length > MAX_ARTICLE_EXCERPT_CHARS) return "";
+  return selectEvidencePassages(excerpt.split(/\n+|(?<=[.!?])\s+(?=[A-Z0-9])/u), {
+    title, maxChars: 1_200, minChars: 20,
+  }).join("\n");
 }
 
 export async function enrichShortlist(items, { assess, fetchArticle } = {}) {
@@ -77,8 +128,10 @@ export async function enrichShortlist(items, { assess, fetchArticle } = {}) {
         if (typeof excerpt !== "string" || excerpt.length < 120 || excerpt.length > MAX_ARTICLE_EXCERPT_CHARS) continue;
         // Identical scoring rules, now with substantive article evidence. Keep
         // the input length the same as feed summaries to limit keyword volume.
-        enriched.set(item.url, { ...item, articleExcerpt: excerpt,
-          summary: `${excerpt} ${item.summary}`.slice(0, 1_200) });
+        // Scoring receives complete source sentences inside the old 1,200-char
+        // limit, never a mid-word fragment later recycled as factual evidence.
+        const summary = articleScoringSummary(excerpt, item.title);
+        enriched.set(item.url, { ...item, articleExcerpt: excerpt, summary: summary || item.summary });
       } catch {
         // A blocked or unavailable page is not evidence of a quiet news day.
         // The original feed stays eligible under the unchanged evidence rules.

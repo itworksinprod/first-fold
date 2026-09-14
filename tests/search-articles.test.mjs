@@ -21,7 +21,7 @@ test("search admission derives facts, title, dates and identity only from the re
   assert.equal(items.length, 1);
   const item = items[0];
   assert.equal(item.title, title);
-  assert.equal(item.summary, `${title} ${paragraph}`);
+  assert.equal(item.summary.replace(/\s+/g, " "), `${title} ${paragraph}`);
   assert.equal(item.publishedAt, "2026-09-10T12:30:00.000Z");
   assert.equal(item.publisher, "OpenAI");
   assert.equal(item.publisherKey, "openai");
@@ -36,6 +36,15 @@ test("search admission derives facts, title, dates and identity only from the re
   assert.equal(item.deskPriors["security-and-privacy"], 0, "Search desk hints must not alter source priors");
   assert.equal(JSON.stringify(item).includes("Untrusted search"), false);
   assert.deepEqual(diagnostics, { considered: 1, fetched: 1, admitted: 1, rejected: {} });
+});
+
+test("search admission never creates a cut-off evidence sentence at the scoring summary limit", async () => {
+  const sentences = Array.from({ length: 14 }, (_, i) => `The product release ${i} adds audit records for administrator activity and gives teams a detailed view of changes across shared services.`);
+  const { items } = await run(article(undefined, sentences.join("</p><p>")));
+  assert.equal(items.length, 1);
+  assert.ok(items[0].summary.length <= 1_200);
+  assert.ok(items[0].summary.endsWith("."));
+  for (const line of items[0].summary.split("\n")) assert.ok(line === title || sentences.includes(line));
 });
 
 test("only exact reviewed HTTPS hosts are fetched, never unknown leads or unsafe URL variants", async () => {

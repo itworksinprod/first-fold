@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { extractArticleEvidence } from "./article-evidence.mjs";
+import { extractArticleEvidence, articleScoringSummary } from "./article-evidence.mjs";
 import { reviewedSearchPublisher } from "./publisher-registry.mjs";
 
 export const MAX_SEARCH_ARTICLE_FETCHES = 24;
@@ -199,7 +199,7 @@ export async function admitSearchArticles({ results, reportingWindow, retrievedA
           itemId: `search-${source.id}-${createHash("sha256").update(final.url).digest("hex").slice(0, 16)}`,
           sourceId: source.id, publisher: source.publisher, publisherKey: source.publisherKey,
           relationship: source.relationship, primaryEntity: source.primaryEntity ?? null,
-          title: metadata.title, summary: excerpt.slice(0, 1_200), articleExcerpt: excerpt,
+          title: metadata.title, summary: articleScoringSummary(excerpt, metadata.title) || metadata.title, articleExcerpt: excerpt,
           url: final.url, discoveryUrl: final.url, discoveryKind: "web-search",
           // Publisher homepage is explicitly context only, never a fabricated
           // feed item or a second factual source for corroboration.
