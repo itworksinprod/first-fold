@@ -98,7 +98,13 @@ function cancel(body) {
   try { Promise.resolve(body?.cancel()).catch(() => {}); } catch { /* best effort */ }
 }
 
-async function readResponse(response, maximum) {
+const timeoutFailure = () => failure("LOCAL_AI_CLIENT_TIMEOUT", "The local writer exceeded its bounded deadline.");
+function assertActive(signal) {
+  if (signal.aborted) throw timeoutFailure();
+}
+
+async function readResponse(response, maximum, signal) {
+  assertActive(signal);
   if (Number(response.headers.get("content-length")) > maximum ||
       !response.body || typeof response.body.getReader !== "function") {
     cancel(response.body);
@@ -108,21 +114,34 @@ async function readResponse(response, maximum) {
   const decoder = new TextDecoder("utf-8", { fatal: true });
   let byteCount = 0;
   let text = "";
+  let rejectAbort;
+  const aborted = new Promise((_, reject) => { rejectAbort = reject; });
+  const abortRead = () => {
+    // AbortSignal alone is not enough for an already-returned custom stream.
+    // Cancel its active reader without waiting for the producer's cleanup.
+    cancel(reader);
+    rejectAbort(timeoutFailure());
+  };
+  signal.addEventListener("abort", abortRead, { once: true });
   try {
     while (true) {
-      const { done, value } = await reader.read();
+      const { done, value } = await Promise.race([reader.read(), aborted]);
+      assertActive(signal);
       if (done) break;
       if (!(value instanceof Uint8Array)) throw new Error();
       byteCount += value.byteLength;
       if (byteCount > maximum) throw new Error();
       text += decoder.decode(value, { stream: true });
     }
+    assertActive(signal);
     return text + decoder.decode();
   } catch {
-    try { Promise.resolve(reader.cancel()).catch(() => {}); } catch { /* best effort */ }
+    if (signal.aborted) throw timeoutFailure();
+    cancel(reader);
     throw failure(LOCAL_AI_EDITORIAL_UNAVAILABLE, "The local writer response exceeded its bounds or was unreadable.");
   } finally {
-    reader.releaseLock();
+    signal.removeEventListener("abort", abortRead);
+    try { reader.releaseLock(); } catch { /* cleanup must not replace a sanitized error */ }
   }
 }
 
@@ -175,7 +194,7 @@ export async function requestLocalAiEditorial({ model = LOCAL_AI_MODEL, messages
   const deadline = new Promise((_, reject) => {
     timer = setTimeout(() => {
       controller.abort();
-      reject(failure("LOCAL_AI_CLIENT_TIMEOUT", "The local writer exceeded its bounded deadline."));
+      reject(timeoutFailure());
     }, timeoutMs);
   });
   const attempt = async () => {
@@ -185,6 +204,10 @@ export async function requestLocalAiEditorial({ model = LOCAL_AI_MODEL, messages
       body: requestText, redirect: "error", credentials: "omit", cache: "no-store",
       signal: controller.signal,
     });
+    if (controller.signal.aborted) {
+      cancel(response?.body);
+      throw timeoutFailure();
+    }
     if (!response || typeof response.ok !== "boolean" || !Number.isInteger(response.status) ||
         response.status < 100 || response.status > 599 || response.redirected === true ||
         (response.url && response.url !== LOCAL_AI_URL)) {
@@ -199,7 +222,8 @@ export async function requestLocalAiEditorial({ model = LOCAL_AI_MODEL, messages
       cancel(response.body);
       throw failure(LOCAL_AI_EDITORIAL_UNAVAILABLE, "The local writer returned a non-JSON HTTP response.");
     }
-    const responseText = await readResponse(response, maxResponseBytes);
+    const responseText = await readResponse(response, maxResponseBytes, controller.signal);
+    assertActive(controller.signal);
     const responseSha256 = hash(responseText);
     const inference = { provider: LOCAL_AI_PROVIDER, model: LOCAL_AI_MODEL,
       responseId: `local-${responseSha256}`, requestSha256, responseSha256 };
@@ -210,7 +234,9 @@ export async function requestLocalAiEditorial({ model = LOCAL_AI_MODEL, messages
     }
     const editorialPayload = extractPayload(envelope, inference, maxTokens);
     let verdict;
+    assertActive(controller.signal);
     try { verdict = await validatePayload(clone(editorialPayload)); } catch { /* sanitized below */ }
+    assertActive(controller.signal);
     if (!(verdict === true || (object(verdict) && verdict.valid === true))) {
       throw failure(LOCAL_AI_EDITORIAL_FORMAT_INVALID, "The local writer editorial object failed local schema validation.",
         { inference, formatReason: "SCHEMA_VALIDATION_FAILED" });
@@ -222,6 +248,9 @@ export async function requestLocalAiEditorial({ model = LOCAL_AI_MODEL, messages
   try {
     return await Promise.race([attempt(), deadline]);
   } catch (error) {
+    // A transport's own abort rejection can race the deadline promise. The
+    // caller should still receive the truthful bounded-timeout classification.
+    if (controller.signal.aborted) throw timeoutFailure();
     if (error instanceof LocalAiError && [LOCAL_AI_EDITORIAL_UNAVAILABLE, LOCAL_AI_EDITORIAL_FORMAT_INVALID,
       "LOCAL_AI_CLIENT_TIMEOUT"].includes(error.code)) throw error;
     throw failure(LOCAL_AI_EDITORIAL_UNAVAILABLE, "The local writer request failed without a usable response.");

@@ -204,6 +204,58 @@ test("deadline includes a stalled local validator", async () => {
     (error) => error.code === "LOCAL_AI_CLIENT_TIMEOUT");
 });
 
+test("deadline cancels and unlocks a stalled response body without waiting for producer cleanup", async () => {
+  let calls = 0; let cancellations = 0; let validations = 0; let signal;
+  const body = new ReadableStream({ cancel() {
+    cancellations++;
+    return new Promise(() => {});
+  } });
+  await assert.rejects(requestLocalAiEditorial(options({ timeoutMs: 10,
+    validatePayload: () => { validations++; return true; },
+    fetchImpl: async (_url, init) => {
+      calls++; signal = init.signal;
+      return new Response(body, { headers: { "content-type": "application/json" } });
+    },
+  })), (error) => error.code === "LOCAL_AI_CLIENT_TIMEOUT");
+  // Let reader cleanup finish without permitting another transport attempt.
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(calls, 1);
+  assert.equal(cancellations, 1);
+  assert.equal(validations, 0);
+  assert.equal(signal.aborted, true);
+  assert.equal(body.locked, false);
+});
+
+test("a transport response arriving after timeout is cancelled before parsing or validation", async () => {
+  let resolveFetch; let calls = 0; let cancellations = 0; let validations = 0;
+  const body = new ReadableStream({ cancel() { cancellations++; } });
+  await assert.rejects(requestLocalAiEditorial(options({ timeoutMs: 10,
+    validatePayload: () => { validations++; return true; },
+    fetchImpl: () => { calls++; return new Promise(resolve => { resolveFetch = resolve; }); },
+  })), (error) => error.code === "LOCAL_AI_CLIENT_TIMEOUT");
+  resolveFetch(new Response(body, { headers: { "content-type": "application/json" } }));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(calls, 1);
+  assert.equal(cancellations, 1);
+  assert.equal(validations, 0);
+  assert.equal(body.locked, false);
+});
+
+test("a validator completing after timeout cannot change the failed result or cause a retry", async () => {
+  let resolveValidation; let calls = 0; let validations = 0; let signal;
+  const result = requestLocalAiEditorial(options({ timeoutMs: 10,
+    fetchImpl: async (_url, init) => { calls++; signal = init.signal; return response(); },
+    validatePayload: () => { validations++; return new Promise(resolve => { resolveValidation = resolve; }); },
+  }));
+  await assert.rejects(result, (error) => error.code === "LOCAL_AI_CLIENT_TIMEOUT");
+  resolveValidation({ valid: true });
+  await new Promise(resolve => setImmediate(resolve));
+  await assert.rejects(result, (error) => error.code === "LOCAL_AI_CLIENT_TIMEOUT");
+  assert.equal(calls, 1);
+  assert.equal(validations, 1);
+  assert.equal(signal.aborted, true);
+});
+
 test("fixed endpoint export cannot be overridden by supplied shared transport options", () => {
   assert.equal(LOCAL_AI_URL, "http://127.0.0.1:11434/api/chat");
   assert.equal(LOCAL_AI_MODEL, "qwen3:30b-a3b");
