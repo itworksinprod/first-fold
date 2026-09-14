@@ -1,0 +1,45 @@
+name: Send requested local-model paper preview
+# One owner-requested September 13 preview. Expires at midnight Eastern.
+# Only public-news JSON crosses from the Mac; all email credentials stay here.
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_gzip_base64:
+        description: Canonical public-news candidate, gzip then base64 (maximum 60000 characters; no secrets or local paths)
+        required: true
+        type: string
+      candidate_sha256:
+        description: SHA-256 of the exact uncompressed canonical JSON
+        required: true
+        type: string
+      confirmation:
+        description: Type SEND LOCAL PREVIEW 2026-09-13
+        required: true
+        type: string
+permissions: {}
+concurrency:
+  group: personal-morning-paper
+  cancel-in-progress: false
+jobs:
+  preview:
+    if: github.repository == 'itworksinprod/first-fold' && github.ref == 'refs/heads/main' && github.actor == 'itworksinprod' && github.triggering_actor == 'itworksinprod' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: '24'
+      - name: Test before using credentials
+        run: npm test
+      - name: Validate the confirmed candidate and recheck publisher links without email credentials
+        run: node scripts/automation/local-paper-preview.mjs --validate
+      - name: Revalidate and send the requested local-model preview once
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          PERSONAL_PAPER_EMAIL: ${{ secrets.PERSONAL_PAPER_EMAIL }}
+        run: node scripts/automation/local-paper-preview.mjs --send

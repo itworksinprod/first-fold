@@ -12,6 +12,8 @@ const QUOTED_SCHEMA_KEY = new RegExp(`["'](?:${SCHEMA_KEYS})["']\\s*:`, "i");
 const BARE_CAMEL_CASE_KEY = /\b(?:candidateId|evidenceId|whatHappened|whyItMatters|whatToDoOrWatch|draftSha256|factsSupported|attributionAccurate|analysisSupported|usefulAndSpecific|sourceIds|editorialPayload)\s*:/i;
 const JSON_VALUE = /["'][A-Za-z_][A-Za-z0-9_]{0,63}["']\s*:\s*(?:["'\[{]|-?\d|true\b|false\b|null\b)/i;
 const JSON_STRUCTURES = /(?:[}\]]\s*){2,}|\[\s*\{|\}\s*,\s*\{/;
+// Match citation-shaped internal evidence labels, not a bare product/part name.
+const INTERNAL_CITATION = /[([]\s*(?:(?:sources?|evidence|passages?)\s*:?\s*)?S[12]P[1-9]\d*(?:\s*[,;]\s*S[12]P[1-9]\d*)*\s*[)\]]|\b(?:evidence|source|passage)(?:\s+IDs?)?\s*[:#]\s*S[12]P[1-9]\d*\b/iu;
 const DANGLING_ENDING = /\b(?:and|or|but|because|although|unless|whether|whereas|despite|including|such as|due to|as well as|in order to)[.!?]$/i;
 
 function detectionText(text) {
@@ -62,6 +64,7 @@ export function readerProseErrors(text, { paragraph = false } = {}) {
   if (JSON_STRUCTURES.test(normalized) || /(?:^|\n)\s*```/u.test(normalized)) {
     errors.push("READER_PROSE_STRUCTURE");
   }
+  if (INTERNAL_CITATION.test(normalized)) errors.push("READER_PROSE_INTERNAL_CITATION");
   if (paragraph) {
     // Remove only ordinary closing punctuation for the ending check. Curly
     // braces are never sentence closers; bracket tails are checked above.

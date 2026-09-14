@@ -3,6 +3,7 @@ import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
 import { HISTORICAL_PREVIEW, assertHistoricalPreviewAuthorization,
   isHistoricalPreviewRecord, isHistoricalPreviewTiming } from "./historical-preview-policy.mjs";
+import { isLocalPreviewRecord, isLocalPreviewTiming } from "./local-preview-policy.mjs";
 
 const DESKS = [
   "ai",
@@ -473,6 +474,18 @@ function analyzeNewsroomDraft(edition, options = {}) {
       options.temporalMode === "personal-free-same-day-backfill" &&
       edition.provenance?.personalFreeResearch?.workflow === "personal-morning-paper" &&
       edition.provenance?.personalFreeResearch?.runMode === "same_day_backfill"
+    ) || (
+      options.temporalMode === "local-requested-preview" &&
+      historicalResearch?.workflow === "local-paper-preview" &&
+      historicalResearch?.runMode === "requested_local_preview" &&
+      historicalResearch?.provider === "ollama-local" &&
+      historicalResearch?.model === "qwen3:30b-a3b" &&
+      historicalResearch?.inference === "local-ai" &&
+      historicalResearch?.draftingMode === "source-grounded-summary" &&
+      isLocalPreviewRecord(historicalResearch.localPreview) &&
+      isLocalPreviewTiming({ editionDate: edition.editionDate,
+        generatedAt: edition.publication?.generatedAt, checkedAt }) &&
+      edition.status === "validated" && edition.publication?.publishedAt === null
     );
 
   const windowStart = parseInstant(edition.reportingWindow?.startInclusive);

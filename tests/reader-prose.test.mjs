@@ -96,3 +96,17 @@ test("invalid inputs use stable reason codes and never get silently coerced", ()
   for (const input of ["", " ", "\n"]) assert.deepEqual(readerProseErrors(input), ["READER_PROSE_EMPTY"]);
   assert.deepEqual(readerProseErrors('Short copy, "whyItMatters": "more'), ["READER_PROSE_SCHEMA_FRAGMENT"]);
 });
+
+test("internal evidence citation syntax is not reader copy, while ordinary part names remain valid", () => {
+  for (const copy of [
+    "The advisory describes affected systems (S1P2, S1P3).",
+    "The advisory describes affected systems [S2P15].",
+    "The model adds a shortcut (evidence: S1P14).",
+    "The app is now available; source ID: S1P2.",
+  ]) assert.deepEqual(readerProseErrors(copy, { paragraph: true }), ["READER_PROSE_INTERNAL_CITATION"], copy);
+  for (const copy of [
+    "The S1P2 controller receives a firmware update.",
+    "The guide lists the S2P15 part number.",
+    "Model S1P2 now supports JSON output.",
+  ]) assert.deepEqual(readerProseErrors(copy, { paragraph: true }), [], copy);
+});

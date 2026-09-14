@@ -23,9 +23,23 @@ const DOCUMENTED_FAILURE_CODES = new Set([3003, 3006, 3007, 3008, 3023, 3036, 30
 const FORMAT_REASONS = new Set(["OUTPUT_TOKEN_LIMIT", "PAYLOAD_MISSING", "PAYLOAD_JSON_INVALID"]);
 const PRIVATE_FAILURE_MAX_BODY_BYTES = 8_192;
 const PRIVATE_FAILURE_CALLBACK_TIMEOUT_MS = 1_000;
+const DAILY_FREE_ALLOCATION_EXHAUSTED = "DAILY_FREE_ALLOCATION_EXHAUSTED";
+// Cloudflare returned this otherwise-undocumented 4006 wrapper in the private
+// diagnostic on 2026-09-14. Do not treat arbitrary 4006/429 errors as quota
+// exhaustion or expose this message/request UUID in public diagnostics.
+const OBSERVED_DAILY_ALLOCATION_MESSAGE = /^AiError: AiError: you have used up your daily free allocation of 10,000 neurons, please upgrade to Cloudflare's Workers Paid plan if you would like to continue usage\. \([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\)$/;
 function documentedFailureCode(value) {
   const code = typeof value === "string" && /^\d{4}$/.test(value) ? Number(value) : value;
   return DOCUMENTED_FAILURE_CODES.has(code) ? code : null;
+}
+function dailyAllocationExhausted(status, envelope) {
+  if (status !== 429 || !isObject(envelope) || envelope.success !== false ||
+    (Object.hasOwn(envelope, "result") && envelope.result !== null) ||
+    !Array.isArray(envelope.errors) || envelope.errors.length !== 1 || !isObject(envelope.errors[0])) return false;
+  const [failure] = envelope.errors;
+  return documentedFailureCode(failure.code) === 3036 ||
+    ((failure.code === 4006 || failure.code === "4006") &&
+      typeof failure.message === "string" && OBSERVED_DAILY_ALLOCATION_MESSAGE.test(failure.message));
 }
 function attachFailureDetails(error, status, envelope) {
   const codes = Array.isArray(envelope?.errors) ? envelope.errors.slice(0, 16)
@@ -33,6 +47,7 @@ function attachFailureDetails(error, status, envelope) {
   Object.defineProperties(error, {
     httpStatus: { value: Number.isInteger(status) && status >= 100 && status <= 599 ? status : null },
     providerCode: { value: new Set(codes).size === 1 ? codes[0] : null },
+    failureReason: { value: dailyAllocationExhausted(status, envelope) ? DAILY_FREE_ALLOCATION_EXHAUSTED : null },
   });
   return error;
 }
@@ -42,6 +57,8 @@ export function workersAiFailureDiagnostic(error) {
       ? String(error.httpStatus) : /^Cloudflare Workers AI request failed with HTTP ([1-5]\d{2})\.$/.exec(error?.message ?? "")?.[1] ?? null,
     providerCode: DOCUMENTED_FAILURE_CODES.has(error?.providerCode) ? error.providerCode : null,
     ...(FORMAT_REASONS.has(error?.formatReason) ? { formatReason: error.formatReason } : {}),
+    ...(error?.httpStatus === 429 && error?.failureReason === DAILY_FREE_ALLOCATION_EXHAUSTED
+      ? { reason: DAILY_FREE_ALLOCATION_EXHAUSTED } : {}),
   };
 }
 

@@ -156,6 +156,38 @@ test("deterministic newsroom QA returns a machine-readable pass", () => {
   });
 });
 
+test("local preview late QA requires exact private local provenance and same-day timing", () => {
+  const edition = JSON.parse(JSON.stringify(editionFixture()).replaceAll("2026-08-19", "2026-09-12")
+    .replaceAll("2026-08-20", "2026-09-13"));
+  const late = "2026-09-14T02:15:00.000Z";
+  edition.status = "validated";
+  edition.publication.generatedAt = late;
+  edition.provenance = { personalFreeResearch: {
+    workflow: "local-paper-preview", runMode: "requested_local_preview",
+    provider: "ollama-local", model: "qwen3:30b-a3b", inference: "local-ai",
+    draftingMode: "source-grounded-summary", localPreview: {
+      editionDate: "2026-09-13", requestedOn: "2026-09-13", revision: "ollama-preview-2026-09-13",
+    },
+  } };
+  for (const source of edition.desks.ai.story.sources) source.retrievedAt = late;
+  const options = { checkedAt: late, temporalMode: "local-requested-preview" };
+  assert.equal(validateNewsroomDraft(edition, options).status, "passed");
+  assert.ok(issueCodes(validateNewsroomDraft(edition, { checkedAt: late })).includes("GENERATED_AFTER_PUBLICATION"));
+  for (const field of ["workflow", "runMode", "provider", "model", "inference", "draftingMode"]) {
+    const changed = structuredClone(edition);
+    changed.provenance.personalFreeResearch[field] = "untrusted";
+    assert.ok(issueCodes(validateNewsroomDraft(changed, options)).includes("GENERATED_AFTER_PUBLICATION"));
+  }
+  for (const change of [
+    value => { value.status = "published"; },
+    value => { value.provenance.personalFreeResearch.localPreview.revision = "forged"; },
+    value => { value.publication.generatedAt = "2026-09-14T04:01:00.000Z"; },
+  ]) {
+    const changed = structuredClone(edition); change(changed);
+    assert.ok(issueCodes(validateNewsroomDraft(changed, options)).includes("GENERATED_AFTER_PUBLICATION"));
+  }
+});
+
 test("late timestamps are exempt only for an explicitly marked same-day backfill lane", () => {
   const edition = editionFixture();
   const lateInstant = "2026-08-20T18:15:00.000Z";

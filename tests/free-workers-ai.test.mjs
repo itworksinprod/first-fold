@@ -37,7 +37,8 @@ test("unavailable responses retain only documented status/code diagnostics witho
           errors: [{ code, message: `sensitive provider text ${apiToken}` }] }),
         { status, headers: { "content-type": "application/json" } });
       } }), error => {
-        assert.deepEqual(workersAiFailureDiagnostic(error), { httpStatus: String(status), providerCode: code });
+        assert.deepEqual(workersAiFailureDiagnostic(error), { httpStatus: String(status), providerCode: code,
+          ...(code === 3036 ? { reason: "DAILY_FREE_ALLOCATION_EXHAUSTED" } : {}) });
         assert.doesNotMatch(JSON.stringify(error), /sensitive|cloudflare-test-token/);
         assert.doesNotMatch(error.message, /sensitive|cloudflare-test-token/);
         return true;
@@ -55,11 +56,72 @@ test("documented numeric-string error codes normalize without widening public di
       fetchImpl: async () => new Response(JSON.stringify({ success: false, result: null,
         errors: [{ code, message: `private ${apiToken}` }] }), { status: 429, headers: { "content-type": "application/json" } }),
     })), (error) => {
-      assert.deepEqual(workersAiFailureDiagnostic(error), { httpStatus: "429", providerCode: expected });
+      assert.deepEqual(workersAiFailureDiagnostic(error), { httpStatus: "429", providerCode: expected,
+        ...(expected === 3036 ? { reason: "DAILY_FREE_ALLOCATION_EXHAUSTED" } : {}) });
       assert.doesNotMatch(error.message, /private|cloudflare-test-token/);
       return true;
     });
   }
+});
+
+const observedQuotaMessage = "AiError: AiError: you have used up your daily free allocation of 10,000 neurons, please upgrade to Cloudflare's Workers Paid plan if you would like to continue usage. (c523e410-c7e7-41e5-b675-99919881a8a1)";
+
+test("the exact observed 4006 quota wrapper exposes only a fixed safe reason", async () => {
+  for (const code of [4006, "4006", 3036, "3036"]) {
+    let calls = 0;
+    await assert.rejects(requestWorkersAiEditorial(requestOptions({ maxAttempts: 1,
+      fetchImpl: async () => {
+        calls++;
+        return new Response(JSON.stringify({ success: false, result: null,
+          errors: [{ code, message: observedQuotaMessage }] }), { status: 429, headers: { "content-type": "application/json" } });
+      },
+    })), (error) => {
+      assert.equal(error.code, WORKERS_AI_EDITORIAL_UNAVAILABLE);
+      assert.equal(error.attemptCount, 1);
+      assert.deepEqual(workersAiFailureDiagnostic(error), { httpStatus: "429",
+        providerCode: Number(code) === 3036 ? 3036 : null, reason: "DAILY_FREE_ALLOCATION_EXHAUSTED" });
+      assert.deepEqual(Object.keys(error), []);
+      assert.doesNotMatch(JSON.stringify(workersAiFailureDiagnostic(error)), /AiError|neurons|c523e410|upgrade|4006/);
+      assert.doesNotMatch(error.message, /AiError|neurons|c523e410|upgrade|4006/);
+      return true;
+    });
+    assert.equal(calls, 1);
+  }
+});
+
+test("quota diagnosis rejects ambiguous codes, message near-matches, multiple errors and successful envelopes", async () => {
+  const quotaError = { code: 4006, message: observedQuotaMessage };
+  const failures = [
+    [429, { success: false, errors: [{ code: 4006, message: "No more data centers to forward the request to" }] }],
+    [429, { success: false, errors: [{ code: 4006, message: `arbitrary ${apiToken}` }] }],
+    [429, { success: false, errors: [{ code: 4006, message: observedQuotaMessage.replace("10,000", "20,000") }] }],
+    [429, { success: false, errors: [{ code: 4006, message: `${observedQuotaMessage} ` }] }],
+    [429, { success: false, errors: [{ code: 4006, message: observedQuotaMessage.replace("AiError: AiError: ", "") }] }],
+    [429, { success: false, errors: [{ code: 4006, message: observedQuotaMessage.replace("c523e410-c7e7-41e5-b675-99919881a8a1", apiToken) }] }],
+    [429, { success: false, errors: [{ code: 3040, message: observedQuotaMessage }] }],
+    [429, { success: false, errors: [{ code: "04006", message: observedQuotaMessage }] }],
+    [429, { success: false, errors: [quotaError, { code: 3040, message: "Out of capacity" }] }],
+    [429, { success: false, errors: [{ code: 3036 }, { code: 3036 }] }],
+    [429, { success: false, result: { response: payload }, errors: [quotaError] }],
+    [429, { success: true, result: { response: payload }, errors: [quotaError] }],
+    [429, { errors: [quotaError] }],
+    [200, { success: false, errors: [quotaError] }],
+    [403, { success: false, errors: [quotaError] }],
+    [200, { success: false, errors: [{ code: 3036 }] }],
+  ];
+  for (const [status, envelope] of failures) {
+    await assert.rejects(requestWorkersAiEditorial(requestOptions({ maxAttempts: 1,
+      fetchImpl: async () => new Response(JSON.stringify(envelope), { status, headers: { "content-type": "application/json" } }),
+    })), (error) => {
+      assert.equal(Object.hasOwn(workersAiFailureDiagnostic(error), "reason"), false);
+      assert.doesNotMatch(error.message, /AiError|c523e410|cloudflare-test-token/);
+      return true;
+    });
+  }
+  const success = await requestWorkersAiEditorial(requestOptions());
+  assert.deepEqual(success.editorialPayload, payload);
+  assert.equal(Object.hasOwn(success, "reason"), false);
+  assert.equal(Object.hasOwn(workersAiFailureDiagnostic({ httpStatus: 429, failureReason: apiToken }), "reason"), false);
 });
 
 test("private failure hook captures only redacted bounded error data and safe response identifiers", async () => {

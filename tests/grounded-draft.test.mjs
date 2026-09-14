@@ -3,9 +3,12 @@ import test from "node:test";
 import { createHash } from "node:crypto";
 import { groundedDraft, groundedEvidence } from "./fixtures/grounded-summary.mjs";
 import { malformedEmailStories } from "./fixtures/malformed-email-2026-09-11.mjs";
-import { GROUNDED_DRAFT_SCHEMA, groundedDossiers, validateGroundedStory, synthesizeGroundedEditorial } from
+import { GROUNDED_DRAFT_SCHEMA, groundedDossiers, groundedRequestBudget, validateGroundedStory, synthesizeGroundedEditorial } from
   "../scripts/automation/free/grounded-draft.mjs";
-import { DEFAULT_CLOUDFLARE_AI_MODEL, EXPERIMENTAL_FREE_WRITER_MODEL, FREE_REASONING_WRITER_MODEL } from "../scripts/automation/free/workers-ai.mjs";
+import { DEFAULT_CLOUDFLARE_AI_MODEL, EXPERIMENTAL_FREE_WRITER_MODEL, FREE_REASONING_WRITER_MODEL,
+  resolveCloudflareAiModel } from "../scripts/automation/free/workers-ai.mjs";
+import { LOCAL_AI_PROVIDER, LOCAL_AI_MODEL, LOCAL_AI_URL, LOCAL_AI_EDITORIAL_FORMAT_INVALID,
+  LOCAL_AI_CONTEXT_TOKENS, buildLocalAiRequest } from "../scripts/automation/free/local-ai.mjs";
 
 const candidate = { candidateId: groundedDraft.candidateId, suggestedDesk: "security-and-privacy",
   ranking: { evidenceTier: "authoritative-single" }, feedEvidence: [groundedEvidence],
@@ -75,6 +78,7 @@ test("writing and review are budgeted independently; only checked prose replaces
     assert.equal(call.model, DEFAULT_CLOUDFLARE_AI_MODEL);
     assert.equal(call.maxRequestBytes, 70_000);
     assert.ok(!JSON.stringify(call.messages).includes("fixture"));
+    assert.doesNotMatch(call.messages[0].content, /Local writer citation discipline/);
   }
   assert.equal(result.editorial.desks["security-and-privacy"].story.headline, groundedDraft.headline);
   assert.deepEqual(result.editorial.desks["security-and-privacy"].story.selection, { score: 77 });
@@ -659,4 +663,258 @@ test("a missing draft can consume only the existing repair slot and still requir
     assert.equal(Boolean(result), approved);
     assert.equal(calls, 3);
   }
+});
+
+function localResponse(payload) {
+  return { ...response(payload), provider: LOCAL_AI_PROVIDER, model: LOCAL_AI_MODEL };
+}
+
+test("explicit local selection uses only loopback and truthful hash-bound review provenance", async () => {
+  assert.throws(() => resolveCloudflareAiModel(LOCAL_AI_MODEL), /Cloudflare-hosted/);
+  const requests = [];
+  const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
+    model: LOCAL_AI_MODEL, accountId: "private-cloudflare-account", apiToken: "private-cloudflare-token",
+    fetchImpl: async (url, options) => {
+      assert.equal(url, LOCAL_AI_URL);
+      assert.equal(options.redirect, "error");
+      assert.doesNotMatch(JSON.stringify(options), /private-cloudflare|authorization/i);
+      const body = JSON.parse(options.body);
+      requests.push(body);
+      assert.equal(body.model, LOCAL_AI_MODEL);
+      assert.equal(body.think, true);
+      assert.equal(body.stream, false);
+      assert.equal(body.options.num_ctx, LOCAL_AI_CONTEXT_TOKENS);
+      assert.equal(body.options.temperature, 0.6);
+      const payload = requests.length === 1 ? { stories: [groundedDraft] } : { reviews: [review] };
+      return new Response(JSON.stringify({ model: LOCAL_AI_MODEL, done: true, done_reason: "stop",
+        prompt_eval_count: 1_200, eval_count: 400,
+        message: { role: "assistant", content: JSON.stringify(payload) } }), {
+        status: 200, headers: { "content-type": "application/json" },
+      });
+    } });
+  assert.ok(result);
+  assert.deepEqual(requests.map(request => request.options.num_predict), [12_000, 6_000]);
+  assert.equal(result.inference.provider, LOCAL_AI_PROVIDER);
+  assert.equal(result.inference.model, LOCAL_AI_MODEL);
+  assert.equal(result.inference.kind, "local-ai");
+  assert.equal(result.inference.semanticReview.provider, LOCAL_AI_PROVIDER);
+  assert.equal(result.inference.semanticReview.model, LOCAL_AI_MODEL);
+  assert.equal(result.inference.semanticReview.requestCount, 1);
+  assert.deepEqual(result.inference.semanticReview.approvedCandidateIds, [candidate.candidateId]);
+  for (const receipt of [result.inference, result.inference.semanticReview]) {
+    assert.match(receipt.requestSha256, /^[a-f0-9]{64}$/);
+    assert.match(receipt.responseSha256, /^[a-f0-9]{64}$/);
+  }
+  assert.deepEqual(result.editorial.desks["security-and-privacy"].story.sources, candidate.sources);
+  assert.equal(baseline.desks["security-and-privacy"].story.headline, "old");
+});
+
+test("local reasoning drafts, isolated full-story repairs and reviews share the explicit 120000-token ceiling", async () => {
+  const desks = ["ai", "work-and-tools", "security-and-privacy", "platforms-and-power"];
+  const slate = desks.map((suggestedDesk, index) => ({ ...structuredClone(candidate),
+    candidateId: `candidate-local-${index}`, suggestedDesk }));
+  const drafts = slate.map(item => ({ ...structuredClone(groundedDraft), candidateId: item.candidateId }));
+  const editorial = { frontPage: { note: "old", estimatedMinutes: 1 }, desks: Object.fromEntries(desks.map((desk, index) => [desk, {
+    story: { ...structuredClone(baseline.desks["security-and-privacy"].story), id: `local-story-${index}` },
+  }])) };
+  const calls = [];
+  const result = await synthesizeGroundedEditorial({ editorial, candidates: slate,
+    model: LOCAL_AI_MODEL, aiRequestImpl: async options => {
+      calls.push(options);
+      assert.equal(options.maxAttempts, 1);
+      assert.equal(options.timeoutMs, 300_000);
+      assert.equal(options.temperature, 0.6);
+      assert.equal(Object.hasOwn(options, "apiToken"), false);
+      assert.equal(Object.hasOwn(options, "accountId"), false);
+      assert.doesNotThrow(() => buildLocalAiRequest(options), "Every request fits the actual local context guard");
+      if (options.schema.properties.reviews) {
+        assert.doesNotMatch(options.messages[0].content, /Local writer citation discipline/);
+        assert.match(options.messages[0].content, /Local review checklist/);
+        assert.match(options.messages[0].content, /No end-user\s+setting does not imply no Admin controls or setup/);
+        assert.match(options.messages[0].content, /Keep mitigation configuration exclusions/);
+      } else {
+        assert.match(options.messages[0].content, /write one supported fact per claim/);
+        assert.match(options.messages[0].content, /Omit optional features when uncited/);
+        assert.match(options.messages[0].content, /data-retention or data-boundary guarantees/);
+        assert.match(options.messages[0].content, /Use conditional analysis/);
+        assert.match(options.messages[0].content, /Evidence IDs belong ONLY in supports/);
+        assert.match(options.messages[0].content, /derive headline, deck, analysis and advice from those claims' factual scope/);
+        const storySchema = options.schema.properties.stories.items;
+        assert.deepEqual(Object.keys(storySchema.properties), ["candidateId", "claims", "headline", "deck", "whyItMatters", "whatToDoOrWatch"]);
+        assert.deepEqual(storySchema.required, Object.keys(storySchema.properties));
+        assert.deepEqual(Object.keys(storySchema.properties.claims.items.properties), ["supports", "text"]);
+        assert.deepEqual(storySchema.properties.claims.items.required, ["supports", "text"]);
+        const data = JSON.parse(options.messages[1].content);
+        const passageIds = data.dossiers.flatMap(dossier => dossier.sources.flatMap(source => source.passages.map(passage => passage.evidenceId)));
+        assert.deepEqual(storySchema.properties.claims.items.properties.supports.items.properties.evidenceId.enum, [...new Set(passageIds)]);
+      }
+      assert.ok(options.messages[0].content.endsWith(JSON.stringify(options.schema)));
+      const data = JSON.parse(options.messages[1].content);
+      assert.equal(data.dossiers.length, 1);
+      const draft = drafts.find(item => item.candidateId === data.dossiers[0].candidateId);
+      if (options.schema.properties.stories) {
+        return localResponse({ stories: [{ ...draft,
+          claims: calls.length <= slate.length ? [{ ...draft.claims[0], text: copiedClaim }, draft.claims[1]] : draft.claims,
+        }] });
+      }
+      assert.ok(options.schema.properties.reviews);
+      assert.equal(options.maxTokens, 6_000);
+      assert.equal(data.drafts.length, 1);
+      assert.equal(data.drafts[0].draftSha256, hash(draft));
+      return localResponse({ reviews: [{ ...review, candidateId: draft.candidateId, draftSha256: hash(draft) }] });
+    } });
+  assert.ok(result);
+  assert.equal(groundedRequestBudget(LOCAL_AI_MODEL), 12);
+  assert.equal(calls.length, 12);
+  assert.deepEqual(calls.map(call => call.maxTokens), [12_000, 12_000, 12_000, 12_000, 12_000, 12_000, 12_000, 12_000, 6_000, 6_000, 6_000, 6_000]);
+  assert.equal(calls.reduce((total, call) => total + call.maxTokens, 0), 120_000);
+  assert.equal(result.inference.semanticReview.requestCount, 4);
+  assert.deepEqual(new Set(result.inference.semanticReview.approvedCandidateIds), new Set(slate.map(item => item.candidateId)));
+  assert.equal(result.inference.requestSha256, hash(Array(12).fill("a".repeat(64))));
+  assert.equal(result.inference.semanticReview.requestSha256, hash(Array(4).fill("a".repeat(64))));
+});
+
+test("local reviewer cannot approve unsupported claims, wrong binding or generic advice", async () => {
+  for (const bad of [
+    { ...review, factsSupported: false }, { ...review, attributionAccurate: false },
+    { ...review, analysisSupported: false }, { ...review, usefulAndSpecific: false },
+    { ...review, draftSha256: "f".repeat(64) }, { ...review, claimSupport: [[], []] },
+  ]) {
+    let calls = 0;
+    const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
+      model: LOCAL_AI_MODEL, aiRequestImpl: async () => localResponse(++calls === 1
+        ? { stories: [groundedDraft] } : { reviews: [bad] }) });
+    assert.equal(result, null);
+    assert.equal(calls, 2);
+  }
+});
+
+test("local evidence-first schema ordering never mutates the daily Cloudflare grammar or prompts", async () => {
+  for (const model of [LOCAL_AI_MODEL, DEFAULT_CLOUDFLARE_AI_MODEL]) {
+    let calls = 0;
+    const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate], model,
+      aiRequestImpl: async options => {
+        calls++;
+        if (model !== LOCAL_AI_MODEL) {
+          assert.doesNotMatch(options.messages[0].content, /Local writer citation discipline|Local review checklist/);
+          if (options.schema.properties.stories) {
+            const fields = options.schema.properties.stories.items.properties;
+            assert.deepEqual(Object.keys(fields), ["candidateId", "headline", "deck", "claims", "whyItMatters", "whatToDoOrWatch"]);
+            assert.deepEqual(Object.keys(fields.claims.items.properties), ["text", "supports"]);
+            assert.deepEqual(fields.claims.items.properties.supports.items.properties.evidenceId, { type: "string" });
+          }
+        }
+        return (model === LOCAL_AI_MODEL ? localResponse : response)(calls === 1
+          ? { stories: [groundedDraft] } : { reviews: [review] });
+      } });
+    assert.ok(result);
+    assert.equal(calls, 2);
+  }
+  assert.deepEqual(Object.keys(GROUNDED_DRAFT_SCHEMA.properties.stories.items.properties.claims.items.properties), ["text", "supports"]);
+});
+
+test("local drafts keep numeric, citation, caveat, originality and reader-copy vetoes", async () => {
+  const conditional = structuredClone(candidate);
+  conditional.feedEvidence[0].articleExcerpt = "When Secure Boot is disabled, disk modification can permit UEFI code execution before the operating system starts.";
+  for (const mutate of [
+    draft => { draft.headline = "AOMEI driver permits UEFI code execution"; },
+    draft => { draft.claims[0].supports[0].evidenceId = "S1P999"; },
+    draft => { draft.claims[0].text = draft.claims[0].text.replace("AOMEI Backupper", "AOMEI Backupper 9.9.9"); },
+    draft => { draft.whyItMatters = malformedEmailStories[0].whyItMatters; },
+    draft => { draft.claims[0].text = copiedClaim; },
+    draft => { draft.headline = "CERT/CC reports a new development"; },
+  ]) {
+    const draft = structuredClone(groundedDraft); mutate(draft);
+    const calls = [];
+    const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [conditional],
+      model: LOCAL_AI_MODEL, aiRequestImpl: async options => {
+        calls.push(options);
+        assert.equal(options.schema.properties.reviews, undefined, "Semantic approval cannot override a deterministic veto");
+        return localResponse({ stories: [draft] });
+      } });
+    assert.equal(result, null);
+    assert.equal(calls.length, 2, "Exactly one drafting request and the bounded repair slot");
+  }
+});
+
+test("local format recovery needs local provenance and never changes providers on failure", async () => {
+  const error = () => Object.assign(new Error("Local final JSON is invalid."), {
+    code: LOCAL_AI_EDITORIAL_FORMAT_INVALID, attemptCount: 1, inference: localResponse(null),
+  });
+  let calls = 0;
+  const fixed = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
+    model: LOCAL_AI_MODEL, aiRequestImpl: async options => {
+      assert.equal(options.model, LOCAL_AI_MODEL);
+      if (++calls === 1) throw error();
+      return localResponse(calls === 2 ? { stories: [groundedDraft] } : { reviews: [review] });
+    } });
+  assert.ok(fixed);
+  assert.equal(calls, 3);
+  for (const failure of [
+    { ...localResponse({ stories: [groundedDraft] }), provider: "cloudflare-workers-ai" },
+    { ...localResponse({ stories: [groundedDraft] }), model: "another-model" },
+    { ...localResponse({ stories: [groundedDraft] }), requestSha256: "" },
+    Object.assign(error(), { inference: response(null) }),
+    Object.assign(new Error("local service unavailable"), { code: "LOCAL_AI_EDITORIAL_UNAVAILABLE" }),
+  ]) {
+    calls = 0;
+    assert.equal(await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
+      model: LOCAL_AI_MODEL, aiRequestImpl: async options => {
+        calls++; assert.equal(options.model, LOCAL_AI_MODEL);
+        if (failure instanceof Error) throw failure;
+        return failure;
+      } }), null);
+    assert.equal(calls, 1);
+  }
+});
+
+test("local compact packets retain late prerequisites, both publishers and original evidence IDs", async () => {
+  const expanded = structuredClone(candidate);
+  const background = Array.from({ length: 40 }, (_, index) =>
+    `Historical archive entry ${index} contains peripheral background about the publisher's older investigations and its archival documentation.`).join(" ");
+  expanded.feedEvidence[0].articleExcerpt = `${background} When Secure Boot is disabled, disk modification can permit UEFI code execution before the operating system starts. This condition limits the described pre-OS consequence.`;
+  const secondEvidence = { ...structuredClone(expanded.feedEvidence[0]), sourceId: "independent-report", publisher: "Independent Report" };
+  expanded.feedEvidence.push(secondEvidence);
+  expanded.sources.push({ ...structuredClone(expanded.sources[0]), id: secondEvidence.sourceId,
+    publisher: secondEvidence.publisher, publisherKey: "independent-report", relationship: "independent" });
+  expanded.ranking.evidenceTier = "corroborated";
+  const draft = structuredClone(groundedDraft);
+  draft.claims[1].supports = [{ evidenceId: "S2P4" }, { evidenceId: "S2P5" }];
+  let calls = 0;
+  const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [expanded],
+    model: LOCAL_AI_MODEL, aiRequestImpl: async options => {
+      calls++;
+      assert.doesNotThrow(() => buildLocalAiRequest(options));
+      const [packet] = JSON.parse(options.messages[1].content).dossiers;
+      assert.equal(packet.sources.length, 2);
+      for (const [index, source] of packet.sources.entries()) {
+        const text = source.passages.map(passage => passage.text).join("\n");
+        assert.ok(text.length <= 2_000);
+        assert.match(text, /When Secure Boot is disabled/);
+        assert.match(text, /This condition limits the described pre-OS consequence/);
+        assert.ok(source.passages.some(passage => passage.evidenceId === `S${index + 1}P2`));
+        assert.ok(source.passages.some(passage => Number(passage.evidenceId.split("P")[1]) > 40));
+        assert.equal(Object.hasOwn(source, "text"), false, "Do not send duplicated full source text");
+      }
+      return localResponse(calls === 1 ? { stories: [draft] } : { reviews: [{ ...review,
+        draftSha256: hash(draft), claimSupport: draft.claims.map(claim => claim.supports.map(support => support.evidenceId)),
+      }] });
+    } });
+  assert.ok(result);
+  assert.equal(calls, 2);
+  assert.deepEqual(result.editorial.desks["security-and-privacy"].story.evidence[1].sourceIds, [secondEvidence.sourceId]);
+});
+
+test("an indivisible oversized local evidence unit fails before inference rather than losing its condition", async () => {
+  const oversized = structuredClone(candidate);
+  oversized.feedEvidence[0].summary = `When Secure Boot is disabled, the described flaw permits pre-OS execution with ${"important bounded context ".repeat(120)}preserved.`;
+  let calls = 0;
+  const events = [];
+  const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [oversized],
+    model: LOCAL_AI_MODEL, onDiagnostic: event => events.push(event), aiRequestImpl: async () => {
+      calls++; throw new Error("Must not infer from a condition-free fragment");
+    } });
+  assert.equal(result, null);
+  assert.equal(calls, 0);
+  assert.deepEqual(events, [{ stage: "free-writer-unavailable", code: "LOCAL_AI_EVIDENCE_BOUNDS" }]);
 });

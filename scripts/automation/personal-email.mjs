@@ -17,6 +17,8 @@ import { FREE_CLOUDFLARE_AI_MODELS, WORKERS_AI_PROVIDER } from "./free/workers-a
 import { hasValidWebSearchResearchMethod, isValidWebSearchReceipt } from "./free/search-receipt.mjs";
 import { HISTORICAL_PREVIEW, assertHistoricalPreviewAuthorization, isHistoricalPreviewRecord,
   isHistoricalPreviewTiming } from "./historical-preview-policy.mjs";
+import { LOCAL_PREVIEW, assertLocalPreviewAuthorization, isLocalPreviewRecord,
+  isLocalPreviewTiming } from "./local-preview-policy.mjs";
 
 export const RESEND_EMAIL_ENDPOINT = "https://api.resend.com/emails";
 export const PERSONAL_EMAIL_FROM = "First Fold <onboarding@resend.dev>";
@@ -296,8 +298,10 @@ function isDisplayString(value, maximumLength, { paragraph = false } = {}) {
 function hasSafeDisplayFields(candidate) {
   const research = candidate.provenance?.personalFreeResearch;
   const groundedEdition = candidate.status === "validated" && candidate.publication?.publishedAt === null &&
-    research?.draftingMode === "source-grounded-summary" && research?.inference === "workers-ai" &&
-    research?.provider === WORKERS_AI_PROVIDER;
+    research?.draftingMode === "source-grounded-summary" &&
+    ((research?.inference === "workers-ai" && research?.provider === WORKERS_AI_PROVIDER) ||
+      (research?.inference === "local-ai" && research?.provider === LOCAL_PREVIEW.provider &&
+        research?.model === LOCAL_PREVIEW.model && isLocalPreviewRecord(research?.localPreview)));
   if (
     !isDisplayString(candidate.masthead?.name, 100) ||
     !isDisplayString(candidate.masthead?.tagline, 300) ||
@@ -499,7 +503,59 @@ function hasCompleteStorySources(candidate) {
   });
 }
 
-export function assertPersonalEmailCandidate(candidate) {
+function hasLocalPreviewMarker(research) {
+  return research?.provider === LOCAL_PREVIEW.provider || research?.inference === "local-ai" ||
+    research?.runMode === LOCAL_PREVIEW.runMode || Object.hasOwn(research ?? {}, "localPreview");
+}
+
+function assertLocalEmailContract(candidate, now) {
+  const research = candidate.provenance.personalFreeResearch;
+  const sourceCheck = candidate.provenance.sourceCheck;
+  const stories = DESKS.flatMap(([desk]) => candidate.desks[desk].story ? [candidate.desks[desk].story] : []);
+  const ids = stories.map(story => story.id).sort();
+  const review = research.semanticReview;
+  const approved = review?.approvedCandidateIds;
+  const approvedStories = review?.approvedStoryIds;
+  const approvalMappingValid = Array.isArray(approved) && approved.length === ids.length &&
+    new Set(approved).size === ids.length && approved.every(id => typeof id === "string" &&
+      /^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/u.test(id)) &&
+    Array.isArray(approvedStories) && approvedStories.length === ids.length &&
+    new Set(approvedStories).size === ids.length &&
+    approvedStories.every(id => typeof id === "string" && ids.includes(id)) &&
+    approved.every(id => approvedStories.includes(`trusted-evidence-digest-${id}`));
+  if (research.workflow !== LOCAL_PREVIEW.workflow || research.runMode !== LOCAL_PREVIEW.runMode ||
+      research.provider !== LOCAL_PREVIEW.provider || research.model !== LOCAL_PREVIEW.model ||
+      research.inference !== "local-ai" || research.draftingMode !== "source-grounded-summary" ||
+      research.researchMethod !== "curated-live-feeds" || !isLocalPreviewRecord(research.localPreview) ||
+      ["automation", "freePilot", "personalResearch"].some(key => Object.hasOwn(candidate.provenance, key)) ||
+      ["webSearch", "historicalPreview", "runId", "runUrl", "repository"].some(key => Object.hasOwn(research, key)) ||
+      research.generatedAt !== candidate.publication.generatedAt ||
+      typeof sourceCheck?.checkedAt !== "string" ||
+      !isLocalPreviewTiming({ editionDate: candidate.editionDate, generatedAt: research.generatedAt,
+        checkedAt: sourceCheck?.checkedAt, now }) ||
+      !["feedSnapshotSha256", "requestSha256", "responseSha256"].every(key => /^[a-f0-9]{64}$/u.test(research[key] ?? "")) ||
+      !/^local-[a-f0-9]{64}$/u.test(research.responseId ?? "") ||
+      research.feedSourceCount !== 48 || !Number.isInteger(research.successfulFeedSourceCount) ||
+      research.successfulFeedSourceCount < 1 || research.successfulFeedSourceCount > research.feedSourceCount ||
+      research.coveredDeskCount !== DESKS.length || research.candidateCount !== ids.length ||
+      research.selectedStoryCount !== ids.length || ids.length < 1 || ids.length > DESKS.length ||
+      research.evidencePolicy !== PERSONAL_RESEARCH_EVIDENCE_POLICY || research.lookbackHours !== 72 ||
+      research.minimumScore !== 70 || research.minimumAuthoritativeScore !== 70 || research.maxModelRequests !== 12 ||
+      research.ephemeral !== true || research.qualityPilotOrdinal !== null ||
+      review?.provider !== LOCAL_PREVIEW.provider || review?.model !== LOCAL_PREVIEW.model ||
+      !["requestSha256", "responseSha256"].every(key => /^[a-f0-9]{64}$/u.test(review?.[key] ?? "")) ||
+      !Number.isInteger(review?.requestCount) || review.requestCount < ids.length || review.requestCount > 4 ||
+      !approvalMappingValid ||
+      !sourceCheck || sourceCheck.status !== "passed" || !Number.isInteger(sourceCheck.checkedSourceCount) ||
+      sourceCheck.checkedSourceCount < ids.length * 2 || !Array.isArray(sourceCheck.issues) || sourceCheck.issues.length ||
+      !hasCompleteStorySources(candidate) ||
+      stories.some(story => !Array.isArray(story.evidence) || !story.evidence.length ||
+        story.evidence.some(claim => typeof claim?.id !== "string" || !claim.id.startsWith(`${story.id}-grounded-`)) ||
+        (story.selection?.validationReceipt?.evidenceTier === "authoritative-single" &&
+          candidate.frontPage.stopThePressesStoryId === story.id))) throw validationFailure();
+}
+
+export function assertPersonalEmailCandidate(candidate, { localPreviewAuthorization, now = new Date() } = {}) {
   let validation;
   try {
     validation = validateCanonicalEdition(candidate);
@@ -519,6 +575,11 @@ export function assertPersonalEmailCandidate(candidate) {
   }
 
   const research = candidate.provenance?.personalFreeResearch;
+  if (hasLocalPreviewMarker(research)) {
+    assertLocalPreviewAuthorization(localPreviewAuthorization, candidate, now);
+    assertLocalEmailContract(candidate, now);
+    return validation;
+  }
   const sourceCheck = candidate.provenance?.sourceCheck;
   const selectedStoryCount = DESKS.filter(([desk]) =>
     candidate.desks?.[desk]?.story !== null).length;
@@ -889,8 +950,8 @@ export function assertRenderedPersonalEmailCopy(candidate, rendered) {
  * Convert one validated free candidate into a static, email-client-safe paper.
  * Dynamic editorial and source strings are escaped before entering the HTML.
  */
-export function renderPersonalEditionEmail(candidate, { feedbackLinks } = {}) {
-  assertPersonalEmailCandidate(candidate);
+export function renderPersonalEditionEmail(candidate, { feedbackLinks, localPreviewAuthorization, now } = {}) {
+  assertPersonalEmailCandidate(candidate, { localPreviewAuthorization, now });
   const normalizedFeedbackLinks = normalizeFeedbackLinks(candidate, feedbackLinks);
   const displayDate = formatEditionDate(candidate.editionDate);
   const subject = `First Fold — ${displayDate}`;
@@ -1162,6 +1223,7 @@ async function performResendRequest({ fetchImpl, apiKey, requestBody, idempotenc
  */
 export async function sendPersonalEditionEmail(candidate, options = {}) {
   const research = candidate?.provenance?.personalFreeResearch;
+  if (hasLocalPreviewMarker(research)) throw new Error("Local previews cannot use daily email delivery.");
   if (research?.runMode === HISTORICAL_PREVIEW.runMode || Object.hasOwn(research ?? {}, "historicalPreview")) {
     throw new Error("Historical previews cannot use daily email delivery.");
   }
@@ -1172,9 +1234,18 @@ export async function sendPersonalEditionEmail(candidate, options = {}) {
  * Its fixed per-date key protects the preview too; it never changes the daily key. */
 export async function sendPersonalEditionPreview(candidate, {
   previewConfirmation, previewRevision, previewNow = new Date(), previewClock = () => new Date(),
-  historicalPreviewAuthorization, ...options
+  historicalPreviewAuthorization, localPreviewAuthorization, ...options
 } = {}) {
   const research = candidate?.provenance?.personalFreeResearch;
+  if (previewRevision === LOCAL_PREVIEW.revision) {
+    if (previewConfirmation !== LOCAL_PREVIEW.confirmation || typeof previewClock !== "function" ||
+        research?.runMode !== LOCAL_PREVIEW.runMode) throw new Error("Local preview requires its exact requested authorization.");
+    assertLocalPreviewAuthorization(localPreviewAuthorization, candidate, previewNow);
+    return sendPersonalEmail(candidate, options, LOCAL_PREVIEW.revision, () => {
+      assertLocalPreviewAuthorization(localPreviewAuthorization, candidate, previewClock());
+    }, { localPreviewAuthorization, now: previewNow });
+  }
+  if (hasLocalPreviewMarker(research)) throw new Error("Local preview requires its exact requested authorization.");
   const historical = previewRevision === HISTORICAL_PREVIEW.revision;
   if (historical) {
     if (previewConfirmation !== HISTORICAL_PREVIEW.confirmation || research?.runMode !== HISTORICAL_PREVIEW.runMode ||
@@ -1225,10 +1296,11 @@ async function sendPersonalEmail(candidate, {
   feedbackNow,
   fetchImpl = globalThis.fetch,
   timeoutMs = DEFAULT_RESEND_TIMEOUT_MS,
-} = {}, preview = false, historicalDeliveryGuard) {
-  assertPersonalEmailCandidate(candidate);
+} = {}, preview = false, historicalDeliveryGuard, localContext = {}) {
+  assertPersonalEmailCandidate(candidate, localContext);
   const historical = preview === HISTORICAL_PREVIEW.revision;
-  if (historical && typeof historicalDeliveryGuard !== "function") {
+  const local = preview === LOCAL_PREVIEW.revision;
+  if ((historical || local) && typeof historicalDeliveryGuard !== "function") {
     throw new Error("Historical preview requires its exact requested authorization.");
   }
   const resolvedFeedbackLinks = optionalFeedbackLinks(candidate, {
@@ -1239,15 +1311,18 @@ async function sendPersonalEmail(candidate, {
   });
   const rendered = renderPersonalEditionEmail(candidate, {
     feedbackLinks: resolvedFeedbackLinks,
+    ...localContext,
   });
   if (preview) {
     const updated = preview === "web-search-upgrade-2026-09-11" || preview === REQUESTED_PREVIEW_REVISION;
-    const notice = historical
+    const notice = local
+      ? "Requested September 13 local-model preview. Freshly researched from reviewed live feeds and drafted and checked on your Mac with Ollama and Qwen. This uses no paid research service and is not a full-web-search report. It does not replace your daily edition or publish a public paper."
+      : historical
       ? "Requested September 11 preview. Researched on September 12, 2026 for the September 11, 2026 5:00 AM ET reporting cutoff. This is not your September 12 daily edition; isolated preview history is used and daily delivery is unchanged."
       : updated
       ? "Requested updated preview with free web discovery and evidence-checked summaries. Uses today's morning reporting window and isolated repeat history; it does not replace your daily edition."
       : "Requested preview of the upgraded free paper. Uses today's morning reporting window and isolated repeat history; it does not replace your daily edition.";
-    rendered.subject = `[${historical ? "September 11 preview" : updated ? "Updated preview" : "Preview"}] ${rendered.subject}`;
+    rendered.subject = `[${local ? "Local model preview" : historical ? "September 11 preview" : updated ? "Updated preview" : "Preview"}] ${rendered.subject}`;
     rendered.text = `${notice}\n\n${rendered.text}`;
     rendered.html = rendered.html.replace(/(<body[^>]*>)/u,
       `$1<div style="padding:16px;text-align:center;font:14px/1.5 Arial,sans-serif;">${notice}</div>`);
@@ -1261,7 +1336,8 @@ async function sendPersonalEmail(candidate, {
   }
 
   const idempotencyKey = preview
-    ? historical
+    ? local ? LOCAL_PREVIEW.idempotencyKey
+      : historical
       ? "first-fold-personal-preview-free-quality-2026-09-11-requested-2026-09-12"
       : preview === "web-search-upgrade-2026-09-11"
       ? "first-fold-personal-preview-web-search-upgrade-2026-09-11"
@@ -1282,7 +1358,7 @@ async function sendPersonalEmail(candidate, {
 
   // Everything between this real-clock check and the request is synchronous.
   // An authorization that expires while preparing copy cannot send after midnight.
-  if (historical) historicalDeliveryGuard();
+  if (historical || local) historicalDeliveryGuard();
   const controller = new AbortController();
   let timeoutHandle;
   const timeout = new Promise((_, reject) => {

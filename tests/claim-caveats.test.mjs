@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { claimCaveatErrors } from "../scripts/automation/free/claim-caveats.mjs";
+import { geminiDefaultEvidence, overgeneralizedGeminiRecommendation } from "./fixtures/default-enablement-2026-09-13.mjs";
 
 const advisory = `The backup driver permits a local user to write to physical disks.
 When Secure Boot is disabled, this can allow execution of arbitrary UEFI-level code before the operating system starts.
@@ -125,4 +126,44 @@ test("stable reason ordering and non-text inputs are bounded", () => {
   assert.deepEqual(claimCaveatErrors(copy, advisory), ["CAVEAT_SECURE_BOOT_REQUIRED", "CAVEAT_EXPLOITATION_UNKNOWN", "CAVEAT_FIX_VERSION_UNSUPPORTED"]);
   assert.deepEqual(claimCaveatErrors(undefined, advisory), []);
   assert.deepEqual(claimCaveatErrors("Text", null), []);
+});
+
+test("the actual Gemini preview cannot broaden existing organization enablement into universal defaults", () => {
+  for (const copy of [
+    overgeneralizedGeminiRecommendation,
+    "The Gemini app is on by default for all Workspace users.",
+    "Organizations with Gemini enabled can use the app. It is enabled by default for everyone.",
+    "For organizations with Gemini enabled, the app is on by default for personal Google accounts too.",
+    "For other organizations with Gemini enabled, setup differs, and this app is enabled by default.",
+    "For organizations with another service enabled, Gemini is enabled by default.",
+  ]) assert.deepEqual(claimCaveatErrors(copy, geminiDefaultEvidence), ["CAVEAT_DEFAULT_ENABLEMENT_SCOPE"], copy);
+});
+
+test("availability and correctly scoped default-enable paraphrases stay eligible", () => {
+  for (const copy of [
+    "For organizations with Gemini enabled, the feature is on by default. Users can download the Windows app.",
+    "The app is enabled by default for organizations that already have Gemini enabled.",
+    "In organizations where Gemini is already enabled, the feature is on by default.",
+    "The app is available to Workspace customers and people with personal Google accounts.",
+    "The source does not say Gemini is enabled by default for all accounts.",
+    "Check whether the app is enabled by default for your organization.",
+    "Download the app and verify your organization's existing Gemini settings.",
+  ]) assert.deepEqual(claimCaveatErrors(copy, geminiDefaultEvidence), [], copy);
+  assert.deepEqual(claimCaveatErrors("The app is enabled by default.", "The app is enabled by default for all users."), []);
+});
+
+test("no end-user setting is not evidence that a separately downloaded app is preinstalled", () => {
+  for (const copy of [
+    "The Gemini app is preinstalled for users.",
+    "The app is automatically installed for everyone.",
+    "The app needs no installation.",
+    "Use the app without downloading it.",
+    "No download is required to use the app.",
+  ]) assert.deepEqual(claimCaveatErrors(copy, geminiDefaultEvidence), ["CAVEAT_INSTALLATION_REQUIRED"], copy);
+  for (const copy of [
+    "Download the app before trying the shortcut.",
+    "The publisher does not say the app is preinstalled.",
+    "Check whether the app is already installed on your device.",
+    "The app has no end-user setting for this feature.",
+  ]) assert.deepEqual(claimCaveatErrors(copy, geminiDefaultEvidence), [], copy);
 });

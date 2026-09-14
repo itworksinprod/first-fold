@@ -59,4 +59,27 @@ Verification on the two freshly downloaded public pages: SecurityWeek retained
 1,665 characters / 11 blocks and BleepingComputer 2,538 characters / 19 blocks.
 Both kept their mitigation limitations; neither retained the observed advertising
 or footer snippets. All 759 tests and the offline editorial evaluation passed.
-No new inference was attempted after the repeated 429, and no email was sent.
+At that checkpoint no new inference was attempted after the repeated 429, and no email was sent.
+
+## Confirmed live quota rejection, September 13 evening
+
+After Carlos explicitly requested a functional live run, the bounded error-capture
+repair passed all 769 tests and the offline editorial evaluation. Run
+[34797544447](https://github.com/itworksinprod/first-fold/actions/runs/34797544447)
+on `131ce44` again stopped at its first writer call: HTTP 429, with no drafting,
+repair, semantic review, or email. The encrypted artifact's SHA-256 matched the
+GitHub download and it decrypted locally.
+
+The provider error now establishes why: Cloudflare returned code `4006` with an
+explicit message that the daily 10,000-neuron free allocation had been used up.
+The prior dashboard reading of 3.23k/10k conflicts with that response; it is not
+proof of remaining usable inference. The cause of that discrepancy is unresolved.
+The earlier `providerCode: null` occurred because `4006` was not in the adapter's
+documented-code allowlist, not because the provider sent no error details.
+
+[Cloudflare's pricing documentation](https://developers.cloudflare.com/workers-ai/platform/pricing/)
+says free limits reset at 00:00 UTC (8 p.m. EDT). This attempt was already after
+that day's published reset. Do not promise immediate recovery, keep retrying a
+known hard limit, switch accounts to evade it, or enable billing. No upgraded
+test email has passed its live quality gates yet. Production settings and the
+recipient remain unchanged.

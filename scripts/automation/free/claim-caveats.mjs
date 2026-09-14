@@ -82,6 +82,38 @@ function sourceRequiresBootCondition(sourceClauses) {
   });
 }
 
+const defaultEnablement = /\b(?:(?:enabled|on|active|activated|available)\s+by\s+default|default[- ](?:on|enabled)|automatically\s+(?:enabled|activated))\b/giu;
+const organizationEnablement = /\b(?:organizations?|orgs?|tenants?)\s+(?:with|where|that)\s+(?:already\s+)?(?:have\s+)?([a-z][a-z0-9]*(?:[ -][a-z][a-z0-9]*){0,5}?)\s+(?:(?:is|has been)\s+)?(?:already\s+)?enabled\b/giu;
+
+function defaultAssertions(clause) {
+  // A task such as "fact-checking" before the assertion is not uncertainty
+  // about the asserted default. Only an actual whether/if question scopes it.
+  return positiveMatches(clause, defaultEnablement, { allowUncertain: true }).filter((match) =>
+    !/\b(?:whether|if)\b[^,;.!?]{0,75}$/iu.test(clause.slice(0, match.index)));
+}
+
+function defaultConditions(sourceClauses) {
+  return sourceClauses.flatMap((clause) => defaultAssertions(clause).length
+    ? [...clause.matchAll(organizationEnablement)].map((match) => match[1].toLowerCase()) : []);
+}
+
+function preservesDefaultCondition(clause, names) {
+  // General availability is different from default enablement. The prerequisite
+  // must qualify this assertion, not appear in another sentence or organization.
+  if (/\b(?:personal\s+(?:google\s+)?(?:users?|accounts?)|everyone|regardless\s+of|all\s+(?:eligible\s+)?(?:google\s+workspace\s+)?accounts?)\b/iu.test(clause)) return false;
+  return [...clause.matchAll(organizationEnablement)].some((match) => {
+    if (!names.includes(match[1].toLowerCase())) return false;
+    const before = clause.slice(0, match.index);
+    const after = clause.slice(match.index + match[0].length);
+    if (/\b(?:other|another|different|unrelated)\b/iu.test(before.slice(-45)) ||
+        /^\s+(?:on|for|in)\s+(?:an?\s+)?(?:other|another|different|unrelated)\b/iu.test(after)) return false;
+    return /\b(?:for|in|within|at|if|when)\s+(?:(?:all|the|those|your)\s+)?$/iu.test(before);
+  });
+}
+
+const appDownloadInstruction = /\b(?:download|install)\s+(?:(?:the|a|your)\s+)?(?:[a-z][a-z0-9-]*\s+){0,5}(?:app|application|client)\b/iu;
+const installationBypass = /\b(?:pre[- ]?installed|(?:already|automatically)\s+installed|(?:no|without(?:\s+(?:any|a))?)\s+(?:download(?:ing)?|install(?:ation|ing)?)(?:\s+(?:or|and)\s+(?:download(?:ing)?|install(?:ation|ing)?))?(?:\s+(?:is\s+)?(?:needed|required))?|(?:does\s+not|doesn't|need\s+not|needn't)\s+(?:require\s+)?(?:a\s+)?(?:download|install(?:ation)?))\b/giu;
+
 /**
  * Return stable, deduplicated reasons for a small set of source caveats that
  * must not be silently removed. An empty array means only that these bounded
@@ -113,6 +145,19 @@ export function claimCaveatErrors(text, evidenceText) {
   if ([...versionReferences(copy, fixVersionPatterns)].some((value) => !sourceFixed.has(value)) ||
       [...versionReferences(copy, [updateVersion])].some((value) => !sourceUpdates.has(value))) {
     reasons.push("CAVEAT_FIX_VERSION_UNSUPPORTED");
+  }
+  const enablementConditions = defaultConditions(sourceClauses);
+  if (enablementConditions.length && copyClauses.some((clause) =>
+    defaultAssertions(clause).length > 0 && !preservesDefaultCondition(clause, enablementConditions))) {
+    reasons.push("CAVEAT_DEFAULT_ENABLEMENT_SCOPE");
+  }
+  // "No end-user setting" never establishes that a separately downloaded app
+  // is preinstalled. This only catches explicit bypass claims, not suggestions
+  // to try a feature or verify its setup with the publisher.
+  if (sourceClauses.some((clause) => appDownloadInstruction.test(clause)) &&
+      copyClauses.some((clause) => /\b(?:app|application|client)\b/iu.test(clause) &&
+        positiveMatches(clause, installationBypass).length > 0)) {
+    reasons.push("CAVEAT_INSTALLATION_REQUIRED");
   }
   return reasons;
 }

@@ -4,6 +4,7 @@ import path from "node:path";
 import { readerProseErrors } from "./reader-prose.mjs";
 import { readerSummaryErrors } from "./reader-summary.mjs";
 import { FREE_CLOUDFLARE_AI_MODELS } from "./automation/free/models.mjs";
+import { isLocalPreviewRecord } from "./automation/local-preview-policy.mjs";
 
 const DESKS = ["ai", "work-and-tools", "security-and-privacy", "platforms-and-power"];
 const DESK_PRESENTATION = {
@@ -201,9 +202,14 @@ export function validateCanonicalEdition(edition) {
 
     const readerWords = countReaderFacingStoryWords(story);
     const freeResearch = edition.provenance?.personalFreeResearch ?? edition.provenance?.freePilot;
+    const groundedProvider = (freeResearch?.inference === "workers-ai" &&
+      freeResearch?.provider === "cloudflare-workers-ai") ||
+      (freeResearch?.workflow === "local-paper-preview" && freeResearch?.runMode === "requested_local_preview" &&
+        freeResearch?.inference === "local-ai" && freeResearch?.provider === "ollama-local" &&
+        freeResearch?.model === "qwen3:30b-a3b" && isLocalPreviewRecord(freeResearch.localPreview) &&
+        freeResearch.localPreview.editionDate === edition.editionDate);
     const privateGroundedBrief = edition.status === "validated" && edition.publication?.publishedAt === null &&
-      freeResearch?.draftingMode === "source-grounded-summary" && freeResearch?.inference === "workers-ai" &&
-      freeResearch?.provider === "cloudflare-workers-ai" &&
+      freeResearch?.draftingMode === "source-grounded-summary" && groundedProvider &&
       Array.isArray(story.evidence) && story.evidence.length > 0 && story.evidence.every((claim) =>
         typeof claim.id === "string" && claim.id.startsWith(`${story.id}-grounded-`));
     const privateSourceBrief = isPrivateSourceBrief(edition, story);

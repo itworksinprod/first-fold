@@ -3,13 +3,16 @@ import { countReaderFacingStoryWords, MIN_PRIVATE_GROUNDED_STORY_WORDS } from ".
 import { readerProseErrors } from "../../reader-prose.mjs";
 import { readerSummaryErrors } from "../../reader-summary.mjs";
 import { claimCaveatErrors } from "./claim-caveats.mjs";
-import { buildEvidencePacketSources } from "./evidence-packets.mjs";
+import { buildEvidencePacketSources, selectEvidencePassages } from "./evidence-packets.mjs";
+import { LOCAL_AI_MODEL, LOCAL_AI_PROVIDER, LOCAL_AI_EDITORIAL_FORMAT_INVALID,
+  requestLocalAiEditorial } from "./local-ai.mjs";
 import { DEFAULT_CLOUDFLARE_AI_MODEL, EXPERIMENTAL_FREE_WRITER_MODEL, FREE_REASONING_WRITER_MODEL, WORKERS_AI_EDITORIAL_FORMAT_INVALID,
   requestWorkersAiEditorial, resolveCloudflareAiModel, workersAiFailureDiagnostic } from "./workers-ai.mjs";
 
 export const GROUNDED_DIGEST_MODE = "source-grounded-summary";
 export const GROUNDED_MAX_REQUESTS = 3;
-export const groundedRequestBudget = model => model === EXPERIMENTAL_FREE_WRITER_MODEL ? 6 : GROUNDED_MAX_REQUESTS;
+export const groundedRequestBudget = model => model === LOCAL_AI_MODEL ? 12
+  : model === EXPERIMENTAL_FREE_WRITER_MODEL ? 6 : GROUNDED_MAX_REQUESTS;
 const hash = (value) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const words = (value) => value.trim().split(/\s+/u).filter(Boolean);
 const normalized = (value) => value.normalize("NFKC").replace(/\s+/gu, " ").trim();
@@ -55,12 +58,63 @@ function writerProviderSchema(candidateIds) {
   return schema;
 }
 
+function localWriterProviderSchema(schema, dossiers) {
+  // Native structured generation should select evidence before composing a
+  // claim, not guess citations after producing its prose. Ordering is only a
+  // drafting aid: exact support, semantic review and every local veto remain
+  // authoritative. Never mutate the shared Cloudflare provider schema.
+  const result = structuredClone(schema);
+  const story = result.properties.stories.items;
+  const claim = story.properties.claims.items;
+  claim.properties.supports.items.properties.evidenceId = { type: "string",
+    enum: [...new Set(dossiers.flatMap(dossier => dossier.sources.flatMap(source =>
+      source.passages.map(passage => passage.evidenceId))))] };
+  claim.properties = { supports: claim.properties.supports, text: claim.properties.text };
+  claim.required = Object.keys(claim.properties);
+  const fields = story.properties;
+  story.properties = { candidateId: fields.candidateId, claims: fields.claims,
+    headline: fields.headline, deck: fields.deck,
+    whyItMatters: fields.whyItMatters, whatToDoOrWatch: fields.whatToDoOrWatch };
+  story.required = Object.keys(story.properties);
+  return result;
+}
+
+function reviewerProviderSchema(drafts) {
+  const schema = structuredClone(GROUNDED_REVIEW_SCHEMA);
+  schema.properties.reviews.minItems = drafts.length;
+  schema.properties.reviews.maxItems = drafts.length;
+  // Constrain labels, never verdicts. Each claim still needs its exact support
+  // set and the entire draft still needs all four independent review flags.
+  schema.properties.reviews.items.properties.candidateId = { type: "string", enum: drafts.map(draft => draft.candidateId) };
+  schema.properties.reviews.items.properties.draftSha256 = { type: "string", enum: drafts.map(hash) };
+  schema.properties.reviews.items.properties.claimSupport.items.items = {
+    type: "string", enum: [...new Set(drafts.flatMap(draft => draft.claims.flatMap(claim => claim.supports.map(support => support.evidenceId))))],
+  };
+  return schema;
+}
+
 export function groundedDossiers(candidates) {
   return candidates.map((candidate) => ({
     candidateId: candidate.candidateId, desk: candidate.suggestedDesk,
     evidenceTier: candidate.ranking.evidenceTier,
     sources: buildEvidencePacketSources(candidate),
   }));
+}
+
+function localDossiers(dossiers) {
+  // Keep complete source/caveat units rather than truncating a long page. IDs
+  // still refer to the original passages; omitted passages cannot be cited.
+  // The full retained source text remains available to the local caveat veto.
+  return dossiers.map(dossier => ({ ...dossier, sources: dossier.sources.map(source => {
+    const selected = new Set(selectEvidencePassages(source.passages.map(passage => passage.text), {
+      title: source.passages[0]?.text ?? "", maxChars: 2_000,
+    }));
+    const passages = source.passages.filter(passage => selected.has(passage.text));
+    if (!passages.length) throw Object.assign(new Error("Local evidence cannot fit without losing its context."), {
+      code: "LOCAL_AI_EVIDENCE_BOUNDS",
+    });
+    return { ...source, passages };
+  }) }));
 }
 
 function safeProse(value, max = 1_500) {
@@ -76,8 +130,9 @@ function withinTextSchema(value, schema) {
 }
 
 function isBoundedFormatFailure(error, model) {
-  return error?.code === WORKERS_AI_EDITORIAL_FORMAT_INVALID && error.attemptCount === 1 &&
-    error.inference?.provider === "cloudflare-workers-ai" && error.inference.model === model &&
+  const local = model === LOCAL_AI_MODEL;
+  return error?.code === (local ? LOCAL_AI_EDITORIAL_FORMAT_INVALID : WORKERS_AI_EDITORIAL_FORMAT_INVALID) && error.attemptCount === 1 &&
+    error.inference?.provider === (local ? LOCAL_AI_PROVIDER : "cloudflare-workers-ai") && error.inference.model === model &&
     /^[a-f0-9]{64}$/u.test(error.inference.requestSha256 ?? "") &&
     /^[a-f0-9]{64}$/u.test(error.inference.responseSha256 ?? "");
 }
@@ -301,6 +356,38 @@ Body fields must be complete sentences ending in punctuation. Only headline/deck
 Use the existing claim's cited passages for a claim rewrite. The full story will be revalidated and reviewed.
 Do not return other fields or whole stories. Return one repair for every supplied candidateId.`;
 
+const LOCAL_CLAIM_GUIDANCE = `Local writer citation discipline:
+Select one or two exact evidence IDs FIRST, then write one supported fact per claim solely from
+those selected passages. Every actor, action, feature, number and condition in the claim must occur
+in its OWN supports. A true fact elsewhere in the dossier does not fill a citation gap. Do not guess
+citations after writing. Omit optional features when uncited. Simplify rather than bundle facts that
+need more than two passages; keep necessary caveats. Corroborated stories must use both publishers.
+Evidence IDs belong ONLY in supports, NEVER in headline, deck, claim text, analysis or advice.
+For example, launch and email passages cannot also establish images, shortcuts or Admin controls.
+Patch evidence does not also establish mitigation steps or every supported configuration.
+After the two claims, derive headline, deck, analysis and advice from those claims' factual scope.
+Do not introduce fresh features, versions, default settings or technical remediation steps there.
+Use conditional analysis: explain a plausible consequence or a proportionate check of these facts,
+not an observed benefit. Keep source prerequisites and exceptions beside any dependent assertion.
+Availability does not mean installed or enabled for every account; no end-user toggle does not
+remove administrator controls. A mitigation cannot be recommended for an excluded configuration.
+Do not infer privacy, data-retention or data-boundary guarantees from workflow or desktop integration.
+These rules also apply during repairs. Repairing length or style never licenses additional uncited facts.`;
+
+const LOCAL_REVIEW_GUIDANCE = `Local review checklist:
+Review EVERY field, including whyItMatters and whatToDoOrWatch, against the source qualifications.
+Reject a claim if any factual clause lacks support in that claim's selected one or two passages;
+another passage in the dossier cannot rescue it. Evidence-ID existence is not entailment.
+Headline, deck, analysis and advice must not introduce facts beyond the two supported claims.
+Set factsSupported or analysisSupported false for broadened availability, default-enable scope,
+install status, measured benefits, privacy guarantees or remediation instructions.
+In particular, availability to accounts does not mean installed or enabled by default for them.
+A default limited to organizations where a feature is enabled retains that prerequisite. No end-user
+setting does not imply no Admin controls or setup. Keep mitigation configuration exclusions, and
+do not turn predicted exploitation into observed attacks or a patch option into universal protection.
+Do not approve an entire paragraph merely because its topic matches the source. Check each clause;
+conditional implications may be useful, but conditional wording never excuses an invented fact.`;
+
 function repairedOriginalityFields(payload, rejected) {
   if (!keys(payload, ["repairs"]) || !Array.isArray(payload.repairs) || payload.repairs.length !== rejected.length ||
       new Set(payload.repairs.map(item => item?.candidateId)).size !== rejected.length) return null;
@@ -446,39 +533,66 @@ function completeClaimReview(review, draft) {
       [...ids].sort().join("\n") === draft.claims[index].supports.map((support) => support.evidenceId).sort().join("\n"));
 }
 
-/** Llama uses at most three calls; Qwen uses four isolated drafts, one optional repair and one review.
- * Both profiles enforce the same 7,800 output-token ceiling, with no transport retries or paid
+/** Llama uses at most three calls; Cloudflare Qwen uses isolated drafts and one review.
+ * Explicit local Qwen uses up to four isolated draft/repair/review sets, capped
+ * at 120,000 requested output tokens, including the local model's reasoning.
+ * Cloudflare profiles retain their 7,800
+ * ceiling, with no transport retries or paid
  * fallback. On Free Workers AI, quota exhaustion rejects; delivery still uses
  * the already validated digest. Each approved story is adopted independently. */
 export async function synthesizeGroundedEditorial({ editorial, candidates, accountId, apiToken,
   model = DEFAULT_CLOUDFLARE_AI_MODEL,
-  aiRequestImpl = requestWorkersAiEditorial, fetchImpl = globalThis.fetch,
+  aiRequestImpl, fetchImpl = globalThis.fetch,
   onDiagnostic = () => {} } = {}) {
-  model = resolveCloudflareAiModel(model);
+  const local = model === LOCAL_AI_MODEL;
+  // A Cloudflare failure never opts a run into local inference. The exact local
+  // model must be selected explicitly, outside the Cloudflare model allowlist.
+  if (!local) model = resolveCloudflareAiModel(model);
+  aiRequestImpl ??= local ? requestLocalAiEditorial : requestWorkersAiEditorial;
+  const isolatedWriter = local || model === EXPERIMENTAL_FREE_WRITER_MODEL;
   if (!Array.isArray(candidates) || candidates.length < 1 || candidates.length > 4) return null;
   // Reasoning-capable Qwen needs more room for the review response. Reallocate
   // the existing 7,800-token ceiling, never increase calls or the total cap.
-  const budgets = model === EXPERIMENTAL_FREE_WRITER_MODEL
+  const budgets = local ? { write: 12_000, repair: 12_000, review: 6_000 }
+    : isolatedWriter
     ? { write: 1_000, repair: 2_000, review: 1_800 }
     : model === FREE_REASONING_WRITER_MODEL ? { write: 3_000, repair: 2_400, review: 2_400 }
     : { write: 4_000, repair: 3_000, review: 800 };
-  const dossiers = groundedDossiers(candidates);
+  let dossiers;
+  try {
+    dossiers = groundedDossiers(candidates);
+    if (local) dossiers = localDossiers(dossiers);
+  } catch (error) {
+    if (!local) throw error;
+    onDiagnostic({ stage: "free-writer-unavailable", code: "LOCAL_AI_EVIDENCE_BOUNDS" });
+    return null;
+  }
   // The passage list already contains the evidence text; do not send a second
   // full-text copy that could exhaust the bounded request/context allowance.
   const promptDossiers = dossiers.map((dossier) => ({ ...dossier,
-    supportedNumericTokens: [...new Set(numericTokens(evidenceText(dossier)).map((value) => value.toLowerCase()))],
+    supportedNumericTokens: [...new Set(numericTokens(local
+      ? dossier.sources.flatMap(source => source.passages.map(passage => passage.text)).join(" ")
+      : evidenceText(dossier)).map((value) => value.toLowerCase()))],
     sources: dossier.sources.map(({ text: _text, ...source }) => ({ ...source,
       passages: source.passages.map(passage => ({ ...passage,
         supportedNumericTokens: [...new Set(numericTokens(passage.text).map(value => value.toLowerCase()))] })) })) }));
   let requestCount = 0;
   let outputTokenBudgetUsed = 0;
-  const ask = (system, data, schema, maxTokens) => {
-    if (requestCount >= groundedRequestBudget(model) || outputTokenBudgetUsed + maxTokens > 7_800) {
+  const outputTokenCeiling = local ? 120_000 : 7_800;
+  const ask = async (system, data, schema, maxTokens) => {
+    if (requestCount >= groundedRequestBudget(model) || outputTokenBudgetUsed + maxTokens > outputTokenCeiling) {
       throw Object.assign(new Error("The fixed free writer budget is exhausted."), { code: "WRITER_BUDGET_EXHAUSTED" });
     }
     requestCount++;
     outputTokenBudgetUsed += maxTokens;
-    return aiRequestImpl({ accountId, apiToken,
+    // Local uses evidence-first structured writing and an explicit all-field
+    // review checklist. Neither changes review verdicts or the daily provider.
+    if (local && Object.hasOwn(schema.properties, "stories")) {
+      schema = localWriterProviderSchema(schema, data.dossiers);
+      system = `${system}\n${LOCAL_CLAIM_GUIDANCE}`;
+    } else if (local) system = `${system}\n${LOCAL_REVIEW_GUIDANCE}`;
+    if (local) system = `${system}\nReturn only the final JSON object matching this schema:\n${JSON.stringify(schema)}`;
+    const response = await aiRequestImpl({ ...(local ? {} : { accountId, apiToken }),
     model, messages: [{ role: "system", content: model === EXPERIMENTAL_FREE_WRITER_MODEL
       ? `${system}\nReturn one JSON object conforming to this schema:\n${JSON.stringify(schema)}\n/no_think`
       : model === FREE_REASONING_WRITER_MODEL ? `Reasoning: low\n${system}\nReturn only the final JSON object matching this schema:\n${JSON.stringify(schema)}` : system },
@@ -486,8 +600,18 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
     responseFormat: model === EXPERIMENTAL_FREE_WRITER_MODEL ? "json_object" : "json_schema",
     validatePayload: (value) => Boolean(value && typeof value === "object"),
     maxTokens, maxAttempts: 1, maxRequestBytes: 70_000, maxResponseBytes: 100_000,
-    timeoutMs: 90_000, temperature: model === EXPERIMENTAL_FREE_WRITER_MODEL ? 0.7
+    // Qwen's published thinking profile uses sampling at 0.6. Do not override
+    // its native reasoning settings with the low-temperature prose profile.
+    timeoutMs: local ? 300_000 : 90_000, temperature: local ? 0.6 : model === EXPERIMENTAL_FREE_WRITER_MODEL ? 0.7
       : model === FREE_REASONING_WRITER_MODEL ? 0.6 : 0.1, fetchImpl });
+    if (local && (response?.provider !== LOCAL_AI_PROVIDER || response.model !== LOCAL_AI_MODEL ||
+        !/^[a-f0-9]{64}$/u.test(response.requestSha256 ?? "") ||
+        !/^[a-f0-9]{64}$/u.test(response.responseSha256 ?? ""))) {
+      throw Object.assign(new Error("Local inference provenance did not match the explicit provider."), {
+        code: "LOCAL_AI_PROVENANCE_INVALID",
+      });
+    }
+    return response;
   };
   try {
     const writerSchema = writerProviderSchema(dossiers.map((dossier) => dossier.candidateId));
@@ -495,9 +619,9 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
     let written;
     let repairUsed = false;
     try {
-      if (model === EXPERIMENTAL_FREE_WRITER_MODEL) {
-        // Four isolated 1,000-token drafts, one 2,000-token repair and one
-        // 1,800-token review retain the existing 7,800-token ceiling.
+      if (isolatedWriter) {
+        // Cloudflare Qwen keeps its existing isolated-draft allocation. Local
+        // Qwen has an explicit separate allowance; it cannot consume cloud quota.
         const responses = [];
         const stories = [];
         for (const dossier of promptDossiers) {
@@ -576,8 +700,15 @@ response, add Markdown fences or serialize another object inside any reader-faci
       wordCounts: drafts.map((draft) => countReaderFacingStoryWords({ ...draft,
         whatHappened: Array.isArray(draft?.claims) ? draft.claims.map((claim) => claim?.text ?? "").join(" ") : "" })) });
     if (rejected.length && !repairUsed) {
+      // The local adapter bounds every input independently. A repair must not
+      // re-batch four source packets that only fit when drafting in isolation.
+      const repairBatches = local ? rejected.map(entry => [entry]) : [rejected];
+      for (const rejected of repairBatches) {
       const repairIds = new Set(rejected.map(({ draft }) => draft.candidateId));
-      const focusedWriter = [EXPERIMENTAL_FREE_WRITER_MODEL, FREE_REASONING_WRITER_MODEL].includes(model);
+      // Local reasoning revises the complete story using the same schema as
+      // drafting. It can remove an uncited clause or correct its claim supports
+      // without inventing a supports field on advice. No second repair follows.
+      const focusedWriter = !local && [EXPERIMENTAL_FREE_WRITER_MODEL, FREE_REASONING_WRITER_MODEL].includes(model);
       const fieldOnly = focusedWriter && rejected.every(entry =>
         entry.rejectionCode === "ORIGINALITY" && REPAIR_FIELDS.includes(entry.feedback.field));
       const focused = focusedWriter && !fieldOnly ? focusedRepairPlan(rejected, dossiers) : null;
@@ -638,23 +769,30 @@ response, add Markdown fences or serialize another object inside any reader-faci
       } else repairRejections.push("SHAPE");
       onDiagnostic({ stage: "draft-repair", submitted: rejected.length, accepted, rejectionCodes: repairRejections,
         fieldFailures: repairFieldFailures, repairMode: focused ? "focused-fields" : fieldOnly ? "originality-field" : "whole-story" });
+      }
     }
     if (!valid.length) return null;
-    const reviewSchema = structuredClone(GROUNDED_REVIEW_SCHEMA);
-    reviewSchema.properties.reviews.minItems = valid.length;
-    reviewSchema.properties.reviews.maxItems = valid.length;
-    // Identifiers are labels to copy, not facts for the reviewer to generate.
-    // The exact candidate/hash pair is still checked locally before adoption.
-    reviewSchema.properties.reviews.items.properties.candidateId = { type: "string", enum: valid.map((draft) => draft.candidateId) };
-    reviewSchema.properties.reviews.items.properties.draftSha256 = { type: "string", enum: valid.map(hash) };
-    // The reviewer can still return [] and every false verdict. Constrain only
-    // the spelling of evidence labels, never whether a claim is supported.
-    reviewSchema.properties.reviews.items.properties.claimSupport.items.items = {
-      type: "string", enum: [...new Set(valid.flatMap((draft) => draft.claims.flatMap((claim) => claim.supports.map((support) => support.evidenceId))))],
-    };
-    const checked = await ask(REVIEW_PROMPT, { dossiers: promptDossiers.filter((dossier) => valid.some((draft) => draft.candidateId === dossier.candidateId)),
-      drafts: valid.map((draft) => ({ draftSha256: hash(draft), draft })) }, reviewSchema, budgets.review);
-    inferenceTrail.push(checked);
+    const reviewResponses = [];
+    // Local reviews run in isolation, so full cited source packets and draft
+    // hashes fit the adapter's smaller context. Each has a fixed local review
+    // allowance; never trade source support for space or retry for approval.
+    for (const batch of local ? valid.map(draft => [draft]) : [valid]) {
+      const checked = await ask(REVIEW_PROMPT, {
+        dossiers: promptDossiers.filter(dossier => batch.some(draft => draft.candidateId === dossier.candidateId)),
+        drafts: batch.map(draft => ({ draftSha256: hash(draft), draft })),
+      }, reviewerProviderSchema(batch), budgets.review);
+      inferenceTrail.push(checked);
+      if (!keys(checked.editorialPayload, ["reviews"]) || !Array.isArray(checked.editorialPayload.reviews) ||
+          checked.editorialPayload.reviews.length !== batch.length ||
+          checked.editorialPayload.reviews.some(review => !batch.some(draft => draft.candidateId === review?.candidateId))) {
+        onDiagnostic({ stage: "semantic-evidence-check", submitted: valid.length, accepted: 0, rejectionCodes: ["REVIEW_SHAPE"] });
+        return null;
+      }
+      reviewResponses.push(checked);
+    }
+    const checked = { ...reviewResponses.at(-1), editorialPayload: {
+      reviews: reviewResponses.flatMap(response => response.editorialPayload.reviews),
+    } };
     const reviews = checked.editorialPayload?.reviews;
     if (!keys(checked.editorialPayload, ["reviews"]) || !Array.isArray(reviews) || reviews.length !== valid.length ||
         new Set(reviews.map((review) => review?.candidateId)).size !== reviews.length) {
@@ -704,7 +842,14 @@ response, add Markdown fences or serialize another object inside any reader-faci
       .reduce((total, desk) => total + (desk.story ? countReaderFacingStoryWords(desk.story) : 0), 0) / 180));
     return { editorial: result, inference: { provider: written.provider, model: written.model,
       responseId: checked.responseId, requestSha256: hash(inferenceTrail.map((entry) => entry.requestSha256)),
-      responseSha256: hash(inferenceTrail.map((entry) => entry.responseSha256)), kind: "workers-ai" } };
+      responseSha256: hash(inferenceTrail.map((entry) => entry.responseSha256)), kind: local ? "local-ai" : "workers-ai",
+      ...(local ? { semanticReview: { provider: LOCAL_AI_PROVIDER, model: LOCAL_AI_MODEL,
+        requestCount: reviewResponses.length,
+        requestSha256: hash(reviewResponses.map(entry => entry.requestSha256)),
+        responseSha256: hash(reviewResponses.map(entry => entry.responseSha256)),
+        approvedCandidateIds: approved.map(draft => draft.candidateId),
+      } } : {}),
+    } };
   } catch (error) {
     onDiagnostic({ stage: "free-writer-unavailable",
       code: /^[A-Z_]{1,64}$/.test(error?.code ?? "") ? error.code : "PROVIDER_OR_FORMAT_ERROR",
