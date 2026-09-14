@@ -927,9 +927,17 @@ Write original, complete sentences, not copied publisher wording, serialized fie
 Claim text is 60–480 characters. Headline is 1–180; deck 1–280; whyItMatters 120–650;
 whatToDoOrWatch 100–550. Each story's body must have 100–225 words: its TWO factual claims plus
 whyItMatters and whatToDoOrWatch, excluding headline and deck. Aim for 140–170 body words PER STORY.
-For fixed foundations, fixedClaimWords is already part of that total. Explain one conditional
-consequence of the actual change and one specific next signal or proportionate check, without
-padding. Every assembled story will still face full factual checks and an independent review.`;
+For fixed foundations, fixedClaimWords is already part of that total. copyBodyTarget gives the
+remaining min/aim/max words for whyItMatters PLUS whatToDoOrWatch, not the entire story.
+When subtractRepairedClaimWords is true, those provisional numbers also include the claims you
+must repair: FIRST count the words in their FINAL repaired text, subtract that count from each
+copyBodyTarget number (never below zero), THEN write the two copy paragraphs toward that remaining
+allowance. Do not use an old or rejected claim's word count. Do not count headline or deck.
+As a useful balance, aim for about 35–50 words in whyItMatters and 30–45 in whatToDoOrWatch,
+adjusting both to the actual remaining allowance and existing character limits. Check each story's
+final total, not the combined total across candidates. Explain one conditional consequence of the
+actual change and one specific next signal or proportionate check. Do not pad, repeat facts or
+invent detail to meet a target. Every assembled story still faces full checks and independent review.`;
 
 function dailyFoundationSchema(dossiers) {
   const writer = evidenceFirstWriterProviderSchema(writerProviderSchema(dossiers.map(item => item.candidateId)), dossiers);
@@ -1001,6 +1009,7 @@ function dailyCompositionContract(foundations, dossiers) {
     const fixedClaims = foundation.claims.flatMap((claim, claimIndex) => requested.some(task => task.claimIndex === claimIndex)
       ? [] : [{ claimIndex, ...structuredClone(claim) }]);
     const citedIds = new Set(fixedClaims.flatMap(claim => claim.supports.map(support => support.evidenceId)));
+    const fixedClaimWords = countReaderFacingStoryWords({ whatHappened: fixedClaims.map(claim => claim.text).join(" ") });
     return { candidateId: dossier.candidateId, desk: dossier.desk, evidenceTier: dossier.evidenceTier,
       fixedClaims, requestedClaimRepairs: requested.map(task => {
         const claim = foundation.claims[task.claimIndex];
@@ -1012,8 +1021,11 @@ function dailyCompositionContract(foundations, dossiers) {
       }),
       sources: dossier.sources.map(source => localPromptSource(source, requested.length ? source.passages
         : source.passages.filter(passage => citedIds.has(passage.evidenceId)))).filter(source => source.passages.length),
-      fixedClaimWords: countReaderFacingStoryWords({ whatHappened: fixedClaims.map(claim => claim.text).join(" ") }),
-      bodyTarget: { min: MIN_PRIVATE_GROUNDED_STORY_WORDS, max: 225, aim: 145 } };
+      fixedClaimWords,
+      bodyTarget: { min: MIN_PRIVATE_GROUNDED_STORY_WORDS, max: 225, aim: 145 },
+      copyBodyTarget: { min: Math.max(0, MIN_PRIVATE_GROUNDED_STORY_WORDS - fixedClaimWords),
+        aim: Math.max(0, 145 - fixedClaimWords), max: Math.max(0, 225 - fixedClaimWords),
+        subtractRepairedClaimWords: requested.length > 0 } };
   }) };
   return { schema, data, claimRepairs };
 }

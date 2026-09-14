@@ -2365,3 +2365,131 @@ test("missing corroboration is repaired on an already rejected claim while the s
     assert.equal(reviewed.draftSha256, hash(expected));
   }
 });
+
+function dailyUnderlengthCopyFixture() {
+  // Synthetic complete prose matching the observed word counts, not live model output.
+  const short = dailySeptember14FailurePattern().drafts[2];
+  const initialDrafts = [
+    " Keep checking for vendor updates before assuming that a corrected release already exists.",
+    " Check the current advisory again before assuming that the vendor has released a compatible corrected driver.",
+  ].map((suffix, index) => ({ ...structuredClone(short), candidateId: `candidate-copy-budget-${index}`,
+    whatToDoOrWatch: short.whatToDoOrWatch + suffix }));
+  const candidates = initialDrafts.map((draft, index) => ({ ...structuredClone(candidate), candidateId: draft.candidateId,
+    suggestedDesk: ["security-and-privacy", "work-and-tools"][index] }));
+  const editorial = { frontPage: { note: "old", estimatedMinutes: 1 }, desks: Object.fromEntries(candidates.map((item, index) => [item.suggestedDesk, {
+    story: { ...structuredClone(baseline.desks["security-and-privacy"].story), id: `copy-budget-${index}` },
+  }])) };
+  const revised = initialDrafts.map(draft => ({ ...structuredClone(draft), whyItMatters: groundedDraft.whyItMatters,
+    whatToDoOrWatch: groundedDraft.whatToDoOrWatch }));
+  return { initialDrafts, candidates, editorial, revised };
+}
+
+test("daily copy targets subtract the exact fixed-claim words per candidate while leaving schemas and budgets unchanged", async () => {
+  const fixture = dailyUnderlengthCopyFixture();
+  const initialDrafts = [...fixture.initialDrafts, groundedDraft];
+  const candidates = [...fixture.candidates, { ...candidate, suggestedDesk: "ai" }];
+  const revised = [...fixture.revised, groundedDraft];
+  const editorial = structuredClone(fixture.editorial);
+  editorial.desks.ai = structuredClone(baseline.desks["security-and-privacy"]);
+  const calls = [];
+  const nativeBodies = [];
+  const result = await synthesizeGroundedEditorial({ editorial, candidates, accountId: "0".repeat(32), apiToken: "synthetic-only",
+    aiRequestImpl: async options => {
+      calls.push(options);
+      const payload = calls.length === 1 ? dailyFoundations([...initialDrafts].reverse()) : calls.length === 2
+        ? dailyCopies(revised) : { reviews: revised.map(draft => ({ ...review, candidateId: draft.candidateId, draftSha256: hash(draft) })) };
+      return requestWorkersAiEditorial({ ...options, fetchImpl: async (_url, init) => {
+        nativeBodies.push(JSON.parse(init.body));
+        return new Response(JSON.stringify({ success: true, result: { response: JSON.stringify(payload) }, errors: [] }), {
+          status: 200, headers: { "content-type": "application/json" },
+        });
+      } });
+    } });
+  assert.ok(result);
+  assert.deepEqual(calls.map(call => call.maxTokens), [2_000, 4_000, 1_800]);
+  assert.deepEqual(nativeBodies.map(body => body.response_format.type), ["json_schema", "json_schema", "json_schema"]);
+  assert.deepEqual(Object.keys(calls[1].schema.properties), ["copies"]);
+  assert.equal(calls[1].schema.properties.copies.minItems, 3);
+  assert.equal(calls[1].schema.properties.copies.maxItems, 3);
+  const packets = JSON.parse(calls[1].messages[1].content).dossiers;
+  for (const packet of packets) {
+    const draft = initialDrafts.find(item => item.candidateId === packet.candidateId);
+    const fixedWords = countReaderFacingStoryWords({ whatHappened: draft.claims.map(claim => claim.text).join(" ") });
+    assert.equal(packet.fixedClaimWords, fixedWords);
+    assert.deepEqual(packet.bodyTarget, { min: 100, max: 225, aim: 145 });
+    assert.deepEqual(packet.copyBodyTarget, { min: Math.max(0, 100 - fixedWords), aim: Math.max(0, 145 - fixedWords),
+      max: Math.max(0, 225 - fixedWords), subtractRepairedClaimWords: false });
+    assert.deepEqual(packet.fixedClaims.map(({ claimIndex: _index, ...claim }) => claim), draft.claims);
+    assert.equal(packet.requestedClaimRepairs.length, 0);
+  }
+  assert.deepEqual(packets.map(packet => packet.fixedClaimWords).sort((a, b) => a - b), [24, 24, 77],
+    "The canonical reader counter handles filenames and publisher punctuation consistently");
+  assert.match(calls[1].messages[0].content, /remaining min\/aim\/max words for whyItMatters PLUS whatToDoOrWatch, not the entire story/);
+  assert.match(calls[1].messages[0].content, /35–50 words in whyItMatters and 30–45 in whatToDoOrWatch/);
+  assert.match(calls[1].messages[0].content, /adjusting both to the actual remaining allowance and existing character limits/);
+  assert.match(calls[1].messages[0].content, /Do not count headline or deck/);
+  assert.match(calls[1].messages[0].content, /Do not pad, repeat facts or/);
+});
+
+test("84- and 87-word copy results still fail after explicit remaining-copy targets without requesting another stage", async () => {
+  const { initialDrafts, candidates, editorial } = dailyUnderlengthCopyFixture();
+  const counts = initialDrafts.map(draft => countReaderFacingStoryWords({ ...draft,
+    whatHappened: draft.claims.map(claim => claim.text).join(" ") }));
+  assert.deepEqual(counts, [84, 87]);
+  for (const [index, draft] of initialDrafts.entries()) {
+    const reasons = [];
+    assert.equal(validateGroundedStory(draft, groundedDossiers([candidates[index]])[0], code => reasons.push(code)), false);
+    assert.deepEqual(reasons, ["WORD_COUNT"]);
+  }
+  const calls = [];
+  const events = [];
+  const result = await synthesizeGroundedEditorial({ editorial, candidates, onDiagnostic: event => events.push(event),
+    aiRequestImpl: async options => {
+      calls.push(options);
+      assert.ok(calls.length <= 2, "A short composition cannot trigger a second copy attempt or approving review");
+      return response(calls.length === 1 ? dailyFoundations(initialDrafts) : dailyCopies(initialDrafts));
+    } });
+  assert.equal(result, null);
+  assert.deepEqual(calls.map(call => call.maxTokens), [2_000, 4_000]);
+  const packets = JSON.parse(calls[1].messages[1].content).dossiers;
+  assert.ok(packets.every(packet => packet.copyBodyTarget.min === 76 && packet.copyBodyTarget.subtractRepairedClaimWords === false));
+  const check = events.find(event => event.stage === "daily-copy-composition");
+  assert.deepEqual(check.wordCounts, [84, 87]);
+  assert.deepEqual(check.rejectionCodes, ["WORD_COUNT", "WORD_COUNT"]);
+  assert.equal(check.accepted, 0);
+  assert.equal(events.some(event => event.stage === "semantic-evidence-check"), false);
+});
+
+test("a repaired claim uses a provisional remaining budget and its final word count before reader copy", async () => {
+  const initial = structuredClone(groundedDraft);
+  initial.claims[0].text = copiedClaim;
+  const calls = [];
+  const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate], aiRequestImpl: async options => {
+    calls.push(options);
+    if (calls.length === 1) return response(dailyFoundations([initial]));
+    if (calls.length === 2) return response(dailyCopies([groundedDraft], [dailyClaimRepair(groundedDraft, 0)]));
+    return response({ reviews: [review] });
+  } });
+  assert.ok(result);
+  assert.deepEqual(calls.map(call => call.maxTokens), [2_000, 4_000, 1_800]);
+  const packet = JSON.parse(calls[1].messages[1].content).dossiers[0];
+  const fixedWords = countReaderFacingStoryWords({ whatHappened: initial.claims[1].text });
+  const finalRepairedWords = countReaderFacingStoryWords({ whatHappened: groundedDraft.claims[0].text });
+  const rejectedWords = countReaderFacingStoryWords({ whatHappened: initial.claims[0].text });
+  assert.notEqual(finalRepairedWords, rejectedWords, "The fixture distinguishes stale and final repaired lengths");
+  assert.equal(packet.fixedClaimWords, fixedWords);
+  assert.deepEqual(packet.copyBodyTarget, { min: Math.max(0, 100 - fixedWords), aim: Math.max(0, 145 - fixedWords),
+    max: Math.max(0, 225 - fixedWords), subtractRepairedClaimWords: true });
+  assert.equal(packet.fixedClaims.length, 1);
+  assert.deepEqual(packet.requestedClaimRepairs.map(task => task.claimIndex), [0]);
+  const finalClaimWords = countReaderFacingStoryWords({ whatHappened: groundedDraft.claims.map(claim => claim.text).join(" ") });
+  for (const [key, total] of [["min", 100], ["aim", 145], ["max", 225]]) {
+    assert.equal(Math.max(0, packet.copyBodyTarget[key] - finalRepairedWords), Math.max(0, total - finalClaimWords));
+  }
+  assert.match(calls[1].messages[0].content, /When subtractRepairedClaimWords is true, those provisional numbers also include the claims you/);
+  assert.match(calls[1].messages[0].content, /FIRST count the words in their FINAL repaired text, subtract that count from each/);
+  assert.match(calls[1].messages[0].content, /Do not use an old or rejected claim's word count/);
+  const reviewed = JSON.parse(calls[2].messages[1].content).drafts[0];
+  assert.deepEqual(reviewed.draft, groundedDraft);
+  assert.equal(reviewed.draftSha256, hash(groundedDraft));
+});

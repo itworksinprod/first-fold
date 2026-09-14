@@ -194,3 +194,21 @@ the two attribution/corroboration repair cases were corrected. Live verification
 must still pass before the summary failure can be considered resolved.
 
 Final local build and complete regression suite pass: 864 tests, zero failures.
+
+The first split-writing live check,
+[34850694004](https://github.com/itworksinprod/first-fold/actions/runs/34850694004)
+on `537afab`, verified ten publisher articles. Both claim foundations passed;
+the two assembled summaries failed only the body-length check at 84 and 87
+words. Review was not reached and no email was sent. This establishes progress
+on initial structure/originality for this batch, not end-to-end success.
+
+The composition input now gives an explicit remaining-copy word range after
+subtracting the canonical fixed-claim count. When claims need repair, the model
+must subtract the final repaired-claim words too. Approximate analysis/watch
+paragraph ranges clarify the intended balance, without changing acceptance
+lengths, character bounds, factual gates or the three-call budget. No text is
+mechanically padded to pass the minimum.
+
+After this targeted correction, the build and all 867 tests pass. Three new
+regressions cover canonical remaining-word arithmetic, final repaired-claim
+counts, and continued rejection of 84/87-word drafts without another call.
