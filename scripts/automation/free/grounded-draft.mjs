@@ -60,11 +60,11 @@ function writerProviderSchema(candidateIds) {
   return schema;
 }
 
-function localWriterProviderSchema(schema, dossiers) {
+function evidenceFirstWriterProviderSchema(schema, dossiers) {
   // Native structured generation should select evidence before composing a
   // claim, not guess citations after producing its prose. Ordering is only a
   // drafting aid: exact support, semantic review and every local veto remain
-  // authoritative. Never mutate the shared Cloudflare provider schema.
+  // authoritative. Clone rather than mutating the shared provider schema.
   const result = structuredClone(schema);
   const story = result.properties.stories.items;
   const claim = story.properties.claims.items;
@@ -82,7 +82,7 @@ function localWriterProviderSchema(schema, dossiers) {
 }
 
 function localClaimsRepairSchema(dossier) {
-  const writer = localWriterProviderSchema(writerProviderSchema([dossier.candidateId]), [dossier]);
+  const writer = evidenceFirstWriterProviderSchema(writerProviderSchema([dossier.candidateId]), [dossier]);
   return objectSchema({ candidateId: writer.properties.stories.items.properties.candidateId,
     claims: writer.properties.stories.items.properties.claims });
 }
@@ -406,9 +406,13 @@ with its exact candidateId and draftSha256. factsSupported is true only if every
 including headline/deck, is supported: preserve prerequisites, negations, numbers, versions and caveats.
 attributionAccurate requires distinguishing vendor claims from independent confirmation.
 Check claims[0] and claims[1] separately. Return claimSupport with exactly two arrays in that order.
-Each array must contain only the evidenceId values from that claim's supports that actually substantiate
-the entire claim. Return an empty array for an unsupported claim; never copy an ID merely because it
-exists. Missing or partial claim coverage will reject the draft. A valid ID and a matching number alone
+Evaluate the submitted cited passages TOGETHER: one passage may establish the actor and action while
+another establishes the necessary condition. Each passage need not prove the entire claim by itself.
+Return the complete submitted evidenceId set only if those passages jointly support EVERY factual
+clause and each cited passage materially supports the account, including required corroboration.
+If any clause is unsupported or any submitted passage is irrelevant, return an empty array for that
+claim, not a guessed subset. Never copy an ID merely because it exists. Missing or partial claim
+coverage will reject the draft. A valid ID and a matching number alone
 are not sufficient: the same actor, action, product, condition and figure must agree in context.
 Before setting factsSupported, also check the headline and deck for broader or stronger assertions
 than those supported claims. Do not let accurate body wording excuse a misleading headline.
@@ -420,6 +424,12 @@ decode a pronoun or disconnected quotation. The lead must say who did what. Why 
 explain a supported consequence of THIS development; what to watch must identify a specific next
 signal. Generic advice to read the original or check its date is not a substitute. Reject those drafts.
 When in doubt reject. Do not assume that a matching quote proves the paraphrase is accurate.`;
+const DAILY_CLAIM_GUIDANCE = `Choose the supporting passages BEFORE composing each claim.
+Use one evidenceId when one passage establishes the complete fact. Use two only when the second
+provides a needed fact, qualification, or independent reporting; every citation must contribute.
+Do not add a spare citation merely because its topic is related. The claim's factual clauses must
+come only from its selected passages. Keep the original conditions and avoid bundling uncited features.
+Across a corroborated story's two distinct claims, retain the required coverage of both publishers.`;
 const REPAIR_PROMPT = `${WRITER_PROMPT}
 You are revising ONLY the rejected drafts supplied here. Return exactly one corrected story per
 rejected candidateId, without introducing other candidates. The rejectionCode is a trusted local check.
@@ -814,6 +824,20 @@ function completeClaimReview(review, draft) {
       [...ids].sort().join("\n") === draft.claims[index].supports.map((support) => support.evidenceId).sort().join("\n"));
 }
 
+function claimSupportFailures(review, draft) {
+  return draft.claims.flatMap((claim, claimIndex) => {
+    const supplied = Array.isArray(review?.claimSupport) ? review.claimSupport[claimIndex] : null;
+    const expected = claim.supports.map(support => support.evidenceId);
+    const validShape = Array.isArray(review?.claimSupport) && review.claimSupport.length === draft.claims.length &&
+      Array.isArray(supplied) && supplied.length <= 2 && supplied.every(id => typeof id === "string") &&
+      new Set(supplied).size === supplied.length;
+    const reason = !validShape ? "invalid_shape" : !supplied.length ? "empty"
+      : [...supplied].sort().join("\n") !== [...expected].sort().join("\n") ? "mismatch" : null;
+    return reason ? [{ candidateId: draft.candidateId, claimIndex, expectedCount: expected.length,
+      reviewedCount: Array.isArray(supplied) && supplied.length <= 2 ? supplied.length : null, reason }] : [];
+  });
+}
+
 /** Llama uses at most three calls; Cloudflare Qwen uses isolated drafts and one review.
  * Explicit local Qwen uses up to four isolated claims/audit/repair/copy/review
  * sets, capped at 240,000 requested output tokens including local reasoning.
@@ -872,10 +896,16 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
     // Local uses evidence-first structured writing and an explicit all-field
     // review checklist. Neither changes review verdicts or the daily provider.
     if (local && Object.hasOwn(schema.properties, "stories")) {
-      schema = localWriterProviderSchema(schema, data.dossiers);
+      schema = evidenceFirstWriterProviderSchema(schema, data.dossiers);
       system = `${system}\n${LOCAL_CLAIM_GUIDANCE}`;
     } else if (local && Object.hasOwn(schema.properties, "claims")) system = `${system}\n${LOCAL_CLAIM_GUIDANCE}`;
     else if (local && Object.hasOwn(schema.properties, "reviews")) system = `${system}\n${LOCAL_REVIEW_GUIDANCE}`;
+    if (model === DEFAULT_CLOUDFLARE_AI_MODEL && Object.hasOwn(schema.properties, "stories")) {
+      const writerDossiers = data.dossiers.map(dossier => dossier.fullRewrite ?? dossier)
+        .filter(dossier => Array.isArray(dossier.sources));
+      schema = evidenceFirstWriterProviderSchema(schema, writerDossiers);
+      system = `${system}\n${DAILY_CLAIM_GUIDANCE}`;
+    }
     if (local) system = `${system}\nReturn only the final JSON object matching this schema:\n${JSON.stringify(schema)}`;
     const response = await aiRequestImpl({ ...(local ? {} : { accountId, apiToken }),
     model, messages: [{ role: "system", content: model === EXPERIMENTAL_FREE_WRITER_MODEL
@@ -1183,12 +1213,16 @@ response, add Markdown fences or serialize another object inside any reader-faci
       return null;
     }
     const reviewRejections = [];
+    const supportFailures = [];
     const approved = valid.filter((draft) => {
       const review = reviews.find((value) => value?.candidateId === draft.candidateId);
       const failures = [];
       if (!keys(review, ["candidateId", "draftSha256", "claimSupport", "factsSupported", "attributionAccurate", "analysisSupported", "usefulAndSpecific"])) failures.push("REVIEW_SHAPE");
       if (review?.draftSha256 !== hash(draft)) failures.push("REVIEW_BINDING");
-      if (!review || !completeClaimReview(review, draft)) failures.push("REVIEW_CLAIM_SUPPORT");
+      if (!review || !completeClaimReview(review, draft)) {
+        failures.push("REVIEW_CLAIM_SUPPORT");
+        supportFailures.push(...claimSupportFailures(review, draft));
+      }
       for (const [field, code] of [["factsSupported", "REVIEW_FACTS"], ["attributionAccurate", "REVIEW_ATTRIBUTION"],
         ["analysisSupported", "REVIEW_ANALYSIS"], ["usefulAndSpecific", "REVIEW_USEFULNESS"]]) {
         if (review?.[field] !== true) failures.push(code);
@@ -1197,7 +1231,7 @@ response, add Markdown fences or serialize another object inside any reader-faci
       return failures.length === 0;
     });
     onDiagnostic({ stage: "semantic-evidence-check", submitted: valid.length, accepted: approved.length,
-      rejectionCodes: [...new Set(reviewRejections)] });
+      rejectionCodes: [...new Set(reviewRejections)], ...(supportFailures.length ? { claimSupportFailures: supportFailures.slice(0, 8) } : {}) });
     if (!approved.length) return null;
     const result = structuredClone(editorial);
     for (const draft of approved) {

@@ -41,3 +41,30 @@ repair does not, by itself, prove the initial format failure is resolved.
 
 Live verification results will be recorded after observation; regression tests
 alone are not proof of a working live summary or email delivery.
+
+The first repaired live check,
+[34841632556](https://github.com/itworksinprod/first-fold/actions/runs/34841632556)
+on `a776c1b`, completed twelve free searches and verified eight publisher
+articles. Four initial drafts failed word-count or reader-copy checks. The
+targeted revision brought all four through those checks; three then passed
+the separate factual review. The fourth failed exact claim-support coverage.
+The all-stories quality assertion correctly failed with
+`QUALITY_GROUNDED_SUMMARIES_INCOMPLETE`; no email was sent. This demonstrates
+three checked live summaries and working field repair, not an all-clear run or
+proof that every future response will be well formatted.
+
+## Citation discipline follow-up
+
+The default writer now selects cited passages before composing claims, then
+writes the headline from those claims. It is told to use the smallest sufficient
+citation set, with every included passage contributing a fact, qualification or
+independent account. Review instructions explicitly evaluate that submitted set
+jointly, while rejecting any unsupported clause or irrelevant citation. Exact
+per-claim evidence-set matching and every semantic approval flag remain required.
+Bounded count-only diagnostics distinguish empty, mismatched and malformed
+review coverage without exposing passages or generated prose.
+
+All 847 regression tests pass, including complementary-passage support, strict
+subset rejection, and the observed four-repaired/three-approved pattern. The
+precise reason for the first live review mismatch was not recorded; clarification
+of the contract is not evidence that the rejected claim was actually correct.

@@ -843,7 +843,7 @@ test("local reviewer cannot approve unsupported claims, wrong binding or generic
   }
 });
 
-test("local evidence-first schema ordering never mutates the daily Cloudflare grammar or prompts", async () => {
+test("provider-specific evidence-first ordering never mutates the shared grammar or mixes local-only prompts", async () => {
   for (const model of [LOCAL_AI_MODEL, DEFAULT_CLOUDFLARE_AI_MODEL]) {
     let calls = 0;
     const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate], model,
@@ -853,9 +853,11 @@ test("local evidence-first schema ordering never mutates the daily Cloudflare gr
           assert.doesNotMatch(options.messages[0].content, /Local writer citation discipline|Local review checklist/);
           if (options.schema.properties.stories) {
             const fields = options.schema.properties.stories.items.properties;
-            assert.deepEqual(Object.keys(fields), ["candidateId", "headline", "deck", "claims", "whyItMatters", "whatToDoOrWatch"]);
-            assert.deepEqual(Object.keys(fields.claims.items.properties), ["text", "supports"]);
-            assert.deepEqual(fields.claims.items.properties.supports.items.properties.evidenceId, { type: "string" });
+            assert.deepEqual(Object.keys(fields), ["candidateId", "claims", "headline", "deck", "whyItMatters", "whatToDoOrWatch"]);
+            assert.deepEqual(Object.keys(fields.claims.items.properties), ["supports", "text"]);
+            const data = JSON.parse(options.messages[1].content);
+            assert.deepEqual(fields.claims.items.properties.supports.items.properties.evidenceId, { type: "string",
+              enum: [...new Set(data.dossiers.flatMap(item => item.sources.flatMap(source => source.passages.map(passage => passage.evidenceId))))] });
           }
         }
         if (model === LOCAL_AI_MODEL) return localResponse(calls === 1 ? localFoundation(groundedDraft)
@@ -1595,4 +1597,144 @@ test("the actual daily failure order spends format recovery before 109/99/71 rej
   assert.deepEqual(events[rejection].wordCounts, [109, 99, 71]);
   assert.deepEqual(events[rejection].rejectionCodes, ["ORIGINALITY", "WORD_COUNT", "WORD_COUNT"]);
   assert.equal(events.some(event => event.stage === "draft-repair"), false);
+});
+
+test("daily writing selects minimal evidence before prose without changing shared or other-provider schemas", async () => {
+  const shared = JSON.stringify(GROUNDED_DRAFT_SCHEMA);
+  for (const model of [DEFAULT_CLOUDFLARE_AI_MODEL, EXPERIMENTAL_FREE_WRITER_MODEL, FREE_REASONING_WRITER_MODEL]) {
+    let calls = 0;
+    const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate], model,
+      aiRequestImpl: async options => {
+        calls++;
+        const wrap = payload => ({ ...response(payload), model });
+        if (calls === 1) {
+          const story = options.schema.properties.stories.items;
+          if (model === DEFAULT_CLOUDFLARE_AI_MODEL) {
+            assert.deepEqual(Object.keys(story.properties), ["candidateId", "claims", "headline", "deck", "whyItMatters", "whatToDoOrWatch"]);
+            assert.deepEqual(story.required, Object.keys(story.properties));
+            assert.deepEqual(Object.keys(story.properties.claims.items.properties), ["supports", "text"]);
+            assert.deepEqual(story.properties.claims.items.required, ["supports", "text"]);
+            assert.match(options.messages[0].content, /Choose the supporting passages BEFORE composing each claim/);
+            assert.match(options.messages[0].content, /Use one evidenceId when one passage establishes the complete fact/);
+            assert.match(options.messages[0].content, /Do not add a spare citation merely because its topic is related/);
+            assert.match(options.messages[0].content, /retain the required coverage of both publishers/);
+            assert.equal(options.maxTokens, 4_000);
+          } else {
+            assert.deepEqual(Object.keys(story.properties.claims.items.properties), ["text", "supports"]);
+            assert.doesNotMatch(options.messages[0].content, /Choose the supporting passages BEFORE/);
+          }
+          assert.equal(story.properties.claims.items.properties.supports.minItems, 1);
+          assert.equal(story.properties.claims.items.properties.supports.maxItems, 2);
+          return wrap({ stories: [groundedDraft] });
+        }
+        assert.match(options.messages[0].content, /Evaluate the submitted cited passages TOGETHER/);
+        assert.match(options.messages[0].content, /Each passage need not prove the entire claim by itself/);
+        assert.match(options.messages[0].content, /If any clause is unsupported or any submitted passage is irrelevant, return an empty array/);
+        assert.match(options.messages[0].content, /not a guessed subset/);
+        return wrap({ reviews: [review] });
+      } });
+    assert.ok(result);
+    assert.equal(calls, 2);
+    assert.equal(JSON.stringify(GROUNDED_DRAFT_SCHEMA), shared);
+  }
+});
+
+test("one sufficient citation and two complementary citations both need exact-set review; subsets never approve", async () => {
+  const onePassage = structuredClone(groundedDraft);
+  onePassage.claims[0] = {
+    text: "CERT/CC describes a backup software driver that lets a local user change data on physical disks through the installed AOMEI component.",
+    supports: [{ evidenceId: "S1P2" }],
+  };
+  assert.equal(validateGroundedStory(onePassage, dossier), true);
+  for (const draft of [onePassage, groundedDraft]) {
+    let calls = 0;
+    const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate], aiRequestImpl: async () => {
+      if (++calls === 1) return response({ stories: [draft] });
+      return response({ reviews: [{ ...review, draftSha256: hash(draft),
+        claimSupport: draft.claims.map(claim => claim.supports.map(support => support.evidenceId).reverse()) }] });
+    } });
+    assert.ok(result);
+    assert.equal(calls, 2);
+  }
+  const cases = [
+    { support: [], reason: "empty", reviewedCount: 0 },
+    { support: ["S1P2"], reason: "mismatch", reviewedCount: 1 },
+    { support: ["S1P4", "S1P5"], reason: "mismatch", reviewedCount: 2 },
+    { support: ["S1P2", "S1P2"], reason: "invalid_shape", reviewedCount: 2 },
+    { support: "UNTRUSTED_REVIEW_CONTENT", reason: "invalid_shape", reviewedCount: null },
+    { support: ["UNTRUSTED_REVIEW_CONTENT", "S1P3"], reason: "mismatch", reviewedCount: 2 },
+  ];
+  for (const item of cases) {
+    let calls = 0;
+    const events = [];
+    const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
+      onDiagnostic: event => events.push(event), aiRequestImpl: async () => response(++calls === 1
+        ? { stories: [groundedDraft] } : { reviews: [{ ...review, claimSupport: [item.support, ["S1P4", "S1P5"]] }] }) });
+    assert.equal(result, null);
+    assert.equal(calls, 2, "No revision or reviewer retry is permitted after a semantic support failure");
+    const checked = events.find(event => event.stage === "semantic-evidence-check");
+    assert.deepEqual(checked.rejectionCodes, ["REVIEW_CLAIM_SUPPORT"]);
+    assert.deepEqual(checked.claimSupportFailures, [{ candidateId: candidate.candidateId, claimIndex: 0,
+      expectedCount: 2, reviewedCount: item.reviewedCount, reason: item.reason }]);
+    assert.doesNotMatch(JSON.stringify(checked), /UNTRUSTED_REVIEW_CONTENT|S1P[2345]/);
+  }
+});
+
+test("four repaired daily drafts retain only three approved stories when the last reviewer drops a citation", async () => {
+  const desks = ["ai", "work-and-tools", "security-and-privacy", "platforms-and-power"];
+  const slate = desks.map((suggestedDesk, index) => ({ ...structuredClone(candidate),
+    candidateId: `candidate-four-review-${index}`, suggestedDesk }));
+  const revised = slate.map(item => ({ ...structuredClone(groundedDraft), candidateId: item.candidateId }));
+  const defective = revised.map(draft => ({ ...structuredClone(draft), whyItMatters: "Too short." }));
+  const editorial = { frontPage: { note: "old", estimatedMinutes: 1 }, desks: Object.fromEntries(desks.map(desk => [desk,
+    structuredClone(baseline.desks["security-and-privacy"])])) };
+  const events = [];
+  const requests = [];
+  const result = await synthesizeGroundedEditorial({ editorial, candidates: slate,
+    onDiagnostic: event => events.push(event), aiRequestImpl: async options => {
+      requests.push(options);
+      if (requests.length === 1) return response({ stories: defective });
+      if (requests.length === 2) return response(dailyRepairPayload(options, revised));
+      return response({ reviews: revised.map((draft, index) => ({ ...review, candidateId: draft.candidateId,
+        draftSha256: hash(draft), claimSupport: index === 3 ? [["S1P2"], ["S1P4", "S1P5"]] : review.claimSupport })) });
+    } });
+  assert.ok(result);
+  assert.deepEqual(requests.map(request => request.maxTokens), [4_000, 3_000, 800]);
+  assert.equal(events.find(event => event.stage === "draft-repair").accepted, 4);
+  const checked = events.find(event => event.stage === "semantic-evidence-check");
+  assert.equal(checked.submitted, 4);
+  assert.equal(checked.accepted, 3);
+  assert.deepEqual(checked.rejectionCodes, ["REVIEW_CLAIM_SUPPORT"]);
+  assert.deepEqual(checked.claimSupportFailures, [{ candidateId: slate[3].candidateId, claimIndex: 0,
+    expectedCount: 2, reviewedCount: 1, reason: "mismatch" }]);
+  for (const [index, desk] of desks.entries()) assert.equal(result.editorial.desks[desk].story.headline,
+    index === 3 ? "old" : revised[index].headline);
+});
+
+test("support-failure diagnostics remain bounded for malformed model arrays and disclose no supplied IDs", async () => {
+  const desks = ["ai", "work-and-tools", "security-and-privacy", "platforms-and-power"];
+  const slate = desks.map((suggestedDesk, index) => ({ ...structuredClone(candidate), candidateId: `candidate-bounded-${index}`, suggestedDesk }));
+  const drafts = slate.map(item => ({ ...structuredClone(groundedDraft), candidateId: item.candidateId }));
+  const editorial = { frontPage: { note: "old", estimatedMinutes: 1 }, desks: Object.fromEntries(desks.map(desk => [desk,
+    structuredClone(baseline.desks["security-and-privacy"])])) };
+  const events = [];
+  let calls = 0;
+  const result = await synthesizeGroundedEditorial({ editorial, candidates: slate, onDiagnostic: event => events.push(event),
+    aiRequestImpl: async () => response(++calls === 1 ? { stories: drafts } : { reviews: drafts.map(draft => ({
+      ...review, candidateId: draft.candidateId, draftSha256: hash(draft),
+      claimSupport: [Array(100).fill("UNTRUSTED_REVIEW_CONTENT"), []],
+    })) }) });
+  assert.equal(result, null);
+  assert.equal(calls, 2);
+  const checked = events.find(event => event.stage === "semantic-evidence-check");
+  assert.equal(checked.claimSupportFailures.length, 8);
+  for (const failure of checked.claimSupportFailures) {
+    assert.deepEqual(Object.keys(failure), ["candidateId", "claimIndex", "expectedCount", "reviewedCount", "reason"]);
+    assert.ok(slate.some(item => item.candidateId === failure.candidateId));
+    assert.ok(failure.claimIndex === 0 || failure.claimIndex === 1);
+    assert.equal(failure.expectedCount, 2);
+    assert.equal(failure.reviewedCount, failure.claimIndex === 0 ? null : 0);
+    assert.equal(failure.reason, failure.claimIndex === 0 ? "invalid_shape" : "empty");
+  }
+  assert.doesNotMatch(JSON.stringify(checked), /UNTRUSTED_REVIEW_CONTENT|S1P[2345]/);
 });
