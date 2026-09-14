@@ -283,3 +283,31 @@ fixtures, acceptance conditions, source checks and budgets are unchanged.
 After that instruction-only correction, build and all 885 local tests pass.
 The synthetic evaluator now also regression-tests both exact label failures
 observed live. Production remains on the original reviewer pending evaluation.
+
+The corrected-instruction evaluation,
+[34895184382](https://github.com/itworksinprod/first-fold/actions/runs/34895184382)
+on `ad3d085`, still rejected the supported control's analysis. Although it now
+correctly marked the fabricated benefit as both factually and analytically
+unsupported, it incorrectly approved the irrelevant-extra-citation case. This
+is a false approval under the unchanged citation contract. The Llama explicit
+profile is therefore not suitable for activation on this evidence. No real-news
+quality run or email was attempted with it.
+
+The next comparison is diagnostic-only: the same fixed cases, expectations,
+prompt and native schema, using the already allowlisted Cloudflare-hosted
+`@cf/openai/gpt-oss-120b` within the existing free allocation. This is not the
+paid OpenAI API and does not change the daily model. The comparison remains
+one request, 1,800 requested output tokens, no retries and no email. At the
+latest dashboard check, daily usage was 9.53k/10k neurons; any provider block
+must stop the comparison without enabling billing.
+
+The separate authorized Mac fallback was also checked read-only: Ollama is
+running on loopback and Qwen3 30B is fully installed. Its last recorded actual
+drafting attempt timed out on the second story's review, with no completed
+paper artifact. GitHub-hosted daily jobs cannot reach the Mac's loopback. No
+automatic local scheduler or cloud-to-Mac connection has been installed.
+
+The diagnostic comparison uses a 20,007-byte request for either model and keeps
+the same 1,800-token output cap. Its selected endpoint and returned provenance
+must match the explicit two-model allowlist. Only pre-existing whitelisted
+provider error details may be logged. Build and all 887 local tests pass.

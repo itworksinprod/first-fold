@@ -23,6 +23,7 @@ jobs:
         run: node --test tests/explicit-claim-review.test.mjs tests/free-reviewer-quality-workflow.test.mjs tests/free-workers-ai.test.mjs
       - name: Evaluate four synthetic cases with one free reviewer request
         env:
+          FREE_REVIEWER_MODEL: '@cf/openai/gpt-oss-120b'
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_AI_API_TOKEN: ${{ secrets.CLOUDFLARE_AI_API_TOKEN }}
         run: node scripts/automation/check-free-reviewer.mjs

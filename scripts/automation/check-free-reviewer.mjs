@@ -5,11 +5,12 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { buildExplicitClaimReview, validateExplicitClaimReview } from "./free/explicit-claim-review.mjs";
-import { DEFAULT_CLOUDFLARE_AI_MODEL, WORKERS_AI_PROVIDER, buildWorkersAiRequest,
-  requestWorkersAiEditorial, workersAiRunUrl } from "./free/workers-ai.mjs";
+import { DEFAULT_CLOUDFLARE_AI_MODEL, FREE_REASONING_WRITER_MODEL, WORKERS_AI_PROVIDER, buildWorkersAiRequest,
+  requestWorkersAiEditorial, workersAiRunUrl, workersAiFailureDiagnostic } from "./free/workers-ai.mjs";
 
 const MAX_TOKENS = 1_800;
 const MAX_REQUEST_BYTES = 70_000;
+const REVIEW_MODELS = new Set([DEFAULT_CLOUDFLARE_AI_MODEL, FREE_REASONING_WRITER_MODEL]);
 const SAFE_CODES = new Set(["REVIEW_EVAL_AUTHORITY_REJECTED", "REVIEW_EVAL_CONFIGURATION_INVALID",
   "REVIEW_EVAL_REQUEST_SIZE", "REVIEW_EVAL_ENDPOINT_REJECTED", "REVIEW_EVAL_REQUEST_BUDGET",
   "REVIEW_EVAL_PROVENANCE_INVALID", "REVIEW_EVAL_CONTRACT_INVALID", "REVIEW_EVAL_VERDICT_MISMATCH",
@@ -86,27 +87,29 @@ function compareCase(item, review) {
 }
 
 export async function checkFreeReviewer({ env = process.env, accountId, apiToken,
+  model = DEFAULT_CLOUDFLARE_AI_MODEL,
   aiRequestImpl = requestWorkersAiEditorial, fetchImpl = globalThis.fetch } = {}) {
   // Authority is checked before credentials, fixture construction or provider use.
   assertFreeReviewerAuthority(env);
-  if (!/^[a-f0-9]{32}$/iu.test(accountId ?? "") || typeof apiToken !== "string" || !apiToken ||
+  if (!REVIEW_MODELS.has(model) || !/^[a-f0-9]{32}$/iu.test(accountId ?? "") || typeof apiToken !== "string" || !apiToken ||
       apiToken !== apiToken.trim() || apiToken.length > 4_096 || /[\p{Cc}\p{Cf}]/u.test(apiToken)) {
     throw failure("REVIEW_EVAL_CONFIGURATION_INVALID");
   }
   const cases = syntheticCases();
   const bundle = buildExplicitClaimReview({ drafts: cases.map(item => item.draft), dossiers: cases.map(item => item.dossier) });
   const messages = [{ role: "system", content: bundle.prompt }, { role: "user", content: JSON.stringify(bundle.data) }];
-  const request = buildWorkersAiRequest({ model: DEFAULT_CLOUDFLARE_AI_MODEL, messages, schema: bundle.schema,
+  const request = buildWorkersAiRequest({ model, messages, schema: bundle.schema,
     responseFormat: "json_schema", maxTokens: MAX_TOKENS, temperature: 0.1 });
   if (new TextEncoder().encode(JSON.stringify(request.body)).byteLength > MAX_REQUEST_BYTES) throw failure("REVIEW_EVAL_REQUEST_SIZE");
-  const endpoint = workersAiRunUrl(accountId, DEFAULT_CLOUDFLARE_AI_MODEL);
+  const endpoint = workersAiRunUrl(accountId, model);
   let modelRequests = 0;
   let networkRequests = 0;
   let reviews = [];
   let code = null;
+  let providerFailure;
   try {
     modelRequests++;
-    const response = await aiRequestImpl({ accountId, apiToken, model: DEFAULT_CLOUDFLARE_AI_MODEL,
+    const response = await aiRequestImpl({ accountId, apiToken, model,
       messages, schema: bundle.schema, responseFormat: "json_schema", maxTokens: MAX_TOKENS,
       temperature: 0.1, maxAttempts: 1, timeoutMs: 90_000, maxRequestBytes: MAX_REQUEST_BYTES, maxResponseBytes: 100_000,
       validatePayload: payload => validateExplicitClaimReview(payload, bundle).errors.length === 0,
@@ -119,17 +122,21 @@ export async function checkFreeReviewer({ env = process.env, accountId, apiToken
         return fetchImpl(url, options);
       },
     });
-    if (response?.provider !== WORKERS_AI_PROVIDER || response.model !== DEFAULT_CLOUDFLARE_AI_MODEL ||
+    if (response?.provider !== WORKERS_AI_PROVIDER || response.model !== model ||
         !/^[a-f0-9]{64}$/u.test(response.requestSha256 ?? "") || !/^[a-f0-9]{64}$/u.test(response.responseSha256 ?? "")) {
       throw failure("REVIEW_EVAL_PROVENANCE_INVALID");
     }
     const validation = validateExplicitClaimReview(response.editorialPayload, bundle);
     if (validation.errors.length || validation.reviews.length !== cases.length) throw failure("REVIEW_EVAL_CONTRACT_INVALID");
     reviews = validation.reviews;
-  } catch (error) { code = safeCode(error?.code); }
+  } catch (error) {
+    code = safeCode(error?.code);
+    if (code === "REVIEW_EVAL_PROVIDER_FAILURE") providerFailure = workersAiFailureDiagnostic(error);
+  }
   const results = cases.map(item => compareCase(item, reviews.find(review => review.candidateId === item.draft.candidateId)));
   if (!code && !results.every(result => result.passed)) code = "REVIEW_EVAL_VERDICT_MISMATCH";
-  return { mode: "synthetic-reviewer-evaluation-not-news-or-delivery", status: code ? "failed" : "passed", code,
+  return { mode: "synthetic-reviewer-evaluation-not-news-or-delivery", model, status: code ? "failed" : "passed", code,
+    ...(providerFailure ? { providerFailure } : {}),
     modelRequests, networkRequests, requestedOutputTokens: modelRequests * MAX_TOKENS,
     maxModelRequests: 1, researchQueries: 0, emailRequests: 0, cases: results };
 }
@@ -138,7 +145,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   try {
     if (process.argv.length !== 2) throw failure("REVIEW_EVAL_CONFIGURATION_INVALID");
     const report = await checkFreeReviewer({ accountId: process.env.CLOUDFLARE_ACCOUNT_ID,
-      apiToken: process.env.CLOUDFLARE_AI_API_TOKEN });
+      apiToken: process.env.CLOUDFLARE_AI_API_TOKEN, model: process.env.FREE_REVIEWER_MODEL });
     console.info(`::notice title=Synthetic reviewer evaluation::${JSON.stringify(report)}`);
     if (report.status !== "passed") process.exitCode = 1;
   } catch (error) {

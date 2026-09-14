@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { assertFreeReviewerAuthority, checkFreeReviewer } from "../scripts/automation/check-free-reviewer.mjs";
-import { DEFAULT_CLOUDFLARE_AI_MODEL, workersAiRunUrl } from "../scripts/automation/free/workers-ai.mjs";
+import { DEFAULT_CLOUDFLARE_AI_MODEL, FREE_REASONING_WRITER_MODEL, workersAiRunUrl } from "../scripts/automation/free/workers-ai.mjs";
 
 const workflow = await readFile(new URL("../.github/workflows/free-reviewer-quality-check.yml", import.meta.url), "utf8");
 const scriptUrl = new URL("../scripts/automation/check-free-reviewer.mjs", import.meta.url);
@@ -36,7 +36,8 @@ test("reviewer evaluation rejects unauthorized contexts before credential checks
       env: { ...authority, [field]: "untrusted" }, aiRequestImpl: async () => { calls++; } }), /REVIEW_EVAL_AUTHORITY_REJECTED/);
   }
   for (const override of [{ accountId: "invalid" }, { apiToken: "" }, { apiToken: " leading" },
-    { apiToken: "line\nbreak" }, { apiToken: "x".repeat(4_097) }]) {
+    { apiToken: "line\nbreak" }, { apiToken: "x".repeat(4_097) }, { model: "@cf/qwen/qwen3-30b-a3b-fp8" },
+    { model: "gpt-5" }, { model: "qwen3:30b-a3b" }, { model: "@cf/unapproved/model" }]) {
     await assert.rejects(checkFreeReviewer({ ...base, ...override, aiRequestImpl: async () => { calls++; } }), /REVIEW_EVAL_CONFIGURATION_INVALID/);
   }
   assert.equal(calls, 0);
@@ -66,6 +67,7 @@ test("one bounded default-Llama request evaluates four opaque synthetic cases wi
   } });
   assert.equal(calls, 1);
   assert.equal(report.status, "passed");
+  assert.equal(report.model, DEFAULT_CLOUDFLARE_AI_MODEL);
   assert.equal(report.code, null);
   assert.ok(report.cases.every(item => item.passed));
   assert.deepEqual([report.modelRequests, report.maxModelRequests, report.requestedOutputTokens], [1, 1, 1_800]);
@@ -121,6 +123,85 @@ test("malformed verdicts, wrong bindings and provider provenance cannot turn an 
     ...response(expectedPayload(modelData(options))), model: "different-model",
   }) });
   assert.equal(report.code, "REVIEW_EVAL_PROVENANCE_INVALID");
+  for (const model of [DEFAULT_CLOUDFLARE_AI_MODEL, FREE_REASONING_WRITER_MODEL]) {
+    const mixed = await checkFreeReviewer({ ...base, model, aiRequestImpl: async options => ({
+      ...response(expectedPayload(modelData(options))),
+      model: model === DEFAULT_CLOUDFLARE_AI_MODEL ? FREE_REASONING_WRITER_MODEL : DEFAULT_CLOUDFLARE_AI_MODEL,
+    }) });
+    assert.equal(mixed.model, model);
+    assert.equal(mixed.code, "REVIEW_EVAL_PROVENANCE_INVALID");
+    assert.equal(mixed.modelRequests, 1);
+  }
+});
+
+test("the diagnostic reasoning model uses the same fixture prompt schema expectations and one-call allowance", async t => {
+  const requests = [];
+  const reports = [];
+  for (const model of [DEFAULT_CLOUDFLARE_AI_MODEL, FREE_REASONING_WRITER_MODEL]) {
+    let calls = 0;
+    reports.push(await checkFreeReviewer({ ...base, model, fetchImpl: async (url, options) => {
+      calls++;
+      assert.equal(url, workersAiRunUrl(base.accountId, model));
+      assert.equal(options.method, "POST");
+      assert.equal(options.redirect, "error");
+      const request = JSON.parse(options.body);
+      assert.equal(request.max_tokens, 1_800);
+      assert.equal(request.temperature, 0.1);
+      assert.equal(request.stream, false);
+      assert.equal(request.response_format.type, "json_schema");
+      const bytes = Buffer.byteLength(options.body);
+      assert.ok(bytes <= 70_000);
+      t.diagnostic(`${model}: ${bytes} UTF-8 request bytes; 1800 requested output tokens.`);
+      requests.push(request);
+      return new Response(JSON.stringify({ success: true, result: {
+        response: JSON.stringify(expectedPayload(JSON.parse(request.messages[1].content))),
+      } }), { headers: { "content-type": "application/json" } });
+    } }));
+    assert.equal(calls, 1);
+    const report = reports.at(-1);
+    assert.equal(report.model, model);
+    assert.equal(report.status, "passed");
+    assert.equal(report.modelRequests, 1);
+    assert.equal(report.networkRequests, 1);
+    assert.equal(report.requestedOutputTokens, 1_800);
+  }
+  assert.deepEqual(requests[0], requests[1]);
+  assert.deepEqual(reports[0].cases, reports[1].cases);
+  let calls = 0;
+  const wrongEndpoint = await checkFreeReviewer({ ...base, model: FREE_REASONING_WRITER_MODEL,
+    fetchImpl: async () => { calls++; },
+    aiRequestImpl: async options => options.fetchImpl(workersAiRunUrl(base.accountId, DEFAULT_CLOUDFLARE_AI_MODEL), {
+      method: "POST", redirect: "error",
+    }) });
+  assert.equal(calls, 0);
+  assert.equal(wrongEndpoint.code, "REVIEW_EVAL_ENDPOINT_REJECTED");
+});
+
+test("quota and malformed-output failures expose only whitelisted provider diagnostics and never retry", async () => {
+  const scenarios = [
+    { status: 429, envelope: { success: false, errors: [{ code: 3036, message: `Private quota detail ${base.apiToken}` }] },
+      expected: { httpStatus: "429", providerCode: 3036, reason: "DAILY_FREE_ALLOCATION_EXHAUSTED" } },
+    { status: 400, envelope: { success: false, errors: [{ code: 5000, message: "JSON Mode couldn't be met." }] },
+      expected: { httpStatus: null, providerCode: null, formatReason: "PROVIDER_SCHEMA_UNSATISFIED" } },
+    { status: 200, envelope: { success: true, result: { response: `MALFORMED_PRIVATE_TEXT ${base.apiToken}`,
+      usage: { completion_tokens: 712 } } }, expected: { httpStatus: null, providerCode: null,
+      formatReason: "PAYLOAD_JSON_INVALID", completionTokens: 712, requestedMaxTokens: 1_800 } },
+  ];
+  for (const scenario of scenarios) {
+    let calls = 0;
+    const report = await checkFreeReviewer({ ...base, model: FREE_REASONING_WRITER_MODEL, fetchImpl: async () => {
+      calls++;
+      return new Response(JSON.stringify(scenario.envelope), {
+        status: scenario.status, headers: { "content-type": "application/json" },
+      });
+    } });
+    assert.equal(calls, 1);
+    assert.equal(report.modelRequests, 1);
+    assert.equal(report.status, "failed");
+    assert.equal(report.code, "REVIEW_EVAL_PROVIDER_FAILURE");
+    assert.deepEqual(report.providerFailure, scenario.expected);
+    assert.doesNotMatch(JSON.stringify(report), /Private quota detail|MALFORMED_PRIVATE_TEXT|synthetic-reviewer-test-token|JSON Mode couldn't/);
+  }
 });
 
 test("the real adapter makes one fixed-endpoint request and never publishes its envelope or reasoning", async () => {
@@ -184,6 +265,7 @@ test("reviewer workflow is manual owner/main read-only, uses existing credential
   assert.equal(actions.length, 2);
   assert.ok(actions.every(action => /^actions\/(checkout|setup-node)@[a-f0-9]{40}$/u.test(action)));
   assert.equal([...workflow.matchAll(/secrets\./gu)].length, 1);
+  assert.match(workflow, /FREE_REVIEWER_MODEL: '@cf\/openai\/gpt-oss-120b'/);
   assert.ok(workflow.indexOf("Test synthetic reviewer boundaries") < workflow.indexOf("secrets.CLOUDFLARE_AI_API_TOKEN"));
   assert.doesNotMatch(workflow, /\bwrite\b|RESEND|OPENAI|TAVILY|PERSONAL_PAPER_EMAIL|upload-artifact|git push|git commit|deploy/);
   assert.doesNotMatch(script, /collectFreeResearch|synthesizeGroundedEditorial|sendPersonal|writeFile|readFile|TAVILY|RESEND|OPENAI_API/);
