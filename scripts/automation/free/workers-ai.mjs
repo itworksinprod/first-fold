@@ -21,9 +21,15 @@ export const WORKERS_AI_EDITORIAL_UNAVAILABLE = "WORKERS_AI_EDITORIAL_UNAVAILABL
 const DOCUMENTED_FAILURE_CODES = new Set([3003, 3006, 3007, 3008, 3023, 3036, 3039, 3040, 3041, 3042,
   5004, 5005, 5007, 5016, 5018, 5019, 5035]);
 const FORMAT_REASONS = new Set(["OUTPUT_TOKEN_LIMIT", "PAYLOAD_MISSING", "PAYLOAD_JSON_INVALID"]);
+const PRIVATE_FAILURE_MAX_BODY_BYTES = 8_192;
+const PRIVATE_FAILURE_CALLBACK_TIMEOUT_MS = 1_000;
+function documentedFailureCode(value) {
+  const code = typeof value === "string" && /^\d{4}$/.test(value) ? Number(value) : value;
+  return DOCUMENTED_FAILURE_CODES.has(code) ? code : null;
+}
 function attachFailureDetails(error, status, envelope) {
   const codes = Array.isArray(envelope?.errors) ? envelope.errors.slice(0, 16)
-    .map((entry) => entry?.code).filter((code) => DOCUMENTED_FAILURE_CODES.has(code)) : [];
+    .map((entry) => documentedFailureCode(entry?.code)).filter((code) => code !== null) : [];
   Object.defineProperties(error, {
     httpStatus: { value: Number.isInteger(status) && status >= 100 && status <= 599 ? status : null },
     providerCode: { value: new Set(codes).size === 1 ? codes[0] : null },
@@ -331,7 +337,119 @@ async function readBoundedResponseText(response, maxResponseBytes) {
   return text;
 }
 
-async function performAttempt({ url, apiToken, requestText, fetchImpl, timeoutMs, maxResponseBytes }) {
+function redactPrivateToken(value, apiToken) {
+  const marker = "[REDACTED]".includes(apiToken) ? "" : "[REDACTED]";
+  return typeof value === "string" ? value.split(apiToken).join(marker) : null;
+}
+
+function privateErrorBody(text, apiToken) {
+  if (typeof text !== "string") return { bodyText: null, bodyTruncated: false };
+  // Keep only error-envelope data, never result/choices/output, request echoes,
+  // or reasoning fields. This diagnostic is private, not safe for public logs.
+  let errorText = text;
+  try {
+    const parsed = JSON.parse(text);
+    if (isObject(parsed)) {
+      const errorFields = ["success", "errors", "error", "message", "detail", "code", "status", "type"];
+      const select = (value, depth = 0) => {
+        if (typeof value === "string") return redactPrivateToken(value, apiToken);
+        if (value === null || ["number", "boolean"].includes(typeof value)) return value;
+        if (depth >= 4) return "[omitted nested error data]";
+        if (Array.isArray(value)) return value.slice(0, 16).map((entry) => select(entry, depth + 1));
+        if (!isObject(value)) return null;
+        return Object.fromEntries(errorFields.filter((key) => Object.hasOwn(value, key))
+          .map((key) => [key, select(value[key], depth + 1)]));
+      };
+      errorText = parsed.success === true ? "[omitted successful result envelope]" : JSON.stringify(select(parsed));
+    } else {
+      errorText = "[omitted non-object JSON error body]";
+    }
+  } catch {
+    // Gateways may return a plain-text or HTML error instead of an API envelope.
+    // A broken JSON envelope might contain result/reasoning fields that cannot
+    // be safely separated from errors, so do not retain its raw representation.
+    if (/^\s*[\[{]/.test(text)) errorText = "[omitted malformed JSON error body]";
+  }
+  // Redact before truncation so a boundary cannot leave a token prefix behind.
+  const bytes = utf8Encoder.encode(redactPrivateToken(errorText, apiToken));
+  let bodyText = new TextDecoder("utf-8", { fatal: false })
+    .decode(bytes.subarray(0, PRIVATE_FAILURE_MAX_BODY_BYTES));
+  // Cutting in the middle of a UTF-8 code point must not exceed the byte cap.
+  while (utf8Encoder.encode(bodyText).byteLength > PRIVATE_FAILURE_MAX_BODY_BYTES) bodyText = bodyText.slice(0, -1);
+  return { bodyText, bodyTruncated: bytes.byteLength > PRIVATE_FAILURE_MAX_BODY_BYTES };
+}
+
+function privateFailureHeader(response, name, apiToken, pattern, maximum = 128) {
+  const raw = response?.headers?.get(name);
+  if (typeof raw !== "string" || raw.length > maximum || !pattern.test(raw) || raw.includes(apiToken)) return null;
+  return raw;
+}
+
+async function readPrivateFailureText(response, maximum) {
+  let reader;
+  let timeoutHandle;
+  try {
+    if (Number(response.headers.get("content-length")) > maximum) {
+      return { text: null, truncated: true };
+    }
+    reader = response.body.getReader();
+    const read = async () => {
+      const decoder = new TextDecoder("utf-8", { fatal: true });
+      let bytes = 0;
+      let text = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!(value instanceof Uint8Array)) return { text: null, truncated: false };
+        bytes += value.byteLength;
+        if (bytes > maximum) return { text: null, truncated: true };
+        text += decoder.decode(value, { stream: true });
+      }
+      return { text: text + decoder.decode(), truncated: false };
+    };
+    return await Promise.race([read(), new Promise((resolve) => {
+      timeoutHandle = setTimeout(() => resolve({ text: null, truncated: false }), PRIVATE_FAILURE_CALLBACK_TIMEOUT_MS);
+    })]);
+  } catch {
+    return { text: null, truncated: false };
+  } finally {
+    clearTimeout(timeoutHandle);
+    // Never await a failed gateway's cancellation after the diagnostic deadline.
+    try { Promise.resolve(reader ? reader.cancel() : response.body?.cancel()).catch(() => {}); } catch { /* best-effort cleanup */ }
+  }
+}
+
+async function notifyPrivateFailure(onPrivateFailure, result, apiToken) {
+  if (typeof onPrivateFailure !== "function") return;
+  let timeoutHandle;
+  try {
+    const { response } = result;
+    const privateBody = result.privateFailureReadLimit
+      ? await readPrivateFailureText(response, result.privateFailureReadLimit) : null;
+    const body = privateErrorBody(result.text ?? privateBody?.text, apiToken);
+    const record = Object.freeze({
+      status: result.status,
+      contentType: privateFailureHeader(response, "content-type", apiToken, /^[\x20-\x7e]+$/, 160),
+      cfRay: privateFailureHeader(response, "cf-ray", apiToken, /^[A-Za-z0-9._-]+$/),
+      requestId: privateFailureHeader(response, "x-request-id", apiToken, /^[A-Za-z0-9._-]+$/),
+      retryAfter: privateFailureHeader(response, "retry-after", apiToken,
+        /^(?:\d{1,8}|(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4} \d{2}:\d{2}:\d{2} GMT)$/),
+      ...body,
+      bodyTruncated: body.bodyTruncated || privateBody?.truncated === true || result.privateFailureTruncated === true,
+    });
+    await Promise.race([
+      Promise.resolve().then(() => onPrivateFailure(record)),
+      new Promise((resolve) => { timeoutHandle = setTimeout(resolve, PRIVATE_FAILURE_CALLBACK_TIMEOUT_MS); }),
+    ]);
+  } catch {
+    // Diagnostic encryption/storage is best-effort. Never change the provider
+    // failure, acceptance, retries, or public error, even if the sink throws.
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
+}
+
+async function performAttempt({ url, apiToken, requestText, fetchImpl, timeoutMs, maxResponseBytes, capturePrivateFailure }) {
   const controller = new AbortController();
   let timeoutHandle;
   const timeout = new Promise((_, reject) => {
@@ -364,15 +482,22 @@ async function performAttempt({ url, apiToken, requestText, fetchImpl, timeoutMs
         !response.body ||
         typeof response.body.getReader !== "function"
       ) {
+        if (capturePrivateFailure && /^(?:text\/(?:plain|html)|application\/problem\+json)(?:;|$)/.test(contentType)) {
+          // Inspect gateway text after the inference attempt has completed, so
+          // slow diagnostic reads cannot turn its status into a transport retry.
+          return { ok: false, response, status: response.status, text: null,
+            privateFailureReadLimit: Math.min(maxResponseBytes, PRIVATE_FAILURE_MAX_BODY_BYTES) };
+        }
         await cancelResponseBody(response);
         return { ok: false, response, status: response.status, text: null };
       }
       try {
         const text = await readBoundedResponseText(response, maxResponseBytes);
         return { ok: false, response, status: response.status, text };
-      } catch {
+      } catch (error) {
         // Error-body inspection is best-effort; the HTTP status remains authoritative.
-        return { ok: false, response, status: response.status, text: null };
+        return { ok: false, response, status: response.status, text: null,
+          privateFailureTruncated: error?.message?.includes("size limit") === true };
       }
     }
     if (!contentType.includes("application/json")) {
@@ -399,6 +524,7 @@ async function requestEnvelope({
   maxAttempts,
   maxResponseBytes,
   sleepImpl,
+  onPrivateFailure,
 }) {
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     let result;
@@ -410,6 +536,7 @@ async function requestEnvelope({
         fetchImpl,
         timeoutMs,
         maxResponseBytes,
+        capturePrivateFailure: typeof onPrivateFailure === "function",
       });
     } catch (error) {
       if (
@@ -439,6 +566,7 @@ async function requestEnvelope({
     }
 
     if (!result.ok) {
+      await notifyPrivateFailure(onPrivateFailure, result, apiToken);
       let errorEnvelope;
       if (result.text !== null) {
         try {
@@ -554,6 +682,10 @@ function validationPassed(result) {
  * Call Cloudflare Workers AI and return a locally validated editorial object.
  * The API token is sent only in the Authorization header and is never returned,
  * hashed, logged, or interpolated into an error.
+ * Optional onPrivateFailure(record) is exclusively for a private encrypted sink.
+ * It receives bounded, token-redacted non-2xx error data, never success/model
+ * output. Do not log its record. Callback failures/timeouts are ignored; the
+ * existing request/retry limits and editorial acceptance are unchanged.
  */
 export async function requestWorkersAiEditorial({
   accountId = process.env.CLOUDFLARE_ACCOUNT_ID,
@@ -571,10 +703,14 @@ export async function requestWorkersAiEditorial({
   maxRequestBytes = DEFAULT_WORKERS_AI_MAX_REQUEST_BYTES,
   maxResponseBytes = DEFAULT_WORKERS_AI_MAX_RESPONSE_BYTES,
   sleepImpl = defaultSleep,
+  onPrivateFailure,
 } = {}) {
   const token = requireNonBlank(apiToken, "CLOUDFLARE_AI_API_TOKEN");
   if (typeof fetchImpl !== "function") throw new Error("fetchImpl must be a function.");
   if (typeof sleepImpl !== "function") throw new Error("sleepImpl must be a function.");
+  if (onPrivateFailure !== undefined && typeof onPrivateFailure !== "function") {
+    throw new Error("onPrivateFailure must be a private diagnostic function.");
+  }
   if (typeof validatePayload !== "function") {
     throw new Error("validatePayload must be a local schema-validation function.");
   }
@@ -612,6 +748,7 @@ export async function requestWorkersAiEditorial({
     maxAttempts,
     maxResponseBytes,
     sleepImpl,
+    onPrivateFailure,
   });
   const result = isObject(envelope?.result) ? envelope.result : {};
   const headerRequestId = response.headers.get("cf-ray")?.trim();

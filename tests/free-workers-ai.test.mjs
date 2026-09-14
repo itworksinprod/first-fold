@@ -49,6 +49,174 @@ test("unavailable responses retain only documented status/code diagnostics witho
   }
 });
 
+test("documented numeric-string error codes normalize without widening public diagnostics", async () => {
+  for (const [code, expected] of [["3036", 3036], ["3040", 3040], [" 3036", null], ["3036.0", null], ["9999", null]]) {
+    await assert.rejects(requestWorkersAiEditorial(requestOptions({ maxAttempts: 1,
+      fetchImpl: async () => new Response(JSON.stringify({ success: false, result: null,
+        errors: [{ code, message: `private ${apiToken}` }] }), { status: 429, headers: { "content-type": "application/json" } }),
+    })), (error) => {
+      assert.deepEqual(workersAiFailureDiagnostic(error), { httpStatus: "429", providerCode: expected });
+      assert.doesNotMatch(error.message, /private|cloudflare-test-token/);
+      return true;
+    });
+  }
+});
+
+test("private failure hook captures only redacted bounded error data and safe response identifiers", async () => {
+  const records = [];
+  await assert.rejects(requestWorkersAiEditorial(requestOptions({ maxAttempts: 1,
+    onPrivateFailure: (record) => { records.push(record); },
+    fetchImpl: async () => new Response(JSON.stringify({ success: false,
+      errors: [{ code: "3036", message: `Quota exceeded near ${apiToken}, again ${apiToken}.`,
+        reasoning: "do not capture reasoning", request: { headers: { authorization: apiToken } } }],
+      result: { response: "do not capture a completion", reasoning_content: "private model thought" },
+      messages: ["do not capture messages"], request: { messages, headers: { authorization: apiToken } },
+    }), { status: 429, headers: { "content-type": "application/json", "cf-ray": "a12bc-LHR",
+      "x-request-id": "request-123", "retry-after": "60", "authorization": apiToken, "x-secret": apiToken } }),
+  })), (error) => {
+    assert.equal(error.code, WORKERS_AI_EDITORIAL_UNAVAILABLE);
+    assert.equal(error.providerCode, 3036);
+    assert.equal(error.attemptCount, 1);
+    assert.doesNotMatch(JSON.stringify(error), /Quota exceeded|cloudflare-test-token/);
+    assert.doesNotMatch(error.message, /Quota exceeded|cloudflare-test-token/);
+    return true;
+  });
+  assert.equal(records.length, 1);
+  assert.equal(Object.isFrozen(records[0]), true);
+  assert.deepEqual(Object.keys(records[0]).sort(), ["status", "contentType", "cfRay", "requestId", "retryAfter", "bodyText", "bodyTruncated"].sort());
+  assert.deepEqual(records[0], { status: 429, contentType: "application/json", cfRay: "a12bc-LHR",
+    requestId: "request-123", retryAfter: "60", bodyTruncated: false,
+    bodyText: JSON.stringify({ success: false, errors: [{ message: "Quota exceeded near [REDACTED], again [REDACTED].", code: "3036" }] }),
+  });
+  assert.doesNotMatch(JSON.stringify(records), /cloudflare-test-token|reasoning|do not capture|private model thought|authorization|normalized evidence/);
+});
+
+test("private error body cap is UTF-8 bounded and redacts before cutting the token boundary", async () => {
+  let record;
+  await assert.rejects(requestWorkersAiEditorial(requestOptions({ maxAttempts: 1,
+    onPrivateFailure: (value) => { record = value; },
+    fetchImpl: async () => new Response(JSON.stringify({ success: false, errors: [{ code: 3040,
+      message: `${"x".repeat(8_100)}${apiToken}${"😀".repeat(5_000)}` }] }),
+    { status: 429, headers: { "content-type": "application/json" } }),
+  })), /usable editorial response/);
+  assert.equal(record.bodyTruncated, true);
+  assert.ok(Buffer.byteLength(record.bodyText, "utf8") <= 8_192);
+  assert.ok(record.bodyText.includes("[REDACTED]"));
+  assert.doesNotMatch(record.bodyText, /cloudflare-test-token/);
+});
+
+test("private hook reads small gateway text without changing non-JSON failure classification", async () => {
+  let calls = 0;
+  const records = [];
+  await assert.rejects(requestWorkersAiEditorial(requestOptions({ maxAttempts: 2,
+    onPrivateFailure: async (record) => { records.push(record); },
+    fetchImpl: async () => {
+      calls++;
+      return new Response(`Upstream rate limited. Credential: ${apiToken}`, { status: 429,
+        headers: { "content-type": "text/plain; charset=utf-8", "cf-ray": apiToken,
+          "x-request-id": "too long ".repeat(100), "retry-after": `60; token=${apiToken}` } });
+    },
+  })), (error) => {
+    assert.equal(error.message, "Cloudflare Workers AI request failed with HTTP 429.");
+    assert.deepEqual(Object.keys(error), []);
+    return true;
+  });
+  assert.equal(calls, 2);
+  assert.equal(records.length, 2);
+  assert.deepEqual(records[0], { status: 429, contentType: "text/plain; charset=utf-8",
+    cfRay: null, requestId: null, retryAfter: null, bodyText: "Upstream rate limited. Credential: [REDACTED]", bodyTruncated: false });
+});
+
+test("oversized and malformed error bodies cannot expose arbitrary model output through diagnostics", async () => {
+  for (const [body, contentType, expected, truncated] of [
+    ["x".repeat(8_193), "text/plain", null, true],
+    [JSON.stringify({ success: false, errors: [{ message: "x".repeat(500) }] }), "application/json", null, true],
+    ['{"errors":[],"result":{"reasoning":"private unfinished', "application/json", "[omitted malformed JSON error body]", false],
+    [JSON.stringify({ success: true, result: { response: "private successful model text" } }), "application/json", "[omitted successful result envelope]", false],
+  ]) {
+    let record;
+    await assert.rejects(requestWorkersAiEditorial(requestOptions({ maxAttempts: 1,
+      maxResponseBytes: body.length > 500 && contentType === "application/json" ? 100 : 10_000,
+      onPrivateFailure: (value) => { record = value; },
+      fetchImpl: async () => new Response(body, { status: 429, headers: { "content-type": contentType } }),
+    })));
+    assert.equal(record.bodyText, expected);
+    assert.equal(record.bodyTruncated, truncated);
+    assert.doesNotMatch(JSON.stringify(record), /private unfinished|private successful model text/);
+  }
+});
+
+test("private callback exceptions and rejections never change provider failures or retries", async () => {
+  for (const onPrivateFailure of [() => { throw new Error(apiToken); }, async () => { throw new Error(apiToken); }]) {
+    let calls = 0;
+    await assert.rejects(requestWorkersAiEditorial(requestOptions({ maxAttempts: 2, onPrivateFailure,
+      fetchImpl: async () => { calls++; return new Response(JSON.stringify({ success: false,
+        errors: [{ code: 3040, message: "No available capacity" }] }), { status: 429, headers: { "content-type": "application/json" } }); },
+    })), (error) => {
+      assert.equal(error.code, WORKERS_AI_EDITORIAL_UNAVAILABLE);
+      assert.equal(error.providerCode, 3040);
+      assert.equal(error.attemptCount, 2);
+      assert.doesNotMatch(error.message, /cloudflare-test-token/);
+      return true;
+    });
+    assert.equal(calls, 2);
+  }
+});
+
+test("a hung private sink has a fixed deadline and cannot replace the provider failure", async () => {
+  let calls = 0;
+  await assert.rejects(requestWorkersAiEditorial(requestOptions({ maxAttempts: 1,
+    onPrivateFailure: () => new Promise(() => {}),
+    fetchImpl: async () => { calls++; return new Response("Limited", { status: 429, headers: { "content-type": "text/plain" } }); },
+  })), /request failed with HTTP 429/);
+  assert.equal(calls, 1);
+});
+
+test("a hung gateway diagnostic body cannot cause a timeout or authentication retry", async () => {
+  let calls = 0;
+  let cancelled = false;
+  let record;
+  await assert.rejects(requestWorkersAiEditorial(requestOptions({ maxAttempts: 2, timeoutMs: 10,
+    onPrivateFailure: (value) => { record = value; },
+    fetchImpl: async () => {
+      calls++;
+      return { ok: false, status: 401, headers: new Headers({ "content-type": "text/plain" }),
+        body: { getReader: () => ({ read: () => new Promise(() => {}), cancel: () => { cancelled = true; } }) } };
+    },
+  })), /request failed with HTTP 401/);
+  assert.equal(calls, 1);
+  assert.equal(cancelled, true);
+  assert.equal(record.bodyText, null);
+  assert.equal(record.status, 401);
+});
+
+test("private hook never receives successful inference content or local validation failures", async () => {
+  let calls = 0;
+  const onPrivateFailure = () => { calls++; };
+  assert.deepEqual((await requestWorkersAiEditorial(requestOptions({ onPrivateFailure }))).editorialPayload, payload);
+  await assert.rejects(requestWorkersAiEditorial(requestOptions({ onPrivateFailure, validatePayload: () => false })), /local schema validation/);
+  await assert.rejects(requestWorkersAiEditorial(requestOptions({ onPrivateFailure,
+    fetchImpl: async () => cloudflareResponse(`{"headline":"private broken model text ${apiToken}`),
+  })), /not valid JSON/);
+  assert.equal(calls, 0);
+});
+
+test("default failures do not read non-JSON gateway text or publicly disclose diagnostics", async () => {
+  let consumed = false;
+  let cancelled = false;
+  await assert.rejects(requestWorkersAiEditorial(requestOptions({ maxAttempts: 1,
+    fetchImpl: async () => ({ ok: false, status: 429, headers: new Headers({ "content-type": "text/plain" }),
+      body: { cancel: async () => { cancelled = true; }, getReader: () => { consumed = true; throw new Error(apiToken); } } }),
+  })), (error) => {
+    assert.equal(error.message, "Cloudflare Workers AI request failed with HTTP 429.");
+    assert.deepEqual(Object.keys(error), []);
+    return true;
+  });
+  assert.equal(consumed, false);
+  assert.equal(cancelled, true);
+  await assert.rejects(requestWorkersAiEditorial(requestOptions({ onPrivateFailure: "print" })), /private diagnostic function/);
+});
+
 function cloudflareResponse(resultResponse = payload, options = {}) {
   return new Response(JSON.stringify({
     success: true,

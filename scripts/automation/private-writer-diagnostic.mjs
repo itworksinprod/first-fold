@@ -106,11 +106,14 @@ export async function diagnoseOneWriter({ publicKey, accountId, apiToken, now = 
             options.model !== FREE_REASONING_WRITER_MODEL || options.maxAttempts !== 1) {
           throw failure("DIAGNOSTIC_REQUEST_BUDGET");
         }
-        // Never retain headers, tokens, the transport envelope, or reasoning.
+        // Only this encrypted probe opts into bounded, redacted provider errors.
+        // Never retain request headers, tokens, successful envelopes or reasoning.
         const call = { request: JSON.parse(options.messages[1].content) };
         capture.calls.push(call);
         try {
-          const response = await aiRequestImpl(options);
+          const response = await aiRequestImpl({ ...options,
+            onPrivateFailure: record => { call.privateFailure = structuredClone(record); },
+          });
           call.editorialPayload = structuredClone(response.editorialPayload);
           return response;
         } catch (error) {

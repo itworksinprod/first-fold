@@ -89,10 +89,11 @@ test("rejected drafts remain inspectable, never become accepted copy, and use at
   assert.equal(opened.calls[0].editorialPayload.stories[0].headline, invalid.headline);
 });
 
-test("429 stops immediately, saves safe failure data and never captures a transport error body", async () => {
+test("429 stops immediately and retains only explicitly supplied private diagnostics in ciphertext", async () => {
   let count = 0;
-  const { report, sealed } = await diagnoseOneWriter({ ...base, aiRequestImpl: async () => {
+  const { report, sealed } = await diagnoseOneWriter({ ...base, aiRequestImpl: async options => {
     count++;
+    await options.onPrivateFailure({ status: 429, bodyText: "private bounded provider detail" });
     throw Object.assign(new Error("sensitive provider response"), {
       code: "WORKERS_AI_EDITORIAL_UNAVAILABLE", httpStatus: 429, providerCode: 3040,
     });
@@ -100,7 +101,11 @@ test("429 stops immediately, saves safe failure data and never captures a transp
   assert.equal(count, 1);
   assert.equal(report.failures[0].providerCode, 3040);
   assert.equal(report.failures[0].httpStatus, "429");
-  assert.ok(!JSON.stringify(openDiagnostic(sealed, pair.privateKey)).includes("sensitive provider response"));
+  const opened = openDiagnostic(sealed, pair.privateKey);
+  assert.equal(opened.calls[0].privateFailure.bodyText, "private bounded provider detail");
+  assert.ok(!JSON.stringify(opened).includes("sensitive provider response"));
+  assert.ok(!JSON.stringify(report).includes("private bounded provider detail"));
+  assert.ok(!JSON.stringify(sealed).includes("private bounded provider detail"));
 });
 
 test("invalid encryption configuration is rejected before any research or inference", async () => {

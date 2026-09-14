@@ -21,8 +21,10 @@ output tokens. A provider error stops it; it does not enable paid fallback.
    and rejection events as untrusted data. Neither prose nor citations are
    automatically accepted just because they can now be inspected.
 
-The capture excludes credentials, request headers, provider transport envelopes,
-and reasoning fields. Public annotations contain only counts and safe failure
+The capture excludes credentials, request headers, successful provider transport
+envelopes, and reasoning fields. An opt-in diagnostic hook retains only bounded,
+token-redacted non-2xx provider error details inside the encrypted artifact;
+it cannot change retries, budgets or acceptance. Public annotations contain only counts and safe failure
 codes. There is no email secret, delivery import, ledger write, or publication
 step. Do not commit decrypted diagnostics or private keys. A lost temporary
 private key makes its encrypted artifact unrecoverable.

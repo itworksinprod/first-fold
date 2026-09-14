@@ -25,7 +25,7 @@ jobs:
         with:
           node-version: '24'
       - name: Test diagnostic boundaries before using credentials
-        run: node --test tests/private-writer-diagnostic.test.mjs tests/grounded-draft.test.mjs
+        run: node --test tests/private-writer-diagnostic.test.mjs tests/grounded-draft.test.mjs tests/free-workers-ai.test.mjs
       - name: Inspect one real-source writer attempt without delivery
         env:
           DIAGNOSTIC_PUBLIC_KEY: ${{ inputs.public_key }}
