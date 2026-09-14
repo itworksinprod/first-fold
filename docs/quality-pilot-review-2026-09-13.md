@@ -25,10 +25,19 @@ label did not distinguish shared claims from separate coverage of a related even
 - Route explicit IPO headlines to Platforms & Power and developer integrations
   to Work & Tools, preserving security precedence and existing selection gates.
 - Test Qwen against current news before adopting it for the daily writer. Preserve
-  the three-call writing ceiling, free-only model allowlist and existing search cap.
+  the 7,800-output-token writing ceiling, free-only model allowlist and search cap.
 - Authorize only the September 13 preview with a date-bound confirmation, a fixed
   idempotency key, unchanged recipient and no daily-ledger or public-edition write.
   Every preview story must pass checked-summary validation before sending.
 
 Live verification and delivery outcomes must be appended after observation; passing
 offline tests is not proof that a newly researched email was sent.
+
+The first preview attempt, [34791606095](https://github.com/itworksinprod/first-fold/actions/runs/34791606095),
+stopped before sending: four initial drafts failed format bounds, only one revision
+passed locally, the reviewer returned an invalid shape, and final source QA failed.
+No email was sent. Qwen drafting is now isolated by story: up to four 1,000-token
+requests, one 2,000-token repair, and one 1,800-token factual review. The total
+output ceiling stays 7,800; the call ceiling is six for writing and seven including
+newsworthiness. A local counter enforces both bounds. Llama's three writing calls
+are unchanged, and existing four-call provenance remains readable.

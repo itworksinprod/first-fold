@@ -1356,6 +1356,12 @@ async function runMandatoryFreeSourceQa(candidate, options) {
     qaResult?.sourceCheck?.status !== "passed" ||
     freeSourceQaIssues(qaResult).length !== 0
   ) {
+    options.onDiagnostic?.({ stage: "final-source-check", status: "rejected",
+      issues: freeSourceQaIssues(qaResult).slice(0, 12).map(issue => ({
+        code: /^[A-Z_]{1,64}$/.test(issue?.code ?? "") ? issue.code : "SOURCE_CHECK_FAILED",
+        ...(Number.isInteger(issue?.httpStatus) && issue.httpStatus >= 100 && issue.httpStatus <= 599
+          ? { httpStatus: issue.httpStatus } : {}),
+      })) });
     throw freeEditorialDiagnosticError(
       "Free candidate failed mandatory newsroom source QA.",
       freeSourceQaDiagnosticCode(qaResult, retried),
@@ -2555,8 +2561,8 @@ async function draftFreeEditionCore({
       "Free trustedEvidenceDigestOnly cannot be combined with Workers AI summary drafting.",
     );
   }
-  if (groundedSummaries && (!trustedEvidenceDigestOnly || maxModelRequests !== 4)) {
-    throw new Error("Grounded summaries require a validated digest baseline and at most four bounded model calls.");
+  if (groundedSummaries && (!trustedEvidenceDigestOnly || ![4, 7].includes(maxModelRequests))) {
+    throw new Error("Grounded summaries require a validated digest baseline and a bounded four- or seven-call free profile.");
   }
   if (
     !Number.isInteger(minimumStoryCount) ||
@@ -2576,7 +2582,7 @@ async function draftFreeEditionCore({
   if (
     !Number.isInteger(maxModelRequests) ||
     maxModelRequests < (trustedEvidenceDigestOnly ? 0 : 1) ||
-    maxModelRequests > (groundedSummaries ? 4 : 2)
+    maxModelRequests > (groundedSummaries ? 7 : 2)
   ) {
     throw new Error(trustedEvidenceDigestOnly
       ? "Free maxModelRequests must be 0, 1, or 2 in trusted digest-only mode."
@@ -3197,6 +3203,7 @@ async function draftFreeEditionCore({
 
   const allowedSourceUrls = buildSourceUrlAllowlist(sourceUrlsFromCandidates(candidates));
   const sourceCheck = await runMandatoryFreeSourceQa(candidate, {
+    onDiagnostic: onFreeDiagnostic,
     allowedSourceUrls,
     priorEditions: archiveEditions,
     checkedAt,

@@ -5,7 +5,7 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { buildFreeEditorialBaselines } from "../../tests/fixtures/free-editorial-evals.mjs";
-import { GROUNDED_MAX_REQUESTS, synthesizeGroundedEditorial } from "./free/grounded-draft.mjs";
+import { groundedRequestBudget, synthesizeGroundedEditorial } from "./free/grounded-draft.mjs";
 import { DEFAULT_CLOUDFLARE_AI_MODEL, WORKERS_AI_PROVIDER, requestWorkersAiEditorial,
   workersAiRunUrl, workersAiFailureDiagnostic, resolveCloudflareAiModel } from "./free/workers-ai.mjs";
 
@@ -43,6 +43,7 @@ export async function checkFreeWriter({ accountId, apiToken,
     throw failure("SMOKE_CONFIGURATION_INVALID");
   }
   try { model = resolveCloudflareAiModel(model); } catch { throw failure("SMOKE_CONFIGURATION_INVALID"); }
+  const maxModelRequests = groundedRequestBudget(model);
   const fixtures = buildFreeEditorialBaselines();
   const candidates = fixtures.map(({ candidate }) => candidate);
   const baseline = {
@@ -61,14 +62,14 @@ export async function checkFreeWriter({ accountId, apiToken,
     if (url !== endpoint || options?.method !== "POST" || options?.redirect !== "error") {
       throw failure("SMOKE_ENDPOINT_REJECTED");
     }
-    if (networkRequests >= GROUNDED_MAX_REQUESTS) throw failure("SMOKE_REQUEST_BUDGET");
+    if (networkRequests >= maxModelRequests) throw failure("SMOKE_REQUEST_BUDGET");
     networkRequests++;
     return fetchImpl(url, options);
   };
   const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates, accountId, apiToken, model,
     fetchImpl: boundedFetch,
     aiRequestImpl: async options => {
-      if (modelRequests >= GROUNDED_MAX_REQUESTS) throw failure("SMOKE_REQUEST_BUDGET");
+      if (modelRequests >= maxModelRequests) throw failure("SMOKE_REQUEST_BUDGET");
       if (options.model !== model || options.maxAttempts !== 1 ||
           options.maxTokens > 4_000 || options.timeoutMs > 90_000 ||
           options.maxRequestBytes > 70_000 || options.maxResponseBytes > 100_000) {
@@ -112,7 +113,7 @@ export async function checkFreeWriter({ accountId, apiToken,
     model,
     status: complete ? "passed" : "failed",
     stories: fixtures.length, acceptedStories, checkedStories,
-    modelRequests, networkRequests, maxModelRequests: GROUNDED_MAX_REQUESTS,
+    modelRequests, networkRequests, maxModelRequests,
     researchQueries: 0, emailRequests: 0,
     codes: [...new Set(codes)], diagnostics,
   };

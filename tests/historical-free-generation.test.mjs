@@ -68,7 +68,7 @@ test("authorized personal research records the real next-day clock and keeps the
     aiRequestImpl: async () => { throw new Error("Quiet fixture must not call an AI provider."); },
     draftFreeEditionWithHealthImpl: async (options) => {
       assert.equal(options.historicalPreviewAuthorization, token);
-      assert.equal(options.maxModelRequests, 4);
+      assert.equal(options.maxModelRequests, 7);
       assert.equal(options.groundedSummaries, true);
       assert.equal(options.trustedEvidenceDigestOnly, true);
       assert.equal(options.draftSelectedSlate, true);

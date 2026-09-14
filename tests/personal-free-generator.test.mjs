@@ -726,7 +726,7 @@ test("personal production preserves delivery when the bounded writer is unavaila
     candidate.provenance.personalFreeResearch.responseId,
     "local-digest",
   );
-  assert.equal(candidate.provenance.personalFreeResearch.maxModelRequests, 4);
+  assert.equal(candidate.provenance.personalFreeResearch.maxModelRequests, 7);
   assert.equal(candidate.provenance.personalFreeResearch.privateSourceBriefs, true);
   const sourceBrief = Object.values(candidate.desks).find((page) => page.story)?.story;
   assert.ok(countReaderFacingStoryWords(sourceBrief) >= 60 && countReaderFacingStoryWords(sourceBrief) < 150);

@@ -58,7 +58,7 @@ export const PERSONAL_FREE_MODEL = DEFAULT_CLOUDFLARE_AI_MODEL;
 export const PERSONAL_FREE_FALLBACK_PROVIDER = TRUSTED_EVIDENCE_DIGEST_PROVIDER;
 export const PERSONAL_FREE_FALLBACK_MODEL = TRUSTED_EVIDENCE_DIGEST_MODEL;
 export const PERSONAL_FREE_EVIDENCE_POLICY = "authoritative-or-corroborated";
-export const PERSONAL_FREE_MAX_MODEL_REQUESTS = 4;
+export const PERSONAL_FREE_MAX_MODEL_REQUESTS = 7;
 export const PERSONAL_FREE_MAX_TOKENS = 3_000;
 export const PERSONAL_FREE_MAX_REQUEST_BYTES = 100_000;
 export const PERSONAL_FREE_AI_TIMEOUT_MS = 240_000;
@@ -614,7 +614,7 @@ export function validatePersonalFreeCandidate(
         ? research.priorLedgerEditionCount + 1
         : null
     ) ||
-    research?.maxModelRequests !== PERSONAL_FREE_MAX_MODEL_REQUESTS ||
+    ![4, PERSONAL_FREE_MAX_MODEL_REQUESTS].includes(research?.maxModelRequests) ||
     research?.ephemeral !== true ||
     containsSourceHealthKey(candidate) ||
     stories.length > PERSONAL_FREE_DESKS.length ||

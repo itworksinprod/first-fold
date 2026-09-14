@@ -29,7 +29,7 @@ const MAX_CANDIDATE_FILE_BYTES = 1024 * 1024;
 const EXPECTED_PERSONAL_REPOSITORY = "itworksinprod/first-fold";
 const PERSONAL_RESEARCH_WORKFLOW = "personal-morning-paper";
 const PERSONAL_RESEARCH_EVIDENCE_POLICY = "authoritative-or-corroborated";
-const PERSONAL_RESEARCH_MAX_MODEL_REQUESTS = 4;
+const PERSONAL_RESEARCH_MAX_MODEL_REQUESTS = 7;
 const PERSONAL_RESEARCH_LOOKBACK_HOURS = 72;
 const PERSONAL_RESEARCH_MINIMUM_SCORE = 70;
 const PERSONAL_RESEARCH_MINIMUM_AUTHORITATIVE_SCORE = 70;
@@ -594,7 +594,7 @@ export function assertPersonalEmailCandidate(candidate) {
         ? research.priorLedgerEditionCount + 1
         : null
     ) ||
-    !(research.maxModelRequests === PERSONAL_RESEARCH_MAX_MODEL_REQUESTS ||
+    !([4, PERSONAL_RESEARCH_MAX_MODEL_REQUESTS].includes(research.maxModelRequests) ||
       (research.maxModelRequests === 0 && research.draftingMode !== "source-grounded-summary")) ||
     selectedStoryCount > DESKS.length ||
     !sourceCheck ||

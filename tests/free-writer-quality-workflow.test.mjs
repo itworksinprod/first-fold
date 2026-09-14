@@ -23,7 +23,7 @@ const reviews = options => JSON.parse(options.messages[1].content).drafts.map(({
   factsSupported: true, attributionAccurate: true, analysisSupported: true, usefulAndSpecific: true,
 }));
 
-test("alternate free model is opt-in, hash reviewed and cannot expand request limits", async () => {
+test("Qwen isolates each story and stays inside its shared output-token ceiling", async () => {
   assert.match(workflow, /FREE_WRITER_MODEL: '@cf\/qwen\/qwen3-30b-a3b-fp8'/);
   let calls = 0;
   const budgets = [];
@@ -38,11 +38,16 @@ test("alternate free model is opt-in, hash reviewed and cannot expand request li
       assert.ok(options.messages[0].content.includes(JSON.stringify(options.schema)));
       assert.equal(options.maxAttempts, 1);
       assert.ok(options.maxTokens <= 4_000);
+      const data = JSON.parse(options.messages[1].content);
+      if (!options.schema.properties.reviews) assert.equal(data.dossiers.length, 1);
       return { ...response(options.schema.properties.reviews ? { reviews: reviews(options) }
-        : { stories: buildFreeEditorialBaselines().map(({ draft }) => draft) }), model: options.model };
+        : { stories: buildFreeEditorialBaselines().filter(({ candidate }) =>
+          candidate.candidateId === data.dossiers[0].candidateId).map(({ draft }) => draft) }), model: options.model };
     } });
-  assert.equal(calls, 2);
-  assert.deepEqual(budgets, [4_000, 1_800]);
+  assert.equal(calls, 5);
+  assert.deepEqual(budgets, [1_000, 1_000, 1_000, 1_000, 1_800]);
+  assert.ok(budgets.reduce((sum, value) => sum + value, 0) + 2_000 <= 7_800);
+  assert.equal(report.maxModelRequests, 6);
   assert.equal(report.status, "passed");
   assert.equal(report.model, EXPERIMENTAL_FREE_WRITER_MODEL);
   assert.equal(report.emailRequests, 0);

@@ -516,24 +516,46 @@ lowering the score threshold, or increasing the four-call Cloudflare budget.
 
 ## Manual run and same-day recovery
 
-### Owner-requested September 11 preview
+### Owner-requested September 13 preview
 
 The separate `personal-preview.yml` workflow fulfills the owner's explicit
-request for one additional demonstration email on September 11, 2026. It is
+request for one additional demonstration email on September 13, 2026. It is
 owner-only on trusted main, rejects rerun attempts, and expires at midnight
 Eastern. It performs fresh free research using an isolated empty repeat ledger
 and sends only when every selected story has a checked source-grounded summary.
 The latest explicitly requested demonstration includes free web discovery and
 requires a valid receipt with at least one publisher article admitted. Its
-confirmation is exactly `SEND WEB SEARCH PREVIEW 2026-09-11`, the subject begins
+confirmation is exactly `SEND CHECKED SUMMARY PREVIEW 2026-09-13`, the subject begins
 `[Updated preview]`, and both message parts explain the comparison context.
 It uses the existing recipient secret and fixed Resend key
-`first-fold-personal-preview-web-search-upgrade-2026-09-11`, distinct from both
+`first-fold-personal-preview-checked-summary-upgrade-2026-09-13`, distinct from both
 the already-sent original preview and the daily edition, with no send retry.
 The workflow is manual-only; publishing its code does not send an email.
 It never changes daily duplicate protection,
 the private repeat ledger, the schedule, or any public edition. It has no cron
 trigger. No additional preview is authorized after the fixed date.
+This preview tests the allowlisted Qwen writer profile before changing the daily
+writer. The older September 11 and historical-preview grants remain expired.
+Qwen drafts one story at a time, with at most four 1,000-token requests, one
+2,000-token repair and one 1,800-token review. This preserves the 7,800-output-token
+ceiling with six writing calls, or seven including the editorial assessment.
+Both call count and total output allowance are locally enforced. It never retries
+a quota, credential or transport failure, or switches to a paid model.
+
+### Reader-facing quality safeguards
+
+Checked summaries must be self-contained: a named subject, an actual development,
+an evidence-supported consequence, and a specific next signal. The local copy
+gate rejects disconnected quotation headlines and known generic source-lead filler;
+the semantic reviewer must also judge usefulness and specificity. Source, citation,
+originality, numeric, caveat and completeness checks remain separate and mandatory.
+
+Private source-digest fallbacks now render as **source links**, with original linked
+titles and an explicit summary-unavailable label. They do not reuse disconnected
+excerpts or generic advice as article sections and are not labeled regular editions.
+Two related publisher accounts do not automatically produce an independent-verification
+label: checked claim IDs and their exact cited source coverage determine the narrower
+reader-facing description. Editorial score weights and thresholds are unchanged.
 
 ### Normal `on_time` run
 

@@ -9,6 +9,7 @@ import { DEFAULT_CLOUDFLARE_AI_MODEL, EXPERIMENTAL_FREE_WRITER_MODEL, WORKERS_AI
 
 export const GROUNDED_DIGEST_MODE = "source-grounded-summary";
 export const GROUNDED_MAX_REQUESTS = 3;
+export const groundedRequestBudget = model => model === EXPERIMENTAL_FREE_WRITER_MODEL ? 6 : GROUNDED_MAX_REQUESTS;
 const hash = (value) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const words = (value) => value.trim().split(/\s+/u).filter(Boolean);
 const normalized = (value) => value.normalize("NFKC").replace(/\s+/gu, " ").trim();
@@ -339,7 +340,8 @@ function completeClaimReview(review, draft) {
       [...ids].sort().join("\n") === draft.claims[index].supports.map((support) => support.evidenceId).sort().join("\n"));
 }
 
-/** At most three calls (writer, optional local-check repair, checking prompt), no transport retries or paid
+/** Llama uses at most three calls; Qwen uses four isolated drafts, one optional repair and one review.
+ * Both profiles enforce the same 7,800 output-token ceiling, with no transport retries or paid
  * fallback. On Free Workers AI, quota exhaustion rejects; delivery still uses
  * the already validated digest. Each approved story is adopted independently. */
 export async function synthesizeGroundedEditorial({ editorial, candidates, accountId, apiToken,
@@ -347,10 +349,11 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
   aiRequestImpl = requestWorkersAiEditorial, fetchImpl = globalThis.fetch,
   onDiagnostic = () => {} } = {}) {
   model = resolveCloudflareAiModel(model);
+  if (!Array.isArray(candidates) || candidates.length < 1 || candidates.length > 4) return null;
   // Reasoning-capable Qwen needs more room for the review response. Reallocate
   // the existing 7,800-token ceiling, never increase calls or the total cap.
   const budgets = model === EXPERIMENTAL_FREE_WRITER_MODEL
-    ? { write: 4_000, repair: 2_000, review: 1_800 }
+    ? { write: 1_000, repair: 2_000, review: 1_800 }
     : { write: 4_000, repair: 3_000, review: 800 };
   const dossiers = groundedDossiers(candidates);
   // The passage list already contains the evidence text; do not send a second
@@ -358,7 +361,15 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
   const promptDossiers = dossiers.map((dossier) => ({ ...dossier,
     supportedNumericTokens: [...new Set(numericTokens(evidenceText(dossier)).map((value) => value.toLowerCase()))],
     sources: dossier.sources.map(({ text: _text, ...source }) => source) }));
-  const ask = (system, data, schema, maxTokens) => aiRequestImpl({ accountId, apiToken,
+  let requestCount = 0;
+  let outputTokenBudgetUsed = 0;
+  const ask = (system, data, schema, maxTokens) => {
+    if (requestCount >= groundedRequestBudget(model) || outputTokenBudgetUsed + maxTokens > 7_800) {
+      throw Object.assign(new Error("The fixed free writer budget is exhausted."), { code: "WRITER_BUDGET_EXHAUSTED" });
+    }
+    requestCount++;
+    outputTokenBudgetUsed += maxTokens;
+    return aiRequestImpl({ accountId, apiToken,
     model, messages: [{ role: "system", content: model === EXPERIMENTAL_FREE_WRITER_MODEL
       ? `${system}\nReturn one JSON object conforming to this schema:\n${JSON.stringify(schema)}\n/no_think` : system },
       { role: "user", content: JSON.stringify(data) }], schema,
@@ -366,13 +377,39 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
     validatePayload: (value) => Boolean(value && typeof value === "object"),
     maxTokens, maxAttempts: 1, maxRequestBytes: 70_000, maxResponseBytes: 100_000,
     timeoutMs: 90_000, temperature: model === EXPERIMENTAL_FREE_WRITER_MODEL ? 0.7 : 0.1, fetchImpl });
+  };
   try {
     const writerSchema = writerProviderSchema(dossiers.map((dossier) => dossier.candidateId));
     const inferenceTrail = [];
     let written;
     let repairUsed = false;
     try {
-      written = await ask(WRITER_PROMPT, { dossiers: promptDossiers }, writerSchema, budgets.write);
+      if (model === EXPERIMENTAL_FREE_WRITER_MODEL) {
+        // Four isolated 1,000-token drafts, one 2,000-token repair and one
+        // 1,800-token review retain the existing 7,800-token ceiling.
+        const responses = [];
+        const stories = [];
+        for (const dossier of promptDossiers) {
+          try {
+            const response = await ask(WRITER_PROMPT, { dossiers: [dossier] },
+              writerProviderSchema([dossier.candidateId]), budgets.write);
+            responses.push(response);
+            if (keys(response.editorialPayload, ["stories"]) &&
+                response.editorialPayload.stories?.length === 1 &&
+                response.editorialPayload.stories[0]?.candidateId === dossier.candidateId) {
+              stories.push(response.editorialPayload.stories[0]);
+            } else stories.push({ candidateId: dossier.candidateId });
+          } catch (error) {
+            if (!isBoundedFormatFailure(error, model)) throw error;
+            responses.push(error.inference);
+            stories.push({ candidateId: dossier.candidateId });
+          }
+        }
+        inferenceTrail.push(...responses.slice(0, -1));
+        written = { ...responses.at(-1), editorialPayload: { stories } };
+      } else {
+        written = await ask(WRITER_PROMPT, { dossiers: promptDossiers }, writerSchema, budgets.write);
+      }
     } catch (error) {
       if (!isBoundedFormatFailure(error, model)) throw error;
       // Spend the existing single revision slot on a fresh complete response.
@@ -414,6 +451,10 @@ response, add Markdown fences or serialize another object inside any reader-faci
       }
     }
     onDiagnostic({ stage: "local-evidence-check", submitted: drafts.length, accepted: valid.length, rejectionCodes,
+      fieldFailures: rejected.map(({ feedback }) => ({
+        field: ["story", "headline", "deck", "whyItMatters", "whatToDoOrWatch", "claims", "claims[0]", "claims[1]", "claims[0].text", "claims[1].text", "body", "readerCopy"].includes(feedback.field) ? feedback.field : "citation",
+        ...(Number.isInteger(feedback.actualCharacters) ? { actualCharacters: feedback.actualCharacters } : {}),
+      })),
       wordCounts: drafts.map((draft) => countReaderFacingStoryWords({ ...draft,
         whatHappened: Array.isArray(draft?.claims) ? draft.claims.map((claim) => claim?.text ?? "").join(" ") : "" })) });
     if (rejected.length && !repairUsed) {
