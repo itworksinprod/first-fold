@@ -10,6 +10,9 @@ const qualityWorkflow = await readFile(
 const personalWorkflow = await readFile(
   new URL("../.github/workflows/personal-morning-paper.yml", import.meta.url), "utf8",
 );
+const dailyQualityWorkflow = await readFile(
+  new URL("../.github/workflows/personal-quality-check.yml", import.meta.url), "utf8",
+);
 const qualityScriptUrl = new URL("../scripts/automation/check-personal-quality.mjs", import.meta.url);
 const qualityScript = await readFile(qualityScriptUrl, "utf8");
 
@@ -19,6 +22,55 @@ function section(text, start, end) {
   assert.ok(startIndex >= 0 && endIndex > startIndex, `Missing bounded section: ${start}`);
   return text.slice(startIndex, endIndex);
 }
+
+test("daily-model quality verification includes the configured free search without changing its narrow trigger", () => {
+  const trigger = section(dailyQualityWorkflow, "on:", "permissions:");
+  assert.match(trigger, /^  workflow_dispatch:$/m);
+  assert.match(trigger, /^  push:$/m);
+  assert.match(trigger, /^    branches: \[main\]$/m);
+  assert.match(trigger, /^    paths: \['\.github\/workflows\/personal-quality-check\.yml'\]$/m);
+  assert.doesNotMatch(trigger, /schedule:|cron:|pull_request|workflow_run|inputs:/);
+  assert.match(dailyQualityWorkflow, /github\.repository == 'itworksinprod\/first-fold'/);
+  assert.match(dailyQualityWorkflow, /github\.ref == 'refs\/heads\/main'/);
+  assert.match(dailyQualityWorkflow, /github\.actor == 'itworksinprod'/);
+  assert.match(dailyQualityWorkflow, /^  group: personal-morning-paper$/m);
+  assert.match(dailyQualityWorkflow, /^  cancel-in-progress: false$/m);
+  const credentialStep = dailyQualityWorkflow.slice(dailyQualityWorkflow.indexOf(
+    "      - name: Research, draft, check evidence and render without sending"));
+  const generation = section(personalWorkflow, "      - name: Generate the private source-checked candidate",
+    "      - name: Probe the advisory source-health report");
+  const modelLine = "          CLOUDFLARE_AI_MODEL: '@cf/meta/llama-3.3-70b-instruct-fp8-fast'";
+  assert.ok(credentialStep.includes(modelLine));
+  assert.ok(generation.includes(modelLine));
+  assert.doesNotMatch(dailyQualityWorkflow, /FREE_WRITER_MODEL|qwen|ollama/iu);
+  for (const line of [
+    "          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}",
+    "          TAVILY_PAYGO_DISABLED_VERIFIED: ${{ vars.TAVILY_PAYGO_DISABLED_VERIFIED }}",
+  ]) {
+    assert.ok(credentialStep.includes(line));
+    assert.ok(generation.includes(line));
+  }
+  assert.match(credentialStep, /run: node scripts\/automation\/check-personal-quality\.mjs --require-web-search/);
+  assert.ok(dailyQualityWorkflow.indexOf("run: npm test") < dailyQualityWorkflow.indexOf("TAVILY_API_KEY:"));
+  assert.doesNotMatch(dailyQualityWorkflow.slice(0, dailyQualityWorkflow.indexOf(credentialStep)),
+    /CLOUDFLARE_AI_API_TOKEN|TAVILY_API_KEY/);
+});
+
+test("daily-model quality verification cannot deliver, publish or write repeat history", () => {
+  assert.match(dailyQualityWorkflow, /^permissions: \{\}$/m);
+  const permissions = section(dailyQualityWorkflow, "    permissions:", "    steps:");
+  assert.match(permissions, /^      contents: read$/m);
+  assert.doesNotMatch(permissions, /write|actions:|pages:|id-token:|issues:|pull-requests:/);
+  assert.match(dailyQualityWorkflow, /persist-credentials: false/);
+  assert.equal(dailyQualityWorkflow.match(/secrets\.TAVILY_API_KEY/g)?.length, 1);
+  assert.equal(dailyQualityWorkflow.match(/secrets\./g)?.length, 2);
+  const actions = [...dailyQualityWorkflow.matchAll(/uses:\s*(\S+)/g)].map(match => match[1]);
+  assert.equal(actions.length, 2);
+  assert.ok(actions.every(action => /^actions\/(checkout|setup-node)@[a-f0-9]{40}$/.test(action)));
+  assert.doesNotMatch(dailyQualityWorkflow,
+    /RESEND|OPENAI|PERSONAL_PAPER_EMAIL|PERSONAL_STORY_LEDGER|sendPersonalEdition|personal-email\.mjs|upload-artifact|download-artifact|git push|git commit|gh pr|deploy-pages/);
+  assert.equal(dailyQualityWorkflow.match(/run: node scripts\/automation\/check-personal-quality\.mjs/g)?.length, 1);
+});
 
 test("web discovery quality runs are manual, owner-only trusted main, and first-attempt-only", () => {
   const trigger = section(qualityWorkflow, "on:", "permissions:");

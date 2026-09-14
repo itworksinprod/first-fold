@@ -127,7 +127,16 @@ test("one bounded repair is allowed but never a green result from partial semant
         drafts[0].headline = 'Model output”, “stories”: [{';
         return response({ stories: drafts });
       }
-      return response({ stories: [drafts[0]] });
+      const { revisionPlan } = JSON.parse(options.messages[1].content);
+      assert.deepEqual(revisionPlan.claimEdits, []);
+      assert.deepEqual(revisionPlan.rewriteCandidateIds, []);
+      assert.deepEqual(revisionPlan.copyEdits.map(({ candidateId, field }) => ({ candidateId, field })), [
+        { candidateId: drafts[0].candidateId, field: "headline" },
+      ]);
+      assert.ok(options.schema.properties.copyEdits);
+      return response({ copyEdits: revisionPlan.copyEdits.map(({ candidateId, field }) => ({
+        candidateId, field, text: drafts.find(draft => draft.candidateId === candidateId)[field],
+      })) });
     } });
     assert.equal(calls, 3);
     assert.equal(report.modelRequests, 3);

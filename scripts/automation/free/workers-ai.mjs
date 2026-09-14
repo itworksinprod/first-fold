@@ -20,7 +20,11 @@ export const WORKERS_AI_EDITORIAL_UNAVAILABLE = "WORKERS_AI_EDITORIAL_UNAVAILABL
 // log provider messages, response bodies, request headers, or model output.
 const DOCUMENTED_FAILURE_CODES = new Set([3003, 3006, 3007, 3008, 3023, 3036, 3039, 3040, 3041, 3042,
   5004, 5005, 5007, 5016, 5018, 5019, 5035]);
-const FORMAT_REASONS = new Set(["OUTPUT_TOKEN_LIMIT", "PAYLOAD_MISSING", "PAYLOAD_JSON_INVALID"]);
+const FORMAT_REASONS = new Set(["OUTPUT_TOKEN_LIMIT", "PAYLOAD_MISSING", "PAYLOAD_JSON_INVALID", "PROVIDER_SCHEMA_UNSATISFIED"]);
+// Only observed, bounded provider counters may accompany a format failure.
+// Native Llama does not supply finish_reason, so reaching the requested cap is
+// diagnostic evidence, not permission to label every malformed reply truncated.
+const formatUsage = new WeakMap();
 const PRIVATE_FAILURE_MAX_BODY_BYTES = 8_192;
 const PRIVATE_FAILURE_CALLBACK_TIMEOUT_MS = 1_000;
 const DAILY_FREE_ALLOCATION_EXHAUSTED = "DAILY_FREE_ALLOCATION_EXHAUSTED";
@@ -57,6 +61,7 @@ export function workersAiFailureDiagnostic(error) {
       ? String(error.httpStatus) : /^Cloudflare Workers AI request failed with HTTP ([1-5]\d{2})\.$/.exec(error?.message ?? "")?.[1] ?? null,
     providerCode: DOCUMENTED_FAILURE_CODES.has(error?.providerCode) ? error.providerCode : null,
     ...(FORMAT_REASONS.has(error?.formatReason) ? { formatReason: error.formatReason } : {}),
+    ...(formatUsage.get(error) ?? {}),
     ...(error?.httpStatus === 429 && error?.failureReason === DAILY_FREE_ALLOCATION_EXHAUSTED
       ? { reason: DAILY_FREE_ALLOCATION_EXHAUSTED } : {}),
   };
@@ -782,11 +787,13 @@ export async function requestWorkersAiEditorial({
     responseSha256: createHash("sha256").update(responseText).digest("hex"),
   };
   if (documentedJsonModeFailure) {
-    throw workersAiEditorialFormatError(
+    const failure = workersAiEditorialFormatError(
       "Cloudflare Workers AI could not satisfy the requested editorial JSON schema.",
       attemptCount,
       inference,
     );
+    Object.defineProperty(failure, "formatReason", { value: "PROVIDER_SCHEMA_UNSATISFIED" });
+    throw failure;
   }
   if (editorialUnavailable) {
     throw attachFailureDetails(workersAiEditorialUnavailableError(
@@ -807,6 +814,11 @@ export async function requestWorkersAiEditorial({
       const limited = envelope?.result?.choices?.length === 1 && envelope.result.choices[0]?.finish_reason === "length";
       Object.defineProperty(failure, "formatReason", { value: limited ? "OUTPUT_TOKEN_LIMIT"
         : error.message === "Cloudflare Workers AI editorial payload was not valid JSON." ? "PAYLOAD_JSON_INVALID" : "PAYLOAD_MISSING" });
+      if (Number.isInteger(result.usage?.completion_tokens) && result.usage.completion_tokens >= 0 &&
+          result.usage.completion_tokens <= 16_000) {
+        formatUsage.set(failure, { completionTokens: result.usage.completion_tokens,
+          requestedMaxTokens: request.body.max_tokens });
+      }
       throw failure;
     }
     throw error;

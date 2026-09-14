@@ -4,6 +4,7 @@ import { readerProseErrors } from "../../reader-prose.mjs";
 import { readerSummaryErrors } from "../../reader-summary.mjs";
 import { claimCaveatErrors } from "./claim-caveats.mjs";
 import { expandSupportedCvePairs } from "./supported-identifiers.mjs";
+import { DAILY_REPAIR_PROMPT } from "./daily-repair-prompt.mjs";
 import { buildEvidencePacketSources, selectEvidencePassages } from "./evidence-packets.mjs";
 import { LOCAL_AI_MODEL, LOCAL_AI_PROVIDER, LOCAL_AI_EDITORIAL_FORMAT_INVALID,
   requestLocalAiEditorial } from "./local-ai.mjs";
@@ -588,7 +589,7 @@ function repairedOriginalityFields(payload, rejected) {
 // A bounded copy edit is smaller than regenerating four otherwise usable
 // stories. This is only a repair plan: it cannot approve text, infer support,
 // truncate sentences, substitute numbers or bypass the whole-story validator.
-function focusedRepairPlan(rejected, dossiers) {
+function focusedRepairPlan(rejected, dossiers, { daily = false } = {}) {
   const plan = [];
   for (const entry of rejected) {
     const draft = entry.draft;
@@ -599,6 +600,9 @@ function focusedRepairPlan(rejected, dossiers) {
     const dossier = dossiers.find(value => value.candidateId === draft.candidateId);
     const evidence = evidenceText(dossier);
     const byId = new Map(dossier.sources.flatMap(source => source.passages.map(passage => [passage.evidenceId, { source, passage }])));
+    const citedNumbers = daily ? new Set(numericTokens(draft.claims.flatMap(claim =>
+      claim.supports.map(support => byId.get(support?.evidenceId)?.passage.text ?? "")).join(" "))
+      .map(value => value.toLowerCase())) : null;
     const fields = new Map();
     const add = (field, reason) => {
       if (!REPAIR_FIELDS.includes(field)) return;
@@ -621,7 +625,7 @@ function focusedRepairPlan(rejected, dossiers) {
             new Set(claim.supports.map(support => support?.evidenceId)).size !== claim.supports.length) add(field, "CITATION_UNKNOWN");
         const numbers = new Set(numericTokens(supports.map(({ passage }) => passage.text).join(" ")).map(value => value.toLowerCase()));
         if (numericTokens(text).some(value => !numbers.has(value.toLowerCase()))) add(field, "NUMERIC_CITATION");
-      }
+      } else if (daily && numericTokens(text).some(value => !citedNumbers.has(value.toLowerCase()))) add(field, "NUMERIC_ANCHOR");
       const tokens = words(normalized(text).toLowerCase());
       const original = normalized(evidence).toLowerCase();
       if (tokens.some((_, index) => index + 12 <= tokens.length && original.includes(tokens.slice(index, index + 12).join(" ")))) add(field, "ORIGINALITY");
@@ -634,10 +638,107 @@ function focusedRepairPlan(rejected, dossiers) {
     if (entry.rejectionCode === "WORD_COUNT") {
       add("whyItMatters", "WORD_COUNT"); add("whatToDoOrWatch", "WORD_COUNT");
     }
-    if (!fields.size || entry.rejectionCode === "GENERIC_COPY") continue;
+    if (daily && entry.rejectionCode === "GENERIC_COPY") {
+      for (const field of ["headline", "deck", "whyItMatters", "whatToDoOrWatch"]) add(field, "GENERIC_COPY");
+    }
+    if (!fields.size || (!daily && entry.rejectionCode === "GENERIC_COPY")) continue;
     plan.push({ candidateId: draft.candidateId, fields: [...fields].map(([field, reasons]) => ({ field, reasons: [...reasons] })) });
   }
   return plan.length ? plan : null;
+}
+
+function dailyRepairContract(rejected, dossiers, plan, rewriteIds) {
+  const copyEdits = [];
+  const claimEdits = [];
+  for (const item of plan) {
+    const draft = rejected.find(entry => entry.draft.candidateId === item.candidateId).draft;
+    for (const field of item.fields) {
+      const claimIndex = /^claims\[([01])\]\.text$/u.exec(field.field)?.[1];
+      const limit = claimIndex === undefined ? GROUNDED_DRAFT_SCHEMA.properties.stories.items.properties[field.field]
+        : CLAIM_SCHEMA.properties.text;
+      const text = claimIndex === undefined ? draft[field.field] : draft.claims[Number(claimIndex)].text;
+      const bounds = { minCharacters: limit.minLength, maxCharacters: limit.maxLength, actualCharacters: text.length };
+      if (claimIndex === undefined) copyEdits.push({ candidateId: item.candidateId, field: field.field, reasons: field.reasons, bounds });
+      else claimEdits.push({ candidateId: item.candidateId, claimIndex: Number(claimIndex), reasons: field.reasons, bounds });
+    }
+  }
+  const exactArray = (items, count) => ({ type: "array", items, minItems: count, maxItems: count });
+  const schema = objectSchema({
+    ...(copyEdits.length ? { copyEdits: exactArray(objectSchema({
+      candidateId: { type: "string", enum: [...new Set(copyEdits.map(edit => edit.candidateId))] },
+      field: { type: "string", enum: [...new Set(copyEdits.map(edit => edit.field))] },
+      text: { type: "string", minLength: 1, maxLength: 650 },
+    }), copyEdits.length) } : {}),
+    ...(claimEdits.length ? { claimEdits: exactArray(objectSchema({
+      candidateId: { type: "string", enum: [...new Set(claimEdits.map(edit => edit.candidateId))] },
+      claimIndex: { type: "integer", enum: [...new Set(claimEdits.map(edit => edit.claimIndex))] },
+      text: CLAIM_SCHEMA.properties.text,
+      supports: CLAIM_SCHEMA.properties.supports,
+    }), claimEdits.length) } : {}),
+    ...(rewriteIds.length ? { stories: writerProviderSchema(rewriteIds).properties.stories } : {}),
+  });
+  const projectedDossiers = rejected.map(({ draft }) => {
+    const dossier = dossiers.find(item => item.candidateId === draft.candidateId);
+    if (rewriteIds.includes(draft.candidateId)) return { candidateId: dossier.candidateId,
+      desk: dossier.desk, evidenceTier: dossier.evidenceTier, fullRewrite: localPromptDossier(dossier) };
+    const copyTasks = copyEdits.filter(edit => edit.candidateId === draft.candidateId);
+    const claimTasks = claimEdits.filter(edit => edit.candidateId === draft.candidateId);
+    const sourcesFor = ids => dossier.sources.map(source => localPromptSource(source,
+      source.passages.filter(passage => ids.has(passage.evidenceId)))).filter(source => source.passages.length);
+    const result = { candidateId: dossier.candidateId, desk: dossier.desk, evidenceTier: dossier.evidenceTier };
+    if (copyTasks.length) {
+      const edited = new Set(copyTasks.map(task => task.field));
+      const fixedBodyWords = countReaderFacingStoryWords({ whatHappened: draft.claims.map(claim => claim.text).join(" "),
+        whyItMatters: edited.has("whyItMatters") ? "" : draft.whyItMatters,
+        whatToDoOrWatch: edited.has("whatToDoOrWatch") ? "" : draft.whatToDoOrWatch });
+      const ids = new Set(draft.claims.flatMap(claim => claim.supports.map(support => support.evidenceId)));
+      result.copy = { fixedClaims: structuredClone(draft.claims),
+        unchangedCopy: Object.fromEntries(["headline", "deck", "whyItMatters", "whatToDoOrWatch"]
+          .filter(field => !edited.has(field) && safeProse(draft[field]) && !readerProseErrors(draft[field]).length)
+          .map(field => [field, draft[field]])),
+        fixedBodyWords, bodyTarget: { min: MIN_PRIVATE_GROUNDED_STORY_WORDS, max: 225, aim: 145 },
+        editedBodyTarget: { min: Math.max(0, MIN_PRIVATE_GROUNDED_STORY_WORDS - fixedBodyWords),
+          max: Math.max(0, 225 - fixedBodyWords), aim: Math.max(0, 145 - fixedBodyWords) },
+        sources: sourcesFor(ids) };
+    }
+    if (claimTasks.length) result.claims = claimTasks.map(task => {
+      const claim = draft.claims[task.claimIndex];
+      const ids = new Set(claim.supports.map(support => support?.evidenceId));
+      // Rephrasing a copied sentence does not require a new factual account.
+      // Pin its support set and expose only those already cited passages. A
+      // genuinely defective citation instead needs the supplied source packet.
+      const preserveSupports = task.reasons.every(reason => reason === "ORIGINALITY");
+      return { claimIndex: task.claimIndex,
+        originalText: safeProse(claim.text) && !readerProseErrors(claim.text).length ? claim.text : "[Invalid prose omitted]",
+        originalSupports: structuredClone(claim.supports), preserveSupports,
+        sources: preserveSupports ? sourcesFor(ids) : dossier.sources.map(source => localPromptSource(source)) };
+    });
+    return result;
+  });
+  return { schema, data: { revisionPlan: { copyEdits, claimEdits, rewriteCandidateIds: rewriteIds }, dossiers: projectedDossiers } };
+}
+
+function applyDailyFocusedRepairs(payload, rejected, plan, rewriteIds, contract) {
+  if (!keys(payload, Object.keys(contract.schema.properties))) return null;
+  const edits = [];
+  for (const key of ["copyEdits", "claimEdits"]) {
+    const expected = contract.schema.properties[key]?.minItems ?? 0;
+    if (!expected) continue;
+    if (!Array.isArray(payload[key]) || payload[key].length !== expected) return null;
+    for (const edit of payload[key]) {
+      if (key === "copyEdits") {
+        if (!keys(edit, ["candidateId", "field", "text"]) || !["headline", "deck", "whyItMatters", "whatToDoOrWatch"].includes(edit.field)) return null;
+        edits.push({ ...edit, supports: [] });
+      } else {
+        if (!keys(edit, ["candidateId", "claimIndex", "text", "supports"]) || ![0, 1].includes(edit.claimIndex) || !Array.isArray(edit.supports)) return null;
+        const task = contract.data.dossiers.find(dossier => dossier.candidateId === edit.candidateId)?.claims
+          ?.find(task => task.claimIndex === edit.claimIndex);
+        if (!task || (task.preserveSupports && JSON.stringify(edit.supports) !== JSON.stringify(task.originalSupports))) return null;
+        edits.push({ candidateId: edit.candidateId, field: `claims[${edit.claimIndex}].text`, text: edit.text, supports: edit.supports });
+      }
+    }
+  }
+  return applyFocusedRepairs({ edits, ...(rewriteIds.length ? { stories: payload.stories } : {}) }, rejected, plan, rewriteIds);
 }
 
 function applyFocusedRepairs(payload, rejected, plan, rewriteIds) {
@@ -846,7 +947,8 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
       // error, or grant a second repair after this one.
       repairUsed = true;
       inferenceTrail.push(error.inference);
-      onDiagnostic({ stage: "draft-format-repair", rejectionCode: "EDITORIAL_FORMAT", repairBudgetRemaining: 0 });
+      onDiagnostic({ stage: "draft-format-repair", rejectionCode: "EDITORIAL_FORMAT", repairBudgetRemaining: 0,
+        ...workersAiFailureDiagnostic(error) });
       written = await ask(`${WRITER_PROMPT}\nYour previous response could not be parsed as the required object.
 Write a fresh complete JSON object with exactly one stories array. Do not reproduce the failed
 response, add Markdown fences or serialize another object inside any reader-facing string.`,
@@ -968,12 +1070,15 @@ response, add Markdown fences or serialize another object inside any reader-faci
       const focusedWriter = !local && [EXPERIMENTAL_FREE_WRITER_MODEL, FREE_REASONING_WRITER_MODEL].includes(model);
       const fieldOnly = focusedWriter && rejected.every(entry =>
         entry.rejectionCode === "ORIGINALITY" && REPAIR_FIELDS.includes(entry.feedback.field));
-      const focused = focusedWriter && !fieldOnly ? focusedRepairPlan(rejected, dossiers) : null;
+      const dailyFocused = model === DEFAULT_CLOUDFLARE_AI_MODEL;
+      const focused = dailyFocused ? focusedRepairPlan(rejected, dossiers, { daily: true })
+        : focusedWriter && !fieldOnly ? focusedRepairPlan(rejected, dossiers) : null;
       const rewriteIds = focused ? [...repairIds].filter(id => !focused.some(item => item.candidateId === id)) : [];
+      const dailyRepair = dailyFocused && focused ? dailyRepairContract(rejected, dossiers, focused, rewriteIds) : null;
       const storyFields = GROUNDED_DRAFT_SCHEMA.properties.stories.items.properties;
       const repairSchema = copyRefinement ? objectSchema({ headline: storyFields.headline, deck: storyFields.deck,
         whyItMatters: storyFields.whyItMatters,
-        whatToDoOrWatch: storyFields.whatToDoOrWatch }) : focused ? objectSchema({ edits: {
+        whatToDoOrWatch: storyFields.whatToDoOrWatch }) : dailyRepair ? dailyRepair.schema : focused ? objectSchema({ edits: {
         type: "array", minItems: focused.reduce((sum, item) => sum + item.fields.length, 0),
         maxItems: focused.reduce((sum, item) => sum + item.fields.length, 0),
         items: objectSchema({ candidateId: { type: "string", enum: [...repairIds] },
@@ -984,8 +1089,11 @@ response, add Markdown fences or serialize another object inside any reader-faci
         items: objectSchema({ candidateId: { type: "string", enum: [...repairIds] },
           field: { type: "string", enum: REPAIR_FIELDS }, text: { type: "string", minLength: 1, maxLength: 650 } }),
       } }) : writerProviderSchema([...repairIds]);
-      const repaired = await ask(copyRefinement ? LOCAL_COPY_REFINEMENT_PROMPT : focused ? FOCUSED_REPAIR_PROMPT : fieldOnly ? FIELD_REPAIR_PROMPT : REPAIR_PROMPT,
-        copyRefinement ? localCopyRefinementData(rejected[0], promptDossiers.find(dossier => repairIds.has(dossier.candidateId))) : {
+      const repaired = await ask(copyRefinement ? LOCAL_COPY_REFINEMENT_PROMPT : dailyRepair
+        ? `${DAILY_REPAIR_PROMPT}\nReturn only a JSON object matching this exact schema:\n${JSON.stringify(repairSchema)}`
+        : focused ? FOCUSED_REPAIR_PROMPT : fieldOnly ? FIELD_REPAIR_PROMPT : REPAIR_PROMPT,
+        copyRefinement ? localCopyRefinementData(rejected[0], promptDossiers.find(dossier => repairIds.has(dossier.candidateId)))
+        : dailyRepair ? dailyRepair.data : {
         dossiers: promptDossiers.filter((dossier) => repairIds.has(dossier.candidateId)),
         ...(focused ? { requestedEdits: focused, rewriteCandidateIds: rewriteIds,
           context: rejected.filter(({ draft }) => !rewriteIds.includes(draft.candidateId)).map(({ draft }) => ({
@@ -1007,6 +1115,7 @@ response, add Markdown fences or serialize another object inside any reader-faci
       inferenceTrail.push(repaired);
       const revisions = copyRefinement ? keys(repaired.editorialPayload, ["headline", "deck", "whyItMatters", "whatToDoOrWatch"])
         ? [{ ...structuredClone(rejected[0].draft), ...repaired.editorialPayload }] : null
+        : dailyRepair ? applyDailyFocusedRepairs(repaired.editorialPayload, rejected, focused, rewriteIds, dailyRepair)
         : focused ? applyFocusedRepairs(repaired.editorialPayload, rejected, focused, rewriteIds)
         : fieldOnly ? repairedOriginalityFields(repaired.editorialPayload, rejected)
         : structuredClone(repaired.editorialPayload?.stories);

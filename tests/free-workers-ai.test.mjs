@@ -27,6 +27,46 @@ const schema = {
 };
 const payload = { headline: "A verified development" };
 
+test("native malformed JSON reports bounded observed output usage without guessing truncation", async () => {
+  for (const count of [71, 4_000, undefined, -1, 16_001, "4000", apiToken]) {
+    let requests = 0;
+    await assert.rejects(requestWorkersAiEditorial({ accountId, apiToken, messages, schema,
+      maxTokens: 4_000, maxAttempts: 1, validatePayload: () => true,
+      fetchImpl: async () => {
+        requests++;
+        return new Response(JSON.stringify({ success: true, result: {
+          response: '{"unfinished":', usage: { completion_tokens: count, privateText: apiToken },
+        } }), { headers: { "content-type": "application/json" } });
+      },
+    }), error => {
+      const diagnostic = workersAiFailureDiagnostic(error);
+      assert.equal(error.code, WORKERS_AI_EDITORIAL_FORMAT_INVALID);
+      assert.equal(diagnostic.formatReason, "PAYLOAD_JSON_INVALID");
+      if ([71, 4_000].includes(count)) {
+        assert.equal(diagnostic.completionTokens, count);
+        assert.equal(diagnostic.requestedMaxTokens, 4_000);
+      } else assert.equal(Object.hasOwn(diagnostic, "completionTokens"), false);
+      assert.doesNotMatch(JSON.stringify(diagnostic), /unfinished|privateText|cloudflare-test-token/);
+      return true;
+    });
+    assert.equal(requests, 1);
+  }
+  assert.equal(Object.hasOwn(workersAiFailureDiagnostic({ completionTokens: 4_000,
+    requestedMaxTokens: 4_000 }), "completionTokens"), false);
+});
+
+test("documented schema-mode refusal has an explicit sanitized format reason", async () => {
+  await assert.rejects(requestWorkersAiEditorial({ accountId, apiToken, messages, schema,
+    maxAttempts: 1, validatePayload: () => true, fetchImpl: async () => new Response(JSON.stringify({
+      success: false, result: null, errors: [{ code: 5000, message: "JSON Mode couldn't be met." }],
+    }), { status: 400, headers: { "content-type": "application/json" } }),
+  }), error => {
+    assert.equal(error.code, WORKERS_AI_EDITORIAL_FORMAT_INVALID);
+    assert.equal(workersAiFailureDiagnostic(error).formatReason, "PROVIDER_SCHEMA_UNSATISFIED");
+    return true;
+  });
+});
+
 test("unavailable responses retain only documented status/code diagnostics without provider text", async () => {
   for (const [status, code] of [[429, 3036], [429, 3040], [403, 5035], [200, 3023]]) {
     let calls = 0;

@@ -1,5 +1,5 @@
 name: Check free paper quality (no email)
-# Live summary-and-revision check; only safe annotations, never paper/source text.
+# Live daily-Llama and free web-discovery check; only safe annotations, never paper/source text.
 
 on:
   workflow_dispatch:
@@ -33,4 +33,7 @@ jobs:
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_AI_API_TOKEN: ${{ secrets.CLOUDFLARE_AI_API_TOKEN }}
-        run: node scripts/automation/check-personal-quality.mjs
+          CLOUDFLARE_AI_MODEL: '@cf/meta/llama-3.3-70b-instruct-fp8-fast'
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+          TAVILY_PAYGO_DISABLED_VERIFIED: ${{ vars.TAVILY_PAYGO_DISABLED_VERIFIED }}
+        run: node scripts/automation/check-personal-quality.mjs --require-web-search

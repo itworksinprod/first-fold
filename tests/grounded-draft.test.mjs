@@ -6,9 +6,11 @@ import { malformedEmailStories } from "./fixtures/malformed-email-2026-09-11.mjs
 import { GROUNDED_DRAFT_SCHEMA, groundedDossiers, groundedRequestBudget, validateGroundedStory, synthesizeGroundedEditorial } from
   "../scripts/automation/free/grounded-draft.mjs";
 import { DEFAULT_CLOUDFLARE_AI_MODEL, EXPERIMENTAL_FREE_WRITER_MODEL, FREE_REASONING_WRITER_MODEL,
-  resolveCloudflareAiModel } from "../scripts/automation/free/workers-ai.mjs";
+  resolveCloudflareAiModel, buildWorkersAiRequest } from "../scripts/automation/free/workers-ai.mjs";
 import { LOCAL_AI_PROVIDER, LOCAL_AI_MODEL, LOCAL_AI_URL, LOCAL_AI_EDITORIAL_FORMAT_INVALID,
   LOCAL_AI_CONTEXT_TOKENS, buildLocalAiRequest } from "../scripts/automation/free/local-ai.mjs";
+import { countReaderFacingStoryWords } from "../scripts/edition-content.mjs";
+import { DAILY_REPAIR_PROMPT } from "../scripts/automation/free/daily-repair-prompt.mjs";
 
 const candidate = { candidateId: groundedDraft.candidateId, suggestedDesk: "security-and-privacy",
   ranking: { evidenceTier: "authoritative-single" }, feedEvidence: [groundedEvidence],
@@ -28,6 +30,20 @@ const review = { candidateId: groundedDraft.candidateId, draftSha256: hash(groun
   claimSupport: groundedDraft.claims.map((claim) => claim.supports.map((support) => support.evidenceId)),
   factsSupported: true, attributionAccurate: true, analysisSupported: true, usefulAndSpecific: true };
 const copiedClaim = `CERT/CC says: ${groundedEvidence.summary.split(". ").slice(0, 2).join(". ")}.`;
+function dailyRepairPayload(options, revised) {
+  const plan = JSON.parse(options.messages[1].content).revisionPlan;
+  const byId = new Map(revised.map(draft => [draft.candidateId, draft]));
+  return {
+    ...(plan.copyEdits.length ? { copyEdits: plan.copyEdits.map(({ candidateId, field }) => ({
+      candidateId, field, text: byId.get(candidateId)[field],
+    })) } : {}),
+    ...(plan.claimEdits.length ? { claimEdits: plan.claimEdits.map(({ candidateId, claimIndex }) => ({
+      candidateId, claimIndex, text: byId.get(candidateId).claims[claimIndex].text,
+      supports: structuredClone(byId.get(candidateId).claims[claimIndex].supports),
+    })) } : {}),
+    ...(plan.rewriteCandidateIds.length ? { stories: plan.rewriteCandidateIds.map(id => structuredClone(byId.get(id))) } : {}),
+  };
+}
 
 test("grounded writer accepts concrete supported news including a driver filename", () => {
   assert.equal(validateGroundedStory(groundedDraft, dossier), true);
@@ -178,13 +194,14 @@ test("one originality revision is revalidated, hash-bound and separately checked
       if (calls.length === 1) return response({ stories: [copied] });
       if (calls.length === 2) {
         const data = JSON.parse(options.messages[1].content);
-        assert.equal(data.rejected[0].rejectionCode, "ORIGINALITY");
-        assert.equal(data.rejected[0].feedback.field, "claims[0].text");
-        assert.deepEqual(data.rejected[0].draft, { candidateId: candidate.candidateId });
-        assert.equal(Object.hasOwn(data.rejected[0].draft, "claims"), false);
+        assert.deepEqual(data.revisionPlan.claimEdits, [{ candidateId: candidate.candidateId, claimIndex: 0, reasons: ["ORIGINALITY"],
+          bounds: { minCharacters: 60, maxCharacters: 480, actualCharacters: copied.claims[0].text.length } }]);
+        assert.deepEqual(data.revisionPlan.copyEdits, []);
+        assert.deepEqual(data.dossiers[0].claims[0].originalSupports, copied.claims[0].supports);
+        assert.equal(data.dossiers[0].claims[0].preserveSupports, true);
         assert.equal(options.maxTokens, 3_000);
         assert.equal(options.maxAttempts, 1);
-        return response({ stories: [groundedDraft] });
+        return response(dailyRepairPayload(options, [groundedDraft]));
       }
       assert.equal(JSON.parse(options.messages[1].content).drafts[0].draftSha256, hash(groundedDraft));
       return response({ reviews: [review] });
@@ -305,11 +322,11 @@ test("a repaired draft still needs semantic approval; repair quota errors stop i
   for (const quota of [false, true]) {
     let calls = 0;
     const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
-      aiRequestImpl: async () => {
+      aiRequestImpl: async options => {
         if (++calls === 1) return response({ stories: [copied] });
         if (calls === 2) {
           if (quota) throw new Error("quota");
-          return response({ stories: [groundedDraft] });
+          return response(dailyRepairPayload(options, [groundedDraft]));
         }
         return response({ reviews: [{ ...review, factsSupported: false }] });
       } });
@@ -332,7 +349,7 @@ test("revision only replaces a rejected draft and preserves an already valid dra
       if (++calls === 1) return response({ stories: [groundedDraft, copied] });
       if (calls === 2) {
         assert.deepEqual(JSON.parse(options.messages[1].content).dossiers.map((value) => value.candidateId), [secondCandidate.candidateId]);
-        return response({ stories: [secondDraft] });
+        return response(dailyRepairPayload(options, [secondDraft]));
       }
       assert.deepEqual(JSON.parse(options.messages[1].content).drafts.map((value) => value.draft), [groundedDraft, secondDraft]);
       return response({ reviews: [review, { ...review, candidateId: secondCandidate.candidateId, draftSha256: hash(secondDraft) }] });
@@ -584,8 +601,12 @@ test("a reviewer must explicitly cover each claim with its actual supporting pas
   assert.ok(result);
 });
 
-test("repair receives the exact failing field and measured bounds without extra inference calls", async () => {
+test("daily repair receives the exact failing field and bounded body plan without extra inference calls", async () => {
   const short = { ...structuredClone(groundedDraft), whyItMatters: "Backup software should protect recovery rather than create a new path to disk damage." };
+  const measured = [];
+  assert.equal(validateGroundedStory(short, dossier, (code, feedback) => measured.push({ code, feedback })), false);
+  assert.equal(measured[0].code, "SHAPE");
+  assert.equal(measured[0].feedback.actualCharacters, short.whyItMatters.length);
   const calls = [];
   const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
     aiRequestImpl: async (options) => {
@@ -596,13 +617,19 @@ test("repair receives the exact failing field and measured bounds without extra 
         return response({ stories: [short] });
       }
       if (calls.length === 2) {
-        const rejected = JSON.parse(options.messages[1].content).rejected[0];
-        assert.equal(rejected.rejectionCode, "SHAPE");
-        assert.equal(rejected.feedback.field, "whyItMatters");
-        assert.equal(rejected.feedback.minCharacters, 120);
-        assert.equal(rejected.feedback.maxCharacters, 650);
-        assert.equal(rejected.feedback.actualCharacters, short.whyItMatters.length);
-        return response({ stories: [groundedDraft] });
+        const data = JSON.parse(options.messages[1].content);
+        assert.equal(data.revisionPlan.copyEdits.length, 1);
+        assert.equal(data.revisionPlan.copyEdits[0].field, "whyItMatters");
+        assert.ok(data.revisionPlan.copyEdits[0].reasons.includes("CHARACTER_OR_PROSE_BOUNDS"));
+        assert.deepEqual(data.revisionPlan.copyEdits[0].bounds, { minCharacters: 120, maxCharacters: 650,
+          actualCharacters: short.whyItMatters.length });
+        assert.deepEqual(data.revisionPlan.claimEdits, []);
+        assert.match(options.messages[0].content, /whyItMatters 120–650/);
+        assert.equal(options.schema.properties.copyEdits.items.properties.text.maxLength, 650);
+        assert.equal(data.dossiers[0].copy.fixedBodyWords, countReaderFacingStoryWords({
+          whatHappened: short.claims.map(claim => claim.text).join(" "), whatToDoOrWatch: short.whatToDoOrWatch,
+        }));
+        return response(dailyRepairPayload(options, [groundedDraft]));
       }
       return response({ reviews: [review] });
     } });
@@ -1378,4 +1405,194 @@ test("a failed post-audit claims repair never earns another audit, repair, copy 
     assert.equal(result, null);
     assert.deepEqual(stages, ["claims", "audit", "claims"]);
   }
+});
+
+function dailySeptember14FailurePattern() {
+  // These are synthetic paragraphs, not recovered provider output. The exact
+  // measured word counts and rejection pattern match the public daily log.
+  const short = structuredClone(groundedDraft);
+  short.claims[0].text = "CERT/CC describes a local disk-write flaw in the backup software's driver.";
+  short.claims[1].text = "The advisory names neither a corrected release nor observed attacks against users.";
+  short.whyItMatters = "If the affected driver is installed, unauthorized disk access could undermine the stored information that backups are meant to protect. This concerns driver permissions rather than demonstrated remote attack activity.";
+  short.whatToDoOrWatch = "Check the advisory for remediation and the vendor's affected-release guidance before choosing a response for your machines.";
+  const medium = structuredClone(short);
+  medium.whatToDoOrWatch += " Compare the named driver with your inventory before deciding whether the reported exposure applies. Keep checking for vendor remediation rather than assuming that a corrected release already exists.";
+  const copied = structuredClone(short);
+  copied.claims[0].text = copiedClaim;
+  copied.whatToDoOrWatch += " Before responding, verify whether the affected driver is installed and keep remediation decisions tied to the originating vendor's guidance.";
+  const drafts = [copied, medium, short].map((draft, index) => ({ ...draft, candidateId: `candidate-sep14-pattern-${index}` }));
+  const slate = drafts.map((draft, index) => ({ ...structuredClone(candidate), candidateId: draft.candidateId,
+    suggestedDesk: ["ai", "work-and-tools", "security-and-privacy"][index] }));
+  const editorial = { frontPage: { note: "old", estimatedMinutes: 1 }, desks: Object.fromEntries(slate.map(item => [item.suggestedDesk, {
+    story: { ...structuredClone(baseline.desks["security-and-privacy"].story), id: `story-${item.candidateId}` },
+  }])) };
+  const revised = drafts.map((draft, index) => index === 0 ? { ...structuredClone(draft),
+    claims: [{ ...groundedDraft.claims[0] }, structuredClone(draft.claims[1])] } : {
+    ...structuredClone(draft), whyItMatters: groundedDraft.whyItMatters, whatToDoOrWatch: groundedDraft.whatToDoOrWatch,
+  });
+  return { drafts, slate, editorial, revised };
+}
+
+test("daily valid-JSON 109/99/71 failure pattern revises five fields without rewriting clean copy", async t => {
+  const { drafts, slate, editorial, revised } = dailySeptember14FailurePattern();
+  const dossiers = groundedDossiers(slate);
+  const counts = drafts.map(draft => countReaderFacingStoryWords({ ...draft, whatHappened: draft.claims.map(claim => claim.text).join(" ") }));
+  assert.deepEqual(counts, [109, 99, 71]);
+  const codes = drafts.map((draft, index) => {
+    const failures = [];
+    assert.equal(validateGroundedStory(draft, dossiers[index], (code, feedback) => failures.push({ code, feedback })), false);
+    return failures[0];
+  });
+  assert.deepEqual(codes.map(item => item.code), ["ORIGINALITY", "WORD_COUNT", "WORD_COUNT"]);
+  assert.equal(codes[0].feedback.field, "claims[0].text");
+  for (const [index, draft] of revised.entries()) assert.equal(validateGroundedStory(draft, dossiers[index]), true);
+  const calls = [];
+  const result = await synthesizeGroundedEditorial({ editorial, candidates: slate, aiRequestImpl: async options => {
+    calls.push(options);
+    if (calls.length === 1) return response({ stories: drafts });
+    const data = JSON.parse(options.messages[1].content);
+    if (calls.length === 2) {
+      const requestBytes = Buffer.byteLength(JSON.stringify(buildWorkersAiRequest(options).body));
+      assert.ok(requestBytes <= 70_000, `The bounded repair request is ${requestBytes} bytes.`);
+      t.diagnostic(`Three-story focused repair request: ${requestBytes} bytes (70,000-byte limit).`);
+      assert.ok(options.messages[0].content.startsWith(DAILY_REPAIR_PROMPT));
+      assert.doesNotMatch(options.messages[0].content, /Write ONE story for EVERY supplied dossier|Do not return an empty stories array/);
+      assert.deepEqual(Object.keys(options.schema.properties), ["copyEdits", "claimEdits"]);
+      assert.equal(options.schema.properties.copyEdits.minItems, 4);
+      assert.equal(options.schema.properties.copyEdits.maxItems, 4);
+      assert.equal(options.schema.properties.claimEdits.minItems, 1);
+      assert.equal(options.schema.properties.claimEdits.maxItems, 1);
+      assert.deepEqual(Object.keys(options.schema.properties.copyEdits.items.properties), ["candidateId", "field", "text"]);
+      assert.deepEqual(Object.keys(options.schema.properties.claimEdits.items.properties), ["candidateId", "claimIndex", "text", "supports"]);
+      assert.deepEqual(data.revisionPlan.rewriteCandidateIds, []);
+      assert.deepEqual(data.revisionPlan.copyEdits.map(edit => [edit.candidateId, edit.field]), [
+        [drafts[1].candidateId, "whyItMatters"], [drafts[1].candidateId, "whatToDoOrWatch"],
+        [drafts[2].candidateId, "whyItMatters"], [drafts[2].candidateId, "whatToDoOrWatch"],
+      ]);
+      assert.deepEqual(data.revisionPlan.claimEdits, [{ candidateId: drafts[0].candidateId, claimIndex: 0, reasons: ["ORIGINALITY"],
+        bounds: { minCharacters: 60, maxCharacters: 480, actualCharacters: drafts[0].claims[0].text.length } }]);
+      for (const [index, packet] of data.dossiers.entries()) {
+        if (index === 0) {
+          assert.equal(packet.copy, undefined);
+          assert.equal(packet.claims[0].preserveSupports, true);
+          assert.deepEqual(packet.claims[0].originalSupports, drafts[index].claims[0].supports);
+        } else {
+          assert.deepEqual(packet.copy.fixedClaims, drafts[index].claims);
+          assert.equal(packet.copy.fixedBodyWords, countReaderFacingStoryWords({ whatHappened: drafts[index].claims.map(claim => claim.text).join(" ") }));
+          assert.deepEqual(packet.copy.bodyTarget, { min: 100, max: 225, aim: 145 });
+          assert.equal(packet.claims, undefined);
+        }
+      }
+      return response(dailyRepairPayload(options, revised));
+    }
+    assert.equal(calls.length, 3);
+    assert.deepEqual(data.drafts.map(item => item.draft), revised);
+    for (const [index, item] of data.drafts.entries()) {
+      assert.equal(item.draftSha256, hash(revised[index]));
+      assert.notEqual(item.draftSha256, hash(drafts[index]));
+      assert.equal(item.draft.headline, drafts[index].headline);
+      assert.equal(item.draft.deck, drafts[index].deck);
+      if (index === 0) {
+        assert.deepEqual(item.draft.claims[1], drafts[index].claims[1]);
+        assert.equal(item.draft.whyItMatters, drafts[index].whyItMatters);
+        assert.equal(item.draft.whatToDoOrWatch, drafts[index].whatToDoOrWatch);
+      } else assert.deepEqual(item.draft.claims, drafts[index].claims);
+    }
+    return response({ reviews: revised.map(draft => ({ ...review, candidateId: draft.candidateId, draftSha256: hash(draft) })) });
+  } });
+  assert.ok(result);
+  assert.deepEqual(calls.map(call => call.maxTokens), [4_000, 3_000, 800]);
+  assert.ok(calls.every(call => call.maxAttempts === 1 && call.model === DEFAULT_CLOUDFLARE_AI_MODEL));
+  assert.equal(calls.reduce((sum, call) => sum + call.maxTokens, 0), 7_800);
+});
+
+test("daily focused edits reject missing, duplicate, extra, wrong-candidate and cross-schema fields", async () => {
+  for (const mutate of [
+    payload => { payload.copyEdits.pop(); },
+    payload => { payload.copyEdits[1] = payload.copyEdits[0]; },
+    payload => { payload.copyEdits.push({ ...payload.copyEdits[0], field: "headline" }); },
+    payload => { payload.claimEdits[0].candidateId = "not-a-candidate"; },
+    payload => { payload.claimEdits[0].claimIndex = 1; },
+    payload => { payload.copyEdits[0].supports = []; },
+    payload => { payload.claimEdits[0].field = "claims[0].text"; },
+    payload => { payload.stories = []; },
+    payload => { payload.claimEdits[0].supports = [{ evidenceId: "S1P4" }]; },
+  ]) {
+    const { drafts, slate, editorial, revised } = dailySeptember14FailurePattern();
+    const calls = [];
+    const result = await synthesizeGroundedEditorial({ editorial, candidates: slate, aiRequestImpl: async options => {
+      calls.push(options);
+      if (calls.length === 1) return response({ stories: drafts });
+      assert.equal(options.schema.properties.reviews, undefined);
+      const payload = dailyRepairPayload(options, revised);
+      mutate(payload);
+      return response(payload);
+    } });
+    assert.equal(result, null);
+    assert.equal(calls.length, 2, "An invalid edit response receives no retry or approving review");
+  }
+});
+
+test("daily focused reconstruction still vetoes unsupported numbers, lost caveats and copied prose", async () => {
+  for (const replacement of [
+    `${groundedDraft.claims[0].text} Version 9.9 is affected.`,
+    "CERT/CC says the backup driver allows UEFI code execution before the operating system starts, exposing the local machine to additional compromise.",
+    copiedClaim,
+    'A damaged claim fragment", "whyItMatters": "unsafe',
+  ]) {
+    const { drafts, slate, editorial, revised } = dailySeptember14FailurePattern();
+    slate[0].feedEvidence[0].articleExcerpt = "When Secure Boot is disabled, disk modification can permit UEFI code execution before the operating system starts.";
+    const calls = [];
+    const result = await synthesizeGroundedEditorial({ editorial, candidates: [slate[0]], aiRequestImpl: async options => {
+      calls.push(options);
+      if (calls.length === 1) return response({ stories: [drafts[0]] });
+      assert.equal(options.schema.properties.reviews, undefined, "Model approval cannot override a deterministic veto");
+      const payload = dailyRepairPayload(options, [revised[0]]);
+      payload.claimEdits[0].text = replacement;
+      return response(payload);
+    } });
+    assert.equal(result, null);
+    assert.equal(calls.length, 2);
+  }
+});
+
+test("daily repaired copy requires its new exact review hash and never retries for approval", async () => {
+  for (const staleHash of [true, false]) {
+    const { drafts, slate, editorial, revised } = dailySeptember14FailurePattern();
+    let calls = 0;
+    const result = await synthesizeGroundedEditorial({ editorial, candidates: [slate[0]], aiRequestImpl: async options => {
+      if (++calls === 1) return response({ stories: [drafts[0]] });
+      if (calls === 2) return response(dailyRepairPayload(options, [revised[0]]));
+      return response({ reviews: [{ ...review, candidateId: revised[0].candidateId,
+        draftSha256: hash(staleHash ? drafts[0] : revised[0]), factsSupported: staleHash }] });
+    } });
+    assert.equal(result, null);
+    assert.equal(calls, 3);
+  }
+});
+
+test("the actual daily failure order spends format recovery before 109/99/71 rejects and must not add another repair", async () => {
+  const { drafts, slate, editorial } = dailySeptember14FailurePattern();
+  const requests = [];
+  const events = [];
+  const result = await synthesizeGroundedEditorial({ editorial, candidates: slate,
+    accountId: "0".repeat(32), apiToken: "synthetic-only", onDiagnostic: event => events.push(event),
+    fetchImpl: async (_url, options) => {
+      const body = JSON.parse(options.body);
+      requests.push(body);
+      assert.ok(requests.length <= 2, "The already-spent repair slot cannot be used again");
+      const payload = requests.length === 1 ? '{"stories":broken' : { stories: drafts };
+      return new Response(JSON.stringify({ success: true, result: { response: payload }, errors: [] }), {
+        status: 200, headers: { "content-type": "application/json" },
+      });
+    } });
+  assert.equal(result, null);
+  assert.deepEqual(requests.map(request => request.max_tokens), [4_000, 3_000]);
+  const recovery = events.findIndex(event => event.stage === "draft-format-repair");
+  const rejection = events.findIndex(event => event.stage === "local-evidence-check");
+  assert.ok(recovery >= 0 && rejection > recovery);
+  assert.equal(events[recovery].repairBudgetRemaining, 0);
+  assert.deepEqual(events[rejection].wordCounts, [109, 99, 71]);
+  assert.deepEqual(events[rejection].rejectionCodes, ["ORIGINALITY", "WORD_COUNT", "WORD_COUNT"]);
+  assert.equal(events.some(event => event.stage === "draft-repair"), false);
 });
