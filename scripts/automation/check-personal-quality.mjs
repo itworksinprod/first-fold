@@ -9,22 +9,28 @@ import { isValidWebSearchReceipt } from "./free/search-receipt.mjs";
 import { draftFreeEditionWithHealth } from "./draft-free-edition.mjs";
 import { EXPERIMENTAL_FREE_WRITER_MODEL } from "./free/workers-ai.mjs";
 import { qualityCheckWindow } from "./quality-check-window.mjs";
+import { EXPLICIT_CLAIM_REVIEW_PROFILE, LEGACY_CLAIM_REVIEW_PROFILE } from "./free/explicit-claim-review.mjs";
 
 const now = new Date();
 let snapshot;
 try {
   const args = process.argv.slice(2);
-  assert.ok(args.length === 0 || args.length === 1 && args[0] === "--require-web-search");
+  assert.ok(args.length <= 2 && new Set(args).size === args.length &&
+    args.every(arg => ["--require-web-search", "--explicit-claim-review"].includes(arg)));
   const requireWebSearch = args.includes("--require-web-search");
+  const explicitReview = args.includes("--explicit-claim-review");
   const alternateWriter = process.env.FREE_WRITER_MODEL;
   assert.ok(!alternateWriter || alternateWriter === EXPERIMENTAL_FREE_WRITER_MODEL);
+  assert.ok(!explicitReview || !alternateWriter);
   if (requireWebSearch && !process.env.TAVILY_API_KEY?.trim()) {
     throw Object.assign(new Error("Search credentials are not configured."), { code: "SEARCH_KEY_REQUIRED" });
   }
   const { editionDate, runMode } = qualityCheckWindow(now);
   const candidate = await generatePersonalFreeEdition({ editionDate, runMode,
-    ...(alternateWriter ? { draftFreeEditionWithHealthImpl: options =>
-      draftFreeEditionWithHealth({ ...options, model: EXPERIMENTAL_FREE_WRITER_MODEL }) } : {}),
+    ...(alternateWriter || explicitReview ? { draftFreeEditionWithHealthImpl: options =>
+      draftFreeEditionWithHealth({ ...options,
+        ...(alternateWriter ? { model: EXPERIMENTAL_FREE_WRITER_MODEL } : {}),
+        ...(explicitReview ? { groundedReviewProfile: EXPLICIT_CLAIM_REVIEW_PROFILE } : {}) }) } : {}),
     personalStoryLedger: createEmptyPersonalStoryLedger({ fingerprintKey: process.env.CLOUDFLARE_AI_API_TOKEN }),
     researchImpl: async (options) => {
       snapshot ??= await collectFreeResearchSnapshot(options);
@@ -50,6 +56,7 @@ try {
   }
   console.info(`::notice title=Quality result::${JSON.stringify({ status: "validated-and-rendered", stories, checkedStories, mode,
     writerModel: candidate.provenance.personalFreeResearch.model,
+    reviewProfile: explicitReview ? EXPLICIT_CLAIM_REVIEW_PROFILE : LEGACY_CLAIM_REVIEW_PROFILE,
     ...(isValidWebSearchReceipt(webSearch) ? { webSearch } : {}),
     renderedCopyChecked: true,
     emailSent: false, repeatHistory: "isolated-test-empty-ledger", maxModelRequests: PERSONAL_FREE_MAX_MODEL_REQUESTS })}`);

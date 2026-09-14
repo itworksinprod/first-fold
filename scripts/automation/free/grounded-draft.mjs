@@ -5,6 +5,8 @@ import { readerSummaryErrors } from "../../reader-summary.mjs";
 import { claimCaveatErrors } from "./claim-caveats.mjs";
 import { expandSupportedCvePairs } from "./supported-identifiers.mjs";
 import { DAILY_REPAIR_PROMPT } from "./daily-repair-prompt.mjs";
+import { EXPLICIT_CLAIM_REVIEW_PROFILE, LEGACY_CLAIM_REVIEW_PROFILE,
+  buildExplicitClaimReview, validateExplicitClaimReview } from "./explicit-claim-review.mjs";
 import { buildEvidencePacketSources, selectEvidencePassages } from "./evidence-packets.mjs";
 import { LOCAL_AI_MODEL, LOCAL_AI_PROVIDER, LOCAL_AI_EDITORIAL_FORMAT_INVALID,
   requestLocalAiEditorial } from "./local-ai.mjs";
@@ -929,13 +931,16 @@ whatToDoOrWatch 100–550. Each story's body must have 100–225 words: its TWO 
 whyItMatters and whatToDoOrWatch, excluding headline and deck. Aim for 140–170 body words PER STORY.
 For fixed foundations, fixedClaimWords is already part of that total. copyBodyTarget gives the
 remaining min/aim/max words for whyItMatters PLUS whatToDoOrWatch, not the entire story.
-When subtractRepairedClaimWords is true, those provisional numbers also include the claims you
-must repair: FIRST count the words in their FINAL repaired text, subtract that count from each
-copyBodyTarget number (never below zero), THEN write the two copy paragraphs toward that remaining
-allowance. Do not use an old or rejected claim's word count. Do not count headline or deck.
-As a useful balance, aim for about 35–50 words in whyItMatters and 30–45 in whatToDoOrWatch,
-adjusting both to the actual remaining allowance and existing character limits. Check each story's
-final total, not the combined total across candidates. Explain one conditional consequence of the
+When subtractRepairedClaimWords is false, copyParagraphWordAims gives this candidate's ready-to-use
+word target for EACH copy paragraph. Aim for its whyItMatters count and its whatToDoOrWatch count;
+do not subtract fixed-claim words again. These are word targets, not character counts.
+When subtractRepairedClaimWords is true, paragraph targets are not supplied because the remaining
+numbers are provisional: FIRST count the words in the FINAL repaired claims, subtract that count
+from each copyBodyTarget number (never below zero), THEN compute the paragraph targets from the
+remaining aim: round 55% to the nearest word for whyItMatters and use the rest for whatToDoOrWatch.
+Do not use an old or rejected claim's word count. Do not count headline or deck. Respect the remaining
+combined min/max and existing character limits. Check each story's final total, not the combined
+total across candidates. Explain one conditional consequence of the
 actual change and one specific next signal or proportionate check. Do not pad, repeat facts or
 invent detail to meet a target. Every assembled story still faces full checks and independent review.`;
 
@@ -1010,6 +1015,8 @@ function dailyCompositionContract(foundations, dossiers) {
       ? [] : [{ claimIndex, ...structuredClone(claim) }]);
     const citedIds = new Set(fixedClaims.flatMap(claim => claim.supports.map(support => support.evidenceId)));
     const fixedClaimWords = countReaderFacingStoryWords({ whatHappened: fixedClaims.map(claim => claim.text).join(" ") });
+    const copyAimWords = Math.max(0, 145 - fixedClaimWords);
+    const whyAimWords = Math.round(copyAimWords * 0.55);
     return { candidateId: dossier.candidateId, desk: dossier.desk, evidenceTier: dossier.evidenceTier,
       fixedClaims, requestedClaimRepairs: requested.map(task => {
         const claim = foundation.claims[task.claimIndex];
@@ -1024,8 +1031,11 @@ function dailyCompositionContract(foundations, dossiers) {
       fixedClaimWords,
       bodyTarget: { min: MIN_PRIVATE_GROUNDED_STORY_WORDS, max: 225, aim: 145 },
       copyBodyTarget: { min: Math.max(0, MIN_PRIVATE_GROUNDED_STORY_WORDS - fixedClaimWords),
-        aim: Math.max(0, 145 - fixedClaimWords), max: Math.max(0, 225 - fixedClaimWords),
-        subtractRepairedClaimWords: requested.length > 0 } };
+        aim: copyAimWords, max: Math.max(0, 225 - fixedClaimWords),
+        subtractRepairedClaimWords: requested.length > 0 },
+      ...(requested.length === 0 ? { copyParagraphWordAims: {
+        whyItMatters: whyAimWords, whatToDoOrWatch: copyAimWords - whyAimWords,
+      } } : {}) };
   }) };
   return { schema, data, claimRepairs };
 }
@@ -1148,12 +1158,20 @@ async function prepareDailyDrafts({ ask, dossiers, promptDossiers, budgets, infe
  * the already validated digest. Each approved story is adopted independently. */
 export async function synthesizeGroundedEditorial({ editorial, candidates, accountId, apiToken,
   model = DEFAULT_CLOUDFLARE_AI_MODEL,
+  reviewProfile = LEGACY_CLAIM_REVIEW_PROFILE,
   aiRequestImpl, fetchImpl = globalThis.fetch,
   onDiagnostic = () => {} } = {}) {
   const local = model === LOCAL_AI_MODEL;
   // A Cloudflare failure never opts a run into local inference. The exact local
   // model must be selected explicitly, outside the Cloudflare model allowlist.
   if (!local) model = resolveCloudflareAiModel(model);
+  // Explicit review is an internal opt-in for the no-email evaluation path.
+  // Merely deploying this code does not activate it for the daily paper.
+  if (![LEGACY_CLAIM_REVIEW_PROFILE, EXPLICIT_CLAIM_REVIEW_PROFILE].includes(reviewProfile) ||
+      (reviewProfile === EXPLICIT_CLAIM_REVIEW_PROFILE && model !== DEFAULT_CLOUDFLARE_AI_MODEL)) {
+    onDiagnostic({ stage: "free-writer-unavailable", code: "REVIEW_PROFILE_INVALID" });
+    return null;
+  }
   aiRequestImpl ??= local ? requestLocalAiEditorial : requestWorkersAiEditorial;
   const isolatedWriter = local || model === EXPERIMENTAL_FREE_WRITER_MODEL;
   if (!Array.isArray(candidates) || candidates.length < 1 || candidates.length > 4) {
@@ -1537,8 +1555,15 @@ add Markdown fences or serialize another object inside any reader-facing string.
         drafts: batch.map(draft => ({ draftSha256: hash(draft), draft })),
       };
       let reviewSystem = REVIEW_PROMPT;
-      const reviewSchema = reviewerProviderSchema(batch);
-      if (model === DEFAULT_CLOUDFLARE_AI_MODEL) {
+      let reviewSchema = reviewerProviderSchema(batch);
+      let explicitBundle;
+      if (reviewProfile === EXPLICIT_CLAIM_REVIEW_PROFILE) {
+        explicitBundle = buildExplicitClaimReview({ drafts: batch, dossiers: dossiers.filter(dossier =>
+          batch.some(draft => draft.candidateId === dossier.candidateId)) });
+        reviewData = explicitBundle.data;
+        reviewSystem = explicitBundle.prompt;
+        reviewSchema = explicitBundle.schema;
+      } else if (model === DEFAULT_CLOUDFLARE_AI_MODEL) {
         const pairedData = { ...reviewData, drafts: reviewData.drafts.map(item => ({ ...item,
           claimEvidence: pairedClaimEvidence(item.draft, dossiers.find(dossier => dossier.candidateId === item.draft.candidateId)) })) };
         const pairedSystem = `${REVIEW_PROMPT}\n${DAILY_REVIEW_GUIDANCE}`;
@@ -1553,8 +1578,21 @@ add Markdown fences or serialize another object inside any reader-facing string.
         onDiagnostic({ stage: "semantic-evidence-pairing", submitted: batch.length,
           paired: fits ? batch.length : 0, reason: fits ? "PAIRED_CLAIMS" : "ORIGINAL_VIEW_REQUEST_BOUND" });
       }
-      const checked = await ask(reviewSystem, reviewData, reviewSchema, budgets.review);
-      inferenceTrail.push(checked);
+      const rawChecked = await ask(reviewSystem, reviewData, reviewSchema, budgets.review);
+      // Preserve native provider output and hashes in the inference trail.
+      // Only an exactly bound explicit verdict can produce the canonical local
+      // support set; a false verdict remains an empty set and cannot approve.
+      inferenceTrail.push(rawChecked);
+      let checked = rawChecked;
+      if (explicitBundle) {
+        const canonical = validateExplicitClaimReview(rawChecked.editorialPayload, explicitBundle);
+        if (canonical.errors.length) {
+          onDiagnostic({ stage: "semantic-evidence-check", submitted: valid.length, accepted: 0,
+            rejectionCodes: canonical.errors });
+          return null;
+        }
+        checked = { ...rawChecked, editorialPayload: { reviews: canonical.reviews } };
+      }
       if (!keys(checked.editorialPayload, ["reviews"]) || !Array.isArray(checked.editorialPayload.reviews) ||
           checked.editorialPayload.reviews.length !== batch.length ||
           checked.editorialPayload.reviews.some(review => !batch.some(draft => draft.candidateId === review?.candidateId))) {

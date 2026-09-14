@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { HISTORICAL_PREVIEW, assertHistoricalPreviewAuthorization,
   isHistoricalPreviewRecord, isHistoricalPreviewTiming } from "./historical-preview-policy.mjs";
 import { GROUNDED_DIGEST_MODE, synthesizeGroundedEditorial } from "./free/grounded-draft.mjs";
+import { EXPLICIT_CLAIM_REVIEW_PROFILE } from "./free/explicit-claim-review.mjs";
 import { createNewsworthinessReview } from "./free/newsworthiness.mjs";
 import { createTavilyDiscovery } from "./free/web-search.mjs";
 import { isValidWebSearchReceipt } from "./free/search-receipt.mjs";
@@ -32,6 +33,7 @@ import {
   WORKERS_AI_EDITORIAL_FORMAT_INVALID,
   WORKERS_AI_EDITORIAL_UNAVAILABLE,
   WORKERS_AI_PROVIDER,
+  DEFAULT_CLOUDFLARE_AI_MODEL,
   requestWorkersAiEditorial,
   resolveCloudflareAiModel,
 } from "./free/workers-ai.mjs";
@@ -2504,6 +2506,7 @@ async function draftFreeEditionCore({
   summarizeSelectedSlate = false,
   trustedEvidenceDigestOnly = false,
   groundedSummaries = false,
+  groundedReviewProfile,
   tavilyApiKey,
   tavilyPaygoDisabledVerified = false,
   onFreeDiagnostic = () => {},
@@ -2568,6 +2571,11 @@ async function draftFreeEditionCore({
   }
   if (groundedSummaries && (!trustedEvidenceDigestOnly || ![4, 7].includes(maxModelRequests))) {
     throw new Error("Grounded summaries require a validated digest baseline and a bounded four- or seven-call free profile.");
+  }
+  if (groundedReviewProfile !== undefined &&
+      (groundedReviewProfile !== EXPLICIT_CLAIM_REVIEW_PROFILE || !groundedSummaries ||
+       resolveCloudflareAiModel(model) !== DEFAULT_CLOUDFLARE_AI_MODEL)) {
+    throw new Error("Explicit claim review requires the bounded daily Llama grounded-summary profile.");
   }
   if (
     !Number.isInteger(minimumStoryCount) ||
@@ -3117,6 +3125,7 @@ async function draftFreeEditionCore({
   if (groundedSummaries && candidates.length > 0) {
     const grounded = await synthesizeGroundedEditorial({ editorial, candidates,
       accountId, apiToken, model, aiRequestImpl, fetchImpl,
+      reviewProfile: groundedReviewProfile,
       onDiagnostic: onFreeDiagnostic });
     if (grounded) {
       editorial = grounded.editorial;

@@ -161,7 +161,10 @@ test("the live quality notice is emitted only after all final copy and story ass
   assert.match(qualityScript, /code: "QUALITY_GROUNDED_SUMMARIES_INCOMPLETE"/);
   assert.match(qualityWorkflow, /FREE_WRITER_MODEL: '@cf\/qwen\/qwen3-30b-a3b-fp8'/);
   assert.match(qualityScript, /alternateWriter === EXPERIMENTAL_FREE_WRITER_MODEL/);
-  assert.match(qualityScript, /draftFreeEditionWithHealth\(\{ \.\.\.options, model: EXPERIMENTAL_FREE_WRITER_MODEL \}\)/);
+  assert.match(qualityScript, /draftFreeEditionWithHealth\(\{ \.\.\.options,/);
+  assert.match(qualityScript, /alternateWriter \? \{ model: EXPERIMENTAL_FREE_WRITER_MODEL \} : \{\}/);
+  assert.match(qualityScript, /explicitReview \? \{ groundedReviewProfile: EXPLICIT_CLAIM_REVIEW_PROFILE \} : \{\}/);
+  assert.match(qualityScript, /assert\.ok\(!explicitReview \|\| !alternateWriter\)/);
   assert.doesNotMatch(personalWorkflow, /FREE_WRITER_MODEL/);
 });
 

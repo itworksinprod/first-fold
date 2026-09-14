@@ -2419,14 +2419,25 @@ test("daily copy targets subtract the exact fixed-claim words per candidate whil
     assert.deepEqual(packet.bodyTarget, { min: 100, max: 225, aim: 145 });
     assert.deepEqual(packet.copyBodyTarget, { min: Math.max(0, 100 - fixedWords), aim: Math.max(0, 145 - fixedWords),
       max: Math.max(0, 225 - fixedWords), subtractRepairedClaimWords: false });
+    const remainingAim = Math.max(0, 145 - fixedWords);
+    assert.deepEqual(packet.copyParagraphWordAims, { whyItMatters: Math.round(remainingAim * 0.55),
+      whatToDoOrWatch: remainingAim - Math.round(remainingAim * 0.55) });
+    assert.equal(packet.copyParagraphWordAims.whyItMatters + packet.copyParagraphWordAims.whatToDoOrWatch + fixedWords, 145,
+      "Each dossier's paragraph targets plus its fixed facts aim at the complete story, not a batch total");
+    if (fixedWords === 24) assert.deepEqual(packet.copyParagraphWordAims, { whyItMatters: 67, whatToDoOrWatch: 54 },
+      "Short foundations get all121remainingwords, instead of the conflicting generic65word paragraph floor");
+    if (fixedWords === 77) assert.deepEqual(packet.copyParagraphWordAims, { whyItMatters: 37, whatToDoOrWatch: 31 });
     assert.deepEqual(packet.fixedClaims.map(({ claimIndex: _index, ...claim }) => claim), draft.claims);
     assert.equal(packet.requestedClaimRepairs.length, 0);
   }
   assert.deepEqual(packets.map(packet => packet.fixedClaimWords).sort((a, b) => a - b), [24, 24, 77],
     "The canonical reader counter handles filenames and publisher punctuation consistently");
   assert.match(calls[1].messages[0].content, /remaining min\/aim\/max words for whyItMatters PLUS whatToDoOrWatch, not the entire story/);
-  assert.match(calls[1].messages[0].content, /35–50 words in whyItMatters and 30–45 in whatToDoOrWatch/);
-  assert.match(calls[1].messages[0].content, /adjusting both to the actual remaining allowance and existing character limits/);
+  assert.doesNotMatch(calls[1].messages[0].content, /35–50 words|30–45 in whatToDoOrWatch/,
+    "The old conflicting generic ranges must not remain alongside the per-candidate targets");
+  assert.match(calls[1].messages[0].content, /copyParagraphWordAims gives this candidate's ready-to-use/);
+  assert.match(calls[1].messages[0].content, /do not subtract fixed-claim words again/);
+  assert.match(calls[1].messages[0].content, /combined min\/max and existing character limits/);
   assert.match(calls[1].messages[0].content, /Do not count headline or deck/);
   assert.match(calls[1].messages[0].content, /Do not pad, repeat facts or/);
 });
@@ -2480,14 +2491,22 @@ test("a repaired claim uses a provisional remaining budget and its final word co
   assert.equal(packet.fixedClaimWords, fixedWords);
   assert.deepEqual(packet.copyBodyTarget, { min: Math.max(0, 100 - fixedWords), aim: Math.max(0, 145 - fixedWords),
     max: Math.max(0, 225 - fixedWords), subtractRepairedClaimWords: true });
+  assert.equal(Object.hasOwn(packet, "copyParagraphWordAims"), false,
+    "Unknown repaired-claim lengths must not be presented as precise final paragraph budgets");
   assert.equal(packet.fixedClaims.length, 1);
   assert.deepEqual(packet.requestedClaimRepairs.map(task => task.claimIndex), [0]);
   const finalClaimWords = countReaderFacingStoryWords({ whatHappened: groundedDraft.claims.map(claim => claim.text).join(" ") });
   for (const [key, total] of [["min", 100], ["aim", 145], ["max", 225]]) {
     assert.equal(Math.max(0, packet.copyBodyTarget[key] - finalRepairedWords), Math.max(0, total - finalClaimWords));
   }
-  assert.match(calls[1].messages[0].content, /When subtractRepairedClaimWords is true, those provisional numbers also include the claims you/);
-  assert.match(calls[1].messages[0].content, /FIRST count the words in their FINAL repaired text, subtract that count from each/);
+  const recomputedAim = Math.max(0, packet.copyBodyTarget.aim - finalRepairedWords);
+  const whyAim = Math.round(recomputedAim * 0.55);
+  const watchAim = recomputedAim - whyAim;
+  assert.deepEqual({ whyItMatters: whyAim, whatToDoOrWatch: watchAim }, { whyItMatters: 37, whatToDoOrWatch: 31 });
+  assert.equal(whyAim + watchAim + finalClaimWords, 145);
+  assert.match(calls[1].messages[0].content, /When subtractRepairedClaimWords is true, paragraph targets are not supplied/);
+  assert.match(calls[1].messages[0].content, /FIRST count the words in the FINAL repaired claims, subtract that count/);
+  assert.match(calls[1].messages[0].content, /round 55% to the nearest word for whyItMatters and use the rest for whatToDoOrWatch/);
   assert.match(calls[1].messages[0].content, /Do not use an old or rejected claim's word count/);
   const reviewed = JSON.parse(calls[2].messages[1].content).drafts[0];
   assert.deepEqual(reviewed.draft, groundedDraft);

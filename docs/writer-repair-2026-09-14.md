@@ -239,3 +239,27 @@ false-positive behavior. It needs negative/adversarial live evaluation before
 adoption, with all original full-source and whole-story vetoes retained. The
 separate short-copy problem also remains; neither can be solved by treating
 this failed run as a successful paper or lowering acceptance requirements.
+
+### Opt-in reviewer evaluation, September 14 continuation
+
+The proposed explicit reviewer is now implemented behind an internal opt-in;
+the daily delivery still uses its prior reviewer. Exact draft and claim hashes
+bind each verdict to its supplied citations and full source context. A negative
+verdict stays negative, all four whole-story vetoes remain mandatory, and no
+missing or legacy response can be converted into approval. Raw provider output
+hashes remain separate from locally resolved citation IDs.
+
+A manual, owner-only, no-email workflow evaluates four synthetic cases using
+one 1,800-output-token request: a supported control, wrong facts and an omitted
+security prerequisite, invented benefits, and an irrelevant extra citation.
+Expected answers are retained locally, not shown to the model. This evaluation
+does not research news, send email, write delivery state, or activate production.
+
+Composition now receives per-candidate paragraph word aims computed from its
+remaining body allowance, instead of contradictory generic paragraph ranges.
+Pending claim repairs must be counted before paragraph targets are calculated.
+Acceptance remains 100–225 words, with no padding or additional writer call.
+
+Build and all 884 local tests pass. Independent review cleared the opt-in test
+path only. Neither live adversarial evaluation nor a full live paper has yet
+passed with this new reviewer; this is not an end-to-end repair claim.
