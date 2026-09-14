@@ -95,3 +95,22 @@ can repair only its analysis fields to reach the unchanged whole-story length;
 its factual claims are preserved and reviewed. This is the final planned live
 trial in this pass; free quota or persistent model failure must be reported, not
 converted into a weak test email or paid fallback.
+
+## Observed outcome
+
+The final live trial, [34794352882](https://github.com/itworksinprod/first-fold/actions/runs/34794352882)
+at commit `75b845b`, verified nine search-discovered articles, then Cloudflare
+returned **HTTP 429** for both the optional assessment and writer. No documented
+provider code accompanied the errors, so this does not distinguish a short-term
+rate limit from exhausted daily allowance. No retry or paid fallback was made.
+The `CHECKED_SUMMARY_REQUIRED` send gate stopped the preview before Resend.
+
+**No test email was sent in this pass.** All 747 repository tests, the build and
+offline quality evaluation pass, but the revised writer is not proven end to end.
+The daily writer remains Llama; neither Qwen nor GPT-OSS was promoted. The
+reader-copy, fallback-label, source-relationship, desk-routing and targeted-repair
+changes are published. No recipient, schedule, account billing, daily ledger or
+public edition was changed. The user-owned untracked edition and design files
+were preserved. A future live preview requires a fresh date-bound authorization
+after the provider restriction clears; offline passes must not be described as
+successful delivery or paid-model parity.
