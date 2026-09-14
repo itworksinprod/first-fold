@@ -123,6 +123,23 @@ function localDossiers(dossiers) {
   }) }));
 }
 
+function localPromptSource(source, passages = source.passages) {
+  // A local writer never receives a shadow full-text field, uncited title,
+  // publication-date number, or future metadata added to the internal source.
+  // The untouched internal source still supports the final caveat checks.
+  return { sourceId: source.sourceId, publisher: source.publisher, publisherKey: source.publisherKey,
+    relationship: source.relationship, passages: passages.map(passage => ({
+      evidenceId: passage.evidenceId, text: passage.text,
+      supportedNumericTokens: [...new Set(numericTokens(passage.text).map(token => token.toLowerCase()))],
+    })) };
+}
+
+function localPromptDossier(dossier, sources = dossier.sources.map(source => localPromptSource(source))) {
+  return { candidateId: dossier.candidateId, desk: dossier.desk, evidenceTier: dossier.evidenceTier,
+    sources, supportedNumericTokens: [...new Set(numericTokens(sources.flatMap(source =>
+      source.passages.map(passage => passage.text)).join(" ")).map(token => token.toLowerCase()))] };
+}
+
 function safeProse(value, max = 1_500) {
   return typeof value === "string" && value.trim() === value && value.length > 0 && value.length <= max &&
     !/[<>\p{Cc}\p{Cf}]/u.test(value) && !/(?:https?:|www\.|```|\]\(|\*\*)/iu.test(value) &&
@@ -460,15 +477,16 @@ and a mandatory review. A failed claims repair cannot be retried.`;
 
 function localCopyRefinementData(entry, dossier) {
   const ids = new Set(entry.draft.claims.flatMap(claim => claim.supports.map(support => support.evidenceId)));
-  const sources = dossier.sources.map(source => ({ ...source,
-    passages: source.passages.filter(passage => ids.has(passage.evidenceId)) }))
+  const sources = dossier.sources.map(source => localPromptSource(source,
+    source.passages.filter(passage => ids.has(passage.evidenceId))))
     .filter(source => source.passages.length);
-  const supportedNumericTokens = [...new Set(numericTokens(sources.flatMap(source =>
-    source.passages.map(passage => passage.text)).join(" ")).map(token => token.toLowerCase()))];
-  return { dossiers: [{ ...dossier, sources, supportedNumericTokens }],
+  return { dossiers: [localPromptDossier(dossier, sources)],
     fixed: { claims: entry.draft.claims },
     fixedClaimWords: words(entry.draft.claims.map(claim => claim.text).join(" ")).length,
-    rejectionCode: entry.rejectionCode, feedback: entry.feedback };
+    rejectionCode: entry.rejectionCode,
+    // Rejected numbers or snippets are not evidence for a new summary. The
+    // refiner only needs to know which kind of copy problem prompted the call.
+    feedback: { field: REPAIR_FIELDS.includes(entry.feedback?.field) ? entry.feedback.field : "readerCopy" } };
 }
 
 function repairedOriginalityFields(payload, rejected) {
@@ -668,6 +686,9 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
     }
     requestCount++;
     outputTokenBudgetUsed += maxTokens;
+    if (local && !Object.hasOwn(schema.properties, "reviews")) {
+      data = { ...data, dossiers: data.dossiers.map(dossier => localPromptDossier(dossier)) };
+    }
     // Local uses evidence-first structured writing and an explicit all-field
     // review checklist. Neither changes review verdicts or the daily provider.
     if (local && Object.hasOwn(schema.properties, "stories")) {

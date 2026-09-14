@@ -844,7 +844,14 @@ test("local numeric advice repair preserves facts and supplies only the immutabl
         const ids = groundedDraft.claims.flatMap(claim => claim.supports.map(support => support.evidenceId));
         assert.deepEqual(data.dossiers[0].sources.flatMap(source => source.passages.map(passage => passage.evidenceId)), ids);
         assert.deepEqual(data.dossiers[0].supportedNumericTokens, []);
-        assert.doesNotMatch(JSON.stringify(data.dossiers), /82\.20|separate VPN/);
+        assert.doesNotMatch(JSON.stringify(data), /82\.20|separate VPN/,
+          "An uncited rejected number must not survive in feedback or any other request field");
+        assert.deepEqual(Object.keys(data.feedback), ["field"]);
+        assert.deepEqual(Object.keys(data.dossiers[0]), ["candidateId", "desk", "evidenceTier", "sources", "supportedNumericTokens"]);
+        for (const source of data.dossiers[0].sources) {
+          assert.deepEqual(Object.keys(source), ["sourceId", "publisher", "publisherKey", "relationship", "passages"]);
+          for (const passage of source.passages) assert.deepEqual(Object.keys(passage), ["evidenceId", "text", "supportedNumericTokens"]);
+        }
         assert.match(options.messages[0].content, /The two fixed claims cannot change/);
         return localResponse(localCopy(groundedDraft));
       }
@@ -1070,4 +1077,42 @@ test("an indivisible oversized local evidence unit fails before inference rather
   assert.equal(result, null);
   assert.equal(calls, 0);
   assert.deepEqual(events, [{ stage: "free-writer-unavailable", code: "LOCAL_AI_EVIDENCE_BOUNDS" }]);
+});
+
+test("local writer projections exclude every omitted source paragraph from the entire request", async () => {
+  const expanded = structuredClone(candidate);
+  expanded.feedEvidence[0].articleExcerpt = Array.from({ length: 32 }, (_, index) =>
+    `Archive marker OMITTED_SOURCE_SENTINEL_${index} describes peripheral publication history and catalog organization without changing the current advisory.`).join("\n");
+  const full = groundedDossiers([expanded])[0];
+  let calls = 0;
+  const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [expanded], model: LOCAL_AI_MODEL,
+    aiRequestImpl: async options => {
+      calls++;
+      const data = JSON.parse(options.messages[1].content);
+      assert.doesNotThrow(() => buildLocalAiRequest(options));
+      if (calls === 1) {
+        const shownIds = new Set(data.dossiers[0].sources.flatMap(source => source.passages.map(passage => passage.evidenceId)));
+        const omitted = full.sources.flatMap(source => source.passages.filter(passage => !shownIds.has(passage.evidenceId)));
+        assert.ok(omitted.length > 0, "Fixture contains full-source paragraphs omitted by the local packet bound");
+        for (const passage of omitted) {
+          assert.ok(full.sources.some(source => source.text.includes(passage.text)), "Retained internally for caveat validation");
+          assert.equal(JSON.stringify(data).includes(passage.text), false, "No hidden full-text or metadata copy of an omitted paragraph");
+          const marker = /OMITTED_SOURCE_SENTINEL_\d+/.exec(passage.text)?.[0];
+          if (marker) assert.equal(JSON.stringify(data).includes(marker), false);
+        }
+        for (const source of data.dossiers[0].sources) {
+          assert.deepEqual(Object.keys(source), ["sourceId", "publisher", "publisherKey", "relationship", "passages"]);
+        }
+        return localResponse({ stories: [groundedDraft] });
+      }
+      if (calls === 2) {
+        assert.doesNotMatch(JSON.stringify(data), /OMITTED_SOURCE_SENTINEL|2026-08-20/);
+        return localResponse(localCopy(groundedDraft));
+      }
+      assert.ok(options.schema.properties.reviews);
+      assert.match(JSON.stringify(data), /publishedAt/, "Reviewer context remains unchanged");
+      return localResponse({ reviews: [review] });
+    } });
+  assert.ok(result);
+  assert.equal(calls, 3);
 });
