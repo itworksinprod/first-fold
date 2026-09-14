@@ -311,3 +311,32 @@ The diagnostic comparison uses a 20,007-byte request for either model and keeps
 the same 1,800-token output cap. Its selected endpoint and returned provenance
 must match the explicit two-model allowlist. Only pre-existing whitelisted
 provider error details may be logged. Build and all 887 local tests pass.
+
+The reasoning-model comparison,
+[34896041465](https://github.com/itworksinprod/first-fold/actions/runs/34896041465)
+on `848767e`, failed before a complete verdict: `OUTPUT_TOKEN_LIMIT`, exactly
+1,800 completion tokens against the 1,800 requested maximum. No case received
+an accepted result. This is not evidence of reviewer accuracy or a passed paper.
+
+The subsequent dashboard refresh explicitly reports the daily allowance
+exceeded: 10.06k/10k neurons, resetting at 00:00 UTC (8 PM EDT on September 14).
+No more live calls are authorized by this diagnostic sequence before reset;
+no billing upgrade, account workaround or repeated provider retry was used.
+
+For a later authorized test, only the isolated GPT-OSS evaluator now has a fixed
+4,000-output-token cap. Llama remains capped at 1,800; all production writer
+budgets, model selection and daily delivery remain unchanged. The test still
+uses one request, the same four cases, same expected verdicts and the same
+source/hash binding. It has not run live at the larger cap. The increase is
+based on observed truncation, not permission to accept incomplete output.
+
+Model selection and free-allocation checks were verified against Cloudflare's
+[model reference](https://developers.cloudflare.com/workers-ai/models/gpt-oss-120b/)
+and [Workers AI pricing](https://developers.cloudflare.com/workers-ai/platform/pricing/).
+This route uses Cloudflare-hosted open weights, not the paid OpenAI API.
+
+**Current status: not repaired end to end.** Offline tests pass, but the Llama
+explicit reviewer failed accuracy checks and the reasoning alternative has not
+completed its evaluation. Next: after free reset, run the bounded reasoning
+evaluation; only if it passes should separately reviewed integration and a full
+no-email research/draft/validation check proceed. No extra email was sent.

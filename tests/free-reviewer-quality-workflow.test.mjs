@@ -134,10 +134,11 @@ test("malformed verdicts, wrong bindings and provider provenance cannot turn an 
   }
 });
 
-test("the diagnostic reasoning model uses the same fixture prompt schema expectations and one-call allowance", async t => {
+test("the diagnostic reasoning model preserves evidence and verdict rules with a fixed larger output cap and one call", async t => {
   const requests = [];
   const reports = [];
   for (const model of [DEFAULT_CLOUDFLARE_AI_MODEL, FREE_REASONING_WRITER_MODEL]) {
+    const maxTokens = model === FREE_REASONING_WRITER_MODEL ? 4_000 : 1_800;
     let calls = 0;
     reports.push(await checkFreeReviewer({ ...base, model, fetchImpl: async (url, options) => {
       calls++;
@@ -145,13 +146,13 @@ test("the diagnostic reasoning model uses the same fixture prompt schema expecta
       assert.equal(options.method, "POST");
       assert.equal(options.redirect, "error");
       const request = JSON.parse(options.body);
-      assert.equal(request.max_tokens, 1_800);
+      assert.equal(request.max_tokens, maxTokens);
       assert.equal(request.temperature, 0.1);
       assert.equal(request.stream, false);
       assert.equal(request.response_format.type, "json_schema");
       const bytes = Buffer.byteLength(options.body);
       assert.ok(bytes <= 70_000);
-      t.diagnostic(`${model}: ${bytes} UTF-8 request bytes; 1800 requested output tokens.`);
+      t.diagnostic(`${model}: ${bytes} UTF-8 request bytes; ${maxTokens} requested output tokens.`);
       requests.push(request);
       return new Response(JSON.stringify({ success: true, result: {
         response: JSON.stringify(expectedPayload(JSON.parse(request.messages[1].content))),
@@ -163,9 +164,9 @@ test("the diagnostic reasoning model uses the same fixture prompt schema expecta
     assert.equal(report.status, "passed");
     assert.equal(report.modelRequests, 1);
     assert.equal(report.networkRequests, 1);
-    assert.equal(report.requestedOutputTokens, 1_800);
+    assert.equal(report.requestedOutputTokens, maxTokens);
   }
-  assert.deepEqual(requests[0], requests[1]);
+  assert.deepEqual({ ...requests[0], max_tokens: 4_000 }, requests[1]);
   assert.deepEqual(reports[0].cases, reports[1].cases);
   let calls = 0;
   const wrongEndpoint = await checkFreeReviewer({ ...base, model: FREE_REASONING_WRITER_MODEL,
@@ -185,7 +186,7 @@ test("quota and malformed-output failures expose only whitelisted provider diagn
       expected: { httpStatus: null, providerCode: null, formatReason: "PROVIDER_SCHEMA_UNSATISFIED" } },
     { status: 200, envelope: { success: true, result: { response: `MALFORMED_PRIVATE_TEXT ${base.apiToken}`,
       usage: { completion_tokens: 712 } } }, expected: { httpStatus: null, providerCode: null,
-      formatReason: "PAYLOAD_JSON_INVALID", completionTokens: 712, requestedMaxTokens: 1_800 } },
+      formatReason: "PAYLOAD_JSON_INVALID", completionTokens: 712, requestedMaxTokens: 4_000 } },
   ];
   for (const scenario of scenarios) {
     let calls = 0;

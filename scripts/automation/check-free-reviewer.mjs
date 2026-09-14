@@ -9,6 +9,9 @@ import { DEFAULT_CLOUDFLARE_AI_MODEL, FREE_REASONING_WRITER_MODEL, WORKERS_AI_PR
   requestWorkersAiEditorial, workersAiRunUrl, workersAiFailureDiagnostic } from "./free/workers-ai.mjs";
 
 const MAX_TOKENS = 1_800;
+// Isolated diagnostic only: the reasoning model exhausted 1,800 output tokens
+// in run 34896041465. This does not change any production writer budget.
+const REASONING_MAX_TOKENS = 4_000;
 const MAX_REQUEST_BYTES = 70_000;
 const REVIEW_MODELS = new Set([DEFAULT_CLOUDFLARE_AI_MODEL, FREE_REASONING_WRITER_MODEL]);
 const SAFE_CODES = new Set(["REVIEW_EVAL_AUTHORITY_REJECTED", "REVIEW_EVAL_CONFIGURATION_INVALID",
@@ -96,10 +99,11 @@ export async function checkFreeReviewer({ env = process.env, accountId, apiToken
     throw failure("REVIEW_EVAL_CONFIGURATION_INVALID");
   }
   const cases = syntheticCases();
+  const maxTokens = model === FREE_REASONING_WRITER_MODEL ? REASONING_MAX_TOKENS : MAX_TOKENS;
   const bundle = buildExplicitClaimReview({ drafts: cases.map(item => item.draft), dossiers: cases.map(item => item.dossier) });
   const messages = [{ role: "system", content: bundle.prompt }, { role: "user", content: JSON.stringify(bundle.data) }];
   const request = buildWorkersAiRequest({ model, messages, schema: bundle.schema,
-    responseFormat: "json_schema", maxTokens: MAX_TOKENS, temperature: 0.1 });
+    responseFormat: "json_schema", maxTokens, temperature: 0.1 });
   if (new TextEncoder().encode(JSON.stringify(request.body)).byteLength > MAX_REQUEST_BYTES) throw failure("REVIEW_EVAL_REQUEST_SIZE");
   const endpoint = workersAiRunUrl(accountId, model);
   let modelRequests = 0;
@@ -110,7 +114,7 @@ export async function checkFreeReviewer({ env = process.env, accountId, apiToken
   try {
     modelRequests++;
     const response = await aiRequestImpl({ accountId, apiToken, model,
-      messages, schema: bundle.schema, responseFormat: "json_schema", maxTokens: MAX_TOKENS,
+      messages, schema: bundle.schema, responseFormat: "json_schema", maxTokens,
       temperature: 0.1, maxAttempts: 1, timeoutMs: 90_000, maxRequestBytes: MAX_REQUEST_BYTES, maxResponseBytes: 100_000,
       validatePayload: payload => validateExplicitClaimReview(payload, bundle).errors.length === 0,
       fetchImpl: async (url, options) => {
@@ -137,7 +141,7 @@ export async function checkFreeReviewer({ env = process.env, accountId, apiToken
   if (!code && !results.every(result => result.passed)) code = "REVIEW_EVAL_VERDICT_MISMATCH";
   return { mode: "synthetic-reviewer-evaluation-not-news-or-delivery", model, status: code ? "failed" : "passed", code,
     ...(providerFailure ? { providerFailure } : {}),
-    modelRequests, networkRequests, requestedOutputTokens: modelRequests * MAX_TOKENS,
+    modelRequests, networkRequests, requestedOutputTokens: modelRequests * maxTokens,
     maxModelRequests: 1, researchQueries: 0, emailRequests: 0, cases: results };
 }
 
