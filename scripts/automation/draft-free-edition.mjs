@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
 import { HISTORICAL_PREVIEW, assertHistoricalPreviewAuthorization,
   isHistoricalPreviewRecord, isHistoricalPreviewTiming } from "./historical-preview-policy.mjs";
-import { GROUNDED_DIGEST_MODE, synthesizeGroundedEditorial } from "./free/grounded-draft.mjs";
+import { GROUNDED_DIGEST_MODE, EXPERIMENTAL_MIXED_REVIEW_PROFILE,
+  synthesizeGroundedEditorial } from "./free/grounded-draft.mjs";
+import { REVIEW_REJECTION_MAX_TOKENS } from "./free/review-rejections.mjs";
 import { EXPLICIT_CLAIM_REVIEW_PROFILE } from "./free/explicit-claim-review.mjs";
 import { createNewsworthinessReview } from "./free/newsworthiness.mjs";
 import { createTavilyDiscovery } from "./free/web-search.mjs";
@@ -34,6 +36,7 @@ import {
   WORKERS_AI_EDITORIAL_UNAVAILABLE,
   WORKERS_AI_PROVIDER,
   DEFAULT_CLOUDFLARE_AI_MODEL,
+  FREE_REASONING_WRITER_MODEL,
   requestWorkersAiEditorial,
   resolveCloudflareAiModel,
 } from "./free/workers-ai.mjs";
@@ -204,6 +207,66 @@ function requireMinimumScore(value, label = "minimumScore") {
 
 function sha256Json(value) {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
+/** Recognize even partial mixed receipts without reclassifying the existing
+ * local-only semanticReview receipt, which has no stages or profile field.
+ */
+export function hasMixedReviewMetadata(provenance) {
+  return Object.hasOwn(provenance ?? {}, "stages") ||
+    (Object.hasOwn(provenance ?? {}, "semanticReview") &&
+      (provenance?.provider === WORKERS_AI_PROVIDER || provenance?.semanticReview?.provider === WORKERS_AI_PROVIDER ||
+        Object.hasOwn(provenance?.semanticReview ?? {}, "profile")));
+}
+
+/** Integrity check for the explicit, no-email mixed-review receipt. This
+ * checks recorded stage/budget/story bindings; it cannot substitute for the
+ * actual provider, exact-citation, semantic-verdict or source-quality gates.
+ */
+export function validateMixedReviewMetadata(provenance, storyIds) {
+  const exact = (value, fields) => isObject(value) &&
+    Object.keys(value).sort().join() === [...fields].sort().join();
+  const sha = value => typeof value === "string" && /^[a-f0-9]{64}$/u.test(value);
+  const semantic = provenance?.semanticReview;
+  if (!hasMixedReviewMetadata(provenance) ||
+      provenance?.provider !== WORKERS_AI_PROVIDER || provenance.model !== DEFAULT_CLOUDFLARE_AI_MODEL ||
+      provenance.inference !== "workers-ai" || provenance.draftingMode !== GROUNDED_DIGEST_MODE ||
+      provenance.privateSourceBriefs !== true || !Array.isArray(storyIds) || storyIds.length < 1 || storyIds.length > 4 ||
+      storyIds.some(id => typeof id !== "string") || new Set(storyIds).size !== storyIds.length ||
+      provenance.candidateCount !== storyIds.length || provenance.selectedStoryCount !== storyIds.length ||
+      !Array.isArray(provenance.stages) || provenance.stages.length !== 3 ||
+      !exact(semantic, ["provider", "model", "profile", "requestCount", "requestedOutputTokens", "requestSha256", "responseSha256", "approvedCandidateIds"]) ||
+      semantic.provider !== WORKERS_AI_PROVIDER || semantic.model !== FREE_REASONING_WRITER_MODEL ||
+      semantic.profile !== EXPERIMENTAL_MIXED_REVIEW_PROFILE || semantic.requestCount !== 1 ||
+      semantic.requestedOutputTokens !== REVIEW_REJECTION_MAX_TOKENS ||
+      !Array.isArray(semantic.approvedCandidateIds) || semantic.approvedCandidateIds.length !== storyIds.length ||
+      semantic.approvedCandidateIds.some(id => typeof id !== "string" || !id || id.length > 200 || id !== id.trim()) ||
+      new Set(semantic.approvedCandidateIds).size !== semantic.approvedCandidateIds.length) return false;
+  const expectedStages = ["foundation", "composition", "review"];
+  for (const [index, stage] of provenance.stages.entries()) {
+    if (!exact(stage, ["stage", "provider", "model", "requestSha256", "responseSha256"]) ||
+        stage.stage !== expectedStages[index] || stage.provider !== WORKERS_AI_PROVIDER ||
+        stage.model !== (index === 2 ? FREE_REASONING_WRITER_MODEL : DEFAULT_CLOUDFLARE_AI_MODEL) ||
+        !sha(stage.requestSha256) || !sha(stage.responseSha256)) return false;
+  }
+  const reviewStage = provenance.stages[2];
+  if (semantic.requestSha256 !== reviewStage.requestSha256 || semantic.responseSha256 !== reviewStage.responseSha256 ||
+      provenance.requestSha256 !== sha256Json(provenance.stages.map(({ stage, provider, model, requestSha256 }) =>
+        ({ stage, provider, model, requestSha256 }))) ||
+      provenance.responseSha256 !== sha256Json(provenance.stages.map(({ stage, provider, model, responseSha256 }) =>
+        ({ stage, provider, model, responseSha256 })))) return false;
+  // Grounded summaries retain the baseline ID: concise personal slates use
+  // brief IDs, while the non-concise baseline uses digest IDs. Require an exact
+  // one-to-one candidate mapping so two prefix variants cannot cover one
+  // candidate twice and silently omit another approved candidate.
+  const prefixes = ["trusted-evidence-brief-", "trusted-evidence-digest-"];
+  const selectedCandidateIds = storyIds.map(id => {
+    const prefix = prefixes.find(value => id.startsWith(value));
+    return prefix ? id.slice(prefix.length) : null;
+  });
+  const approvedCandidates = new Set(semantic.approvedCandidateIds);
+  return new Set(selectedCandidateIds).size === storyIds.length &&
+    selectedCandidateIds.every(id => approvedCandidates.has(id));
 }
 
 function localDate(instant) {
@@ -2452,6 +2515,10 @@ export function validateFreePilotProvenance(
   }
   const actualSelectedStoryCount = FREE_DESKS.filter((desk) =>
     isObject(candidate.desks?.[desk]?.story)).length;
+  if (hasMixedReviewMetadata(freePilot) && !validateMixedReviewMetadata(freePilot,
+      FREE_DESKS.flatMap(desk => isObject(candidate.desks?.[desk]?.story) ? [candidate.desks[desk].story.id] : []))) {
+    throw new Error("Free candidate mixed-review provenance is invalid or incomplete.");
+  }
   if (
     freePilot.selectedStoryCount !== actualSelectedStoryCount ||
     (
@@ -2573,7 +2640,7 @@ async function draftFreeEditionCore({
     throw new Error("Grounded summaries require a validated digest baseline and a bounded four- or seven-call free profile.");
   }
   if (groundedReviewProfile !== undefined &&
-      (groundedReviewProfile !== EXPLICIT_CLAIM_REVIEW_PROFILE || !groundedSummaries ||
+      (![EXPLICIT_CLAIM_REVIEW_PROFILE, EXPERIMENTAL_MIXED_REVIEW_PROFILE].includes(groundedReviewProfile) || !groundedSummaries ||
        resolveCloudflareAiModel(model) !== DEFAULT_CLOUDFLARE_AI_MODEL)) {
     throw new Error("Explicit claim review requires the bounded daily Llama grounded-summary profile.");
   }
@@ -3188,6 +3255,8 @@ async function draftFreeEditionCore({
         responseSha256: inference.responseSha256,
         responseId: inference.responseId,
         inference: inference.kind,
+        ...(Object.hasOwn(inference, "stages") ? { stages: structuredClone(inference.stages) } : {}),
+        ...(Object.hasOwn(inference, "semanticReview") ? { semanticReview: structuredClone(inference.semanticReview) } : {}),
         draftingMode,
         ...(groundedSummaries ? { privateSourceBriefs: true } : {}),
         feedSourceCount: coverage.sourceCount,

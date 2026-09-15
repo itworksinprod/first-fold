@@ -171,3 +171,59 @@ The prompt and selector passed independent review and 42 focused offline tests.
 They do not activate the experimental reviewer in the daily workflow. A
 separate mixed-model prototype remains local and must not be treated as a
 verified or published production repair.
+
+## Clarification did not resolve the regression; separate holdouts passed
+
+On `5b8d3e3`, [regression run 34917494759](https://github.com/itworksinprod/first-fold/actions/runs/34917494759)
+again returned valid verdicts but falsely rejected the supported control's
+`factsSupported` flag, targeting the same conditional sentence and passage.
+All three negative cases were rejected. This is a reviewer-quality limitation,
+not evidence of another parser or transport bug. No fixture or false verdict
+was changed to make the check pass.
+
+The separate, previously frozen holdouts were then run as a diagnostic to
+characterize this limitation, not as a replacement for the failed regression.
+[Run 34917734439](https://github.com/itworksinprod/first-fold/actions/runs/34917734439)
+on the same commit passed both cases in one request: the supported transit-data
+summary received all true flags; the version/attack-condition swap was rejected
+on its second claim and factual flag with the relevant contradictory passages.
+This shows the reviewer does not reject every supported summary. It does not
+erase the false rejection or establish a general error rate.
+
+## Experimental full-paper observation, not production qualification
+
+The next bounded step is a real-research **no-email diagnostic**, rather than
+another synonymous prompt adjustment. This deliberately differs from the
+earlier promotion prerequisite: observing real pipeline behavior is permitted,
+but promoting this reviewer to daily production is not justified by these
+results. The failed regression remains recorded and the quality-check notice
+explicitly sets `productionQualified: false`.
+
+Only this owner/main/first-attempt quality workflow selects the mixed profile:
+Llama foundation (2,000 output tokens), Llama composition (4,000), then one
+Cloudflare-hosted GPT-OSS review (8,000/180 seconds). The three-stage maximum is
+14,000 requested output tokens. Default daily models, budgets, editorial flags,
+source thresholds, recipient and delivery policy remain unchanged. Each stage
+retains its actual model and native fingerprints; aggregate fingerprints bind
+stage order and model identities. The review receipt must survive private
+candidate conversion and agree with every final story.
+
+The test requires live free web discovery with at least one verified publisher
+article, checked summaries for **every** selected story, canonical/source
+validation and HTML/plain-text rendering. Partial summaries, quiet-only output,
+missing reviewer receipts and link fallbacks cannot make it green. It has no
+email credentials, delivery call, artifact upload, ledger write or public-edition
+write. Updating its workflow file automatically starts one test; do not also
+manually dispatch a duplicate. No success or delivery is claimed before the
+actual result is observed.
+
+Preflight integration found and fixed an ID-contract mismatch: concise baselines
+retain `trusted-evidence-brief-*` IDs, while older digests retain
+`trusted-evidence-digest-*`. The validator recognizes exactly those two prefixes
+and requires a one-to-one mapping to approved candidate IDs; it rejects a
+duplicate candidate represented through both prefixes. A mocked-native test
+now exercises ordinary personal generation, all three adapter requests,
+adaptation, canonical validation, final email validation and rendering. This is
+offline integration coverage, not a live model-quality result. The build and
+all 940 regression tests pass before publication. The refreshed free counter
+showed 2.21k/10k neurons used before this real-research observation.

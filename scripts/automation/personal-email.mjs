@@ -15,6 +15,7 @@ import {
 import { PERSONAL_STORY_LEDGER_SCHEMA_VERSION } from "./personal-story-ledger.mjs";
 import { FREE_CLOUDFLARE_AI_MODELS, WORKERS_AI_PROVIDER } from "./free/workers-ai.mjs";
 import { hasValidWebSearchResearchMethod, isValidWebSearchReceipt } from "./free/search-receipt.mjs";
+import { hasMixedReviewMetadata, validateMixedReviewMetadata } from "./draft-free-edition.mjs";
 import { HISTORICAL_PREVIEW, assertHistoricalPreviewAuthorization, isHistoricalPreviewRecord,
   isHistoricalPreviewTiming } from "./historical-preview-policy.mjs";
 import { LOCAL_PREVIEW, assertLocalPreviewAuthorization, isLocalPreviewRecord,
@@ -575,6 +576,12 @@ export function assertPersonalEmailCandidate(candidate, { localPreviewAuthorizat
   }
 
   const research = candidate.provenance?.personalFreeResearch;
+  // Mixed writer/reviewer metadata is a bound provenance contract, not delivery
+  // authorization. Validate it before either cloud or explicitly local routes.
+  if (hasMixedReviewMetadata(research) && !validateMixedReviewMetadata(research,
+    DESKS.flatMap(([desk]) => candidate.desks[desk].story ? [candidate.desks[desk].story.id] : []))) {
+    throw validationFailure();
+  }
   if (hasLocalPreviewMarker(research)) {
     assertLocalPreviewAuthorization(localPreviewAuthorization, candidate, now);
     assertLocalEmailContract(candidate, now);

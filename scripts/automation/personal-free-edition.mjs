@@ -11,6 +11,8 @@ import {
   FREE_AUTOMATION_WORKFLOW,
   assertFreeEditionGenerationTime,
   draftFreeEditionWithHealth,
+  hasMixedReviewMetadata,
+  validateMixedReviewMetadata,
   validateFreePilotProvenance,
 } from "./draft-free-edition.mjs";
 import { FREE_FEED_SOURCES } from "./free/feed-sources.mjs";
@@ -444,10 +446,12 @@ function buildPersonalCandidate(
   const freePilot = freeCandidate?.provenance?.freePilot;
   const stories = selectedStories(freeCandidate);
   const inferenceIsValid = hasPersonalFreeInferenceTuple(freePilot, stories.length);
+  const mixedReview = hasMixedReviewMetadata(freePilot);
   if (
     freePilot?.workflow !== FREE_AUTOMATION_WORKFLOW ||
     (Object.hasOwn(freePilot ?? {}, "webSearch") && !isValidWebSearchReceipt(freePilot.webSearch)) ||
     !inferenceIsValid ||
+    (mixedReview && !validateMixedReviewMetadata(freePilot, stories.map(story => story.id))) ||
     freePilot?.coveredDeskCount !== PERSONAL_FREE_DESKS.length ||
     freePilot?.draftSelectedSlate !== true ||
     freePilot?.candidateCount !== stories.length ||
@@ -491,6 +495,8 @@ function buildPersonalCandidate(
     requestSha256: freePilot.requestSha256,
     responseSha256: freePilot.responseSha256,
     responseId: freePilot.responseId,
+    ...(mixedReview ? { stages: structuredClone(freePilot.stages),
+      semanticReview: structuredClone(freePilot.semanticReview) } : {}),
     feedSourceCount: freePilot.feedSourceCount,
     successfulFeedSourceCount: freePilot.successfulFeedSourceCount,
     coveredDeskCount: freePilot.coveredDeskCount,
@@ -571,6 +577,8 @@ export function validatePersonalFreeCandidate(
     (runMode !== undefined && research.runMode !== runMode) ||
     research?.generatedAt !== candidate.publication?.generatedAt ||
     !inferenceIsValid ||
+    (hasMixedReviewMetadata(research) &&
+      !validateMixedReviewMetadata(research, stories.map(story => story.id))) ||
     !PERSONAL_FREE_DRAFTING_MODES.includes(research?.draftingMode) ||
     (stories.length === 0 && research?.draftingMode !== "quiet") ||
     (stories.length > 0 && ![TRUSTED_EVIDENCE_DIGEST_MODE, "source-grounded-summary"].includes(research?.draftingMode)) ||

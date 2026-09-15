@@ -1,5 +1,6 @@
 name: Check free paper quality (no email)
-# Live daily-Llama and free web-discovery check; only safe annotations, never paper/source text.
+# Experimental Llama writer + free GPT-OSS reviewer observation, not production qualification.
+# Only safe annotations, never paper/source text. Daily delivery is unchanged.
 
 on:
   workflow_dispatch:
@@ -15,7 +16,7 @@ concurrency:
 
 jobs:
   check:
-    if: github.repository == 'itworksinprod/first-fold' && github.ref == 'refs/heads/main' && github.actor == 'itworksinprod'
+    if: github.repository == 'itworksinprod/first-fold' && github.ref == 'refs/heads/main' && github.actor == 'itworksinprod' && github.run_attempt == 1
     runs-on: ubuntu-latest
     timeout-minutes: 12
     permissions:
@@ -36,4 +37,4 @@ jobs:
           CLOUDFLARE_AI_MODEL: '@cf/meta/llama-3.3-70b-instruct-fp8-fast'
           TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
           TAVILY_PAYGO_DISABLED_VERIFIED: ${{ vars.TAVILY_PAYGO_DISABLED_VERIFIED }}
-        run: node scripts/automation/check-personal-quality.mjs --require-web-search
+        run: node scripts/automation/check-personal-quality.mjs --require-web-search --mixed-claim-review
