@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { assertFreeReviewerAuthority, checkFreeReviewer } from "../scripts/automation/check-free-reviewer.mjs";
+import { assertFreeReviewerAuthority, checkFreeReviewer, freeReviewerSyntheticCases } from "../scripts/automation/check-free-reviewer.mjs";
 import { DEFAULT_CLOUDFLARE_AI_MODEL, FREE_REASONING_WRITER_MODEL, workersAiRunUrl } from "../scripts/automation/free/workers-ai.mjs";
 
 const workflow = await readFile(new URL("../.github/workflows/free-reviewer-quality-check.yml", import.meta.url), "utf8");
@@ -27,6 +28,26 @@ function expectedPayload(data) {
   }) };
 }
 const modelData = options => JSON.parse(options.messages[1].content);
+
+test("the diagnostic keeps the original four synthetic inputs and expected outcomes unchanged", () => {
+  assert.equal(createHash("sha256").update(JSON.stringify(freeReviewerSyntheticCases())).digest("hex"),
+    "c1501af920241a9a2e60a9b167c9e66f91bb4cd4242da441869455018109ea67");
+});
+
+function diagnosedPayload(data) {
+  const payload = expectedPayload(data);
+  for (const review of payload.reviews) {
+    const rejection = (gate, sentenceId, rule, evidenceId = "S1P1") => ({ gate, sentenceId, rule, evidenceIds: [evidenceId] });
+    review.rejections = review.claimVerdicts.filter(verdict => !verdict.allCitedPassagesSupport).map(verdict =>
+      rejection(`claim:${verdict.claimIndex}`, `claim:${verdict.claimIndex}`,
+        review.candidateId === "review-fixture-d" ? "irrelevant-citation" : "contradicted-by-source",
+        review.candidateId === "review-fixture-d" ? "S1P3" : verdict.claimIndex === 1 ? "S1P2" : "S1P1"));
+    if (!review.factsSupported) review.rejections.push(rejection("factsSupported",
+      review.candidateId === "review-fixture-c" ? "whyItMatters:0" : "claim:0", "unsupported-assertion"));
+    if (!review.analysisSupported) review.rejections.push(rejection("analysisSupported", "whyItMatters:0", "unsupported-assertion"));
+  }
+  return payload;
+}
 
 test("reviewer evaluation rejects unauthorized contexts before credential checks or provider use", async () => {
   assert.doesNotThrow(() => assertFreeReviewerAuthority(authority));
@@ -73,6 +94,102 @@ test("one bounded default-Llama request evaluates four opaque synthetic cases wi
   assert.deepEqual([report.modelRequests, report.maxModelRequests, report.requestedOutputTokens], [1, 1, 1_800]);
   assert.deepEqual([report.networkRequests, report.researchQueries, report.emailRequests], [0, 0, 0]);
   assert.doesNotMatch(JSON.stringify(report), /Harbor Agent|Beacon Console|maintenance endpoint|NEVER_OUTPUT|synthetic-reviewer-test-token|claimSha256|draftSha256|api\.cloudflare/);
+});
+
+test("sentence-bound rejection mode preserves four expected outcomes and one 4000-token diagnostic-only request", async () => {
+  let requests = 0;
+  const report = await checkFreeReviewer({ ...base, model: FREE_REASONING_WRITER_MODEL, explainRejections: true,
+    fetchImpl: async (url, options) => {
+      requests++;
+      assert.equal(url, workersAiRunUrl(base.accountId, FREE_REASONING_WRITER_MODEL));
+      const request = JSON.parse(options.body);
+      assert.equal(request.max_tokens, 4_000);
+      assert.equal(request.temperature, 0.1);
+      assert.equal(request.response_format.type, "json_schema");
+      assert.ok(Buffer.byteLength(options.body) <= 70_000);
+      const data = JSON.parse(request.messages[1].content);
+      assert.equal(data.sentenceIndex.length, 4);
+      assert.doesNotMatch(JSON.stringify(request.messages), /"expected"|supported-control|wrong-facts-and-prerequisite|unsupported-benefit|irrelevant-extra-citation/);
+      return new Response(JSON.stringify({ success: true, result: { response: JSON.stringify(diagnosedPayload(data)),
+        reasoning: "NEVER_OUTPUT_NATIVE_REASONING" } }), { headers: { "content-type": "application/json" } });
+    } });
+  assert.equal(requests, 1);
+  assert.equal(report.status, "passed");
+  assert.ok(report.cases.every(item => item.passed));
+  assert.equal(report.diagnosticProfile, "sentence-bound-rejections-v1");
+  assert.equal(report.rejectionDiagnostics.length, 6);
+  assert.deepEqual(report.diagnosticErrors, []);
+  assert.deepEqual([report.modelRequests, report.networkRequests, report.requestedOutputTokens,
+    report.researchQueries, report.emailRequests], [1, 1, 4_000, 0, 0]);
+  assert.doesNotMatch(JSON.stringify(report), /Harbor Agent|NEVER_OUTPUT|synthetic-reviewer-test-token|sourceContextSha256/);
+});
+
+test("an explained false rejection remains a failed evaluation rather than becoming approval", async () => {
+  let requests = 0;
+  const report = await checkFreeReviewer({ ...base, model: FREE_REASONING_WRITER_MODEL, explainRejections: true,
+    aiRequestImpl: async options => {
+      requests++;
+      const payload = diagnosedPayload(modelData(options));
+      payload.reviews[0].factsSupported = false;
+      payload.reviews[0].rejections.push({ gate: "factsSupported", sentenceId: "headline:0",
+        rule: "unsupported-assertion", evidenceIds: ["S1P1"] });
+      assert.equal(options.validatePayload(payload), true);
+      return { ...response(payload), model: FREE_REASONING_WRITER_MODEL };
+    } });
+  assert.equal(requests, 1);
+  assert.equal(report.code, "REVIEW_EVAL_VERDICT_MISMATCH");
+  assert.equal(report.cases[0].actual.accepted, false);
+  assert.equal(report.rejectionDiagnostics[0].candidateId, "review-fixture-a");
+  assert.equal(report.rejectionDiagnostics[0].sentenceId, "headline:0");
+});
+
+test("missing or fabricated diagnostic references fail closed without logging generated text or retrying", async () => {
+  for (const mutation of [
+    payload => { payload.reviews[1].rejections = []; },
+    payload => { payload.reviews[1].rejections[0].sentenceId = "PRIVATE_INVENTED_SENTENCE"; },
+    payload => { payload.reviews[1].rejections[0].evidenceIds = ["PRIVATE_INVENTED_SOURCE"]; },
+    payload => { payload.reviews[1].rejections[0].explanation = "PRIVATE_GENERATED_PROSE"; },
+    payload => { payload.reviews[0].rejections = [{ gate: "factsSupported", sentenceId: "headline:0", rule: "unsupported-assertion", evidenceIds: ["S1P1"] }]; },
+  ]) {
+    let requests = 0;
+    const report = await checkFreeReviewer({ ...base, model: FREE_REASONING_WRITER_MODEL, explainRejections: true,
+      aiRequestImpl: async options => {
+        requests++;
+        const payload = diagnosedPayload(modelData(options)); mutation(payload);
+        assert.equal(options.validatePayload(payload), false);
+        return { ...response(payload), model: FREE_REASONING_WRITER_MODEL };
+      } });
+    assert.equal(requests, 1);
+    assert.equal(report.code, "REVIEW_EVAL_DIAGNOSTIC_INVALID");
+    assert.ok(report.diagnosticErrors.length > 0);
+    assert.deepEqual(report.rejectionDiagnostics, []);
+    assert.ok(report.cases.every(item => item.actual === null));
+    assert.doesNotMatch(JSON.stringify(report), /PRIVATE_/);
+  }
+  let requests = 0;
+  for (const extra of [{ model: DEFAULT_CLOUDFLARE_AI_MODEL, explainRejections: true },
+    { model: FREE_REASONING_WRITER_MODEL, explainRejections: "true" }]) {
+    await assert.rejects(checkFreeReviewer({ ...base, ...extra, aiRequestImpl: async () => { requests++; } }),
+      /REVIEW_EVAL_CONFIGURATION_INVALID/);
+  }
+  assert.equal(requests, 0);
+});
+
+test("the real adapter reports locally invalid explanation coverage as diagnostic failure without retry", async () => {
+  let requests = 0;
+  const report = await checkFreeReviewer({ ...base, model: FREE_REASONING_WRITER_MODEL, explainRejections: true,
+    fetchImpl: async (_url, options) => {
+      requests++;
+      const payload = diagnosedPayload(JSON.parse(JSON.parse(options.body).messages[1].content));
+      payload.reviews[1].rejections = [];
+      return new Response(JSON.stringify({ success: true, result: { response: JSON.stringify(payload) } }),
+        { headers: { "content-type": "application/json" } });
+    } });
+  assert.equal(requests, 1);
+  assert.equal(report.code, "REVIEW_EVAL_DIAGNOSTIC_INVALID");
+  assert.deepEqual(report.rejectionDiagnostics, []);
+  assert.ok(report.diagnosticErrors.includes("REVIEW_REJECTION_COVERAGE"));
+  assert.equal(report.providerFailure, undefined);
 });
 
 test("blanket approval, false rejection, missed prerequisite, invented promotion and irrelevant citation all make the check red", async () => {
@@ -267,6 +384,8 @@ test("reviewer workflow is manual owner/main read-only, uses existing credential
   assert.ok(actions.every(action => /^actions\/(checkout|setup-node)@[a-f0-9]{40}$/u.test(action)));
   assert.equal([...workflow.matchAll(/secrets\./gu)].length, 1);
   assert.match(workflow, /FREE_REVIEWER_MODEL: '@cf\/openai\/gpt-oss-120b'/);
+  assert.match(workflow, /node scripts\/automation\/check-free-reviewer\.mjs --explain-rejections/);
+  assert.match(workflow, /tests\/review-rejections\.test\.mjs/);
   assert.ok(workflow.indexOf("Test synthetic reviewer boundaries") < workflow.indexOf("secrets.CLOUDFLARE_AI_API_TOKEN"));
   assert.doesNotMatch(workflow, /\bwrite\b|RESEND|OPENAI|TAVILY|PERSONAL_PAPER_EMAIL|upload-artifact|git push|git commit|deploy/);
   assert.doesNotMatch(script, /collectFreeResearch|synthesizeGroundedEditorial|sendPersonal|writeFile|readFile|TAVILY|RESEND|OPENAI_API/);

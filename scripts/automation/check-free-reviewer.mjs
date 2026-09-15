@@ -5,6 +5,7 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { buildExplicitClaimReview, validateExplicitClaimReview } from "./free/explicit-claim-review.mjs";
+import { buildReviewRejectionDiagnostic, validateReviewRejectionDiagnostic } from "./free/review-rejections.mjs";
 import { DEFAULT_CLOUDFLARE_AI_MODEL, FREE_REASONING_WRITER_MODEL, WORKERS_AI_PROVIDER, buildWorkersAiRequest,
   requestWorkersAiEditorial, workersAiRunUrl, workersAiFailureDiagnostic } from "./free/workers-ai.mjs";
 
@@ -17,7 +18,7 @@ const REVIEW_MODELS = new Set([DEFAULT_CLOUDFLARE_AI_MODEL, FREE_REASONING_WRITE
 const SAFE_CODES = new Set(["REVIEW_EVAL_AUTHORITY_REJECTED", "REVIEW_EVAL_CONFIGURATION_INVALID",
   "REVIEW_EVAL_REQUEST_SIZE", "REVIEW_EVAL_ENDPOINT_REJECTED", "REVIEW_EVAL_REQUEST_BUDGET",
   "REVIEW_EVAL_PROVENANCE_INVALID", "REVIEW_EVAL_CONTRACT_INVALID", "REVIEW_EVAL_VERDICT_MISMATCH",
-  "REVIEW_EVAL_PROVIDER_FAILURE"]);
+  "REVIEW_EVAL_DIAGNOSTIC_INVALID", "REVIEW_EVAL_PROVIDER_FAILURE"]);
 const failure = code => Object.assign(new Error(code), { code });
 const safeCode = code => SAFE_CODES.has(code) ? code : "REVIEW_EVAL_PROVIDER_FAILURE";
 const bodyFields = ["factsSupported", "attributionAccurate", "analysisSupported", "usefulAndSpecific"];
@@ -29,7 +30,7 @@ export function assertFreeReviewerAuthority(env) {
       env.GITHUB_RUN_ATTEMPT !== "1") throw failure("REVIEW_EVAL_AUTHORITY_REJECTED");
 }
 
-function syntheticCases() {
+export function freeReviewerSyntheticCases() {
   const source = { sourceId: "synthetic-meridian-release", publisher: "Synthetic Meridian Laboratory",
     publisherKey: "synthetic-meridian", relationship: "originating", publishedAt: "2026-01-10T08:00:00.000Z",
     passages: [
@@ -91,16 +92,22 @@ function compareCase(item, review) {
 
 export async function checkFreeReviewer({ env = process.env, accountId, apiToken,
   model = DEFAULT_CLOUDFLARE_AI_MODEL,
+  explainRejections = false,
   aiRequestImpl = requestWorkersAiEditorial, fetchImpl = globalThis.fetch } = {}) {
   // Authority is checked before credentials, fixture construction or provider use.
   assertFreeReviewerAuthority(env);
-  if (!REVIEW_MODELS.has(model) || !/^[a-f0-9]{32}$/iu.test(accountId ?? "") || typeof apiToken !== "string" || !apiToken ||
+  if (!REVIEW_MODELS.has(model) || typeof explainRejections !== "boolean" ||
+      (explainRejections && model !== FREE_REASONING_WRITER_MODEL) ||
+      !/^[a-f0-9]{32}$/iu.test(accountId ?? "") || typeof apiToken !== "string" || !apiToken ||
       apiToken !== apiToken.trim() || apiToken.length > 4_096 || /[\p{Cc}\p{Cf}]/u.test(apiToken)) {
     throw failure("REVIEW_EVAL_CONFIGURATION_INVALID");
   }
-  const cases = syntheticCases();
+  const cases = freeReviewerSyntheticCases();
   const maxTokens = model === FREE_REASONING_WRITER_MODEL ? REASONING_MAX_TOKENS : MAX_TOKENS;
-  const bundle = buildExplicitClaimReview({ drafts: cases.map(item => item.draft), dossiers: cases.map(item => item.dossier) });
+  const originalBundle = buildExplicitClaimReview({ drafts: cases.map(item => item.draft), dossiers: cases.map(item => item.dossier) });
+  const bundle = explainRejections ? buildReviewRejectionDiagnostic(originalBundle) : originalBundle;
+  const validate = payload => explainRejections ? validateReviewRejectionDiagnostic(payload, bundle)
+    : validateExplicitClaimReview(payload, bundle);
   const messages = [{ role: "system", content: bundle.prompt }, { role: "user", content: JSON.stringify(bundle.data) }];
   const request = buildWorkersAiRequest({ model, messages, schema: bundle.schema,
     responseFormat: "json_schema", maxTokens, temperature: 0.1 });
@@ -109,6 +116,8 @@ export async function checkFreeReviewer({ env = process.env, accountId, apiToken
   let modelRequests = 0;
   let networkRequests = 0;
   let reviews = [];
+  let rejectionDiagnostics = [];
+  let diagnosticErrors = [];
   let code = null;
   let providerFailure;
   try {
@@ -116,7 +125,13 @@ export async function checkFreeReviewer({ env = process.env, accountId, apiToken
     const response = await aiRequestImpl({ accountId, apiToken, model,
       messages, schema: bundle.schema, responseFormat: "json_schema", maxTokens,
       temperature: 0.1, maxAttempts: 1, timeoutMs: 90_000, maxRequestBytes: MAX_REQUEST_BYTES, maxResponseBytes: 100_000,
-      validatePayload: payload => validateExplicitClaimReview(payload, bundle).errors.length === 0,
+      validatePayload: payload => {
+        const checked = validate(payload);
+        // Only fixed local error codes, never provider prose, may survive a
+        // schema failure. Negative verdicts themselves remain valid responses.
+        if (explainRejections) diagnosticErrors = checked.errors;
+        return checked.errors.length === 0;
+      },
       fetchImpl: async (url, options) => {
         if (url !== endpoint || options?.method !== "POST" || options?.redirect !== "error") {
           throw failure("REVIEW_EVAL_ENDPOINT_REJECTED");
@@ -130,16 +145,24 @@ export async function checkFreeReviewer({ env = process.env, accountId, apiToken
         !/^[a-f0-9]{64}$/u.test(response.requestSha256 ?? "") || !/^[a-f0-9]{64}$/u.test(response.responseSha256 ?? "")) {
       throw failure("REVIEW_EVAL_PROVENANCE_INVALID");
     }
-    const validation = validateExplicitClaimReview(response.editorialPayload, bundle);
-    if (validation.errors.length || validation.reviews.length !== cases.length) throw failure("REVIEW_EVAL_CONTRACT_INVALID");
+    const validation = validate(response.editorialPayload);
+    if (explainRejections) diagnosticErrors = validation.errors;
+    if (validation.errors.length || validation.reviews.length !== cases.length) {
+      throw failure(explainRejections ? "REVIEW_EVAL_DIAGNOSTIC_INVALID" : "REVIEW_EVAL_CONTRACT_INVALID");
+    }
     reviews = validation.reviews;
+    if (explainRejections) rejectionDiagnostics = validation.diagnostics;
   } catch (error) {
     code = safeCode(error?.code);
+    if (explainRejections && diagnosticErrors.length > 0 && code === "REVIEW_EVAL_PROVIDER_FAILURE") {
+      code = "REVIEW_EVAL_DIAGNOSTIC_INVALID";
+    }
     if (code === "REVIEW_EVAL_PROVIDER_FAILURE") providerFailure = workersAiFailureDiagnostic(error);
   }
   const results = cases.map(item => compareCase(item, reviews.find(review => review.candidateId === item.draft.candidateId)));
   if (!code && !results.every(result => result.passed)) code = "REVIEW_EVAL_VERDICT_MISMATCH";
   return { mode: "synthetic-reviewer-evaluation-not-news-or-delivery", model, status: code ? "failed" : "passed", code,
+    ...(explainRejections ? { diagnosticProfile: "sentence-bound-rejections-v1", rejectionDiagnostics, diagnosticErrors } : {}),
     ...(providerFailure ? { providerFailure } : {}),
     modelRequests, networkRequests, requestedOutputTokens: modelRequests * maxTokens,
     maxModelRequests: 1, researchQueries: 0, emailRequests: 0, cases: results };
@@ -147,9 +170,12 @@ export async function checkFreeReviewer({ env = process.env, accountId, apiToken
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   try {
-    if (process.argv.length !== 2) throw failure("REVIEW_EVAL_CONFIGURATION_INVALID");
+    if (process.argv.length !== 2 && !(process.argv.length === 3 && process.argv[2] === "--explain-rejections")) {
+      throw failure("REVIEW_EVAL_CONFIGURATION_INVALID");
+    }
     const report = await checkFreeReviewer({ accountId: process.env.CLOUDFLARE_ACCOUNT_ID,
-      apiToken: process.env.CLOUDFLARE_AI_API_TOKEN, model: process.env.FREE_REVIEWER_MODEL });
+      apiToken: process.env.CLOUDFLARE_AI_API_TOKEN, model: process.env.FREE_REVIEWER_MODEL,
+      explainRejections: process.argv[2] === "--explain-rejections" });
     console.info(`::notice title=Synthetic reviewer evaluation::${JSON.stringify(report)}`);
     if (report.status !== "passed") process.exitCode = 1;
   } catch (error) {
