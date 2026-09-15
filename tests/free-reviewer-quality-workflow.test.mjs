@@ -9,6 +9,7 @@ import test from "node:test";
 import { assertFreeReviewerAuthority, checkFreeReviewer, freeReviewerSyntheticCases,
   validateFreeReviewerDiagnosticKey } from "../scripts/automation/check-free-reviewer.mjs";
 import { openDiagnostic } from "../scripts/automation/private-writer-diagnostic.mjs";
+import { REVIEW_REJECTION_MAX_TOKENS, REVIEW_REJECTION_TIMEOUT_MS } from "../scripts/automation/free/review-rejections.mjs";
 import { DEFAULT_CLOUDFLARE_AI_MODEL, FREE_REASONING_WRITER_MODEL, workersAiRunUrl } from "../scripts/automation/free/workers-ai.mjs";
 
 const workflow = await readFile(new URL("../.github/workflows/free-reviewer-quality-check.yml", import.meta.url), "utf8");
@@ -102,14 +103,14 @@ test("one bounded default-Llama request evaluates four opaque synthetic cases wi
   assert.doesNotMatch(JSON.stringify(report), /Harbor Agent|Beacon Console|maintenance endpoint|NEVER_OUTPUT|synthetic-reviewer-test-token|claimSha256|draftSha256|api\.cloudflare/);
 });
 
-test("sentence-bound rejection mode preserves four expected outcomes and one 4000-token diagnostic-only request", async () => {
+test("sentence-bound rejection mode preserves four expected outcomes and one 8000-token diagnostic-only request", async () => {
   let requests = 0;
   const report = await checkFreeReviewer({ ...base, model: FREE_REASONING_WRITER_MODEL, explainRejections: true,
     fetchImpl: async (url, options) => {
       requests++;
       assert.equal(url, workersAiRunUrl(base.accountId, FREE_REASONING_WRITER_MODEL));
       const request = JSON.parse(options.body);
-      assert.equal(request.max_tokens, 4_000);
+      assert.equal(request.max_tokens, 8_000);
       assert.equal(request.temperature, 0.1);
       assert.equal(request.response_format.type, "json_schema");
       assert.ok(Buffer.byteLength(options.body) <= 70_000);
@@ -126,8 +127,59 @@ test("sentence-bound rejection mode preserves four expected outcomes and one 400
   assert.equal(report.rejectionDiagnostics.length, 6);
   assert.deepEqual(report.diagnosticErrors, []);
   assert.deepEqual([report.modelRequests, report.networkRequests, report.requestedOutputTokens,
-    report.researchQueries, report.emailRequests], [1, 1, 4_000, 0, 0]);
+    report.researchQueries, report.emailRequests], [1, 1, 8_000, 0, 0]);
   assert.doesNotMatch(JSON.stringify(report), /Harbor Agent|NEVER_OUTPUT|synthetic-reviewer-test-token|sourceContextSha256/);
+});
+
+test("fixed diagnostic budgets cannot be overridden by callers and leave ordinary reviewer profiles unchanged", async () => {
+  assert.equal(REVIEW_REJECTION_MAX_TOKENS, 8_000);
+  assert.equal(REVIEW_REJECTION_TIMEOUT_MS, 180_000);
+  for (const [model, explainRejections, maxTokens, timeoutMs] of [
+    [DEFAULT_CLOUDFLARE_AI_MODEL, false, 1_800, 90_000],
+    [FREE_REASONING_WRITER_MODEL, false, 4_000, 90_000],
+    [FREE_REASONING_WRITER_MODEL, true, 8_000, 180_000],
+  ]) {
+    let calls = 0;
+    const report = await checkFreeReviewer({ ...base, model, explainRejections,
+      maxTokens: 99_999, timeoutMs: 999_999, maxAttempts: 99, maxRequestBytes: 999_999, maxResponseBytes: 999_999,
+      aiRequestImpl: async options => {
+        calls++;
+        assert.equal(options.maxTokens, maxTokens);
+        assert.equal(options.timeoutMs, timeoutMs);
+        assert.equal(options.maxAttempts, 1);
+        assert.equal(options.maxRequestBytes, 70_000);
+        assert.equal(options.maxResponseBytes, 100_000);
+        assert.equal(options.temperature, 0.1);
+        const data = modelData(options);
+        return { ...response(explainRejections ? diagnosedPayload(data) : expectedPayload(data)), model };
+      } });
+    assert.equal(calls, 1);
+    assert.equal(report.status, "passed");
+    assert.equal(report.modelRequests, 1);
+    assert.equal(report.maxModelRequests, 1);
+    assert.equal(report.requestedOutputTokens, maxTokens);
+  }
+});
+
+test("an exhausted 8000-token diagnostic remains a failed single request with safe exact budget evidence", async () => {
+  let requests = 0;
+  const report = await checkFreeReviewer({ ...base, model: FREE_REASONING_WRITER_MODEL, explainRejections: true,
+    fetchImpl: async () => {
+      requests++;
+      return new Response(JSON.stringify({ success: true, result: {
+        choices: [{ index: 0, finish_reason: "length", message: { role: "assistant", content: "PRIVATE_TRUNCATED_DIAGNOSTIC" } }],
+        usage: { completion_tokens: 8_000 },
+      } }), { headers: { "content-type": "application/json" } });
+    } });
+  assert.equal(requests, 1);
+  assert.equal(report.status, "failed");
+  assert.equal(report.code, "REVIEW_EVAL_PROVIDER_FAILURE");
+  assert.deepEqual(report.providerFailure, { httpStatus: null, providerCode: null,
+    formatReason: "OUTPUT_TOKEN_LIMIT", completionTokens: 8_000, requestedMaxTokens: 8_000 });
+  assert.deepEqual([report.modelRequests, report.networkRequests, report.requestedOutputTokens], [1, 1, 8_000]);
+  assert.ok(report.cases.every(item => item.actual === null && !item.passed));
+  assert.deepEqual(report.rejectionDiagnostics, []);
+  assert.doesNotMatch(JSON.stringify(report), /PRIVATE_TRUNCATED_DIAGNOSTIC/);
 });
 
 test("an explained false rejection remains a failed evaluation rather than becoming approval", async () => {
@@ -430,7 +482,7 @@ test("provider-error ciphertext round-trips only the redacted bounded record and
   assert.deepEqual(captured, withoutCapture);
   assert.equal(captured.status, "failed");
   assert.equal(captured.code, "REVIEW_EVAL_PROVIDER_FAILURE");
-  assert.deepEqual([captured.modelRequests, captured.networkRequests, captured.requestedOutputTokens], [1, 1, 4_000]);
+  assert.deepEqual([captured.modelRequests, captured.networkRequests, captured.requestedOutputTokens], [1, 1, 8_000]);
   assert.equal(sealed.length, 1);
   assert.deepEqual(Object.keys(sealed[0]).sort(), ["version", "wrappedKey", "iv", "tag", "ciphertext"].sort());
   const opened = openDiagnostic(sealed[0], keyPair.privateKey);

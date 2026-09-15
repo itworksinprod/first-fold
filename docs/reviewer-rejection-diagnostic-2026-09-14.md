@@ -30,9 +30,10 @@ absent elsewhere. The optional local resolver cannot authorize a story.
 
 Cloudflare's [JSON-mode documentation](https://developers.cloudflare.com/workers-ai/features/json-mode/)
 does not guarantee schema compliance, so local shape and binding validation
-remain mandatory. The diagnostic stays at one request, a 4,000-output-token
+remain mandatory. The initial diagnostic used one request, a 4,000-output-token
 cap, a 90-second deadline, and a 70 KB request ceiling. At introduction its
-request was 29,144 bytes with the fixed examples. No budget is enlarged for explanations.
+request was 29,144 bytes with the fixed examples. The later completion-budget
+adjustment below applies only to this isolated explanation diagnostic.
 
 ## Isolation and verification
 
@@ -101,6 +102,38 @@ combinations, rejection of duplicate references, key checks before credentials,
 ciphertext-only file output, redaction, and unchanged results when capture fails.
 No new live inference or email has been performed for this revision yet.
 
-Any new live test requires separate publication and dispatch authorization. A
+Live testing and repository publication require Carlos's authorization. A
 passing synthetic diagnostic is still not an end-to-end newspaper or delivery
 test. Do not enable the new reviewer in the daily workflow based on this alone.
+
+## Compatible request reached its completion cap
+
+With Carlos's explicit authorization, `68b8443` was published and run
+[34916049338](https://github.com/itworksinprod/first-fold/actions/runs/34916049338)
+was dispatched once with an ephemeral diagnostic public key. Setup, offline
+tests and key validation passed. The provider no longer returned HTTP 400 on
+this request, but the response reached exactly 4,000 completion tokens and
+failed with `OUTPUT_TOKEN_LIMIT`. No complete editorial payload, verdict, or
+rejection allegation was available. Nothing was researched, emailed, or
+enabled in the daily paper. No successful response or reasoning was retained.
+
+This result supports testing a completion-budget repair, not retrying a negative
+verdict for a more favorable answer. The sentence-bound diagnostic alone now
+allows one request with 8,000 output tokens and a 180-second deadline, still
+inside the five-minute workflow timeout and existing request/response byte
+bounds. Plain GPT-OSS review stays at 4,000/90 seconds; plain Llama review stays
+at 1,800/90 seconds. Production budgets, acceptance flags, schemas, prompts,
+fixtures and expected outcomes are unchanged. There is no automatic retry.
+
+Cloudflare's [pricing reference](https://developers.cloudflare.com/workers-ai/platform/pricing/)
+lists GPT-OSS-120b at 68,182 neurons per million output tokens, so the new output
+ceiling corresponds to about 546 neurons, plus input usage. This consumes the
+existing free allowance; it does not enable a paid plan or a paid-model fallback.
+The account's actual allowance must still be checked before a live test. A
+known exhausted free allowance is a stop condition, not a reason to bypass it.
+
+Before this bounded completion-budget test, the refreshed dashboard showed
+799.76/10,000 neurons used for the current UTC day. The repair passes the build
+and all 917 offline tests, including exact per-profile budgets and rejection
+of caller-supplied budget overrides. Carlos authorized continuing the repair;
+this does not authorize paid service, lower quality gates or a changed recipient.

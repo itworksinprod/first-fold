@@ -1,6 +1,12 @@
 import { validateExplicitClaimReview } from "./explicit-claim-review.mjs";
 import { buildWorkersAiRequest, FREE_REASONING_WRITER_MODEL } from "./workers-ai.mjs";
 
+// Diagnostic only: run 34916049338 reached its entire 4,000-token cap before
+// returning verdicts. The shared fixed budget keeps preflight and execution in
+// agreement without changing the ordinary reviewer or production writer.
+export const REVIEW_REJECTION_MAX_TOKENS = 8_000;
+export const REVIEW_REJECTION_TIMEOUT_MS = 180_000;
+
 // Diagnostic-only protocol. It cannot replace a verdict or authorize a story.
 const bundleBindings = new WeakMap();
 const diagnosticBindings = new WeakMap();
@@ -113,7 +119,7 @@ export function buildReviewRejectionDiagnostic(baseBundle) {
   const prompt = baseBundle.prompt.replace(FORMAT_STANZA, DIAGNOSTIC_FORMAT) + DIAGNOSTIC_RULES;
   const request = buildWorkersAiRequest({ model: FREE_REASONING_WRITER_MODEL, schema,
     messages: [{ role: "system", content: prompt }, { role: "user", content: JSON.stringify(data) }],
-    responseFormat: "json_schema", maxTokens: 4_000, temperature: 0.1 });
+    responseFormat: "json_schema", maxTokens: REVIEW_REJECTION_MAX_TOKENS, temperature: 0.1 });
   if (new TextEncoder().encode(JSON.stringify(request.body)).byteLength > 70_000) fail("REVIEW_REJECTION_REQUEST_BOUND");
   const bundle = freeze({ schema, data, prompt });
   bundleBindings.set(bundle, { baseBundle, candidates: freeze(candidates) });

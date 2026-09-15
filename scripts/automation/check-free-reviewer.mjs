@@ -6,7 +6,8 @@ import { writeFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { buildExplicitClaimReview, validateExplicitClaimReview } from "./free/explicit-claim-review.mjs";
-import { buildReviewRejectionDiagnostic, validateReviewRejectionDiagnostic } from "./free/review-rejections.mjs";
+import { buildReviewRejectionDiagnostic, validateReviewRejectionDiagnostic,
+  REVIEW_REJECTION_MAX_TOKENS, REVIEW_REJECTION_TIMEOUT_MS } from "./free/review-rejections.mjs";
 import { diagnosticPublicKey, sealDiagnostic } from "./private-writer-diagnostic.mjs";
 import { DEFAULT_CLOUDFLARE_AI_MODEL, FREE_REASONING_WRITER_MODEL, WORKERS_AI_PROVIDER, buildWorkersAiRequest,
   requestWorkersAiEditorial, workersAiRunUrl, workersAiFailureDiagnostic } from "./free/workers-ai.mjs";
@@ -133,7 +134,9 @@ export async function checkFreeReviewer({ env = process.env, accountId, apiToken
     throw failure("REVIEW_EVAL_CONFIGURATION_INVALID");
   }
   const cases = freeReviewerSyntheticCases();
-  const maxTokens = model === FREE_REASONING_WRITER_MODEL ? REASONING_MAX_TOKENS : MAX_TOKENS;
+  const maxTokens = explainRejections ? REVIEW_REJECTION_MAX_TOKENS
+    : model === FREE_REASONING_WRITER_MODEL ? REASONING_MAX_TOKENS : MAX_TOKENS;
+  const timeoutMs = explainRejections ? REVIEW_REJECTION_TIMEOUT_MS : 90_000;
   const originalBundle = buildExplicitClaimReview({ drafts: cases.map(item => item.draft), dossiers: cases.map(item => item.dossier) });
   const bundle = explainRejections ? buildReviewRejectionDiagnostic(originalBundle) : originalBundle;
   const validate = payload => explainRejections ? validateReviewRejectionDiagnostic(payload, bundle)
@@ -155,7 +158,7 @@ export async function checkFreeReviewer({ env = process.env, accountId, apiToken
     modelRequests++;
     const response = await aiRequestImpl({ accountId, apiToken, model,
       messages, schema: bundle.schema, responseFormat: "json_schema", maxTokens,
-      temperature: 0.1, maxAttempts: 1, timeoutMs: 90_000, maxRequestBytes: MAX_REQUEST_BYTES, maxResponseBytes: 100_000,
+      temperature: 0.1, maxAttempts: 1, timeoutMs, maxRequestBytes: MAX_REQUEST_BYTES, maxResponseBytes: 100_000,
       ...(captureFailure ? { onPrivateFailure: async record => {
         if (privateCaptureAttempted) return;
         privateCaptureAttempted = true;
