@@ -1,6 +1,12 @@
 name: Check free reviewer with synthetic negative cases (no email)
 on:
   workflow_dispatch:
+    inputs:
+      public_key:
+        description: Optional ephemeral RSA-3072 public key in base64 DER format for encrypted provider errors (never a private key)
+        required: false
+        default: ''
+        type: string
 permissions: {}
 concurrency:
   group: personal-morning-paper
@@ -21,9 +27,22 @@ jobs:
           node-version: '24'
       - name: Test synthetic reviewer boundaries before using credentials
         run: node --test tests/explicit-claim-review.test.mjs tests/review-rejections.test.mjs tests/free-reviewer-quality-workflow.test.mjs tests/free-workers-ai.test.mjs
+      - name: Validate optional diagnostic public key before credentials
+        env:
+          DIAGNOSTIC_PUBLIC_KEY: ${{ inputs.public_key }}
+        run: node scripts/automation/check-free-reviewer.mjs --validate-diagnostic-key
       - name: Evaluate four synthetic cases with one free reviewer request
         env:
+          DIAGNOSTIC_PUBLIC_KEY: ${{ inputs.public_key }}
           FREE_REVIEWER_MODEL: '@cf/openai/gpt-oss-120b'
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_AI_API_TOKEN: ${{ secrets.CLOUDFLARE_AI_API_TOKEN }}
         run: node scripts/automation/check-free-reviewer.mjs --explain-rejections
+      - name: Retain only encrypted provider error for one day
+        if: always() && inputs.public_key != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: private-reviewer-provider-failure
+          path: ${{ runner.temp }}/reviewer-provider-failure.encrypted.json
+          retention-days: 1
+          if-no-files-found: ignore

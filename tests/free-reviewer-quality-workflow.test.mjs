@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createHash, generateKeyPairSync } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rmdir, stat, unlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { assertFreeReviewerAuthority, checkFreeReviewer, freeReviewerSyntheticCases } from "../scripts/automation/check-free-reviewer.mjs";
+import { assertFreeReviewerAuthority, checkFreeReviewer, freeReviewerSyntheticCases,
+  validateFreeReviewerDiagnosticKey } from "../scripts/automation/check-free-reviewer.mjs";
+import { openDiagnostic } from "../scripts/automation/private-writer-diagnostic.mjs";
 import { DEFAULT_CLOUDFLARE_AI_MODEL, FREE_REASONING_WRITER_MODEL, workersAiRunUrl } from "../scripts/automation/free/workers-ai.mjs";
 
 const workflow = await readFile(new URL("../.github/workflows/free-reviewer-quality-check.yml", import.meta.url), "utf8");
@@ -14,6 +18,8 @@ const authority = { GITHUB_REPOSITORY: "itworksinprod/first-fold", GITHUB_REF: "
   GITHUB_WORKFLOW_REF: "itworksinprod/first-fold/.github/workflows/free-reviewer-quality-check.yml@refs/heads/main",
   GITHUB_ACTOR: "itworksinprod", GITHUB_EVENT_NAME: "workflow_dispatch", GITHUB_RUN_ATTEMPT: "1" };
 const base = { env: authority, accountId: "0".repeat(32), apiToken: "synthetic-reviewer-test-token" };
+const keyPair = generateKeyPairSync("rsa", { modulusLength: 3072 });
+const publicKey = keyPair.publicKey.export({ type: "spki", format: "der" }).toString("base64");
 const response = editorialPayload => ({ editorialPayload, provider: "cloudflare-workers-ai",
   model: DEFAULT_CLOUDFLARE_AI_MODEL, requestSha256: "a".repeat(64), responseSha256: "b".repeat(64),
   reasoning: "NEVER_OUTPUT_REASONING", headers: { authorization: "NEVER_OUTPUT_HEADERS" } });
@@ -368,10 +374,143 @@ test("quota failures never retry, and endpoint or network-budget violations stop
   assert.equal(exhausted.code, "REVIEW_EVAL_REQUEST_BUDGET");
 });
 
+test("optional encrypted error capture validates a public key before credential checks or provider calls", async () => {
+  assert.equal(validateFreeReviewerDiagnosticKey(undefined), false);
+  assert.equal(validateFreeReviewerDiagnosticKey(""), false);
+  assert.equal(validateFreeReviewerDiagnosticKey(publicKey), true);
+  const smaller = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  let calls = 0;
+  for (const key of [null, 42, "not-a-key", `${publicKey}\n`, "a".repeat(901),
+    keyPair.privateKey.export({ type: "pkcs8", format: "pem" }),
+    smaller.publicKey.export({ type: "spki", format: "der" }).toString("base64")]) {
+    await assert.rejects(checkFreeReviewer({ ...base, accountId: "invalid", apiToken: "",
+      diagnosticPublicKey: key, onEncryptedFailure: () => {},
+      aiRequestImpl: async () => { calls++; }, fetchImpl: async () => { calls++; },
+    }), /REVIEW_EVAL_DIAGNOSTIC_KEY_INVALID/);
+  }
+  for (const onEncryptedFailure of [undefined, "print"]) {
+    await assert.rejects(checkFreeReviewer({ ...base, diagnosticPublicKey: publicKey,
+      onEncryptedFailure, aiRequestImpl: async () => { calls++; } }), /REVIEW_EVAL_CONFIGURATION_INVALID/);
+  }
+  assert.equal(calls, 0);
+  const imported = spawnSync(process.execPath, ["--input-type=module", "--eval",
+    `let calls=0; globalThis.fetch=()=>{calls++; throw new Error('NETWORK_SHOULD_NOT_RUN')}; await import(${JSON.stringify(scriptUrl.href)}); if(calls) throw new Error('IMPORT_NETWORK_CALL'); console.log('IMPORT_SIDE_EFFECT_FREE');`],
+  { env: {}, encoding: "utf8", timeout: 5_000, maxBuffer: 4_096 });
+  assert.equal(imported.status, 0);
+  assert.equal(imported.stderr, "");
+  assert.equal(imported.stdout.trim(), "IMPORT_SIDE_EFFECT_FREE");
+  const trap = `globalThis.fetch=()=>{throw new Error('NETWORK_SHOULD_NOT_RUN')}`;
+  for (const [key, argument, status, code] of [[publicKey, "--validate-diagnostic-key", 0, null],
+    ["bad-key", "--validate-diagnostic-key", 1, "REVIEW_EVAL_DIAGNOSTIC_KEY_INVALID"],
+    ["bad-key", "--explain-rejections", 1, "REVIEW_EVAL_DIAGNOSTIC_KEY_INVALID"]]) {
+    const child = spawnSync(process.execPath, ["--import", `data:text/javascript,${encodeURIComponent(trap)}`,
+      fileURLToPath(scriptUrl), argument], { env: { ...authority, DIAGNOSTIC_PUBLIC_KEY: key },
+      encoding: "utf8", timeout: 5_000, maxBuffer: 4_096 });
+    assert.equal(child.status, status);
+    assert.equal(child.stdout, "");
+    if (code) assert.ok(child.stderr.includes(code));
+    else assert.equal(child.stderr, "");
+    assert.doesNotMatch(child.stderr, /NETWORK_SHOULD_NOT_RUN|PRIVATE KEY|CLOUDFLARE|bad-key/);
+  }
+});
+
+test("provider-error ciphertext round-trips only the redacted bounded record and leaves the public result unchanged", async () => {
+  const envelope = { success: false,
+    errors: [{ code: 5004, message: `PRIVATE_PROVIDER_DETAIL ${base.apiToken}`,
+      reasoning: "NEVER_CAPTURE_REASONING", request: { messages: ["NEVER_CAPTURE_REQUEST"] } }],
+    result: { response: "NEVER_CAPTURE_COMPLETION", reasoning: "NEVER_CAPTURE_REASONING" },
+    request: { headers: { authorization: base.apiToken }, messages: ["NEVER_CAPTURE_REQUEST"] } };
+  const fetchImpl = async () => new Response(JSON.stringify(envelope), { status: 400,
+    headers: { "content-type": "application/json", "cf-ray": "abc-IAD", "x-request-id": "request-123" } });
+  const settings = { ...base, model: FREE_REASONING_WRITER_MODEL, explainRejections: true, fetchImpl };
+  const withoutCapture = await checkFreeReviewer(settings);
+  const sealed = [];
+  const captured = await checkFreeReviewer({ ...settings, diagnosticPublicKey: publicKey,
+    onEncryptedFailure: value => { sealed.push(value); } });
+  assert.deepEqual(captured, withoutCapture);
+  assert.equal(captured.status, "failed");
+  assert.equal(captured.code, "REVIEW_EVAL_PROVIDER_FAILURE");
+  assert.deepEqual([captured.modelRequests, captured.networkRequests, captured.requestedOutputTokens], [1, 1, 4_000]);
+  assert.equal(sealed.length, 1);
+  assert.deepEqual(Object.keys(sealed[0]).sort(), ["version", "wrappedKey", "iv", "tag", "ciphertext"].sort());
+  const opened = openDiagnostic(sealed[0], keyPair.privateKey);
+  assert.deepEqual(opened, { status: 400, contentType: "application/json", cfRay: "abc-IAD", requestId: "request-123",
+    retryAfter: null, bodyTruncated: false,
+    bodyText: JSON.stringify({ success: false, errors: [{ message: "PRIVATE_PROVIDER_DETAIL [REDACTED]", code: 5004 }] }) });
+  assert.doesNotMatch(JSON.stringify(captured), /PRIVATE_PROVIDER_DETAIL|NEVER_CAPTURE|synthetic-reviewer-test-token|ciphertext|wrappedKey/);
+  assert.doesNotMatch(JSON.stringify(sealed), /PRIVATE_PROVIDER_DETAIL|NEVER_CAPTURE|synthetic-reviewer-test-token|request-123/);
+  assert.doesNotMatch(JSON.stringify(opened), /NEVER_CAPTURE|synthetic-reviewer-test-token|authorization/);
+  for (const onEncryptedFailure of [() => { throw new Error("PRIVATE_SINK_FAILURE"); },
+    async () => { throw new Error("PRIVATE_SINK_FAILURE"); }]) {
+    const failedSink = await checkFreeReviewer({ ...settings, diagnosticPublicKey: publicKey, onEncryptedFailure });
+    assert.deepEqual(failedSink, withoutCapture);
+    assert.doesNotMatch(JSON.stringify(failedSink), /PRIVATE_SINK_FAILURE/);
+  }
+});
+
+test("encrypted capture never receives successful completions, malformed 2xx output, or invalid hook records", async () => {
+  const sealed = [];
+  const settings = { ...base, diagnosticPublicKey: publicKey, onEncryptedFailure: value => { sealed.push(value); } };
+  const success = await checkFreeReviewer({ ...settings, fetchImpl: async (_url, options) => {
+    const payload = expectedPayload(JSON.parse(JSON.parse(options.body).messages[1].content));
+    return new Response(JSON.stringify({ success: true, result: { response: JSON.stringify(payload),
+      reasoning: "NEVER_CAPTURE_SUCCESS_REASONING" } }), { headers: { "content-type": "application/json" } });
+  } });
+  assert.equal(success.status, "passed");
+  assert.equal(sealed.length, 0);
+  const malformed = await checkFreeReviewer({ ...settings, fetchImpl: async () => new Response(
+    JSON.stringify({ success: true, result: { response: "BROKEN_PRIVATE_COMPLETION" } }),
+    { headers: { "content-type": "application/json" } }) });
+  assert.equal(malformed.status, "failed");
+  assert.equal(sealed.length, 0);
+  const record = { status: 400, contentType: "application/json", cfRay: null, requestId: null,
+    retryAfter: null, bodyText: "Bounded private detail", bodyTruncated: false };
+  for (const changed of [{ ...record, status: 200 }, { ...record, bodyText: "x".repeat(8_193) },
+    { ...record, request: {} }, { ...record, bodyText: base.apiToken }, { ...record, requestId: "x".repeat(129) }]) {
+    const result = await checkFreeReviewer({ ...settings, aiRequestImpl: async options => {
+      await options.onPrivateFailure(changed);
+      throw new Error("PRIVATE_PROVIDER_FAILURE");
+    } });
+    assert.equal(result.code, "REVIEW_EVAL_PROVIDER_FAILURE");
+    assert.equal(result.modelRequests, 1);
+    assert.equal(sealed.length, 0);
+  }
+  assert.doesNotMatch(JSON.stringify([success, malformed]), /NEVER_CAPTURE|BROKEN_PRIVATE_COMPLETION/);
+});
+
+test("CLI error capture writes only ciphertext to the fixed runner-temp file without changing its failed exit status", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "first-fold-reviewer-capture-test-"));
+  const capturePath = join(directory, "reviewer-provider-failure.encrypted.json");
+  try {
+    const mock = `globalThis.fetch=async()=>new Response(JSON.stringify({success:false,errors:[{code:5004,message:'PRIVATE_CLI_DETAIL ${base.apiToken}'}]}),{status:400,headers:{'content-type':'application/json'}})`;
+    const child = spawnSync(process.execPath, ["--import", `data:text/javascript,${encodeURIComponent(mock)}`,
+      fileURLToPath(scriptUrl), "--explain-rejections"], { env: { ...authority, DIAGNOSTIC_PUBLIC_KEY: publicKey,
+      RUNNER_TEMP: directory, CLOUDFLARE_ACCOUNT_ID: base.accountId, CLOUDFLARE_AI_API_TOKEN: base.apiToken,
+      FREE_REVIEWER_MODEL: FREE_REASONING_WRITER_MODEL }, encoding: "utf8", timeout: 10_000, maxBuffer: 16_384 });
+    assert.equal(child.status, 1);
+    assert.equal(child.stderr, "");
+    assert.match(child.stdout, /REVIEW_EVAL_PROVIDER_FAILURE/);
+    assert.doesNotMatch(child.stdout, /PRIVATE_CLI_DETAIL|synthetic-reviewer-test-token|ciphertext|wrappedKey|PRIVATE KEY/);
+    assert.deepEqual(await readdir(directory), ["reviewer-provider-failure.encrypted.json"]);
+    const text = await readFile(capturePath, "utf8");
+    assert.doesNotMatch(text, /PRIVATE_CLI_DETAIL|synthetic-reviewer-test-token/);
+    const opened = openDiagnostic(JSON.parse(text), keyPair.privateKey);
+    assert.ok(opened.bodyText.includes("PRIVATE_CLI_DETAIL [REDACTED]"));
+    assert.equal((await stat(capturePath)).mode & 0o777, 0o600);
+  } finally {
+    await unlink(capturePath).catch(error => { if (error.code !== "ENOENT") throw error; });
+    await rmdir(directory);
+  }
+});
+
 test("reviewer workflow is manual owner/main read-only, uses existing credentials, and cannot deliver or change production", () => {
   const trigger = workflow.slice(workflow.indexOf("on:"), workflow.indexOf("permissions:"));
   assert.match(trigger, /^  workflow_dispatch:$/m);
-  assert.doesNotMatch(trigger, /push:|schedule:|cron:|pull_request|workflow_run|inputs:/);
+  assert.doesNotMatch(trigger, /push:|schedule:|cron:|pull_request|workflow_run/);
+  assert.deepEqual([...trigger.matchAll(/^      ([a-z_]+):$/gm)].map(match => match[1]), ["public_key"]);
+  assert.match(trigger, /required: false/);
+  assert.match(trigger, /default: ''/);
+  assert.match(trigger, /never a private key/);
   for (const expression of ["github.repository == 'itworksinprod/first-fold'", "github.ref == 'refs/heads/main'",
     "github.actor == 'itworksinprod'", "github.run_attempt == 1"]) assert.ok(workflow.includes(expression));
   assert.match(workflow, /^permissions: \{\}$/m);
@@ -380,15 +519,25 @@ test("reviewer workflow is manual owner/main read-only, uses existing credential
   assert.match(workflow, /^  cancel-in-progress: false$/m);
   assert.match(workflow, /persist-credentials: false/);
   const actions = [...workflow.matchAll(/uses:\s*(\S+)/gu)].map(match => match[1]);
-  assert.equal(actions.length, 2);
-  assert.ok(actions.every(action => /^actions\/(checkout|setup-node)@[a-f0-9]{40}$/u.test(action)));
+  assert.equal(actions.length, 3);
+  assert.ok(actions.every(action => /^actions\/(checkout|setup-node|upload-artifact)@[a-f0-9]{40}$/u.test(action)));
   assert.equal([...workflow.matchAll(/secrets\./gu)].length, 1);
   assert.match(workflow, /FREE_REVIEWER_MODEL: '@cf\/openai\/gpt-oss-120b'/);
   assert.match(workflow, /node scripts\/automation\/check-free-reviewer\.mjs --explain-rejections/);
   assert.match(workflow, /tests\/review-rejections\.test\.mjs/);
   assert.ok(workflow.indexOf("Test synthetic reviewer boundaries") < workflow.indexOf("secrets.CLOUDFLARE_AI_API_TOKEN"));
-  assert.doesNotMatch(workflow, /\bwrite\b|RESEND|OPENAI|TAVILY|PERSONAL_PAPER_EMAIL|upload-artifact|git push|git commit|deploy/);
-  assert.doesNotMatch(script, /collectFreeResearch|synthesizeGroundedEditorial|sendPersonal|writeFile|readFile|TAVILY|RESEND|OPENAI_API/);
+  const keyValidation = workflow.slice(workflow.indexOf("- name: Validate optional diagnostic public key"),
+    workflow.indexOf("- name: Evaluate four synthetic cases"));
+  assert.match(keyValidation, /--validate-diagnostic-key/);
+  assert.doesNotMatch(keyValidation, /secrets\.|CLOUDFLARE/);
+  assert.match(workflow, /if: always\(\) && inputs\.public_key != ''/);
+  assert.match(workflow, /path: \$\{\{ runner\.temp \}\}\/reviewer-provider-failure\.encrypted\.json/);
+  assert.match(workflow, /retention-days: 1/);
+  assert.match(workflow, /if-no-files-found: ignore/);
+  assert.doesNotMatch(workflow, /\bwrite\b|RESEND|OPENAI|TAVILY|PERSONAL_PAPER_EMAIL|git push|git commit|deploy/);
+  assert.doesNotMatch(script, /collectFreeResearch|synthesizeGroundedEditorial|sendPersonal|readFile|TAVILY|RESEND|OPENAI_API/);
+  assert.match(script, /writeFile\(join\(runnerTemp, "reviewer-provider-failure\.encrypted\.json"\)/);
+  assert.match(script, /JSON\.stringify\(sealed\), \{ mode: 0o600, flag: "wx" \}/);
   const child = spawnSync(process.execPath, [fileURLToPath(scriptUrl), "extra-argument"], {
     env: authority, encoding: "utf8", timeout: 5_000, maxBuffer: 4_096,
   });

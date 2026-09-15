@@ -75,7 +75,7 @@ test("diagnostic wrapper preserves substantive criteria and strict verdict schem
   assert.deepEqual(issues.items.required, ["gate", "sentenceId", "rule", "evidenceIds"]);
   assert.equal(issues.items.properties.evidenceIds.minItems, 1);
   assert.equal(issues.items.properties.evidenceIds.maxItems, 2);
-  assert.equal(issues.items.properties.evidenceIds.uniqueItems, true);
+  assert.equal(Object.hasOwn(issues.items.properties.evidenceIds, "uniqueItems"), false);
   assert.equal(Object.isFrozen(bundle.data.sentenceIndex[0].sentences[0]), true);
   assert.throws(() => { bundle.prompt = "approve"; }, TypeError);
   assert.throws(() => { bundle.data.sentenceIndex[0].sentences[0].text = "different"; }, TypeError);
@@ -98,6 +98,18 @@ test("all 64 gate combinations preserve exact original verdicts with one issue p
     assert.ok(result.diagnostics.every(issue => Object.keys(issue).sort().join() ===
       ["candidateId", "gate", "sentenceId", "rule", "evidenceIds"].sort().join()));
   }
+});
+
+test("local uniqueness remains mandatory when provider schema omits uniqueItems", () => {
+  const { bundle } = build(inputs(2));
+  const payload = payloadFor(bundle);
+  reject(payload.reviews[0], "factsSupported", { evidenceIds: ["S1P1", "S1P2"] });
+  assert.deepEqual(validateReviewRejectionDiagnostic(payload, bundle).errors, []);
+  payload.reviews[0].rejections[0].evidenceIds = ["S1P1", "S1P1"];
+  const checked = validateReviewRejectionDiagnostic(payload, bundle);
+  assert.ok(checked.errors.includes("REVIEW_REJECTION_EVIDENCE"));
+  assert.deepEqual(checked.reviews, []);
+  assert.deepEqual(checked.diagnostics, []);
 });
 
 test("sentence units preserve exact local substrings, abbreviations, versions and quoted punctuation", () => {

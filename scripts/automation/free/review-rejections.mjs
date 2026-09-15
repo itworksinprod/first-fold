@@ -101,7 +101,10 @@ export function buildReviewRejectionDiagnostic(baseBundle) {
       gate: { type: "string", enum: gates },
       sentenceId: { type: "string", enum: [...new Set(candidates.flatMap(candidate => candidate.sentences.map(sentence => sentence.sentenceId)))] },
       rule: { type: "string", enum: rules },
-      evidenceIds: { type: "array", minItems: 1, maxItems: 2, uniqueItems: true,
+      // Avoid introducing a provider-side grammar keyword for a constraint
+      // already enforced below. This is a compatibility experiment after an
+      // unexplained HTTP 400, not proof that uniqueItems caused that response.
+      evidenceIds: { type: "array", minItems: 1, maxItems: 2,
         items: { type: "string", enum: [...new Set(candidates.flatMap(candidate => candidate.passages.map(passage => passage.evidenceId)))] } },
     }, required: ["gate", "sentenceId", "rule", "evidenceIds"],
   } };
