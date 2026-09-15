@@ -55,6 +55,29 @@ test("local adapter reaches only literal loopback and never sends credentials or
     responseSha256: sha(raw), attemptCount: 1, usage: { prompt_tokens: 84, completion_tokens: 21, total_tokens: 105 } });
 });
 
+test("local thinking is enabled by default and only an explicit boolean can change it", async () => {
+  const baseline = buildLocalAiRequest({ messages, schema });
+  const direct = buildLocalAiRequest({ messages, schema, think: false });
+  assert.equal(baseline.body.think, true);
+  assert.deepEqual(direct, { ...baseline, body: { ...baseline.body, think: false } });
+  let calls = 0;
+  const result = await requestLocalAiEditorial(options({ think: false, fetchImpl: async (_url, init) => {
+    calls++;
+    assert.equal(JSON.parse(init.body).think, false);
+    return response();
+  } }));
+  assert.equal(calls, 1);
+  assert.equal(result.requestSha256, sha(JSON.stringify({ provider: LOCAL_AI_PROVIDER,
+    model: LOCAL_AI_MODEL, body: direct.body })));
+  for (const think of [null, 0, 1, "false", "true", {}, []]) {
+    assert.throws(() => buildLocalAiRequest({ messages, schema, think }),
+      error => error.code === "LOCAL_AI_CONFIGURATION_INVALID");
+    await assert.rejects(requestLocalAiEditorial(options({ think, fetchImpl: async () => { calls++; } })),
+      error => error.code === "LOCAL_AI_CONFIGURATION_INVALID" && error.attemptCount === 0);
+  }
+  assert.equal(calls, 1);
+});
+
 test("local input checks reject models, messages, schema and capacity before any network call", async () => {
   let calls = 0;
   const cyclic = {}; cyclic.self = cyclic;

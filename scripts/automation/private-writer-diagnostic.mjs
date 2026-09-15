@@ -1,6 +1,6 @@
-// One real-source writer probe, not an edition or delivery path. Only ciphertext
+// One real-source writer probe, or explicit tiny provider-only check. Only ciphertext
 // leaves the runner. The decryption key is generated and retained on Carlos's Mac.
-import { createCipheriv, createDecipheriv, createPublicKey, generateKeyPairSync,
+import { createCipheriv, createDecipheriv, createHash, createPublicKey, generateKeyPairSync,
   publicEncrypt, privateDecrypt, randomBytes, constants } from "node:crypto";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -8,7 +8,7 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { collectFreeResearchSnapshot } from "./free/feed-engine.mjs";
 import { synthesizeGroundedEditorial } from "./free/grounded-draft.mjs";
-import { DEFAULT_CLOUDFLARE_AI_MODEL, requestWorkersAiEditorial, workersAiFailureDiagnostic,
+import { DEFAULT_CLOUDFLARE_AI_MODEL, buildWorkersAiRequest, requestWorkersAiEditorial, workersAiFailureDiagnostic,
   workersAiRunUrl } from "./free/workers-ai.mjs";
 
 const MAX_BYTES = 350_000;
@@ -63,13 +63,77 @@ export function assertDiagnosticAuthority(env) {
       env.GITHUB_RUN_ATTEMPT !== "1") throw failure("DIAGNOSTIC_AUTHORITY_REJECTED");
 }
 
+export function resolvePrivateWriterDiagnosticMode(value = "source") {
+  if (!["source", "provider-only"].includes(value)) throw failure("DIAGNOSTIC_MODE_INVALID");
+  return value;
+}
+
+export function validatePrivateWriterDiagnosticOptions(env) {
+  // The manual workflow runs this before exposing its provider credentials.
+  assertDiagnosticAuthority(env);
+  const mode = resolvePrivateWriterDiagnosticMode(env.PRIVATE_WRITER_DIAGNOSTIC_MODE);
+  diagnosticPublicKey(env.DIAGNOSTIC_PUBLIC_KEY);
+  return mode;
+}
+
+async function diagnoseProvider({ publicKey, accountId, apiToken, now, aiRequestImpl, fetchImpl, endpoint }) {
+  const capture = { purpose: "one-provider-probe-not-news-or-delivery", capturedAt: now.toISOString(),
+    calls: [], emailSent: false };
+  const request = { model: DEFAULT_CLOUDFLARE_AI_MODEL,
+    messages: [{ role: "system", content: 'Return only the JSON object {"ok":true}.' },
+      { role: "user", content: "Run the fixed provider availability check." }],
+    schema: { type: "object", properties: { ok: { type: "boolean", enum: [true] } },
+      required: ["ok"], additionalProperties: false },
+    responseFormat: "json_schema", maxTokens: 128, temperature: 0.1,
+    maxAttempts: 1, timeoutMs: 30_000, maxRequestBytes: 2_048, maxResponseBytes: 16_384 };
+  const validPayload = payload => payload && typeof payload === "object" && !Array.isArray(payload) &&
+    Object.keys(payload).join() === "ok" && payload.ok === true;
+  const { body } = buildWorkersAiRequest(request);
+  const requestText = JSON.stringify(body);
+  const requestSha256 = createHash("sha256").update(JSON.stringify({ provider: "cloudflare-workers-ai",
+    model: DEFAULT_CLOUDFLARE_AI_MODEL, body })).digest("hex");
+  let modelRequests = 0, networkRequests = 0, code = null;
+  const call = {};
+  capture.calls.push(call);
+  try {
+    modelRequests++;
+    const result = await aiRequestImpl({ ...request, accountId, apiToken,
+      validatePayload: validPayload,
+      fetchImpl: async (url, options) => {
+        if (url !== endpoint || options?.method !== "POST" || options.redirect !== "error" ||
+            options.body !== requestText || networkRequests >= 1) throw failure("DIAGNOSTIC_NETWORK_CONTRACT");
+        networkRequests++;
+        return fetchImpl(url, options);
+      },
+      onPrivateFailure: record => { call.privateFailure ??= structuredClone(record); },
+    });
+    if (result.provider !== "cloudflare-workers-ai" || result.model !== DEFAULT_CLOUDFLARE_AI_MODEL ||
+        result.requestSha256 !== requestSha256 || !/^[a-f0-9]{64}$/u.test(result.responseSha256 ?? "") ||
+        result.attemptCount !== 1) throw failure("DIAGNOSTIC_PROVENANCE_INVALID");
+    if (!validPayload(result.editorialPayload)) throw failure("DIAGNOSTIC_PAYLOAD_INVALID");
+    // Availability is not editorial quality. Never capture successful content,
+    // provider envelopes, reasoning or request/authorization headers here.
+  } catch (error) {
+    code = safeCode(error?.code);
+    call.failure = { code, ...workersAiFailureDiagnostic(error) };
+  }
+  const report = { mode: capture.purpose, status: code ? "failed" : "provider-responded", code,
+    modelRequests, networkRequests, outputBudget: modelRequests * 128, searchQueries: 0, emailSent: false,
+    failures: call.failure ? [call.failure] : [] };
+  return { report, sealed: sealDiagnostic({ ...capture, report }, publicKey) };
+}
+
 export async function diagnoseOneWriter({ publicKey, accountId, apiToken, now = new Date(),
+  mode = "source",
   researchImpl = collectFreeResearchSnapshot, aiRequestImpl = requestWorkersAiEditorial,
   fetchImpl = globalThis.fetch } = {}) {
   // Check encryption and credentials before research or inference, not afterwards.
+  mode = resolvePrivateWriterDiagnosticMode(mode);
   diagnosticPublicKey(publicKey);
   const endpoint = workersAiRunUrl(accountId, DEFAULT_CLOUDFLARE_AI_MODEL);
   if (typeof apiToken !== "string" || !apiToken.trim()) throw failure("DIAGNOSTIC_CONFIGURATION_INVALID");
+  if (mode === "provider-only") return diagnoseProvider({ publicKey, accountId, apiToken, now,
+    aiRequestImpl, fetchImpl, endpoint });
   const capture = { purpose: "one-real-source-writer-probe-not-an-edition", capturedAt: now.toISOString(),
     calls: [], diagnostics: [], emailSent: false };
   let modelRequests = 0;
@@ -145,10 +209,12 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
       const value = openDiagnostic(JSON.parse(await readFile(args[0], "utf8")), await readFile(args[1], "utf8"));
       await writeFile(args[2], JSON.stringify(value, null, 2), { mode: 0o600, flag: "wx" });
       console.info("Diagnostic decrypted locally; content remains untrusted source/model data.");
+    } else if (command === "validate" && args.length === 0) {
+      validatePrivateWriterDiagnosticOptions(process.env);
     } else if (command === "run" && args.length === 1) {
-      assertDiagnosticAuthority(process.env);
+      const mode = validatePrivateWriterDiagnosticOptions(process.env);
       const { sealed, report } = await diagnoseOneWriter({ publicKey: process.env.DIAGNOSTIC_PUBLIC_KEY,
-        accountId: process.env.CLOUDFLARE_ACCOUNT_ID, apiToken: process.env.CLOUDFLARE_AI_API_TOKEN });
+        mode, accountId: process.env.CLOUDFLARE_ACCOUNT_ID, apiToken: process.env.CLOUDFLARE_AI_API_TOKEN });
       await writeFile(args[0], JSON.stringify(sealed), { mode: 0o600, flag: "wx" });
       console.info(`::notice title=One-story diagnostic::${JSON.stringify(report)}`);
       if (report.status === "failed") process.exitCode = 1;

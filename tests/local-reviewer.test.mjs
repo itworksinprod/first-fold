@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 import { checkLocalReviewer } from "../scripts/automation/check-local-reviewer.mjs";
 import { reviewerHoldoutCases } from "./fixtures/reviewer-holdouts.mjs";
-import { LOCAL_AI_MODEL, LOCAL_AI_PROVIDER, LOCAL_AI_URL } from "../scripts/automation/free/local-ai.mjs";
+import { buildLocalAiRequest, LOCAL_AI_MODEL, LOCAL_AI_PROVIDER, LOCAL_AI_URL } from "../scripts/automation/free/local-ai.mjs";
 
 const expected = data => ({ reviews: data.drafts.map(({ draft, draftSha256, claimEvidence }) => {
   const item = reviewerHoldoutCases().find(item => item.draft.candidateId === draft.candidateId);
@@ -12,8 +13,10 @@ const expected = data => ({ reviews: data.drafts.map(({ draft, draftSha256, clai
     ...Object.fromEntries(["factsSupported", "attributionAccurate", "analysisSupported", "usefulAndSpecific"]
       .map(field => [field, item.expected[field] ?? true])) };
 }) });
-const response = editorialPayload => ({ editorialPayload, model: LOCAL_AI_MODEL, provider: LOCAL_AI_PROVIDER,
-  requestSha256: "a".repeat(64), responseSha256: "b".repeat(64) });
+const fingerprint = body => createHash("sha256").update(JSON.stringify({ provider: LOCAL_AI_PROVIDER,
+  model: LOCAL_AI_MODEL, body })).digest("hex");
+const response = (editorialPayload, options) => ({ editorialPayload, model: LOCAL_AI_MODEL, provider: LOCAL_AI_PROVIDER,
+  requestSha256: fingerprint(buildLocalAiRequest(options).body), responseSha256: "b".repeat(64) });
 
 test("local reviewer uses fresh holdouts without expected answers, one fixed call and no credentials", async () => {
   let calls = 0;
@@ -24,6 +27,7 @@ test("local reviewer uses fresh holdouts without expected answers, one fixed cal
     assert.equal(options.timeoutMs, 300_000);
     assert.equal(options.maxAttempts, 1);
     assert.equal(options.temperature, 0.6);
+    assert.equal(options.think, true);
     assert.equal(options.maxRequestBytes, 70_000);
     assert.equal(options.maxResponseBytes, 100_000);
     assert.equal(options.responseFormat, "json_schema");
@@ -34,12 +38,14 @@ test("local reviewer uses fresh holdouts without expected answers, one fixed cal
     assert.doesNotMatch(JSON.stringify(options.messages), /"expected"|"caseId"/);
     const payload = expected(data);
     assert.equal(options.validatePayload(payload), true);
-    return response(payload);
+    return response(payload, options);
   } });
   assert.equal(calls, 1);
   assert.equal(report.status, "passed");
   assert.equal(report.requestedOutputTokens, 8_000);
   assert.equal(report.timeoutMs, 300_000);
+  assert.equal(report.requestedThinking, true);
+  assert.match(report.requestSha256, /^[a-f0-9]{64}$/u);
   assert.ok(report.cases.every(item => item.passed));
   assert.deepEqual([report.cloudRequests, report.emailRequests], [0, 0]);
 });
@@ -54,12 +60,13 @@ test("local review rejects blanket approvals, false rejections, hash mismatches 
     result => { result.editorialPayload.reviews[0].draftSha256 = "f".repeat(64); },
     result => { result.provider = "cloudflare-workers-ai"; },
     result => { result.model = "remote-model"; },
+    result => { result.requestSha256 = "f".repeat(64); },
   ];
   for (const mutate of mutations) {
     let calls = 0;
     const report = await checkLocalReviewer({ aiRequestImpl: async options => {
       calls++;
-      const result = response(expected(JSON.parse(options.messages[1].content)));
+      const result = response(expected(JSON.parse(options.messages[1].content)), options);
       mutate(result);
       return result;
     } });
@@ -103,7 +110,7 @@ test("caller options cannot change the fixed diagnostic budget, model or transpo
       assert.equal(options.maxRequestBytes, 70_000);
       assert.equal(options.maxResponseBytes, 100_000);
       assert.equal(options.apiToken, undefined);
-      return response(expected(JSON.parse(options.messages[1].content)));
+      return response(expected(JSON.parse(options.messages[1].content)), options);
     },
   });
   assert.equal(calls, 1);
@@ -111,6 +118,51 @@ test("caller options cannot change the fixed diagnostic budget, model or transpo
   assert.equal(report.requestedOutputTokens, 8_000);
   assert.equal(report.timeoutMs, 300_000);
   assert.doesNotMatch(JSON.stringify(report), /PRIVATE_UNUSED_TOKEN|unrequested-cloud-model/);
+});
+
+test("direct synthetic mode is explicit, hash-bound and otherwise identical to the thinking request", async () => {
+  const requests = [];
+  const reports = [];
+  for (const think of [true, false]) {
+    let calls = 0;
+    const report = await checkLocalReviewer({ think, fetchImpl: async (url, options) => {
+      calls++;
+      assert.equal(url, LOCAL_AI_URL);
+      const request = JSON.parse(options.body);
+      requests.push(request);
+      assert.equal(request.think, think);
+      assert.equal(request.options.num_predict, 8_000);
+      assert.equal(request.options.num_ctx, 32_768);
+      assert.equal(request.stream, false);
+      return new Response(JSON.stringify({ model: LOCAL_AI_MODEL, done: true, done_reason: "stop",
+        prompt_eval_count: 500, eval_count: 1200,
+        message: { role: "assistant", content: JSON.stringify(expected(JSON.parse(request.messages[1].content))) } }),
+      { headers: { "content-type": "application/json" } });
+    } });
+    reports.push(report);
+    assert.equal(calls, 1);
+    assert.equal(report.status, "passed");
+    assert.equal(report.requestedThinking, think);
+    assert.equal(report.requestSha256, fingerprint(requests.at(-1)));
+    assert.equal(report.timeoutMs, 300_000);
+    assert.deepEqual([report.cloudRequests, report.emailRequests], [0, 0]);
+  }
+  assert.deepEqual(requests[1], { ...requests[0], think: false });
+  assert.notEqual(reports[0].requestSha256, reports[1].requestSha256);
+});
+
+test("non-boolean thinking switches fail before any local request and are not echoed", async () => {
+  for (const think of [null, 0, 1, "false", "PRIVATE_UNTRUSTED_MODE", {}]) {
+    let calls = 0;
+    const report = await checkLocalReviewer({ think, aiRequestImpl: async () => { calls++; } });
+    assert.equal(calls, 0);
+    assert.equal(report.modelRequests, 0);
+    assert.equal(report.code, "LOCAL_AI_CONFIGURATION_INVALID");
+    assert.equal(report.status, "failed");
+    assert.equal(report.requestedThinking, undefined);
+    assert.equal(report.requestSha256, undefined);
+    assert.doesNotMatch(JSON.stringify(report), /PRIVATE_UNTRUSTED_MODE/);
+  }
 });
 
 test("native output exceeding the fixed diagnostic cap stays red with no completed verdict", async () => {

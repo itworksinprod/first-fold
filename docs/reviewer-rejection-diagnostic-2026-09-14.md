@@ -312,3 +312,23 @@ actual cited text; it is not permission to override a false flag automatically.
 Verification before publication: all 968 tests passed, the build and diff checks
 were clean, and a separate read-only review cleared the bounded capture path.
 An absent artifact means capture was unavailable, not that the paper passed.
+
+The first manual run, `34920670039` on `134f6af`, completed web discovery
+(12 searches, three admitted publisher articles) but the newsworthiness request
+returned HTTP 429 before drafting. No checkpoint artifact was produced.
+The refreshed Cloudflare dashboard still displayed 4.12k/10k daily usage; the
+public error lacked a recognized daily-allocation reason. These observations
+do not establish whether the refusal was daily quota or another provider limit.
+No email was sent. The existing single-story encrypted probe, `34921209735`,
+was dispatched once to inspect a fresh same-model response without further
+Tavily searches. It stopped with `DIAGNOSTIC_NO_QUALIFYING_STORY` and zero model
+calls, so it did not establish whether the provider was still refusing requests.
+
+The existing single-story workflow now also accepts explicit `provider-only`
+mode: one fixed tiny JSON request to the same default Llama model, at most
+128 output tokens and 30 seconds, no feed or search requests, and no retries.
+Its existing encrypted failure capture can retain the precise bounded provider
+message; public output remains status/codes/counts only. The default `source`
+mode is unchanged. Owner/main/attempt/key/mode checks precede provider credentials.
+Independent review cleared the path; the complete suite passed 975 tests.
+A successful tiny request would establish availability for that request only.
