@@ -6,9 +6,10 @@ import path from "node:path";
 import test from "node:test";
 import { buildFreeReportingWindow, draftFreeEdition, hasMixedReviewMetadata,
   validateMixedReviewMetadata, validateFreePilotProvenance } from "../scripts/automation/draft-free-edition.mjs";
-import { EXPERIMENTAL_MIXED_REVIEW_PROFILE, GROUNDED_DIGEST_MODE } from "../scripts/automation/free/grounded-draft.mjs";
+import { EXPERIMENTAL_MIXED_REVIEW_PROFILE, EXPERIMENTAL_REASONING_PIPELINE_PROFILE,
+  GROUNDED_DIGEST_MODE } from "../scripts/automation/free/grounded-draft.mjs";
 import { DEFAULT_CLOUDFLARE_AI_MODEL, FREE_REASONING_WRITER_MODEL,
-  WORKERS_AI_PROVIDER, workersAiRunUrl } from "../scripts/automation/free/workers-ai.mjs";
+  WORKERS_AI_PROVIDER, requestWorkersAiEditorial, workersAiRunUrl } from "../scripts/automation/free/workers-ai.mjs";
 import { FREE_FEED_SOURCES } from "../scripts/automation/free/feed-sources.mjs";
 import { generatePersonalFreeEdition } from "../scripts/automation/personal-free-edition.mjs";
 import { createEmptyPersonalStoryLedger } from "../scripts/automation/personal-story-ledger.mjs";
@@ -26,17 +27,19 @@ const storyIds = ids.map(id => `trusted-evidence-digest-${id}`);
 
 // Synthetic receipt consistency fixtures only. Passing this validator does not
 // establish that inference ran or that any provider approved a real news item.
-function receipt() {
+function receipt(profile = EXPERIMENTAL_MIXED_REVIEW_PROFILE) {
+  const writerModel = profile === EXPERIMENTAL_REASONING_PIPELINE_PROFILE
+    ? FREE_REASONING_WRITER_MODEL : DEFAULT_CLOUDFLARE_AI_MODEL;
   const stages = ["foundation", "composition", "review"].map((stage, index) => ({ stage,
-    provider: WORKERS_AI_PROVIDER, model: index === 2 ? FREE_REASONING_WRITER_MODEL : DEFAULT_CLOUDFLARE_AI_MODEL,
+    provider: WORKERS_AI_PROVIDER, model: index === 2 ? FREE_REASONING_WRITER_MODEL : writerModel,
     requestSha256: hash({ syntheticRequest: stage }), responseSha256: hash({ syntheticResponse: stage }) }));
-  return { provider: WORKERS_AI_PROVIDER, model: DEFAULT_CLOUDFLARE_AI_MODEL,
+  return { provider: WORKERS_AI_PROVIDER, model: writerModel,
     inference: "workers-ai", draftingMode: GROUNDED_DIGEST_MODE, privateSourceBriefs: true,
     candidateCount: 2, selectedStoryCount: 2, stages,
     requestSha256: hash(stages.map(({ stage, provider, model, requestSha256 }) => ({ stage, provider, model, requestSha256 }))),
     responseSha256: hash(stages.map(({ stage, provider, model, responseSha256 }) => ({ stage, provider, model, responseSha256 }))),
     semanticReview: { provider: WORKERS_AI_PROVIDER, model: FREE_REASONING_WRITER_MODEL,
-      profile: EXPERIMENTAL_MIXED_REVIEW_PROFILE, requestCount: 1, requestedOutputTokens: 8_000,
+      profile, requestCount: 1, requestedOutputTokens: 8_000,
       requestSha256: stages[2].requestSha256, responseSha256: stages[2].responseSha256,
       approvedCandidateIds: [...ids] } };
 }
@@ -78,6 +81,39 @@ test("mixed story bindings accept only known baseline prefixes and cover each ap
     [storyIds[0], `unreviewed-brief-${ids[1]}`],
     [storyIds[0], `trusted-evidence-brief-trusted-evidence-digest-${ids[1]}`]]) {
     assert.equal(validateMixedReviewMetadata(receipt(), invalidIds), false);
+  }
+});
+
+test("reasoning-pipeline receipts require the truthful GPT-OSS writer in every bound stage and cannot relabel a mixed run", () => {
+  const value = receipt(EXPERIMENTAL_REASONING_PIPELINE_PROFILE);
+  assert.equal(validateMixedReviewMetadata(value, storyIds), true);
+  assert.equal(validateMixedReviewMetadata(value, ids.map(id => `trusted-evidence-brief-${id}`)), true);
+  assert.equal(validateMixedReviewMetadata(value, [storyIds[0], `trusted-evidence-brief-${ids[0]}`]), false);
+  const stored = candidate();
+  Object.assign(stored.provenance.freePilot, value);
+  assert.equal(validateFreePilotProvenance(stored, automation), true);
+  for (const profile of [EXPERIMENTAL_MIXED_REVIEW_PROFILE, EXPERIMENTAL_REASONING_PIPELINE_PROFILE]) {
+    const otherProfile = profile === EXPERIMENTAL_MIXED_REVIEW_PROFILE
+      ? EXPERIMENTAL_REASONING_PIPELINE_PROFILE : EXPERIMENTAL_MIXED_REVIEW_PROFILE;
+    const otherWriter = profile === EXPERIMENTAL_MIXED_REVIEW_PROFILE
+      ? FREE_REASONING_WRITER_MODEL : DEFAULT_CLOUDFLARE_AI_MODEL;
+    for (const mutate of [
+      meta => { meta.semanticReview.profile = otherProfile; },
+      meta => { meta.semanticReview.profile = "caller-chosen-profile"; },
+      meta => { meta.model = otherWriter; },
+      meta => { meta.stages[0].model = otherWriter; },
+      meta => { meta.stages[1].model = otherWriter; },
+      meta => { meta.semanticReview.requestedOutputTokens = 24_000; },
+      meta => { meta.semanticReview.requestCount = 3; },
+      meta => { meta.stages[0].requestedOutputTokens = 8_000; },
+      meta => { meta.stages[0].requestSha256 = "f".repeat(64); },
+      meta => { meta.requestSha256 = "f".repeat(64); },
+      meta => { meta.responseSha256 = "f".repeat(64); },
+      meta => { meta.semanticReview.approvedCandidateIds = [ids[0], "unapproved-candidate"]; },
+    ]) {
+      const forged = receipt(profile); mutate(forged);
+      assert.equal(validateMixedReviewMetadata(forged, storyIds), false);
+    }
   }
 });
 
@@ -159,13 +195,15 @@ test("partial Cloudflare markers fail closed while ordinary default and local-on
 
 test("mixed profile remains an explicit grounded/default-Llama opt-in checked before any research or inference", async () => {
   let calls = 0;
+  for (const profile of [EXPERIMENTAL_MIXED_REVIEW_PROFILE, EXPERIMENTAL_REASONING_PIPELINE_PROFILE]) {
   for (const override of [{ groundedReviewProfile: "unknown-profile" }, { groundedSummaries: false },
     { model: FREE_REASONING_WRITER_MODEL }]) {
     await assert.rejects(draftFreeEdition({ draftSelectedSlate: true, trustedEvidenceDigestOnly: true,
       groundedSummaries: true, maxModelRequests: 7, model: DEFAULT_CLOUDFLARE_AI_MODEL,
-      groundedReviewProfile: EXPERIMENTAL_MIXED_REVIEW_PROFILE,
+      groundedReviewProfile: profile,
       researchImpl: async () => { calls++; }, aiRequestImpl: async () => { calls++; }, ...override,
     }), /Explicit claim review requires/);
+  }
   }
   assert.equal(calls, 0);
   const priorEdition = JSON.parse(await readFile(new URL("../content/editions/2026-08-19.json", import.meta.url), "utf8"));
@@ -180,7 +218,10 @@ test("mixed profile remains an explicit grounded/default-Llama opt-in checked be
   assert.equal(calls, 1);
 });
 
-test("real personal selected-slate concise generation retains mixed provenance through all three native calls and final rendering", async (t) => {
+for (const profile of [EXPERIMENTAL_MIXED_REVIEW_PROFILE, EXPERIMENTAL_REASONING_PIPELINE_PROFILE]) {
+test(`real personal selected-slate concise generation preserves ${profile} through three native calls and final rendering`, async (t) => {
+  const reasoningWriter = profile === EXPERIMENTAL_REASONING_PIPELINE_PROFILE;
+  const writerModel = reasoningWriter ? FREE_REASONING_WRITER_MODEL : DEFAULT_CLOUDFLARE_AI_MODEL;
   const projectRoot = await mkdtemp(path.join(tmpdir(), "first-fold-mixed-integration-"));
   t.after(() => rm(projectRoot, { recursive: true, force: true }));
   await mkdir(path.join(projectRoot, "content", "editions"), { recursive: true });
@@ -230,6 +271,7 @@ test("real personal selected-slate concise generation retains mixed provenance t
   const accountId = "a".repeat(32);
   const apiToken = "synthetic-mixed-personal-test-token";
   const requests = [];
+  const stageOptions = [];
   let researchCalls = 0;
   let freeCandidate;
   const result = await generatePersonalFreeEdition({ editionDate: "2026-08-20", projectRoot,
@@ -238,14 +280,16 @@ test("real personal selected-slate concise generation retains mixed provenance t
       GITHUB_REPOSITORY: automation.repository }, now: generatedAt, feedSources: FREE_FEED_SOURCES,
     personalStoryLedger: createEmptyPersonalStoryLedger({ fingerprintKey: apiToken }),
     researchImpl: async options => { researchCalls++; assert.equal(options.enrichArticles, true); return research; },
+    aiRequestImpl: async options => { stageOptions.push(options); return requestWorkersAiEditorial(options); },
     // Use the ordinary personal options, opt into only the experimental profile,
     // and retain the real native adapter, actual generator and adaptation gates.
     draftFreeEditionImpl: async options => {
       assert.equal(options.draftSelectedSlate, true);
       assert.equal(options.trustedEvidenceDigestOnly, true);
       assert.equal(options.groundedSummaries, true);
+      assert.equal(options.model, DEFAULT_CLOUDFLARE_AI_MODEL);
       freeCandidate = await draftFreeEdition({ ...options,
-        groundedReviewProfile: EXPERIMENTAL_MIXED_REVIEW_PROFILE });
+        groundedReviewProfile: profile });
       return freeCandidate;
     },
     fetchImpl: async (url, options) => {
@@ -254,7 +298,7 @@ test("real personal selected-slate concise generation retains mixed provenance t
       requests.push({ url, body });
       assert.ok(index < 3, "No fourth model request is allowed");
       assert.equal(url, workersAiRunUrl(accountId,
-        index === 2 ? FREE_REASONING_WRITER_MODEL : DEFAULT_CLOUDFLARE_AI_MODEL));
+        index === 2 ? FREE_REASONING_WRITER_MODEL : writerModel));
       assert.equal(options.method, "POST");
       assert.equal(options.redirect, "error");
       let payload;
@@ -278,7 +322,10 @@ test("real personal selected-slate concise generation retains mixed provenance t
   });
   assert.equal(researchCalls, 2);
   assert.equal(requests.length, 3);
-  assert.deepEqual(requests.map(request => request.body.max_tokens), [2_000, 4_000, 8_000]);
+  assert.deepEqual(requests.map(request => request.body.max_tokens), reasoningWriter ? [8_000, 8_000, 8_000] : [2_000, 4_000, 8_000]);
+  assert.deepEqual(stageOptions.map(options => options.model), [writerModel, writerModel, FREE_REASONING_WRITER_MODEL]);
+  assert.deepEqual(stageOptions.map(options => options.timeoutMs), reasoningWriter ? [180_000, 180_000, 180_000] : [90_000, 90_000, 180_000]);
+  assert.ok(stageOptions.every(options => options.maxAttempts === 1 && options.maxRequestBytes === 70_000));
   const story = result.desks[desk].story;
   assert.equal(story.id, `trusted-evidence-brief-${groundedDraft.candidateId}`);
   assert.equal(story.headline, groundedDraft.headline);
@@ -287,8 +334,9 @@ test("real personal selected-slate concise generation retains mixed provenance t
   assert.equal(validateFreePilotProvenance(freeCandidate, automation), true);
   const meta = result.provenance.personalFreeResearch;
   assert.equal(validateMixedReviewMetadata(meta, [story.id]), true);
-  assert.equal(meta.model, DEFAULT_CLOUDFLARE_AI_MODEL);
+  assert.equal(meta.model, writerModel);
   assert.equal(meta.semanticReview.model, FREE_REASONING_WRITER_MODEL);
+  assert.equal(meta.semanticReview.profile, profile);
   assert.deepEqual(meta.stages, freeCandidate.provenance.freePilot.stages);
   assert.deepEqual(meta.semanticReview, freeCandidate.provenance.freePilot.semanticReview);
   assert.equal(validateCanonicalEdition(result).valid, true);
@@ -297,3 +345,4 @@ test("real personal selected-slate concise generation retains mixed provenance t
   assert.ok(rendered.html.includes(groundedDraft.headline));
   assert.ok(rendered.text.includes(groundedDraft.whyItMatters));
 });
+}

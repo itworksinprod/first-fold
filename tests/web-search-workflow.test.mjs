@@ -163,25 +163,26 @@ test("the live quality notice is emitted only after all final copy and story ass
   assert.match(qualityScript, /alternateWriter === EXPERIMENTAL_FREE_WRITER_MODEL/);
   assert.match(qualityScript, /draftFreeEditionWithHealth\(\{ \.\.\.options,/);
   assert.match(qualityScript, /alternateWriter \? \{ model: EXPERIMENTAL_FREE_WRITER_MODEL \} : \{\}/);
-  assert.match(qualityScript, /explicitReview \|\| mixedReview \? \{ groundedReviewProfile: reviewProfile \} : \{\}/);
-  assert.match(qualityScript, /assert\.ok\(!\(explicitReview \|\| mixedReview\) \|\| !alternateWriter\)/);
+  assert.match(qualityScript, /explicitReview \|\| experimentalReview \? \{ groundedReviewProfile: reviewProfile \} : \{\}/);
+  assert.match(qualityScript, /assert\.ok\(!\(explicitReview \|\| experimentalReview\) \|\| !alternateWriter\)/);
   assert.doesNotMatch(personalWorkflow, /FREE_WRITER_MODEL/);
 });
 
 test("mixed full-paper observation keeps failed regression visible and cannot activate daily delivery", () => {
   assert.match(dailyQualityWorkflow, /github\.run_attempt == 1/);
-  assert.match(dailyQualityWorkflow, /--require-web-search --mixed-claim-review/);
+  assert.match(dailyQualityWorkflow, /--require-web-search --reasoning-pipeline/);
   assert.match(qualityScript, /code: "QUALITY_REVIEW_RECEIPT_REQUIRED"/);
   assert.match(qualityScript, /productionQualified: false/);
   assert.match(qualityScript, /knownReviewerRegression: "supported-control-false-rejection"/);
-  assert.doesNotMatch(personalWorkflow, /mixed-claim-review|EXPERIMENTAL_MIXED_REVIEW_PROFILE/);
+  assert.doesNotMatch(personalWorkflow, /mixed-claim-review|reasoning-pipeline|EXPERIMENTAL_MIXED_REVIEW_PROFILE|EXPERIMENTAL_REASONING_PIPELINE_PROFILE/);
 });
 
 test("mixed observation rejects wrong authority and incompatible options before credentials or network", () => {
   const env = { GITHUB_REPOSITORY: "itworksinprod/first-fold", GITHUB_REF: "refs/heads/main",
     GITHUB_ACTOR: "itworksinprod", GITHUB_RUN_ATTEMPT: "1", GITHUB_EVENT_NAME: "workflow_dispatch",
     GITHUB_WORKFLOW_REF: "itworksinprod/first-fold/.github/workflows/personal-quality-check.yml@refs/heads/main" };
-  const args = ["--require-web-search", "--mixed-claim-review"];
+  for (const flag of ["--mixed-claim-review", "--reasoning-pipeline"]) {
+  const args = ["--require-web-search", flag];
   for (const [key, value] of [["GITHUB_REPOSITORY", "someone/fork"], ["GITHUB_REF", "refs/heads/test"],
     ["GITHUB_ACTOR", "someone"], ["GITHUB_RUN_ATTEMPT", "2"], ["GITHUB_EVENT_NAME", "schedule"],
     ["GITHUB_WORKFLOW_REF", "itworksinprod/first-fold/.github/workflows/personal-morning-paper.yml@refs/heads/main"],
@@ -192,8 +193,8 @@ test("mixed observation rejects wrong authority and incompatible options before 
     assert.equal(result.stderr.trim(), "::error title=Quality failure::ERR_ASSERTION");
     assert.equal(result.stdout, "");
   }
-  for (const invalidArgs of [["--mixed-claim-review"], ["--mixed-claim-review", "--explicit-claim-review"],
-    ["--mixed-claim-review", "--mixed-claim-review"]]) {
+  for (const invalidArgs of [[flag], [flag, "--explicit-claim-review"], [flag, flag],
+    ["--mixed-claim-review", "--reasoning-pipeline"]]) {
     const result = spawnSync(process.execPath, [fileURLToPath(qualityScriptUrl), ...invalidArgs],
       { encoding: "utf8", env, timeout: 5000 });
     assert.equal(result.status, 1);
@@ -204,6 +205,7 @@ test("mixed observation rejects wrong authority and incompatible options before 
     { encoding: "utf8", env, timeout: 5000 });
   assert.equal(result.status, 1);
   assert.equal(result.stderr.trim(), "::error title=Quality failure::SEARCH_KEY_REQUIRED");
+  }
 });
 
 test("requiring web search without a key fails before research, with cleared credentials and network blocked", () => {

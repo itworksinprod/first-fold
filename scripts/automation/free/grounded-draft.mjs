@@ -20,6 +20,7 @@ export const GROUNDED_DIGEST_MODE = "source-grounded-summary";
 export const GROUNDED_MAX_REQUESTS = 3;
 // Internal opt-in only. No production caller or environment variable selects it.
 export const EXPERIMENTAL_MIXED_REVIEW_PROFILE = "no-email-sentence-bound-gptoss-review-v1";
+export const EXPERIMENTAL_REASONING_PIPELINE_PROFILE = "no-email-gptoss-draft-review-v1";
 export const groundedRequestBudget = model => model === LOCAL_AI_MODEL ? 20
   : model === EXPERIMENTAL_FREE_WRITER_MODEL ? 6 : GROUNDED_MAX_REQUESTS;
 const hash = (value) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -1071,12 +1072,13 @@ function applyDailyComposition(payload, foundations, contract) {
   });
 }
 
-async function prepareDailyDrafts({ ask, dossiers, promptDossiers, budgets, inferenceTrail, onDiagnostic }) {
+async function prepareDailyDrafts({ ask, dossiers, promptDossiers, budgets, inferenceTrail, onDiagnostic,
+  writerModel = DEFAULT_CLOUDFLARE_AI_MODEL }) {
   const compose = async (prompt, data, schema) => {
     try { return await ask(prompt, data, schema, budgets.repair); }
     catch (error) {
       onDiagnostic({ stage: "daily-copy-composition", submitted: dossiers.length, accepted: 0,
-        rejectionCodes: [isBoundedFormatFailure(error, DEFAULT_CLOUDFLARE_AI_MODEL) ? "EDITORIAL_FORMAT" : "PROVIDER_OR_FORMAT_ERROR"],
+        rejectionCodes: [isBoundedFormatFailure(error, writerModel) ? "EDITORIAL_FORMAT" : "PROVIDER_OR_FORMAT_ERROR"],
         wordCounts: [], ...workersAiFailureDiagnostic(error) });
       throw error;
     }
@@ -1087,7 +1089,7 @@ async function prepareDailyDrafts({ ask, dossiers, promptDossiers, budgets, infe
     initial = await ask(DAILY_FOUNDATION_PROMPT, { dossiers: promptDossiers }, dailyFoundationSchema(dossiers), budgets.write);
     foundationFailure = dailyFoundationShape(initial.editorialPayload, dossiers);
   } catch (error) {
-    if (!isBoundedFormatFailure(error, DEFAULT_CLOUDFLARE_AI_MODEL)) throw error;
+    if (!isBoundedFormatFailure(error, writerModel)) throw error;
     initial = error.inference;
     foundationFailure = "EDITORIAL_FORMAT";
     onDiagnostic({ stage: "daily-foundation-format", ...workersAiFailureDiagnostic(error) });
@@ -1099,7 +1101,7 @@ async function prepareDailyDrafts({ ask, dossiers, promptDossiers, budgets, infe
   if (foundationFailure) {
     onDiagnostic({ stage: "daily-foundation-check", submitted: dossiers.length, accepted: 0,
       rejectionCodes: [foundationFailure] });
-    if (!hasBoundedInference(initial, DEFAULT_CLOUDFLARE_AI_MODEL)) return null;
+    if (!hasBoundedInference(initial, writerModel)) return null;
     // The sole composition call becomes full recovery. Nothing is extracted
     // from unknown wrappers, malformed candidates or partial JSON.
     written = await compose(WRITER_PROMPT, { dossiers: promptDossiers },
@@ -1158,7 +1160,8 @@ async function prepareDailyDrafts({ ask, dossiers, promptDossiers, budgets, infe
  * Explicit local Qwen uses up to four isolated claims/audit/repair/copy/review
  * sets, capped at 240,000 requested output tokens including local reasoning.
  * Default Cloudflare profiles retain their 7,800-token ceiling. The internal
- * no-email mixed-review experiment alone has three stages and 14,000 tokens.
+ * no-email experiments have three stages: 14,000 tokens for mixed review or
+ * 24,000 for the separately selected all-reasoning profile.
  * There are no transport retries or paid
  * fallback. On Free Workers AI, quota exhaustion rejects; delivery still uses
  * the already validated digest. Each approved story is adopted independently. */
@@ -1169,16 +1172,23 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
   onDiagnostic = () => {} } = {}) {
   const local = model === LOCAL_AI_MODEL;
   const mixedReview = reviewProfile === EXPERIMENTAL_MIXED_REVIEW_PROFILE;
+  const reasoningPipeline = reviewProfile === EXPERIMENTAL_REASONING_PIPELINE_PROFILE;
+  const diagnosticReview = mixedReview || reasoningPipeline;
   // A Cloudflare failure never opts a run into local inference. The exact local
   // model must be selected explicitly, outside the Cloudflare model allowlist.
   if (!local) model = resolveCloudflareAiModel(model);
   // Explicit review is an internal opt-in for the no-email evaluation path.
   // Merely deploying this code does not activate it for the daily paper.
-  if (![LEGACY_CLAIM_REVIEW_PROFILE, EXPLICIT_CLAIM_REVIEW_PROFILE, EXPERIMENTAL_MIXED_REVIEW_PROFILE].includes(reviewProfile) ||
-      ((reviewProfile === EXPLICIT_CLAIM_REVIEW_PROFILE || mixedReview) && model !== DEFAULT_CLOUDFLARE_AI_MODEL)) {
+  if (![LEGACY_CLAIM_REVIEW_PROFILE, EXPLICIT_CLAIM_REVIEW_PROFILE,
+    EXPERIMENTAL_MIXED_REVIEW_PROFILE, EXPERIMENTAL_REASONING_PIPELINE_PROFILE].includes(reviewProfile) ||
+      ((reviewProfile === EXPLICIT_CLAIM_REVIEW_PROFILE || diagnosticReview) && model !== DEFAULT_CLOUDFLARE_AI_MODEL)) {
     onDiagnostic({ stage: "free-writer-unavailable", code: "REVIEW_PROFILE_INVALID" });
     return null;
   }
+  // Here model chooses the existing daily foundation/composition structure.
+  // The explicit all-reasoning profile dispatches GPT-OSS at every actual stage;
+  // request endpoints and returned provenance always name that actual model.
+  const stageWriterModel = reasoningPipeline ? FREE_REASONING_WRITER_MODEL : model;
   aiRequestImpl ??= local ? requestLocalAiEditorial : requestWorkersAiEditorial;
   const isolatedWriter = local || model === EXPERIMENTAL_FREE_WRITER_MODEL;
   if (!Array.isArray(candidates) || candidates.length < 1 || candidates.length > 4) {
@@ -1191,6 +1201,7 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
   // explicit no-email mixed experiment reserves the diagnostic's larger review;
   // its three-call ceiling and the ordinary daily profile remain unchanged.
   const budgets = local ? { write: 12_000, repair: 12_000, review: 12_000 }
+    : reasoningPipeline ? { write: 8_000, repair: 8_000, review: REVIEW_REJECTION_MAX_TOKENS }
     : mixedReview ? { write: 2_000, repair: 4_000, review: REVIEW_REJECTION_MAX_TOKENS }
     : isolatedWriter
     ? { write: 1_000, repair: 2_000, review: 1_800 }
@@ -1218,17 +1229,17 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
   let mixedNetworkRequests = 0;
   const mixedStages = [];
   let outputTokenBudgetUsed = 0;
-  const outputTokenCeiling = local ? 240_000 : mixedReview ? 14_000 : 7_800;
+  const outputTokenCeiling = local ? 240_000 : reasoningPipeline ? 24_000 : mixedReview ? 14_000 : 7_800;
   const ask = async (system, data, schema, maxTokens) => {
     if (requestCount >= groundedRequestBudget(model) || outputTokenBudgetUsed + maxTokens > outputTokenCeiling) {
       throw Object.assign(new Error("The fixed free writer budget is exhausted."), { code: "WRITER_BUDGET_EXHAUSTED" });
     }
     requestCount++;
     outputTokenBudgetUsed += maxTokens;
-    const mixedReviewStage = mixedReview && Object.hasOwn(schema.properties, "reviews");
-    const stageModel = mixedReviewStage ? FREE_REASONING_WRITER_MODEL : model;
-    if (mixedReview && (mixedReviewStage !== (requestCount === 3) ||
-        maxTokens !== [2_000, 4_000, REVIEW_REJECTION_MAX_TOKENS][requestCount - 1])) {
+    const mixedReviewStage = diagnosticReview && Object.hasOwn(schema.properties, "reviews");
+    const stageModel = mixedReviewStage ? FREE_REASONING_WRITER_MODEL : stageWriterModel;
+    if (diagnosticReview && (mixedReviewStage !== (requestCount === 3) ||
+        maxTokens !== [budgets.write, budgets.repair, budgets.review][requestCount - 1])) {
       throw Object.assign(new Error("The mixed-review stage order is invalid."), { code: "MIXED_REVIEW_STAGE_INVALID" });
     }
     if (local && !Object.hasOwn(schema.properties, "reviews") && !Object.hasOwn(schema.properties, "foundationSha256")) {
@@ -1273,11 +1284,11 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
     maxTokens, maxAttempts: 1, maxRequestBytes: 70_000, maxResponseBytes: 100_000,
     // Qwen's published thinking profile uses sampling at 0.6. Do not override
     // its native reasoning settings with the low-temperature prose profile.
-    timeoutMs: local ? 300_000 : mixedReviewStage ? REVIEW_REJECTION_TIMEOUT_MS : 90_000,
+    timeoutMs: local ? 300_000 : reasoningPipeline || mixedReviewStage ? REVIEW_REJECTION_TIMEOUT_MS : 90_000,
     temperature: local ? 0.6 : model === EXPERIMENTAL_FREE_WRITER_MODEL ? 0.7
       : model === FREE_REASONING_WRITER_MODEL ? 0.6 : 0.1, fetchImpl };
     let stageRequestHash;
-    if (mixedReview) {
+    if (diagnosticReview) {
       const request = buildWorkersAiRequest(requestOptions);
       const endpoint = workersAiRunUrl(accountId, stageModel);
       const body = JSON.stringify(request.body);
@@ -1311,7 +1322,7 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
     catch (error) {
       // A bounded malformed foundation can use the already allocated recovery
       // composition, but its native provenance must be checked and retained too.
-      if (mixedReview && error?.inference) retainMixedStage(error.inference);
+      if (diagnosticReview && error?.inference) retainMixedStage(error.inference);
       throw error;
     }
     if (local && (response?.provider !== LOCAL_AI_PROVIDER || response.model !== LOCAL_AI_MODEL ||
@@ -1321,7 +1332,7 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
         code: "LOCAL_AI_PROVENANCE_INVALID",
       });
     }
-    if (mixedReview) retainMixedStage(response);
+    if (diagnosticReview) retainMixedStage(response);
     return response;
   };
   try {
@@ -1342,7 +1353,8 @@ add Markdown fences or serialize another object inside any reader-facing string.
       { dossiers: promptDossiers }, writerSchema, budgets.repair);
     };
     if (model === DEFAULT_CLOUDFLARE_AI_MODEL) {
-      const prepared = await prepareDailyDrafts({ ask, dossiers, promptDossiers, budgets, inferenceTrail, onDiagnostic });
+      const prepared = await prepareDailyDrafts({ ask, dossiers, promptDossiers, budgets, inferenceTrail, onDiagnostic,
+        writerModel: stageWriterModel });
       if (!prepared) return null;
       ({ written, valid } = prepared);
     } else {
@@ -1615,10 +1627,10 @@ add Markdown fences or serialize another object inside any reader-facing string.
       let reviewSchema = reviewerProviderSchema(batch);
       let explicitBundle;
       let rejectionBundle;
-      if (reviewProfile === EXPLICIT_CLAIM_REVIEW_PROFILE || mixedReview) {
+      if (reviewProfile === EXPLICIT_CLAIM_REVIEW_PROFILE || diagnosticReview) {
         explicitBundle = buildExplicitClaimReview({ drafts: batch, dossiers: dossiers.filter(dossier =>
           batch.some(draft => draft.candidateId === dossier.candidateId)) });
-        if (mixedReview) rejectionBundle = buildReviewRejectionDiagnostic(explicitBundle);
+        if (diagnosticReview) rejectionBundle = buildReviewRejectionDiagnostic(explicitBundle);
         const bundle = rejectionBundle ?? explicitBundle;
         reviewData = bundle.data;
         reviewSystem = bundle.prompt;
@@ -1717,13 +1729,13 @@ add Markdown fences or serialize another object inside any reader-facing string.
     result.frontPage.estimatedMinutes = Math.max(1, Math.ceil(Object.values(result.desks)
       .reduce((total, desk) => total + (desk.story ? countReaderFacingStoryWords(desk.story) : 0), 0) / 180));
     return { editorial: result, inference: { provider: written.provider, model: written.model,
-      responseId: mixedReview ? written.responseId : checked.responseId,
-      requestSha256: hash(mixedReview ? mixedStages.map(({ stage, provider, model, requestSha256 }) =>
+      responseId: diagnosticReview ? written.responseId : checked.responseId,
+      requestSha256: hash(diagnosticReview ? mixedStages.map(({ stage, provider, model, requestSha256 }) =>
         ({ stage, provider, model, requestSha256 })) : inferenceTrail.map((entry) => entry.requestSha256)),
-      responseSha256: hash(mixedReview ? mixedStages.map(({ stage, provider, model, responseSha256 }) =>
+      responseSha256: hash(diagnosticReview ? mixedStages.map(({ stage, provider, model, responseSha256 }) =>
         ({ stage, provider, model, responseSha256 })) : inferenceTrail.map((entry) => entry.responseSha256)),
       kind: local ? "local-ai" : "workers-ai",
-      ...(mixedReview ? { stages: mixedStages, semanticReview: {
+      ...(diagnosticReview ? { stages: mixedStages, semanticReview: {
         provider: WORKERS_AI_PROVIDER, model: FREE_REASONING_WRITER_MODEL, profile: reviewProfile,
         requestCount: reviewResponses.length, requestedOutputTokens: REVIEW_REJECTION_MAX_TOKENS,
         requestSha256: checked.requestSha256, responseSha256: checked.responseSha256,

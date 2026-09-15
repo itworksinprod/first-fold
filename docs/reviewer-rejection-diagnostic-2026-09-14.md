@@ -227,3 +227,43 @@ adaptation, canonical validation, final email validation and rendering. This is
 offline integration coverage, not a live model-quality result. The build and
 all 940 regression tests pass before publication. The refreshed free counter
 showed 2.21k/10k neurons used before this real-research observation.
+
+### First real-paper observation: research worked; composition failed
+
+[Run 34918488162](https://github.com/itworksinprod/first-fold/actions/runs/34918488162)
+used `d929ddf`, passed the offline suite and completed 12 free web searches,
+verifying three publisher articles. Nine of 12 candidate newsworthiness
+assessments were accepted. Of three selected foundations, two passed and one
+failed originality. Composition produced three locally rejected drafts:
+103 words with an originality failure, and 72/84 words below the unchanged
+100-word body minimum. The final reviewer was **not reached**. The run failed
+`QUALITY_GROUNDED_SUMMARIES_INCOMPLETE`; it did not send email.
+
+The next experimental profile changes the writer model, not the acceptance
+criteria: three fixed Cloudflare-hosted GPT-OSS stages, 8,000 output tokens and
+180 seconds each, with no fourth request. Foundation/composition keep the same
+source-bound instructions, per-story word targets, originality checks and
+review vetoes. The larger stage allocations include reasoning, as previous
+GPT-OSS requests exhausted smaller completion limits. Native stage models and
+writer metadata must accurately say GPT-OSS. The existing mixed profile and all
+daily production behavior remain unchanged.
+
+Cloudflare's [published prices](https://developers.cloudflare.com/workers-ai/platform/pricing/)
+list 68,182 neurons per million GPT-OSS output tokens, versus 204,805 for the
+Llama model. The new 24,000-token output ceiling is approximately 1,637 neurons,
+plus input usage; it is not inherently more expensive in free quota than the
+prior 6,000 Llama plus 8,000 GPT-OSS output ceilings (approximately 1,775 neurons).
+These are requested upper bounds, not observed billing or a guarantee of future
+free availability. Known quota exhaustion remains a stop condition. No paid
+plan or OpenAI API is enabled.
+
+This remains a no-email observation, explicitly not production-qualified.
+The unresolved supported-control false rejection remains visible. A complete
+real pipeline result would establish only what the run actually checks, not
+that a human has judged its prose or that any email was delivered.
+
+Independent review cleared the all-GPT no-email path, including 55 focused
+checks and both profiles' real-generator/mocked-native integration. The complete
+worktree build and all 950 tests pass. Before the next observation, the refreshed
+current-day free counter was 2.86k/10k neurons. Separate requests to the same
+model are not independent model corroboration; correlated errors remain possible.

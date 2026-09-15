@@ -10,22 +10,24 @@ import { draftFreeEditionWithHealth } from "./draft-free-edition.mjs";
 import { EXPERIMENTAL_FREE_WRITER_MODEL } from "./free/workers-ai.mjs";
 import { qualityCheckWindow } from "./quality-check-window.mjs";
 import { EXPLICIT_CLAIM_REVIEW_PROFILE, LEGACY_CLAIM_REVIEW_PROFILE } from "./free/explicit-claim-review.mjs";
-import { EXPERIMENTAL_MIXED_REVIEW_PROFILE } from "./free/grounded-draft.mjs";
+import { EXPERIMENTAL_MIXED_REVIEW_PROFILE, EXPERIMENTAL_REASONING_PIPELINE_PROFILE } from "./free/grounded-draft.mjs";
 
 const now = new Date();
 let snapshot;
 try {
   const args = process.argv.slice(2);
   assert.ok(args.length <= 2 && new Set(args).size === args.length &&
-    args.every(arg => ["--require-web-search", "--explicit-claim-review", "--mixed-claim-review"].includes(arg)));
+    args.every(arg => ["--require-web-search", "--explicit-claim-review", "--mixed-claim-review", "--reasoning-pipeline"].includes(arg)));
   const requireWebSearch = args.includes("--require-web-search");
   const explicitReview = args.includes("--explicit-claim-review");
   const mixedReview = args.includes("--mixed-claim-review");
-  assert.ok(!(explicitReview && mixedReview));
+  const reasoningPipeline = args.includes("--reasoning-pipeline");
+  const experimentalReview = mixedReview || reasoningPipeline;
+  assert.ok(Number(explicitReview) + Number(mixedReview) + Number(reasoningPipeline) <= 1);
   // This experiment is not qualified for production: a known supported
   // regression control is still falsely rejected. Permit observation only in
   // this no-email, owner-run trusted workflow, never through daily configuration.
-  if (mixedReview) {
+  if (experimentalReview) {
     assert.ok(requireWebSearch && process.env.GITHUB_REPOSITORY === "itworksinprod/first-fold" &&
       process.env.GITHUB_REF === "refs/heads/main" && process.env.GITHUB_ACTOR === "itworksinprod" &&
       process.env.GITHUB_RUN_ATTEMPT === "1" &&
@@ -34,18 +36,19 @@ try {
   }
   const alternateWriter = process.env.FREE_WRITER_MODEL;
   assert.ok(!alternateWriter || alternateWriter === EXPERIMENTAL_FREE_WRITER_MODEL);
-  assert.ok(!(explicitReview || mixedReview) || !alternateWriter);
-  const reviewProfile = mixedReview ? EXPERIMENTAL_MIXED_REVIEW_PROFILE
+  assert.ok(!(explicitReview || experimentalReview) || !alternateWriter);
+  const reviewProfile = reasoningPipeline ? EXPERIMENTAL_REASONING_PIPELINE_PROFILE
+    : mixedReview ? EXPERIMENTAL_MIXED_REVIEW_PROFILE
     : explicitReview ? EXPLICIT_CLAIM_REVIEW_PROFILE : LEGACY_CLAIM_REVIEW_PROFILE;
   if (requireWebSearch && !process.env.TAVILY_API_KEY?.trim()) {
     throw Object.assign(new Error("Search credentials are not configured."), { code: "SEARCH_KEY_REQUIRED" });
   }
   const { editionDate, runMode } = qualityCheckWindow(now);
   const candidate = await generatePersonalFreeEdition({ editionDate, runMode,
-    ...(alternateWriter || explicitReview || mixedReview ? { draftFreeEditionWithHealthImpl: options =>
+    ...(alternateWriter || explicitReview || experimentalReview ? { draftFreeEditionWithHealthImpl: options =>
       draftFreeEditionWithHealth({ ...options,
         ...(alternateWriter ? { model: EXPERIMENTAL_FREE_WRITER_MODEL } : {}),
-        ...(explicitReview || mixedReview ? { groundedReviewProfile: reviewProfile } : {}) }) } : {}),
+        ...(explicitReview || experimentalReview ? { groundedReviewProfile: reviewProfile } : {}) }) } : {}),
     personalStoryLedger: createEmptyPersonalStoryLedger({ fingerprintKey: process.env.CLOUDFLARE_AI_API_TOKEN }),
     researchImpl: async (options) => {
       snapshot ??= await collectFreeResearchSnapshot(options);
@@ -70,13 +73,13 @@ try {
     });
   }
   const semanticReview = candidate.provenance.personalFreeResearch.semanticReview;
-  if (mixedReview && semanticReview?.profile !== EXPERIMENTAL_MIXED_REVIEW_PROFILE) {
+  if (experimentalReview && semanticReview?.profile !== reviewProfile) {
     throw Object.assign(new Error("The experimental reviewer receipt is absent."), { code: "QUALITY_REVIEW_RECEIPT_REQUIRED" });
   }
   console.info(`::notice title=Quality result::${JSON.stringify({ status: "validated-and-rendered", stories, checkedStories, mode,
     writerModel: candidate.provenance.personalFreeResearch.model,
     reviewProfile,
-    ...(mixedReview ? { reviewerModel: semanticReview.model, experimental: true,
+    ...(experimentalReview ? { reviewerModel: semanticReview.model, experimental: true,
       productionQualified: false, knownReviewerRegression: "supported-control-false-rejection" } : {}),
     ...(isValidWebSearchReceipt(webSearch) ? { webSearch } : {}),
     renderedCopyChecked: true,
