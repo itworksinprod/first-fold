@@ -20,7 +20,7 @@ test("local reviewer uses fresh holdouts without expected answers, one fixed cal
   const report = await checkLocalReviewer({ aiRequestImpl: async options => {
     calls++;
     assert.equal(options.model, LOCAL_AI_MODEL);
-    assert.equal(options.maxTokens, 4_000);
+    assert.equal(options.maxTokens, 8_000);
     assert.equal(options.timeoutMs, 300_000);
     assert.equal(options.maxAttempts, 1);
     assert.equal(options.temperature, 0.6);
@@ -38,6 +38,8 @@ test("local reviewer uses fresh holdouts without expected answers, one fixed cal
   } });
   assert.equal(calls, 1);
   assert.equal(report.status, "passed");
+  assert.equal(report.requestedOutputTokens, 8_000);
+  assert.equal(report.timeoutMs, 300_000);
   assert.ok(report.cases.every(item => item.passed));
   assert.deepEqual([report.cloudRequests, report.emailRequests], [0, 0]);
 });
@@ -76,7 +78,7 @@ test("real local adapter is loopback-only and excludes reasoning from diagnostic
     assert.equal(options.headers.authorization, undefined);
     const request = JSON.parse(options.body);
     assert.equal(request.think, true);
-    assert.equal(request.options.num_predict, 4_000);
+    assert.equal(request.options.num_predict, 8_000);
     return new Response(JSON.stringify({ model: LOCAL_AI_MODEL, done: true, done_reason: "stop",
       prompt_eval_count: 500, eval_count: 1200,
       message: { role: "assistant", content: JSON.stringify(expected(JSON.parse(request.messages[1].content))),
@@ -86,6 +88,49 @@ test("real local adapter is loopback-only and excludes reasoning from diagnostic
   assert.equal(report.status, "passed");
   assert.deepEqual(report.usage, { prompt_tokens: 500, completion_tokens: 1200, total_tokens: 1700 });
   assert.doesNotMatch(JSON.stringify(report), /PRIVATE_REASONING|claimSha256|sourceContext|evidenceId/);
+});
+
+test("caller options cannot change the fixed diagnostic budget, model or transport safeguards", async () => {
+  let calls = 0;
+  const report = await checkLocalReviewer({ maxTokens: 16_000, timeoutMs: 600_000,
+    maxAttempts: 2, model: "unrequested-cloud-model", apiToken: "PRIVATE_UNUSED_TOKEN",
+    aiRequestImpl: async options => {
+      calls++;
+      assert.equal(options.maxTokens, 8_000);
+      assert.equal(options.timeoutMs, 300_000);
+      assert.equal(options.maxAttempts, 1);
+      assert.equal(options.model, LOCAL_AI_MODEL);
+      assert.equal(options.maxRequestBytes, 70_000);
+      assert.equal(options.maxResponseBytes, 100_000);
+      assert.equal(options.apiToken, undefined);
+      return response(expected(JSON.parse(options.messages[1].content)));
+    },
+  });
+  assert.equal(calls, 1);
+  assert.equal(report.status, "passed");
+  assert.equal(report.requestedOutputTokens, 8_000);
+  assert.equal(report.timeoutMs, 300_000);
+  assert.doesNotMatch(JSON.stringify(report), /PRIVATE_UNUSED_TOKEN|unrequested-cloud-model/);
+});
+
+test("native output exceeding the fixed diagnostic cap stays red with no completed verdict", async () => {
+  let calls = 0;
+  const report = await checkLocalReviewer({ fetchImpl: async (url, options) => {
+    calls++;
+    assert.equal(url, LOCAL_AI_URL);
+    const request = JSON.parse(options.body);
+    assert.equal(request.options.num_predict, 8_000);
+    return new Response(JSON.stringify({ model: LOCAL_AI_MODEL, done: true, done_reason: "stop",
+      prompt_eval_count: 500, eval_count: 8_001,
+      message: { role: "assistant", content: JSON.stringify(expected(JSON.parse(request.messages[1].content))) } }),
+    { headers: { "content-type": "application/json" } });
+  } });
+  assert.equal(calls, 1);
+  assert.equal(report.status, "failed");
+  assert.equal(report.code, "LOCAL_AI_EDITORIAL_FORMAT_INVALID");
+  assert.equal(report.formatReason, "OUTPUT_TOKEN_LIMIT");
+  assert.equal(report.requestedOutputTokens, 8_000);
+  assert.ok(report.cases.every(item => item.actual === null && item.passed === false));
 });
 
 test("local timeouts and errors stay red, bounded and sanitized without retries", async () => {

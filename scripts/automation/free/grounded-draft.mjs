@@ -8,7 +8,7 @@ import { DAILY_REPAIR_PROMPT } from "./daily-repair-prompt.mjs";
 import { EXPLICIT_CLAIM_REVIEW_PROFILE, LEGACY_CLAIM_REVIEW_PROFILE,
   buildExplicitClaimReview, validateExplicitClaimReview } from "./explicit-claim-review.mjs";
 import { buildReviewRejectionDiagnostic, validateReviewRejectionDiagnostic,
-  REVIEW_REJECTION_MAX_TOKENS, REVIEW_REJECTION_TIMEOUT_MS } from "./review-rejections.mjs";
+  resolveReviewRejectionDiagnostic, REVIEW_REJECTION_MAX_TOKENS, REVIEW_REJECTION_TIMEOUT_MS } from "./review-rejections.mjs";
 import { buildEvidencePacketSources, selectEvidencePassages } from "./evidence-packets.mjs";
 import { LOCAL_AI_MODEL, LOCAL_AI_PROVIDER, LOCAL_AI_EDITORIAL_FORMAT_INVALID,
   requestLocalAiEditorial } from "./local-ai.mjs";
@@ -21,6 +21,8 @@ export const GROUNDED_MAX_REQUESTS = 3;
 // Internal opt-in only. No production caller or environment variable selects it.
 export const EXPERIMENTAL_MIXED_REVIEW_PROFILE = "no-email-sentence-bound-gptoss-review-v1";
 export const EXPERIMENTAL_REASONING_PIPELINE_PROFILE = "no-email-gptoss-draft-review-v1";
+export const MAX_PRIVATE_EDITORIAL_PACKET_BYTES = 80_000;
+const PRIVATE_EDITORIAL_SINK_TIMEOUT_MS = 250;
 export const groundedRequestBudget = model => model === LOCAL_AI_MODEL ? 20
   : model === EXPERIMENTAL_FREE_WRITER_MODEL ? 6 : GROUNDED_MAX_REQUESTS;
 const hash = (value) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -387,6 +389,143 @@ export function validateGroundedStory(draft, dossier, onFailure = () => {}) {
       return reject("ORIGINALITY", { field, expected: "Rewrite from the evidence in a different sentence structure; do not reuse the publisher headline or a twelve-word source sequence." });
   }
   return true;
+}
+
+const PRIVATE_LOCAL_CODES = new Set(["SHAPE", "CLAIM_SHAPE", "READER_COPY", "CITATION_UNKNOWN", "NUMERIC_CITATION",
+  "SOURCE_CAVEAT", "CORROBORATION", "WORD_COUNT", "GENERIC_COPY", "NUMERIC_ANCHOR", "ATTRIBUTION", "ORIGINALITY", "FIXED_CLAIM_CHANGED"]);
+const PRIVATE_LOCAL_FIELDS = new Set(["story", "claims", "body", "readerCopy", "headline", "deck", "whyItMatters", "whatToDoOrWatch",
+  "claims[0]", "claims[1]", "claims[0].text", "claims[1].text", "claims[0].supports", "claims[1].supports"]);
+const privateLocalFailure = (code, feedback = {}) => ({ code,
+  field: PRIVATE_LOCAL_FIELDS.has(feedback.field) ? feedback.field : "story",
+  unsupportedNumericTokens: Array.isArray(feedback.unsupportedNumericTokens) ? [...feedback.unsupportedNumericTokens] : [],
+  evidenceIds: Array.isArray(feedback.evidenceIds) ? [...feedback.evidenceIds] : [],
+});
+
+// Do not invoke getters, toJSON, or custom prototypes while validating private
+// records. The bounded graph guard runs before any serialization or cloning.
+function privatePlainData(value, seen = new Set(), depth = 0, budget = { nodes: 0 }) {
+  if (++budget.nodes > 20_000 || depth > 24) return false;
+  if (value === null || typeof value === "boolean") return true;
+  if (typeof value === "string") return value.length <= 6_000;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (typeof value !== "object" || seen.has(value)) return false;
+  const array = Array.isArray(value);
+  if (Object.getPrototypeOf(value) !== (array ? Array.prototype : Object.prototype)) return false;
+  seen.add(value);
+  const properties = Object.getOwnPropertyDescriptors(value);
+  const names = Reflect.ownKeys(properties);
+  if (names.some(name => typeof name !== "string")) return false;
+  if (array && (value.length > 500 || names.length !== value.length + 1 ||
+      names.some(name => name !== "length" && !/^(?:0|[1-9]\d*)$/u.test(name)))) return false;
+  return names.every(name => {
+    const property = properties[name];
+    return Object.hasOwn(property, "value") && (array && name === "length" ||
+      property.enumerable && privatePlainData(property.value, seen, depth + 1, budget));
+  });
+}
+
+function privateDossier(dossier) {
+  return { candidateId: dossier.candidateId, desk: dossier.desk, evidenceTier: dossier.evidenceTier,
+    sources: dossier.sources.map(source => ({ sourceId: source.sourceId, publisher: source.publisher,
+      publisherKey: source.publisherKey, relationship: source.relationship,
+      ...(source.publishedAt === undefined ? {} : { publishedAt: source.publishedAt }),
+      text: source.text, passages: source.passages.map(({ evidenceId, text }) => ({ evidenceId, text })) })) };
+}
+
+/** Strict private diagnostic shape check, not semantic approval. Only bounded
+ * locally assembled copy, selected evidence and exactly resolved rejection
+ * references are permitted. Provider envelopes, reasoning and credentials have
+ * no fields in this contract. Invalid packets return false, never throw. */
+export function validatePrivateEditorialDiagnostic(packet) {
+  try {
+    if (!privatePlainData(packet) || Buffer.byteLength(JSON.stringify(packet)) > MAX_PRIVATE_EDITORIAL_PACKET_BYTES ||
+        !keys(packet, ["version", "profile", "stage", "submittedCount", "skippedCount", "entries"]) || packet.version !== 1 ||
+        ![EXPERIMENTAL_MIXED_REVIEW_PROFILE, EXPERIMENTAL_REASONING_PIPELINE_PROFILE].includes(packet.profile) ||
+        !["assembled-drafts", "review-verdicts"].includes(packet.stage) ||
+        !Number.isInteger(packet.submittedCount) || packet.submittedCount < 1 || packet.submittedCount > 4 ||
+        !Number.isInteger(packet.skippedCount) || packet.skippedCount < 0 ||
+        !Array.isArray(packet.entries) || packet.entries.length < 1 || packet.entries.length > 4 ||
+        packet.submittedCount !== packet.entries.length + packet.skippedCount ||
+        new Set(packet.entries.map(entry => entry?.draft?.candidateId)).size !== packet.entries.length) return false;
+    for (const entry of packet.entries) {
+      if (!keys(entry, ["draft", "dossier", "localCheck", "review"]) ||
+          !keys(entry.dossier, ["candidateId", "desk", "evidenceTier", "sources"]) ||
+          !Array.isArray(entry.dossier.sources) || entry.dossier.sources.some(source =>
+            !keys(source, ["sourceId", "publisher", "publisherKey", "relationship", "text", "passages",
+              ...(Object.hasOwn(source, "publishedAt") ? ["publishedAt"] : [])]))) return false;
+      const base = buildExplicitClaimReview({ drafts: [entry.draft], dossiers: [entry.dossier] });
+      const evidenceIds = new Set(entry.dossier.sources.flatMap(source => source.passages.map(passage => passage.evidenceId)));
+      if (packet.stage === "assembled-drafts") {
+        const check = entry.localCheck;
+        if (entry.review !== null || !keys(check, ["accepted", "wordCount", "failures"]) ||
+            typeof check.accepted !== "boolean" || !Number.isInteger(check.wordCount) || check.wordCount < 0 || check.wordCount > 2_000 ||
+            check.wordCount !== countReaderFacingStoryWords({ ...entry.draft,
+              whatHappened: entry.draft.claims.map(claim => claim.text).join(" ") }) ||
+            !Array.isArray(check.failures) || check.failures.length > 8 || check.accepted !== (check.failures.length === 0)) return false;
+        const draftNumbers = new Set(numericTokens(JSON.stringify(entry.draft)));
+        for (const failure of check.failures) if (!keys(failure, ["code", "field", "unsupportedNumericTokens", "evidenceIds"]) ||
+            !PRIVATE_LOCAL_CODES.has(failure.code) || !PRIVATE_LOCAL_FIELDS.has(failure.field) ||
+            !Array.isArray(failure.unsupportedNumericTokens) || failure.unsupportedNumericTokens.length > 8 ||
+            new Set(failure.unsupportedNumericTokens).size !== failure.unsupportedNumericTokens.length ||
+            failure.unsupportedNumericTokens.some(token => typeof token !== "string" || token.length > 64 || !draftNumbers.has(token)) ||
+            !Array.isArray(failure.evidenceIds) || failure.evidenceIds.length > 2 ||
+            new Set(failure.evidenceIds).size !== failure.evidenceIds.length || failure.evidenceIds.some(id => !evidenceIds.has(id))) return false;
+      } else {
+        if (entry.localCheck !== null || !keys(entry.review, ["canonical", "rejections"]) ||
+            !keys(entry.review.canonical, ["candidateId", "draftSha256", "claimSupport", "factsSupported", "attributionAccurate", "analysisSupported", "usefulAndSpecific"]) ||
+            !Array.isArray(entry.review.rejections) || entry.review.rejections.length > 6) return false;
+        const canonical = entry.review.canonical;
+        if (!Array.isArray(canonical.claimSupport) || canonical.claimSupport.length !== 2) return false;
+        const binding = base.bindings[0];
+        const payload = { reviews: [{ candidateId: canonical.candidateId, draftSha256: canonical.draftSha256,
+          claimVerdicts: binding.claims.map((claim, index) => ({ claimIndex: index, claimSha256: claim.claimSha256,
+            allCitedPassagesSupport: JSON.stringify(canonical.claimSupport[index]) === JSON.stringify(claim.supportIds) })),
+          ...Object.fromEntries(["factsSupported", "attributionAccurate", "analysisSupported", "usefulAndSpecific"].map(field => [field, canonical[field]])),
+          rejections: entry.review.rejections.map(({ gate, sentenceId, rule, evidenceIds }) => ({ gate, sentenceId, rule, evidenceIds })),
+        }] };
+        const bundle = buildReviewRejectionDiagnostic(base);
+        const checked = validateReviewRejectionDiagnostic(payload, bundle);
+        if (checked.errors.length || JSON.stringify(checked.reviews[0]) !== JSON.stringify(canonical) ||
+            JSON.stringify(checked.diagnostics.map(diagnostic => resolveReviewRejectionDiagnostic(diagnostic, bundle))) !==
+            JSON.stringify(entry.review.rejections)) return false;
+      }
+    }
+    return true;
+  } catch { return false; }
+}
+
+function freezePrivateData(value) {
+  if (value && typeof value === "object") {
+    for (const entry of Object.values(value)) freezePrivateData(entry);
+    Object.freeze(value);
+  }
+  return value;
+}
+
+function privateEditorialEmitter(profile, sink, forbiddenValues) {
+  let emitted = 0;
+  return async (stage, submittedCount, entries) => {
+    if (typeof sink !== "function" || emitted >= 2) return;
+    try {
+      const bounded = [];
+      for (const entry of entries) {
+        const single = { version: 1, profile, stage, submittedCount: 1, skippedCount: 0, entries: [entry] };
+        if (validatePrivateEditorialDiagnostic(single)) bounded.push(entry);
+      }
+      const packet = { version: 1, profile, stage, submittedCount,
+        skippedCount: submittedCount - bounded.length, entries: bounded };
+      if (!validatePrivateEditorialDiagnostic(packet)) return;
+      const serialized = JSON.stringify(packet);
+      if (forbiddenValues.some(value => typeof value === "string" && value && serialized.includes(value))) return;
+      const detached = freezePrivateData(JSON.parse(serialized));
+      emitted++;
+      let timeout;
+      try {
+        await Promise.race([Promise.resolve().then(() => sink(detached)).catch(() => {}),
+          new Promise(resolve => { timeout = setTimeout(resolve, PRIVATE_EDITORIAL_SINK_TIMEOUT_MS); })]);
+      } finally { clearTimeout(timeout); }
+    } catch { /* Diagnostics can never affect story adoption or provider work. */ }
+  };
 }
 
 const WRITER_PROMPT = `You are First Fold's news writer for a technically curious general reader.
@@ -1073,7 +1212,7 @@ function applyDailyComposition(payload, foundations, contract) {
 }
 
 async function prepareDailyDrafts({ ask, dossiers, promptDossiers, budgets, inferenceTrail, onDiagnostic,
-  writerModel = DEFAULT_CLOUDFLARE_AI_MODEL }) {
+  writerModel = DEFAULT_CLOUDFLARE_AI_MODEL, onPrivateAssembled }) {
   const compose = async (prompt, data, schema) => {
     try { return await ask(prompt, data, schema, budgets.repair); }
     catch (error) {
@@ -1128,6 +1267,14 @@ async function prepareDailyDrafts({ ask, dossiers, promptDossiers, budgets, infe
   const rejectionCodes = [];
   const fieldFailures = [];
   const valid = [];
+  const privateEntries = [];
+  const retainPrivateCheck = (draft, dossier, accepted, failures) => {
+    if (!onPrivateAssembled) return;
+    try { privateEntries.push({ draft: structuredClone(draft), dossier: privateDossier(dossier),
+      localCheck: { accepted, wordCount: countReaderFacingStoryWords({ ...draft,
+        whatHappened: draft.claims.map(claim => claim.text).join(" ") }), failures }, review: null }); }
+    catch { /* Malformed assembled values are not diagnostic copy. */ }
+  };
   if (!Array.isArray(drafts) || drafts.some(draft => !draft)) rejectionCodes.push("SHAPE");
   else for (const draft of drafts) {
     const dossier = dossiers.find(item => item.candidateId === draft.candidateId);
@@ -1143,16 +1290,22 @@ async function prepareDailyDrafts({ ask, dossiers, promptDossiers, budgets, infe
     const fixed = plan?.fixedClaims ?? [];
     if (fixed.some(({ claimIndex, ...claim }) => JSON.stringify(draft.claims[claimIndex]) !== JSON.stringify(claim))) {
       rejectionCodes.push("FIXED_CLAIM_CHANGED");
+      retainPrivateCheck(draft, dossier, false, [privateLocalFailure("FIXED_CLAIM_CHANGED")]);
       continue;
     }
-    if (validateGroundedStory(draft, dossier, (code, feedback) => {
+    const localFailures = [];
+    const accepted = validateGroundedStory(draft, dossier, (code, feedback) => {
       rejectionCodes.push(code, ...(feedback.reasons ?? []));
       fieldFailures.push({ field: REPAIR_FIELDS.includes(feedback.field) ? feedback.field : "story" });
-    })) valid.push(draft);
+      if (onPrivateAssembled) localFailures.push(privateLocalFailure(code, feedback));
+    });
+    if (accepted) valid.push(draft);
+    retainPrivateCheck(draft, dossier, accepted, localFailures);
   }
   onDiagnostic({ stage: "daily-copy-composition", submitted: dossiers.length, accepted: valid.length,
     rejectionCodes, fieldFailures, wordCounts: Array.isArray(drafts) ? drafts.map(draft => draft ? countReaderFacingStoryWords({
       ...draft, whatHappened: Array.isArray(draft.claims) ? draft.claims.map(claim => claim?.text ?? "").join(" ") : "" }) : null) : [] });
+  if (onPrivateAssembled) await onPrivateAssembled("assembled-drafts", dossiers.length, privateEntries);
   return { written, valid };
 }
 
@@ -1169,7 +1322,7 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
   model = DEFAULT_CLOUDFLARE_AI_MODEL,
   reviewProfile = LEGACY_CLAIM_REVIEW_PROFILE,
   aiRequestImpl, fetchImpl = globalThis.fetch,
-  onDiagnostic = () => {} } = {}) {
+  onDiagnostic = () => {}, onPrivateEditorialDiagnostic } = {}) {
   const local = model === LOCAL_AI_MODEL;
   const mixedReview = reviewProfile === EXPERIMENTAL_MIXED_REVIEW_PROFILE;
   const reasoningPipeline = reviewProfile === EXPERIMENTAL_REASONING_PIPELINE_PROFILE;
@@ -1189,6 +1342,10 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
   // The explicit all-reasoning profile dispatches GPT-OSS at every actual stage;
   // request endpoints and returned provenance always name that actual model.
   const stageWriterModel = reasoningPipeline ? FREE_REASONING_WRITER_MODEL : model;
+  // Ordinary profiles ignore this optional sink entirely. It receives only
+  // detached, validated private checkpoints and never controls editorial gates.
+  const emitPrivate = diagnosticReview && typeof onPrivateEditorialDiagnostic === "function"
+    ? privateEditorialEmitter(reviewProfile, onPrivateEditorialDiagnostic, [apiToken, accountId]) : null;
   aiRequestImpl ??= local ? requestLocalAiEditorial : requestWorkersAiEditorial;
   const isolatedWriter = local || model === EXPERIMENTAL_FREE_WRITER_MODEL;
   if (!Array.isArray(candidates) || candidates.length < 1 || candidates.length > 4) {
@@ -1354,7 +1511,7 @@ add Markdown fences or serialize another object inside any reader-facing string.
     };
     if (model === DEFAULT_CLOUDFLARE_AI_MODEL) {
       const prepared = await prepareDailyDrafts({ ask, dossiers, promptDossiers, budgets, inferenceTrail, onDiagnostic,
-        writerModel: stageWriterModel });
+        writerModel: stageWriterModel, onPrivateAssembled: emitPrivate });
       if (!prepared) return null;
       ({ written, valid } = prepared);
     } else {
@@ -1663,6 +1820,18 @@ add Markdown fences or serialize another object inside any reader-facing string.
           onDiagnostic({ stage: "semantic-evidence-check", submitted: valid.length, accepted: 0,
             rejectionCodes: canonical.errors });
           return null;
+        }
+        if (emitPrivate && rejectionBundle) {
+          try {
+            await emitPrivate("review-verdicts", batch.length, batch.map(draft => ({
+              draft: structuredClone(draft), dossier: privateDossier(dossiers.find(dossier => dossier.candidateId === draft.candidateId)),
+              localCheck: null, review: {
+                canonical: structuredClone(canonical.reviews.find(review => review.candidateId === draft.candidateId)),
+                rejections: canonical.diagnostics.filter(diagnostic => diagnostic.candidateId === draft.candidateId)
+                  .map(diagnostic => resolveReviewRejectionDiagnostic(diagnostic, rejectionBundle)),
+              },
+            })));
+          } catch { /* Capture defects cannot change a validated verdict. */ }
         }
         checked = { ...rawChecked, editorialPayload: { reviews: canonical.reviews } };
       }

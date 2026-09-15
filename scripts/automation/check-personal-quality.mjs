@@ -1,6 +1,9 @@
 // Owner-only live smoke test. Uses existing free credentials, never imports
-// delivery functions, never sends email, never archives raw evidence or copy.
+// delivery functions or sends email. The separate private diagnostic may retain
+// encrypted checkpoints only; it never archives plaintext evidence or copy.
 import assert from "node:assert/strict";
+import { writeFile } from "node:fs/promises";
+import { isAbsolute, join } from "node:path";
 import { generatePersonalFreeEdition, PERSONAL_FREE_MAX_MODEL_REQUESTS } from "./personal-free-edition.mjs";
 import { createEmptyPersonalStoryLedger } from "./personal-story-ledger.mjs";
 import { collectFreeResearchSnapshot } from "./free/feed-engine.mjs";
@@ -11,19 +14,24 @@ import { EXPERIMENTAL_FREE_WRITER_MODEL } from "./free/workers-ai.mjs";
 import { qualityCheckWindow } from "./quality-check-window.mjs";
 import { EXPLICIT_CLAIM_REVIEW_PROFILE, LEGACY_CLAIM_REVIEW_PROFILE } from "./free/explicit-claim-review.mjs";
 import { EXPERIMENTAL_MIXED_REVIEW_PROFILE, EXPERIMENTAL_REASONING_PIPELINE_PROFILE } from "./free/grounded-draft.mjs";
+import { createPrivateEditorialDiagnosticCollector } from "./private-editorial-diagnostic.mjs";
 
 const now = new Date();
 let snapshot;
+let privateDiagnostic;
+let privateDiagnosticPath;
 try {
   const args = process.argv.slice(2);
-  assert.ok(args.length <= 2 && new Set(args).size === args.length &&
-    args.every(arg => ["--require-web-search", "--explicit-claim-review", "--mixed-claim-review", "--reasoning-pipeline"].includes(arg)));
+  assert.ok(args.length <= 3 && new Set(args).size === args.length &&
+    args.every(arg => ["--require-web-search", "--explicit-claim-review", "--mixed-claim-review", "--reasoning-pipeline", "--private-diagnostic"].includes(arg)));
   const requireWebSearch = args.includes("--require-web-search");
   const explicitReview = args.includes("--explicit-claim-review");
   const mixedReview = args.includes("--mixed-claim-review");
   const reasoningPipeline = args.includes("--reasoning-pipeline");
+  const privateCapture = args.includes("--private-diagnostic");
   const experimentalReview = mixedReview || reasoningPipeline;
   assert.ok(Number(explicitReview) + Number(mixedReview) + Number(reasoningPipeline) <= 1);
+  assert.ok(!privateCapture || (requireWebSearch && reasoningPipeline));
   // This experiment is not qualified for production: a known supported
   // regression control is still falsely rejected. Permit observation only in
   // this no-email, owner-run trusted workflow, never through daily configuration.
@@ -31,8 +39,15 @@ try {
     assert.ok(requireWebSearch && process.env.GITHUB_REPOSITORY === "itworksinprod/first-fold" &&
       process.env.GITHUB_REF === "refs/heads/main" && process.env.GITHUB_ACTOR === "itworksinprod" &&
       process.env.GITHUB_RUN_ATTEMPT === "1" &&
-      ["workflow_dispatch", "push"].includes(process.env.GITHUB_EVENT_NAME) &&
-      process.env.GITHUB_WORKFLOW_REF === "itworksinprod/first-fold/.github/workflows/personal-quality-check.yml@refs/heads/main");
+      (privateCapture ? process.env.GITHUB_EVENT_NAME === "workflow_dispatch"
+        : ["workflow_dispatch", "push"].includes(process.env.GITHUB_EVENT_NAME)) &&
+      process.env.GITHUB_WORKFLOW_REF === `itworksinprod/first-fold/.github/workflows/${privateCapture
+        ? "private-paper-quality-check.yml" : "personal-quality-check.yml"}@refs/heads/main`);
+  }
+  if (privateCapture) {
+    assert.ok(process.env.DIAGNOSTIC_PUBLIC_KEY?.trim() && isAbsolute(process.env.RUNNER_TEMP ?? ""));
+    privateDiagnostic = createPrivateEditorialDiagnosticCollector({ publicKey: process.env.DIAGNOSTIC_PUBLIC_KEY });
+    privateDiagnosticPath = join(process.env.RUNNER_TEMP, "private-editorial-checkpoints.encrypted.json");
   }
   const alternateWriter = process.env.FREE_WRITER_MODEL;
   assert.ok(!alternateWriter || alternateWriter === EXPERIMENTAL_FREE_WRITER_MODEL);
@@ -48,6 +63,7 @@ try {
     ...(alternateWriter || explicitReview || experimentalReview ? { draftFreeEditionWithHealthImpl: options =>
       draftFreeEditionWithHealth({ ...options,
         ...(alternateWriter ? { model: EXPERIMENTAL_FREE_WRITER_MODEL } : {}),
+        ...(privateDiagnostic ? { onPrivateEditorialDiagnostic: privateDiagnostic.onPrivateEditorialDiagnostic } : {}),
         ...(explicitReview || experimentalReview ? { groundedReviewProfile: reviewProfile } : {}) }) } : {}),
     personalStoryLedger: createEmptyPersonalStoryLedger({ fingerprintKey: process.env.CLOUDFLARE_AI_API_TOKEN }),
     researchImpl: async (options) => {
@@ -89,4 +105,15 @@ try {
   const code = error?.diagnosticCode ?? error?.code;
   console.error(`::error title=Quality failure::${/^[A-Z_]+$/.test(code ?? "") ? code : "QUALITY_CHECK_FAILED"}`);
   process.exitCode = 1;
+} finally {
+  // Only public-key ciphertext may leave the in-memory diagnostic collector.
+  // Capture failure cannot turn a failed story into approval or retry inference.
+  if (privateDiagnostic) {
+    try {
+      const sealed = await privateDiagnostic.finalize();
+      if (sealed) await writeFile(privateDiagnosticPath, JSON.stringify(sealed), { mode: 0o600, flag: "wx" });
+    } catch {
+      console.warn("::warning title=Private diagnostic::ENCRYPTED_CAPTURE_UNAVAILABLE");
+    }
+  }
 }

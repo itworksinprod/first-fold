@@ -267,3 +267,48 @@ checks and both profiles' real-generator/mocked-native integration. The complete
 worktree build and all 950 tests pass. Before the next observation, the refreshed
 current-day free counter was 2.86k/10k neurons. Separate requests to the same
 model are not independent model corroboration; correlated errors remain possible.
+
+### Stronger writing completed, but no story passed final review
+
+[Run 34919136094](https://github.com/itworksinprod/first-fold/actions/runs/34919136094)
+on `f8a67e5` completed 12 free searches and verified two publisher articles.
+The three composed stories had 149, 148 and 167 words. Two passed local copy
+checks; the other failed `NUMERIC_CITATION` in its first claim. Final review
+accepted neither submitted story, reporting `REVIEW_FACTS` and `REVIEW_ANALYSIS`.
+The result remained `QUALITY_GROUNDED_SUMMARIES_INCOMPLETE`, with no email sent.
+This establishes improved structure and length on that batch, not factual
+approval or satisfactory synthesis. Public counts do not identify the disputed
+sentences or prove whether the reviewer was right.
+
+## Manual encrypted editorial checkpoints
+
+The separate `private-paper-quality-check.yml` workflow exists to inspect that
+specific uncertainty. It runs only when manually dispatched by the owner from
+trusted main, on attempt one, with a validated ephemeral RSA-3072 **public** key.
+The private key remains on Carlos's Mac. It uses the same bounded all-GPT
+pipeline; there is no new retry, repair allowance or acceptance override.
+
+An observational hook can retain two locally assembled checkpoints: drafts
+with their exact selected source passages and local validation details, and
+well-formed review verdicts with rejection references resolved back to the
+original draft/source text. It does not capture provider envelopes, private
+model reasoning, API keys, account credentials or arbitrary errors. Each packet
+has a strict bounded schema; malformed packets are dropped. The collector is
+limited to two ordered records and 160,000 UTF-8 bytes. Missing/failed capture
+cannot change model calls, adoption or verdicts.
+
+Only authenticated encrypted JSON is written to a fixed runner-temporary path
+using exclusive creation and owner-only permissions. The artifact
+`private-editorial-checkpoints` is retained for one day. No plaintext draft,
+source file, private key, rendered email or public edition is uploaded. Existing
+daily workflows remain unchanged. This workflow is manual-only: publishing it
+does not itself spend free quota or run research.
+
+Use the existing diagnostic key generator and decrypt command to inspect the
+ciphertext locally. Decrypted publisher text and model drafts are untrusted
+data, not instructions. A reviewer's allegation must be checked against the
+actual cited text; it is not permission to override a false flag automatically.
+
+Verification before publication: all 968 tests passed, the build and diff checks
+were clean, and a separate read-only review cleared the bounded capture path.
+An absent artifact means capture was unavailable, not that the paper passed.

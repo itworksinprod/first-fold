@@ -2580,6 +2580,7 @@ async function draftFreeEditionCore({
   tavilyApiKey,
   tavilyPaygoDisabledVerified = false,
   onFreeDiagnostic = () => {},
+  onPrivateEditorialDiagnostic,
   maxResearchAttempts = 1,
   researchRetryBelowStoryCount = 0,
   lookbackHours = DEFAULT_FREE_LOOKBACK_HOURS,
@@ -3197,6 +3198,8 @@ async function draftFreeEditionCore({
     const grounded = await synthesizeGroundedEditorial({ editorial, candidates,
       accountId, apiToken, model, aiRequestImpl, fetchImpl,
       reviewProfile: groundedReviewProfile,
+      ...([EXPERIMENTAL_MIXED_REVIEW_PROFILE, EXPERIMENTAL_REASONING_PIPELINE_PROFILE].includes(groundedReviewProfile) &&
+        typeof onPrivateEditorialDiagnostic === "function" ? { onPrivateEditorialDiagnostic } : {}),
       onDiagnostic: onFreeDiagnostic });
     if (grounded) {
       editorial = grounded.editorial;

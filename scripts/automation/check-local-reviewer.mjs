@@ -7,6 +7,9 @@ import { buildExplicitClaimReview, validateExplicitClaimReview } from "./free/ex
 import { requestLocalAiEditorial, LOCAL_AI_MODEL, LOCAL_AI_PROVIDER } from "./free/local-ai.mjs";
 
 const fields = ["factsSupported", "attributionAccurate", "analysisSupported", "usefulAndSpecific"];
+// Diagnostic-only allowance after an observed 4,000-token truncation. This is
+// not a caller-selected budget or a change to the production writer/reviewer.
+const maxOutputTokens = 8_000;
 const safeErrors = new Set(["LOCAL_AI_CONFIGURATION_INVALID", "LOCAL_AI_CLIENT_TIMEOUT",
   "LOCAL_AI_EDITORIAL_FORMAT_INVALID", "LOCAL_AI_EDITORIAL_UNAVAILABLE", "LOCAL_REVIEW_PROVENANCE"]);
 const safeFormatReasons = new Set(["RESPONSE_SHAPE", "OUTPUT_TOKEN_LIMIT", "PAYLOAD_MISSING",
@@ -23,7 +26,7 @@ export async function checkLocalReviewer({ aiRequestImpl = requestLocalAiEditori
     const result = await aiRequestImpl({ model: LOCAL_AI_MODEL,
       messages: [{ role: "system", content: bundle.prompt },
         { role: "user", content: JSON.stringify(bundle.data) }],
-      schema: bundle.schema, responseFormat: "json_schema", maxTokens: 4_000,
+      schema: bundle.schema, responseFormat: "json_schema", maxTokens: maxOutputTokens,
       temperature: 0.6, timeoutMs: 300_000, maxAttempts: 1,
       maxRequestBytes: 70_000, maxResponseBytes: 100_000, fetchImpl,
       validatePayload: payload => validateExplicitClaimReview(payload, bundle).errors.length === 0 });
@@ -56,7 +59,7 @@ export async function checkLocalReviewer({ aiRequestImpl = requestLocalAiEditori
   if (!code && !results.every(item => item.passed)) code = "LOCAL_REVIEW_VERDICT_MISMATCH";
   return { status: code ? "failed" : "passed", code, mode: "synthetic-local-review-not-a-paper",
     provider: LOCAL_AI_PROVIDER, model: LOCAL_AI_MODEL, modelRequests: 1,
-    requestedOutputTokens: 4_000, timeoutMs: 300_000, elapsedMs: Date.now() - started,
+    requestedOutputTokens: maxOutputTokens, timeoutMs: 300_000, elapsedMs: Date.now() - started,
     cloudRequests: 0, emailRequests: 0, ...(usage ? { usage } : {}),
     ...(formatReason ? { formatReason } : {}), cases: results };
 }
