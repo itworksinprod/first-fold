@@ -332,3 +332,16 @@ message; public output remains status/codes/counts only. The default `source`
 mode is unchanged. Owner/main/attempt/key/mode checks precede provider credentials.
 Independent review cleared the path; the complete suite passed 975 tests.
 A successful tiny request would establish availability for that request only.
+
+Provider-only run `34921797235` on `e5bf4a8` made exactly one request and received
+HTTP 429. Its downloaded artifact's SHA-256 matched GitHub's advertised digest
+before local decryption. The retained provider message explicitly says the
+daily free allocation of 10,000 neurons has been used up. No further Cloudflare
+inference should run while that restriction is active; the lower dashboard
+counter must not be used to disregard an explicit quota refusal.
+
+The sanitized private failure projection excludes the original `result` field.
+Replaying that projection offline already recognizes the known quota message;
+the artifact therefore cannot explain why the original public error omitted its
+quota label. No classifier guard was broadened based on an assumed envelope.
+No news was researched and no email was sent by this provider-only run.

@@ -151,6 +151,85 @@ test("direct synthetic mode is explicit, hash-bound and otherwise identical to t
   assert.notEqual(reports[0].requestSha256, reports[1].requestSha256);
 });
 
+test("reasoning-json diagnostic only removes native format and appends the exact schema to the trusted system prompt", async () => {
+  const requests = [], reports = [];
+  for (const formatMode of ["native", "prompt-json"]) {
+    let calls = 0;
+    const report = await checkLocalReviewer({ formatMode, fetchImpl: async (url, options) => {
+      calls++;
+      assert.equal(url, LOCAL_AI_URL);
+      assert.equal(options.headers.authorization, undefined);
+      assert.equal(options.credentials, "omit");
+      assert.equal(options.redirect, "error");
+      const request = JSON.parse(options.body);
+      requests.push(request);
+      assert.equal(request.think, true);
+      assert.equal(request.options.num_predict, 8_000);
+      assert.equal(request.options.num_ctx, 32_768);
+      return new Response(JSON.stringify({ model: LOCAL_AI_MODEL, done: true, done_reason: "stop",
+        prompt_eval_count: 500, eval_count: 1200,
+        message: { role: "assistant", content: JSON.stringify(expected(JSON.parse(request.messages[1].content))) } }),
+      { headers: { "content-type": "application/json" } });
+    } });
+    reports.push(report);
+    assert.equal(calls, 1);
+    assert.equal(report.status, "passed");
+    assert.equal(report.requestedThinking, true);
+    assert.equal(report.requestedFormatMode, formatMode);
+    assert.equal(report.requestSha256, fingerprint(requests.at(-1)));
+    assert.equal(report.timeoutMs, 300_000);
+    assert.deepEqual([report.cloudRequests, report.emailRequests], [0, 0]);
+  }
+  const { format: exactSchema, ...nativeBody } = requests[0];
+  assert.deepEqual(requests[1], { ...nativeBody, messages: [
+    { ...nativeBody.messages[0], content: `${nativeBody.messages[0].content}\n\nReturn only one JSON object matching this exact JSON schema:\n${JSON.stringify(exactSchema)}` },
+    ...nativeBody.messages.slice(1),
+  ] });
+  assert.notEqual(reports[0].requestSha256, reports[1].requestSha256);
+});
+
+test("reasoning-json transport retains strict final JSON, exact schema and every quality veto with no retry", async () => {
+  for (const kind of ["thinking-only", "fenced", "extra-field", "wrong-hash", "blanket-approval", "false-control", "over-cap"]) {
+    let calls = 0;
+    const report = await checkLocalReviewer({ formatMode: "prompt-json", fetchImpl: async (_url, options) => {
+      calls++;
+      const request = JSON.parse(options.body);
+      assert.equal(Object.hasOwn(request, "format"), false);
+      const payload = expected(JSON.parse(request.messages[1].content));
+      if (kind === "extra-field") payload.extra = true;
+      if (kind === "wrong-hash") payload.reviews[0].draftSha256 = "f".repeat(64);
+      if (kind === "blanket-approval") payload.reviews.forEach(review => {
+        review.claimVerdicts.forEach(verdict => { verdict.allCitedPassagesSupport = true; });
+        review.factsSupported = true;
+      });
+      if (kind === "false-control") payload.reviews[0].analysisSupported = false;
+      let content = JSON.stringify(payload);
+      if (kind === "thinking-only") content = "";
+      if (kind === "fenced") content = `\`\`\`json\n${content}\n\`\`\``;
+      return new Response(JSON.stringify({ model: LOCAL_AI_MODEL, done: true, done_reason: "stop",
+        prompt_eval_count: 500, eval_count: kind === "over-cap" ? 8_001 : 1200,
+        message: { role: "assistant", content, thinking: "PRIVATE_REASONING" } }),
+      { headers: { "content-type": "application/json" } });
+    } });
+    assert.equal(calls, 1, kind);
+    assert.equal(report.status, "failed", kind);
+    assert.doesNotMatch(JSON.stringify(report), /PRIVATE_REASONING/);
+  }
+});
+
+test("invalid format modes or nonthinking reasoning-json fail before inference without echoing input", async () => {
+  for (const options of [{ formatMode: "prompt-json", think: false },
+    ...[null, false, {}, "PRIVATE_UNTRUSTED_MODE"].map(formatMode => ({ formatMode }))]) {
+    let calls = 0;
+    const report = await checkLocalReviewer({ ...options, aiRequestImpl: async () => { calls++; } });
+    assert.equal(calls, 0);
+    assert.equal(report.modelRequests, 0);
+    assert.equal(report.code, "LOCAL_AI_CONFIGURATION_INVALID");
+    assert.equal(report.requestSha256, undefined);
+    assert.doesNotMatch(JSON.stringify(report), /PRIVATE_UNTRUSTED_MODE/);
+  }
+});
+
 test("non-boolean thinking switches fail before any local request and are not echoed", async () => {
   for (const think of [null, 0, 1, "false", "PRIVATE_UNTRUSTED_MODE", {}]) {
     let calls = 0;
@@ -182,7 +261,30 @@ test("native output exceeding the fixed diagnostic cap stays red with no complet
   assert.equal(report.code, "LOCAL_AI_EDITORIAL_FORMAT_INVALID");
   assert.equal(report.formatReason, "OUTPUT_TOKEN_LIMIT");
   assert.equal(report.requestedOutputTokens, 8_000);
+  assert.deepEqual(report.outputDiagnostic, { doneReason: "stop", promptTokens: 500, completionTokens: 8_001,
+    finalContentPresent: true, tokenLimitCause: "COMPLETION_COUNT_OVER_CAP" });
   assert.ok(report.cases.every(item => item.actual === null && item.passed === false));
+});
+
+test("native diagnostic distinguishes length stops without exposing response content or reasoning", async () => {
+  for (const completionTokens of [8_000, 8_001]) {
+    let calls = 0;
+    const report = await checkLocalReviewer({ fetchImpl: async () => {
+      calls++;
+      return new Response(JSON.stringify({ model: LOCAL_AI_MODEL, done: true, done_reason: "length",
+        prompt_eval_count: 500, eval_count: completionTokens,
+        message: { role: "assistant", content: "PRIVATE_FINAL_CONTENT", thinking: "PRIVATE_REASONING" } }),
+      { headers: { "content-type": "application/json" } });
+    } });
+    assert.equal(calls, 1);
+    assert.equal(report.status, "failed");
+    assert.equal(report.formatReason, "OUTPUT_TOKEN_LIMIT");
+    assert.deepEqual(report.outputDiagnostic, { doneReason: "length", promptTokens: 500,
+      completionTokens, finalContentPresent: true,
+      tokenLimitCause: completionTokens > 8_000 ? "NATIVE_LENGTH_AND_COUNT_OVER_CAP" : "NATIVE_LENGTH" });
+    assert.ok(report.cases.every(item => item.actual === null));
+    assert.doesNotMatch(JSON.stringify(report), /PRIVATE_|claimSha256|sourceContext|evidenceId/);
+  }
 });
 
 test("local timeouts and errors stay red, bounded and sanitized without retries", async () => {
@@ -205,11 +307,14 @@ test("local diagnostic reports only allowlisted format reasons, never provider t
     const report = await checkLocalReviewer({ aiRequestImpl: async () => {
       calls++;
       throw Object.assign(new Error("PRIVATE_RESPONSE"), {
-        code: "LOCAL_AI_EDITORIAL_FORMAT_INVALID", formatReason });
+        code: "LOCAL_AI_EDITORIAL_FORMAT_INVALID", formatReason,
+        outputDiagnostic: { doneReason: "PRIVATE_REASON", promptTokens: 1e100,
+          finalContentPresent: "PRIVATE_CONTENT", unexpected: "PRIVATE_FIELD" } });
     } });
     assert.equal(calls, 1);
     assert.equal(report.status, "failed");
     assert.equal(report.formatReason, formatReason === "PRIVATE_PROVIDER_TEXT" ? undefined : formatReason);
+    assert.equal(report.outputDiagnostic, undefined);
     assert.doesNotMatch(JSON.stringify(report), /PRIVATE_/);
   }
 });

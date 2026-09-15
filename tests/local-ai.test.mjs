@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import test from "node:test";
 import { LOCAL_AI_PROVIDER, LOCAL_AI_MODEL, LOCAL_AI_URL, LOCAL_AI_CONTEXT_TOKENS,
   LOCAL_AI_EDITORIAL_FORMAT_INVALID, LOCAL_AI_EDITORIAL_UNAVAILABLE,
-  buildLocalAiRequest, requestLocalAiEditorial } from "../scripts/automation/free/local-ai.mjs";
+  buildLocalAiRequest, requestLocalAiEditorial, localAiFailureDiagnostic } from "../scripts/automation/free/local-ai.mjs";
 
 const messages = [{ role: "system", content: "Use only supplied evidence." }, { role: "user", content: "An evidence bundle." }];
 const schema = { type: "object", additionalProperties: false, properties: { headline: { type: "string" } }, required: ["headline"] };
@@ -76,6 +76,56 @@ test("local thinking is enabled by default and only an explicit boolean can chan
       error => error.code === "LOCAL_AI_CONFIGURATION_INVALID" && error.attemptCount === 0);
   }
   assert.equal(calls, 1);
+});
+
+test("prompt-json transport is explicit and thinking-only with exact schema in the hashed system prompt", async () => {
+  const baseline = buildLocalAiRequest({ messages, schema, maxTokens: 700 });
+  const alternate = buildLocalAiRequest({ messages, schema, maxTokens: 700, formatMode: "prompt-json" });
+  const { format: removed, ...nativeBody } = baseline.body;
+  assert.deepEqual(removed, schema);
+  assert.deepEqual(alternate.body, { ...nativeBody, messages: [
+    { ...messages[0], content: `${messages[0].content}\n\nReturn only one JSON object matching this exact JSON schema:\n${JSON.stringify(schema)}` },
+    messages[1],
+  ] });
+  assert.equal(messages[0].content, "Use only supplied evidence.");
+  let calls = 0;
+  const result = await requestLocalAiEditorial(options({ maxTokens: 700, formatMode: "prompt-json",
+    fetchImpl: async (url, init) => {
+      calls++;
+      assert.equal(url, LOCAL_AI_URL);
+      assert.deepEqual(JSON.parse(init.body), alternate.body);
+      return response();
+    },
+  }));
+  assert.equal(calls, 1);
+  assert.equal(result.requestSha256, sha(JSON.stringify({ provider: LOCAL_AI_PROVIDER,
+    model: LOCAL_AI_MODEL, body: alternate.body })));
+  for (const patch of [{ formatMode: "prompt-json", think: false },
+    { formatMode: "prompt-json", messages: [messages[1]] },
+    ...[null, false, {}, "text", "PRIVATE_MODE"].map(formatMode => ({ formatMode }))]) {
+    await assert.rejects(requestLocalAiEditorial(options({ ...patch, fetchImpl: async () => { calls++; } })),
+      error => error.code === "LOCAL_AI_CONFIGURATION_INVALID" && error.attemptCount === 0);
+  }
+  assert.equal(calls, 1);
+});
+
+test("prompt-json context accounting includes its exact appended schema once without truncation", () => {
+  const largeSchema = { ...schema, description: "x".repeat(15_000) };
+  const maxTokens = 8_000;
+  const request = buildLocalAiRequest({ messages, schema: largeSchema, formatMode: "prompt-json", maxTokens });
+  const countedBytes = Buffer.byteLength(JSON.stringify(request.body.messages));
+  assert.ok(countedBytes + 1_024 + maxTokens < LOCAL_AI_CONTEXT_TOKENS);
+  assert.ok(countedBytes + Buffer.byteLength(JSON.stringify(largeSchema)) + 1_024 + maxTokens > LOCAL_AI_CONTEXT_TOKENS);
+  assert.ok(request.body.messages[0].content.endsWith(JSON.stringify(largeSchema)));
+  assert.equal(Object.hasOwn(request.body, "format"), false);
+  const remaining = LOCAL_AI_CONTEXT_TOKENS - countedBytes - 1_024 - maxTokens;
+  const boundaryMessages = structuredClone(messages);
+  boundaryMessages[1].content += "x".repeat(remaining);
+  assert.doesNotThrow(() => buildLocalAiRequest({ messages: boundaryMessages, schema: largeSchema,
+    formatMode: "prompt-json", maxTokens }));
+  boundaryMessages[1].content += "x";
+  assert.throws(() => buildLocalAiRequest({ messages: boundaryMessages, schema: largeSchema,
+    formatMode: "prompt-json", maxTokens }), error => error.code === "LOCAL_AI_CONFIGURATION_INVALID");
 });
 
 test("local input checks reject models, messages, schema and capacity before any network call", async () => {
@@ -154,6 +204,67 @@ test("truncated output is rejected even if it happens to contain valid JSON", as
     await assert.rejects(requestLocalAiEditorial(options({ fetchImpl: async () => response(value) })),
       (error) => error.code === LOCAL_AI_EDITORIAL_FORMAT_INVALID && error.formatReason === "OUTPUT_TOKEN_LIMIT");
   }
+});
+
+test("native length and aggregate-count guards stay rejected with distinct scalar-only diagnostics", async () => {
+  const variants = [
+    { done_reason: "length", eval_count: 3_000, content: "", cause: "NATIVE_LENGTH" },
+    { done_reason: "stop", eval_count: 3_001, content: JSON.stringify(payload), cause: "COMPLETION_COUNT_OVER_CAP" },
+    { done_reason: "length", eval_count: 3_001, content: JSON.stringify(payload), cause: "NATIVE_LENGTH_AND_COUNT_OVER_CAP" },
+  ];
+  for (const { cause, content, ...native } of variants) {
+    let calls = 0, validations = 0;
+    await assert.rejects(requestLocalAiEditorial(options({
+      validatePayload: () => { validations++; return true; },
+      fetchImpl: async () => {
+        calls++;
+        return response(envelope({ ...native, message: { role: "assistant", content,
+          thinking: "PRIVATE_REASONING_NEVER_COPY" }, transportField: "PRIVATE_TRANSPORT" }));
+      },
+    })), error => {
+      assert.equal(error.code, LOCAL_AI_EDITORIAL_FORMAT_INVALID);
+      assert.equal(error.formatReason, "OUTPUT_TOKEN_LIMIT");
+      assert.deepEqual(localAiFailureDiagnostic(error), { outputDiagnostic: {
+        doneReason: native.done_reason, promptTokens: 84, completionTokens: native.eval_count,
+        finalContentPresent: Boolean(content), tokenLimitCause: cause,
+      } });
+      assert.equal(Object.isFrozen(error.outputDiagnostic), true);
+      const diagnostic = localAiFailureDiagnostic(error);
+      diagnostic.outputDiagnostic.promptTokens = -1;
+      assert.equal(error.outputDiagnostic.promptTokens, 84);
+      assert.doesNotMatch(JSON.stringify(localAiFailureDiagnostic(error)), /PRIVATE_|headline|source-backed/);
+      return true;
+    });
+    assert.equal(calls, 1);
+    assert.equal(validations, 0);
+  }
+});
+
+test("native diagnostic counts and reasons are bounded and never copy malformed scalar content", async () => {
+  for (const value of [-1, 1.5, null, "PRIVATE_COUNT", {}, 65_537, 1e100]) {
+    await assert.rejects(requestLocalAiEditorial(options({ fetchImpl: async () => response(envelope({
+      done_reason: "length", prompt_eval_count: value, eval_count: value,
+      message: { role: "assistant", content: { private: "PRIVATE_CONTENT" }, thinking: "PRIVATE_THINKING" },
+    })) })), error => {
+      const { outputDiagnostic } = localAiFailureDiagnostic(error);
+      assert.equal(error.formatReason, "OUTPUT_TOKEN_LIMIT");
+      assert.equal(outputDiagnostic.doneReason, "length");
+      assert.equal(outputDiagnostic.promptTokens, null);
+      assert.equal(outputDiagnostic.completionTokens, null);
+      assert.equal(outputDiagnostic.finalContentPresent, false);
+      assert.doesNotMatch(JSON.stringify(outputDiagnostic), /PRIVATE_|1e\+100|65537/);
+      return true;
+    });
+  }
+  await assert.rejects(requestLocalAiEditorial(options({ fetchImpl: async () => response(envelope({
+    done_reason: "PRIVATE_REASON", prompt_eval_count: 65_536, eval_count: 65_536,
+  })) })), error => {
+    assert.deepEqual(localAiFailureDiagnostic(error), { outputDiagnostic: { doneReason: null,
+      promptTokens: 65_536, completionTokens: 65_536, finalContentPresent: true,
+      tokenLimitCause: "COMPLETION_COUNT_OVER_CAP" } });
+    return true;
+  });
+  assert.deepEqual(localAiFailureDiagnostic({ outputDiagnostic: { finalContentPresent: "PRIVATE_FAKE" } }), {});
 });
 
 test("only complete final JSON objects are accepted, never reasoning or code-fence salvage", async () => {

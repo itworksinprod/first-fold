@@ -5,7 +5,8 @@ import { createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { reviewerHoldoutCases } from "../../tests/fixtures/reviewer-holdouts.mjs";
 import { buildExplicitClaimReview, validateExplicitClaimReview } from "./free/explicit-claim-review.mjs";
-import { buildLocalAiRequest, requestLocalAiEditorial, LOCAL_AI_MODEL, LOCAL_AI_PROVIDER } from "./free/local-ai.mjs";
+import { buildLocalAiRequest, requestLocalAiEditorial, localAiFailureDiagnostic,
+  LOCAL_AI_MODEL, LOCAL_AI_PROVIDER } from "./free/local-ai.mjs";
 
 const fields = ["factsSupported", "attributionAccurate", "analysisSupported", "usefulAndSpecific"];
 // Diagnostic-only allowance after an observed 4,000-token truncation. This is
@@ -17,18 +18,18 @@ const safeFormatReasons = new Set(["RESPONSE_SHAPE", "OUTPUT_TOKEN_LIMIT", "PAYL
   "PAYLOAD_JSON_INVALID", "SCHEMA_VALIDATION_FAILED"]);
 
 export async function checkLocalReviewer({ aiRequestImpl = requestLocalAiEditorial,
-  fetchImpl = globalThis.fetch, think = true } = {}) {
+  fetchImpl = globalThis.fetch, think = true, formatMode = "native" } = {}) {
   const cases = reviewerHoldoutCases();
   const bundle = buildExplicitClaimReview({ drafts: cases.map(item => item.draft),
     dossiers: cases.map(item => item.dossier) });
   const started = Date.now();
-  let reviews = [], usage, formatReason, requestSha256, modelRequests = 0, code = null;
+  let reviews = [], usage, formatReason, outputDiagnostic, requestSha256, modelRequests = 0, code = null;
   try {
     const request = { model: LOCAL_AI_MODEL,
       messages: [{ role: "system", content: bundle.prompt },
         { role: "user", content: JSON.stringify(bundle.data) }],
       schema: bundle.schema, responseFormat: "json_schema", maxTokens: maxOutputTokens,
-      temperature: 0.6, think, timeoutMs: 300_000, maxAttempts: 1,
+      temperature: 0.6, think, formatMode, timeoutMs: 300_000, maxAttempts: 1,
       maxRequestBytes: 70_000, maxResponseBytes: 100_000, fetchImpl,
       validatePayload: payload => validateExplicitClaimReview(payload, bundle).errors.length === 0 };
     const { body } = buildLocalAiRequest(request);
@@ -52,6 +53,7 @@ export async function checkLocalReviewer({ aiRequestImpl = requestLocalAiEditori
     code = safeErrors.has(error?.code) ? error.code : "LOCAL_REVIEW_FAILED";
     if (code === "LOCAL_AI_EDITORIAL_FORMAT_INVALID" && safeFormatReasons.has(error?.formatReason)) {
       formatReason = error.formatReason;
+      ({ outputDiagnostic } = localAiFailureDiagnostic(error));
     }
   }
   const results = cases.map(item => {
@@ -67,18 +69,20 @@ export async function checkLocalReviewer({ aiRequestImpl = requestLocalAiEditori
   return { status: code ? "failed" : "passed", code, mode: "synthetic-local-review-not-a-paper",
     provider: LOCAL_AI_PROVIDER, model: LOCAL_AI_MODEL, modelRequests,
     ...(typeof think === "boolean" ? { requestedThinking: think } : {}),
+    ...(["native", "prompt-json"].includes(formatMode) ? { requestedFormatMode: formatMode } : {}),
     ...(requestSha256 ? { requestSha256 } : {}),
     requestedOutputTokens: maxOutputTokens, timeoutMs: 300_000, elapsedMs: Date.now() - started,
     cloudRequests: 0, emailRequests: 0, ...(usage ? { usage } : {}),
-    ...(formatReason ? { formatReason } : {}), cases: results };
+    ...(formatReason ? { formatReason } : {}), ...(outputDiagnostic ? { outputDiagnostic } : {}), cases: results };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  if (process.argv.length !== 3 || !["--synthetic-only", "--synthetic-direct"].includes(process.argv[2])) {
-    console.error("Use --synthetic-only or --synthetic-direct for this manual, one-request local diagnostic.");
+  if (process.argv.length !== 3 || !["--synthetic-only", "--synthetic-direct", "--synthetic-reasoning-json"].includes(process.argv[2])) {
+    console.error("Use --synthetic-only, --synthetic-direct or --synthetic-reasoning-json for this manual, one-request local diagnostic.");
     process.exitCode = 1;
   } else {
-    const report = await checkLocalReviewer({ think: process.argv[2] !== "--synthetic-direct" });
+    const report = await checkLocalReviewer({ think: process.argv[2] !== "--synthetic-direct",
+      formatMode: process.argv[2] === "--synthetic-reasoning-json" ? "prompt-json" : "native" });
     console.info(JSON.stringify(report));
     if (report.status !== "passed") process.exitCode = 1;
   }

@@ -18,16 +18,41 @@ const hash = (value) => createHash("sha256").update(value).digest("hex");
 const object = (value) => Boolean(value) && typeof value === "object" && !Array.isArray(value);
 class LocalAiError extends Error {}
 
-function failure(code, message, { inference, formatReason, httpStatus, attemptCount = 1 } = {}) {
+function failure(code, message, { inference, formatReason, httpStatus, outputDiagnostic, attemptCount = 1 } = {}) {
   const error = new LocalAiError(message);
   Object.defineProperties(error, {
     code: { value: code },
     attemptCount: { value: attemptCount },
     ...(inference ? { inference: { value: Object.freeze({ ...inference }) } } : {}),
     ...(formatReason ? { formatReason: { value: formatReason } } : {}),
+    ...(outputDiagnostic ? { outputDiagnostic: { value: Object.freeze({ ...outputDiagnostic }) } } : {}),
     ...(Number.isInteger(httpStatus) ? { httpStatus: { value: httpStatus } } : {}),
   });
   return error;
+}
+
+// Scalars only. A native structured-output implementation may aggregate two
+// generation passes; report what the envelope said without inferring a cause
+// from elapsed time or exposing final content, thinking, or other raw fields.
+const diagnosticCount = value => Number.isInteger(value) && value >= 0 &&
+  value <= LOCAL_AI_CONTEXT_TOKENS * 2 ? value : null;
+function nativeOutputDiagnostic(envelope, maxTokens) {
+  const lengthStop = envelope?.done_reason === "length";
+  const countOverCap = Number.isInteger(envelope?.eval_count) && envelope.eval_count > maxTokens;
+  return {
+    doneReason: ["stop", "length"].includes(envelope?.done_reason) ? envelope.done_reason : null,
+    promptTokens: diagnosticCount(envelope?.prompt_eval_count),
+    completionTokens: diagnosticCount(envelope?.eval_count),
+    finalContentPresent: typeof envelope?.message?.content === "string" && envelope.message.content.trim().length > 0,
+    ...(lengthStop || countOverCap ? { tokenLimitCause: lengthStop && countOverCap
+      ? "NATIVE_LENGTH_AND_COUNT_OVER_CAP" : lengthStop ? "NATIVE_LENGTH" : "COMPLETION_COUNT_OVER_CAP" } : {}),
+  };
+}
+
+export function localAiFailureDiagnostic(error) {
+  // Do not trust a transport/callback exception that impersonates this shape.
+  if (!(error instanceof LocalAiError) || !error.outputDiagnostic) return {};
+  return { outputDiagnostic: { ...error.outputDiagnostic } };
 }
 
 function configurationFailure() {
@@ -52,14 +77,18 @@ function clone(value) {
  * think:true by default (Qwen3 native reasoning), options.num_ctx/num_predict. Reasoning
  * shares the bounded output allowance and is never returned to callers/logs.
  * Explicit boolean think:false is available for isolated direct-output tests.
+ * Explicit formatMode:"prompt-json" omits native format and appends the exact
+ * schema to the first system message, for thinking-only transport diagnostics.
  * https://docs.ollama.com/api/chat
  * https://docs.ollama.com/capabilities/structured-outputs
  * https://docs.ollama.com/capabilities/thinking
  */
 export function buildLocalAiRequest({ model = LOCAL_AI_MODEL, messages, schema,
-  responseFormat = "json_schema", maxTokens = 3_000, temperature = 0.6, think = true } = {}) {
+  responseFormat = "json_schema", maxTokens = 3_000, temperature = 0.6, think = true,
+  formatMode = "native" } = {}) {
   if (model !== LOCAL_AI_MODEL || !["json_schema", "json_object"].includes(responseFormat) ||
       typeof think !== "boolean" ||
+      !["native", "prompt-json"].includes(formatMode) || (formatMode === "prompt-json" && think !== true) ||
       !Array.isArray(messages) || messages.length < 1 || messages.length > 8 ||
       !Number.isFinite(temperature) || temperature < 0 || temperature > 2) throw configurationFailure();
   integer(maxTokens, 1, 12_000);
@@ -73,18 +102,23 @@ export function buildLocalAiRequest({ model = LOCAL_AI_MODEL, messages, schema,
   if (!object(copiedSchema) || copiedSchema.type !== "object" || !object(copiedSchema.properties)) {
     throw configurationFailure();
   }
+  if (formatMode === "prompt-json") {
+    if (copiedMessages[0].role !== "system") throw configurationFailure();
+    copiedMessages[0].content += `\n\nReturn only one JSON object matching this exact JSON schema:\n${JSON.stringify(copiedSchema)}`;
+  }
   // Byte-level BPE has at most one token per UTF-8 byte before template tokens.
   // Count the schema too, conservatively, rather than assume characters/4 or
   // silently truncate evidence to fit. Callers can submit smaller dossiers.
   const inputUpperBound = encoder.encode(JSON.stringify(copiedMessages)).byteLength +
-    encoder.encode(JSON.stringify(copiedSchema)).byteLength + TEMPLATE_TOKEN_RESERVE;
+    // In prompt-json mode the exact schema is already counted inside messages.
+    (formatMode === "native" ? encoder.encode(JSON.stringify(copiedSchema)).byteLength : 0) + TEMPLATE_TOKEN_RESERVE;
   if (inputUpperBound + maxTokens > LOCAL_AI_CONTEXT_TOKENS) throw configurationFailure();
   return {
     model: LOCAL_AI_MODEL,
     body: {
       model: LOCAL_AI_MODEL,
       messages: copiedMessages,
-      format: copiedSchema,
+      ...(formatMode === "native" ? { format: copiedSchema } : {}),
       stream: false,
       think,
       keep_alive: "5m",
@@ -149,7 +183,8 @@ async function readResponse(response, maximum, signal) {
 
 function extractPayload(envelope, inference, maxTokens) {
   const reject = (formatReason = "RESPONSE_SHAPE") => {
-    throw failure(LOCAL_AI_EDITORIAL_FORMAT_INVALID, "The local writer did not return a complete editorial object.", { inference, formatReason });
+    throw failure(LOCAL_AI_EDITORIAL_FORMAT_INVALID, "The local writer did not return a complete editorial object.",
+      { inference, formatReason, outputDiagnostic: nativeOutputDiagnostic(envelope, maxTokens) });
   };
   if (!object(envelope) || envelope.model !== LOCAL_AI_MODEL || envelope.done !== true ||
       Object.hasOwn(envelope, "error") || !object(envelope.message) ||
@@ -181,13 +216,14 @@ function extractPayload(envelope, inference, maxTokens) {
  */
 export async function requestLocalAiEditorial({ model = LOCAL_AI_MODEL, messages, schema,
   responseFormat = "json_schema", validatePayload, maxTokens = 3_000, temperature = 0.6, think = true,
+  formatMode = "native",
   fetchImpl = globalThis.fetch, timeoutMs = 300_000, maxAttempts = 1,
   maxRequestBytes = MAX_REQUEST_BYTES, maxResponseBytes = MAX_RESPONSE_BYTES } = {}) {
   if (typeof fetchImpl !== "function" || typeof validatePayload !== "function" || maxAttempts !== 1) throw configurationFailure();
   integer(timeoutMs, 10, 300_000);
   integer(maxRequestBytes, 64, MAX_REQUEST_BYTES);
   integer(maxResponseBytes, 64, MAX_RESPONSE_BYTES);
-  const request = buildLocalAiRequest({ model, messages, schema, responseFormat, maxTokens, temperature, think });
+  const request = buildLocalAiRequest({ model, messages, schema, responseFormat, maxTokens, temperature, think, formatMode });
   const requestText = JSON.stringify(request.body);
   if (encoder.encode(requestText).byteLength > maxRequestBytes) throw configurationFailure();
   const requestSha256 = hash(JSON.stringify({ provider: LOCAL_AI_PROVIDER, model: LOCAL_AI_MODEL, body: request.body }));
