@@ -98,6 +98,10 @@ test("explicit review distinguishes grounded conditional analysis from invented 
   const bundle = buildExplicitClaimReview(inputs());
   assert.match(bundle.prompt, /whole-story flags overlap/);
   assert.match(bundle.prompt, /headline, deck, both claims, whyItMatters AND\nwhatToDoOrWatch/);
+  assert.match(bundle.prompt, /distinguish asserted factual premises from a clearly conditional practical\ninference/);
+  assert.match(bundle.prompt, /Every asserted premise, condition and scope still needs source\nsupport/);
+  assert.match(bundle.prompt, /absence of the inference verbatim from the publisher is not by itself an unsupported\nfactual assertion/);
+  assert.match(bundle.prompt, /never derive either flag from the other/);
   assert.match(bundle.prompt, /trials, measurements, observed outcomes or guarantees requires source evidence/);
   assert.match(bundle.prompt, /set BOTH factsSupported and analysisSupported false/);
   assert.match(bundle.prompt, /publisher need not state\nthat inference verbatim/);

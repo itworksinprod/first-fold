@@ -41,6 +41,11 @@ Conversely, correct source links, copied hashes and plausible analysis never exc
 The whole-story flags overlap; checking one flag never substitutes for checking another.
 factsSupported checks EVERY factual assertion in headline, deck, both claims, whyItMatters AND
 whatToDoOrWatch. Preserve actors, products, scope, numbers, versions, prerequisites and uncertainty.
+Within analysis or advice, distinguish asserted factual premises from a clearly conditional practical
+inference drawn from those premises. Every asserted premise, condition and scope still needs source
+support; the absence of the inference verbatim from the publisher is not by itself an unsupported
+factual assertion. Independently assess whether the consequence actually follows under
+analysisSupported; never derive either flag from the other.
 An assertion about trials, measurements, observed outcomes or guarantees requires source evidence
 even inside analysis or advice. If unsupported, set BOTH factsSupported and analysisSupported false;
 do not reserve factual checking for the two claims or classify invented empirical facts as analysis only.

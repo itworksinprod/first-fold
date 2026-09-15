@@ -7,7 +7,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { assertFreeReviewerAuthority, checkFreeReviewer, freeReviewerSyntheticCases,
-  validateFreeReviewerDiagnosticKey } from "../scripts/automation/check-free-reviewer.mjs";
+  validateFreeReviewerDiagnosticKey, FREE_REVIEWER_CASE_SETS, resolveFreeReviewerCaseSet } from "../scripts/automation/check-free-reviewer.mjs";
+import { reviewerHoldoutCases } from "./fixtures/reviewer-holdouts.mjs";
 import { openDiagnostic } from "../scripts/automation/private-writer-diagnostic.mjs";
 import { REVIEW_REJECTION_MAX_TOKENS, REVIEW_REJECTION_TIMEOUT_MS } from "../scripts/automation/free/review-rejections.mjs";
 import { DEFAULT_CLOUDFLARE_AI_MODEL, FREE_REASONING_WRITER_MODEL, workersAiRunUrl } from "../scripts/automation/free/workers-ai.mjs";
@@ -36,9 +37,15 @@ function expectedPayload(data) {
 }
 const modelData = options => JSON.parse(options.messages[1].content);
 
-test("the diagnostic keeps the original four synthetic inputs and expected outcomes unchanged", () => {
+test("the diagnostic keeps both fixed synthetic sets and expected outcomes unchanged", () => {
   assert.equal(createHash("sha256").update(JSON.stringify(freeReviewerSyntheticCases())).digest("hex"),
     "c1501af920241a9a2e60a9b167c9e66f91bb4cd4242da441869455018109ea67");
+  assert.equal(createHash("sha256").update(JSON.stringify(reviewerHoldoutCases())).digest("hex"),
+    "c236936be98c8733a9d96b85c43bab8c297c1a5c7f811b51486c1c99d5000e30");
+  assert.deepEqual(FREE_REVIEWER_CASE_SETS, ["regression", "holdouts"]);
+  assert.equal(Object.isFrozen(FREE_REVIEWER_CASE_SETS), true);
+  assert.equal(resolveFreeReviewerCaseSet(), "regression");
+  assert.equal(resolveFreeReviewerCaseSet("holdouts"), "holdouts");
 });
 
 function diagnosedPayload(data) {
@@ -55,6 +62,103 @@ function diagnosedPayload(data) {
   }
   return payload;
 }
+
+function holdoutPayload(data) {
+  const cases = reviewerHoldoutCases();
+  return { reviews: data.drafts.map(({ draft, draftSha256, claimEvidence }) => {
+    const expected = cases.find(item => item.draft.candidateId === draft.candidateId).expected;
+    return { candidateId: draft.candidateId, draftSha256,
+      claimVerdicts: claimEvidence.map(({ claimIndex, claimSha256 }) => ({ claimIndex, claimSha256,
+        allCitedPassagesSupport: expected.claims[claimIndex] })),
+      ...Object.fromEntries(["factsSupported", "attributionAccurate", "analysisSupported", "usefulAndSpecific"]
+        .map(field => [field, expected[field] ?? true])),
+      rejections: expected.accepted ? [] : [
+        { gate: "claim:1", sentenceId: "claim:1", rule: "contradicted-by-source", evidenceIds: ["S1P2", "S1P3"] },
+        { gate: "factsSupported", sentenceId: "claim:1", rule: "contradicted-by-source", evidenceIds: ["S1P2", "S1P3"] },
+      ] };
+  }) };
+}
+
+test("unknown case sets fail before credentials, key checks, fixtures or provider use", async () => {
+  let calls = 0;
+  for (const caseSet of ["", "all", "regression,holdouts", "HOLDOUTS", " holdouts", null, false, [],
+    "../../untrusted-file", "holdouts; printf UNSAFE_CASE_SET"]) {
+    await assert.rejects(checkFreeReviewer({ ...base, accountId: "invalid", apiToken: "",
+      diagnosticPublicKey: "bad-key", caseSet,
+      aiRequestImpl: async () => { calls++; }, fetchImpl: async () => { calls++; },
+    }), /REVIEW_EVAL_CONFIGURATION_INVALID/);
+  }
+  assert.equal(calls, 0);
+  for (const argument of ["--validate-diagnostic-key", "--explain-rejections"]) {
+    const child = spawnSync(process.execPath, [fileURLToPath(scriptUrl), argument], {
+      env: { ...authority, FREE_REVIEWER_CASE_SET: "UNKNOWN_CASE_SET", DIAGNOSTIC_PUBLIC_KEY: "bad-key" },
+      encoding: "utf8", timeout: 5_000, maxBuffer: 4_096,
+    });
+    assert.equal(child.status, 1);
+    assert.equal(child.stdout, "");
+    assert.match(child.stderr, /REVIEW_EVAL_CONFIGURATION_INVALID/);
+    assert.doesNotMatch(child.stderr, /UNKNOWN_CASE_SET|bad-key|REVIEW_EVAL_DIAGNOSTIC_KEY_INVALID/);
+  }
+});
+
+test("holdout selection sends only two bound cases in one unchanged-budget request with no expected labels", async () => {
+  let requests = 0;
+  const cases = reviewerHoldoutCases();
+  const report = await checkFreeReviewer({ ...base, model: FREE_REASONING_WRITER_MODEL, explainRejections: true,
+    caseSet: "holdouts", fetchImpl: async (url, options) => {
+      requests++;
+      assert.equal(url, workersAiRunUrl(base.accountId, FREE_REASONING_WRITER_MODEL));
+      const request = JSON.parse(options.body);
+      const data = JSON.parse(request.messages[1].content);
+      assert.equal(request.max_tokens, 8_000);
+      assert.equal(request.temperature, 0.1);
+      assert.ok(Buffer.byteLength(options.body) <= 70_000);
+      assert.equal(data.drafts.length, 2);
+      assert.equal(data.dossiers.length, 2);
+      assert.equal(data.sentenceIndex.length, 2);
+      assert.deepEqual(data.drafts.map(entry => entry.draft), cases.map(item => item.draft));
+      assert.deepEqual(data.dossiers.map(dossier => dossier.candidateId), cases.map(item => item.dossier.candidateId));
+      for (const item of cases) assert.ok(!JSON.stringify(request.messages).includes(item.caseId));
+      assert.doesNotMatch(JSON.stringify(request.messages), /"caseId"|"expected"|"accepted"|review-fixture-[abcd]/);
+      const payload = holdoutPayload(data);
+      payload.reviews.reverse();
+      payload.reviews.forEach(review => review.claimVerdicts.reverse());
+      return new Response(JSON.stringify({ success: true, result: { response: JSON.stringify(payload) } }),
+        { headers: { "content-type": "application/json" } });
+    } });
+  assert.equal(requests, 1);
+  assert.equal(report.status, "passed");
+  assert.equal(report.caseSet, "holdouts");
+  assert.equal(report.cases.length, 2);
+  assert.deepEqual(report.cases.map(item => item.caseId), cases.map(item => item.caseId));
+  assert.ok(report.cases.every(item => item.passed));
+  assert.deepEqual([report.modelRequests, report.networkRequests, report.maxModelRequests, report.requestedOutputTokens,
+    report.researchQueries, report.emailRequests], [1, 1, 1, 8_000, 0, 0]);
+  assert.deepEqual(report.rejectionDiagnostics.map(item => item.candidateId), ["review-holdout-42", "review-holdout-42"]);
+});
+
+test("holdout mode preserves candidate bindings and cannot accept false approvals or reject the control silently", async () => {
+  for (const mutate of [
+    payload => { payload.reviews[0].analysisSupported = false; payload.reviews[0].rejections.push({ gate: "analysisSupported",
+      sentenceId: "whyItMatters:0", rule: "uncertain-support", evidenceIds: ["S1P1"] }); },
+    payload => { payload.reviews[1].claimVerdicts[1].allCitedPassagesSupport = true;
+      payload.reviews[1].factsSupported = true; payload.reviews[1].rejections = []; },
+    payload => { payload.reviews[0].candidateId = "review-fixture-a"; },
+    payload => { payload.reviews[1].draftSha256 = payload.reviews[0].draftSha256; },
+  ]) {
+    const report = await checkFreeReviewer({ ...base, model: FREE_REASONING_WRITER_MODEL, explainRejections: true,
+      caseSet: "holdouts", aiRequestImpl: async options => {
+        const payload = holdoutPayload(modelData(options)); mutate(payload);
+        return { ...response(payload), model: FREE_REASONING_WRITER_MODEL };
+      } });
+    assert.equal(report.caseSet, "holdouts");
+    assert.equal(report.status, "failed");
+    assert.equal(report.cases.length, 2);
+    assert.equal(report.modelRequests, 1);
+    assert.equal(report.requestedOutputTokens, 8_000);
+    assert.ok(report.cases.some(item => !item.passed));
+  }
+});
 
 test("reviewer evaluation rejects unauthorized contexts before credential checks or provider use", async () => {
   assert.doesNotThrow(() => assertFreeReviewerAuthority(authority));
@@ -96,6 +200,8 @@ test("one bounded default-Llama request evaluates four opaque synthetic cases wi
   assert.equal(calls, 1);
   assert.equal(report.status, "passed");
   assert.equal(report.model, DEFAULT_CLOUDFLARE_AI_MODEL);
+  assert.equal(report.caseSet, "regression");
+  assert.equal(report.cases.length, 4);
   assert.equal(report.code, null);
   assert.ok(report.cases.every(item => item.passed));
   assert.deepEqual([report.modelRequests, report.maxModelRequests, report.requestedOutputTokens], [1, 1, 1_800]);
@@ -559,10 +665,12 @@ test("reviewer workflow is manual owner/main read-only, uses existing credential
   const trigger = workflow.slice(workflow.indexOf("on:"), workflow.indexOf("permissions:"));
   assert.match(trigger, /^  workflow_dispatch:$/m);
   assert.doesNotMatch(trigger, /push:|schedule:|cron:|pull_request|workflow_run/);
-  assert.deepEqual([...trigger.matchAll(/^      ([a-z_]+):$/gm)].map(match => match[1]), ["public_key"]);
+  assert.deepEqual([...trigger.matchAll(/^      ([a-z_]+):$/gm)].map(match => match[1]), ["public_key", "case_set"]);
   assert.match(trigger, /required: false/);
   assert.match(trigger, /default: ''/);
   assert.match(trigger, /never a private key/);
+  assert.match(trigger, /default: regression/);
+  assert.match(trigger, /type: choice\n        options:\n          - regression\n          - holdouts/);
   for (const expression of ["github.repository == 'itworksinprod/first-fold'", "github.ref == 'refs/heads/main'",
     "github.actor == 'itworksinprod'", "github.run_attempt == 1"]) assert.ok(workflow.includes(expression));
   assert.match(workflow, /^permissions: \{\}$/m);
@@ -577,11 +685,15 @@ test("reviewer workflow is manual owner/main read-only, uses existing credential
   assert.match(workflow, /FREE_REVIEWER_MODEL: '@cf\/openai\/gpt-oss-120b'/);
   assert.match(workflow, /node scripts\/automation\/check-free-reviewer\.mjs --explain-rejections/);
   assert.match(workflow, /tests\/review-rejections\.test\.mjs/);
+  assert.match(workflow, /tests\/reviewer-holdouts\.test\.mjs/);
   assert.ok(workflow.indexOf("Test synthetic reviewer boundaries") < workflow.indexOf("secrets.CLOUDFLARE_AI_API_TOKEN"));
-  const keyValidation = workflow.slice(workflow.indexOf("- name: Validate optional diagnostic public key"),
-    workflow.indexOf("- name: Evaluate four synthetic cases"));
+  const keyValidation = workflow.slice(workflow.indexOf("- name: Validate diagnostic options before credentials"),
+    workflow.indexOf("- name: Evaluate selected synthetic cases"));
   assert.match(keyValidation, /--validate-diagnostic-key/);
   assert.doesNotMatch(keyValidation, /secrets\.|CLOUDFLARE/);
+  assert.match(keyValidation, /FREE_REVIEWER_CASE_SET: \$\{\{ inputs\.case_set \}\}/);
+  assert.equal([...workflow.matchAll(/FREE_REVIEWER_CASE_SET: \$\{\{ inputs\.case_set \}\}/gu)].length, 2);
+  assert.doesNotMatch(workflow, /run:.*\$\{\{.*inputs\./);
   assert.match(workflow, /if: always\(\) && inputs\.public_key != ''/);
   assert.match(workflow, /path: \$\{\{ runner\.temp \}\}\/reviewer-provider-failure\.encrypted\.json/);
   assert.match(workflow, /retention-days: 1/);

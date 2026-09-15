@@ -7,6 +7,14 @@ on:
         required: false
         default: ''
         type: string
+      case_set:
+        description: Fixed synthetic case set; each dispatch makes only one reviewer request
+        required: false
+        default: regression
+        type: choice
+        options:
+          - regression
+          - holdouts
 permissions: {}
 concurrency:
   group: personal-morning-paper
@@ -26,14 +34,16 @@ jobs:
         with:
           node-version: '24'
       - name: Test synthetic reviewer boundaries before using credentials
-        run: node --test tests/explicit-claim-review.test.mjs tests/review-rejections.test.mjs tests/free-reviewer-quality-workflow.test.mjs tests/free-workers-ai.test.mjs
-      - name: Validate optional diagnostic public key before credentials
+        run: node --test tests/explicit-claim-review.test.mjs tests/review-rejections.test.mjs tests/reviewer-holdouts.test.mjs tests/free-reviewer-quality-workflow.test.mjs tests/free-workers-ai.test.mjs
+      - name: Validate diagnostic options before credentials
         env:
           DIAGNOSTIC_PUBLIC_KEY: ${{ inputs.public_key }}
+          FREE_REVIEWER_CASE_SET: ${{ inputs.case_set }}
         run: node scripts/automation/check-free-reviewer.mjs --validate-diagnostic-key
-      - name: Evaluate four synthetic cases with one free reviewer request
+      - name: Evaluate selected synthetic cases with one free reviewer request
         env:
           DIAGNOSTIC_PUBLIC_KEY: ${{ inputs.public_key }}
+          FREE_REVIEWER_CASE_SET: ${{ inputs.case_set }}
           FREE_REVIEWER_MODEL: '@cf/openai/gpt-oss-120b'
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_AI_API_TOKEN: ${{ secrets.CLOUDFLARE_AI_API_TOKEN }}

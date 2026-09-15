@@ -137,3 +137,37 @@ Before this bounded completion-budget test, the refreshed dashboard showed
 and all 917 offline tests, including exact per-profile budgets and rejection
 of caller-supplied budget overrides. Carlos authorized continuing the repair;
 this does not authorize paid service, lower quality gates or a changed recipient.
+
+## Completed verdicts exposed a premise/inference ambiguity
+
+Run [34916672646](https://github.com/itworksinprod/first-fold/actions/runs/34916672646)
+used `6655fff` and completed one bounded 8,000-token diagnostic request. It
+returned a valid payload and valid sentence-bound rejection references. All
+three negative cases were rejected, but the supported control was rejected
+solely on `factsSupported`; its claims and all other flags, including
+`analysisSupported`, were true. The allegation targeted the conditional
+read-only-inventory benefit in `whyItMatters:0`, citing the passage that
+documents the read-only capability. The overall result was
+`REVIEW_EVAL_VERDICT_MISMATCH`, not a provider or format failure.
+
+Independent adjudication found that the cited sentence expresses a conditional
+use of the documented capability, not a new empirical result or guarantee.
+The reviewer prompt now explicitly distinguishes source-supported factual
+premises from a practical inference, while requiring independent evaluation of
+whether the consequence follows. Unsupported premises, conditions, scope,
+measurements and guarantees remain vetoes. No false verdict is rewritten by
+code. The original fixtures and expected outcomes are unchanged.
+
+These four examples are now regression cases, not fresh evidence of
+generalization. The manual diagnostic therefore has a fixed `case_set` choice:
+`regression` selects the original four; `holdouts` selects two pre-existing,
+unchanged cases with separately locked fixture hashes. Each dispatch evaluates
+only one set with one request. Expected labels never enter the provider prompt.
+Unknown case sets fail before credentials or inference. A passing regression
+must be followed by the separate holdout evaluation before considering a
+full-paper test. Neither result alone establishes newspaper or delivery quality.
+
+The prompt and selector passed independent review and 42 focused offline tests.
+They do not activate the experimental reviewer in the daily workflow. A
+separate mixed-model prototype remains local and must not be treated as a
+verified or published production repair.
