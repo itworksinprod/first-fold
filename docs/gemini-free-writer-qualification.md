@@ -4,7 +4,9 @@ This adds a separate Google Gemini adapter and a manual qualification workflow.
 It does **not** switch the daily paper, run live news discovery, send email,
 publish a paper or establish parity with a paid writer. Mock tests establish
 code behavior, not model quality. No successful live Gemini result has yet been
-recorded for this implementation.
+recorded for this implementation. See the
+[September 16 live-test record](gemini-live-check-2026-09-16.md): Google returned
+HTTP 503 / UNAVAILABLE before producing any review or draft.
 
 ## Free account requirement
 
