@@ -4,6 +4,8 @@ import { createHash } from "node:crypto";
 // and a caller confirmation cannot prove that billing remains disabled.
 export const GEMINI_PROVIDER = "google-gemini";
 export const GEMINI_FREE_MODEL = "gemini-3.8-flash";
+export const GEMINI_LITE_MODEL = "gemini-3.5-flash-lite";
+const allowedModels = [GEMINI_FREE_MODEL, GEMINI_LITE_MODEL];
 export const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_FREE_MODEL}:generateContent`;
 const hash = value => createHash("sha256").update(value).digest("hex");
 const object = value => value && typeof value === "object" && !Array.isArray(value);
@@ -52,7 +54,7 @@ export function geminiFailureDiagnostic(failure) {
 
 export function buildGeminiRequest({ model = GEMINI_FREE_MODEL, messages, schema, maxTokens = 8000,
   thinking = "medium", tools, cachedContent, endpoint } = {}) {
-  if (model !== GEMINI_FREE_MODEL || tools !== undefined || cachedContent !== undefined || endpoint !== undefined ||
+  if (!allowedModels.includes(model) || tools !== undefined || cachedContent !== undefined || endpoint !== undefined ||
       !["low", "medium", "high"].includes(thinking) || !Number.isInteger(maxTokens) || maxTokens < 1 || maxTokens > 8000 ||
       !Array.isArray(messages) || messages.length !== 2 || messages[0]?.role !== "system" || messages[1]?.role !== "user" ||
       messages.some(message => Object.keys(message).sort().join() !== "content,role" ||
@@ -77,6 +79,9 @@ export async function requestGeminiEditorial({ apiKey, freeTierConfirmed, valida
       typeof fetchImpl !== "function" || typeof validatePayload !== "function" || maxAttempts !== 1 ||
       !Number.isInteger(timeoutMs) || timeoutMs < 10 || timeoutMs > 180000) throw invalid();
   const request = buildGeminiRequest(options);
+  const model = options.model ?? GEMINI_FREE_MODEL;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+  const versionPattern = new RegExp(`^${model.replaceAll(".", "\\.")}(?:-\\d{3}|-\\d{4}-\\d{2}-\\d{2})?$`, "u");
   const controller = new AbortController();
   let reader, timer;
   const timeout = new Promise((_, reject) => {
@@ -85,10 +90,10 @@ export async function requestGeminiEditorial({ apiKey, freeTierConfirmed, valida
       reject(error("GEMINI_TIMEOUT")); }, timeoutMs);
   });
   const operation = async () => {
-    const response = await fetchImpl(GEMINI_URL, { method: "POST", redirect: "error", credentials: "omit",
+    const response = await fetchImpl(url, { method: "POST", redirect: "error", credentials: "omit",
       cache: "no-store", signal: controller.signal, body: request.serialized,
       headers: { "content-type": "application/json", accept: "application/json", "x-goog-api-key": apiKey } });
-    if (!response || !Number.isInteger(response.status) || response.redirected || (response.url && response.url !== GEMINI_URL)) {
+    if (!response || !Number.isInteger(response.status) || response.redirected || (response.url && response.url !== url)) {
       throw error("GEMINI_RESPONSE_INVALID");
     }
     if (!response.ok) {
@@ -127,7 +132,7 @@ export async function requestGeminiEditorial({ apiKey, freeTierConfirmed, valida
     try { envelope = JSON.parse(text); } catch { throw error("GEMINI_RESPONSE_INVALID"); }
     if (!object(envelope) || Object.hasOwn(envelope, "error") || envelope.promptFeedback?.blockReason ||
         !Array.isArray(envelope.candidates) || envelope.candidates.length !== 1 ||
-        !/^gemini-3\.8-flash(?:-\d{3}|-\d{4}-\d{2}-\d{2})?$/u.test(envelope.modelVersion ?? "")) {
+        !versionPattern.test(envelope.modelVersion ?? "")) {
       throw error("GEMINI_RESPONSE_INVALID");
     }
     const candidate = envelope.candidates[0];
@@ -152,7 +157,7 @@ export async function requestGeminiEditorial({ apiKey, freeTierConfirmed, valida
     const usage = envelope.usageMetadata ?? {};
     const safeUsage = Object.fromEntries(["promptTokenCount", "candidatesTokenCount", "thoughtsTokenCount", "totalTokenCount"]
       .filter(key => Number.isInteger(usage[key]) && usage[key] >= 0 && usage[key] <= 100000).map(key => [key, usage[key]]));
-    return { provider: GEMINI_PROVIDER, model: GEMINI_FREE_MODEL, modelVersion: envelope.modelVersion,
+    return { provider: GEMINI_PROVIDER, model, modelVersion: envelope.modelVersion,
       editorialPayload, requestSha256: request.requestSha256, responseSha256,
       responseId: `gemini-${responseSha256}`, usage: safeUsage, attemptCount: 1 };
   };

@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 import { geminiQualificationCases, geminiWriterControls } from "../../tests/fixtures/gemini-qualification.mjs";
 import { buildExplicitClaimReview, validateExplicitClaimReview } from "./free/explicit-claim-review.mjs";
 import { GROUNDED_DRAFT_SCHEMA, WRITER_PROMPT, localPromptDossier, validateGroundedStory } from "./free/grounded-draft.mjs";
-import { buildGeminiRequest, requestGeminiEditorial, geminiFailureDiagnostic, GEMINI_FREE_MODEL, GEMINI_PROVIDER } from "./free/gemini-ai.mjs";
+import { buildGeminiRequest, requestGeminiEditorial, geminiFailureDiagnostic, GEMINI_FREE_MODEL, GEMINI_LITE_MODEL, GEMINI_PROVIDER } from "./free/gemini-ai.mjs";
 
 export const FREE_PROJECT_CONFIRMATION = "FREE PROJECT BILLING DISABLED";
 const fields = ["factsSupported", "attributionAccurate", "analysisSupported", "usefulAndSpecific"];
@@ -22,7 +22,7 @@ const actualVerdict = review => {
   return { ...actual, accepted: actual.claims.every(Boolean) && fields.every(field => actual[field] === true) };
 };
 
-export async function checkGeminiWriter({ apiKey, freeProjectConfirmation,
+export async function checkGeminiWriter({ apiKey, freeProjectConfirmation, model = GEMINI_FREE_MODEL,
   aiRequestImpl = requestGeminiEditorial, fetchImpl = globalThis.fetch } = {}) {
   const cases = geminiQualificationCases();
   const receipts = [], verdicts = [];
@@ -30,13 +30,13 @@ export async function checkGeminiWriter({ apiKey, freeProjectConfirmation,
   let failureDiagnostic = {};
   const request = async (prompt, data, schema, validatePayload) => {
     if (modelRequests >= 5) fail("GEMINI_CONFIGURATION_INVALID");
-    const options = { apiKey, freeTierConfirmed: true, model: GEMINI_FREE_MODEL,
+    const options = { apiKey, freeTierConfirmed: true, model,
       messages: [{ role: "system", content: prompt }, { role: "user", content: JSON.stringify(data) }],
       schema, maxTokens: 8000, thinking: "medium", timeoutMs: 180000, maxAttempts: 1, fetchImpl, validatePayload };
     const { requestSha256 } = buildGeminiRequest(options);
     modelRequests++;
     const result = await aiRequestImpl(options);
-    if (result.provider !== GEMINI_PROVIDER || result.model !== GEMINI_FREE_MODEL || result.attemptCount !== 1 ||
+    if (result.provider !== GEMINI_PROVIDER || result.model !== model || result.attemptCount !== 1 ||
         result.requestSha256 !== requestSha256 || !/^[a-f0-9]{64}$/u.test(result.responseSha256 ?? "")) {
       fail("GEMINI_QUALIFICATION_PROVENANCE");
     }
@@ -54,6 +54,7 @@ export async function checkGeminiWriter({ apiKey, freeProjectConfirmation,
   };
   try {
     if (freeProjectConfirmation !== FREE_PROJECT_CONFIRMATION) fail("GEMINI_FREE_TIER_NOT_CONFIRMED");
+    if (![GEMINI_FREE_MODEL, GEMINI_LITE_MODEL].includes(model)) fail("GEMINI_CONFIGURATION_INVALID");
     // Validate configuration before counting or permitting any model call.
     if (typeof apiKey !== "string" || !/^[A-Za-z0-9_.-]{20,256}$/u.test(apiKey)) fail("GEMINI_CONFIGURATION_INVALID");
     stage = "reviewer-regressions";
@@ -85,7 +86,7 @@ export async function checkGeminiWriter({ apiKey, freeProjectConfirmation,
     failureDiagnostic = geminiFailureDiagnostic(error);
   }
   return { status: code ? "failed" : "passed", code, stage, ...failureDiagnostic,
-    mode: "offline-evidence-model-qualification-not-a-paper", provider: GEMINI_PROVIDER, model: GEMINI_FREE_MODEL,
+    mode: "offline-evidence-model-qualification-not-a-paper", provider: GEMINI_PROVIDER, model,
     billingCheck: "caller-confirmation-only-not-provider-verification", productionEnabled: false,
     modelRequests, maxModelRequests: 5, maxRequestedOutputTokens: 40000,
     requestedOutputTokens: modelRequests * 8000, emailRequests: 0, liveResearchRequests: 0,
