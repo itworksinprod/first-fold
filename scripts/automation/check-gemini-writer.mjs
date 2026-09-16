@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 import { geminiQualificationCases, geminiWriterControls } from "../../tests/fixtures/gemini-qualification.mjs";
 import { buildExplicitClaimReview, validateExplicitClaimReview } from "./free/explicit-claim-review.mjs";
 import { GROUNDED_DRAFT_SCHEMA, WRITER_PROMPT, localPromptDossier, validateGroundedStory } from "./free/grounded-draft.mjs";
-import { buildGeminiRequest, requestGeminiEditorial, GEMINI_FREE_MODEL, GEMINI_PROVIDER } from "./free/gemini-ai.mjs";
+import { buildGeminiRequest, requestGeminiEditorial, geminiFailureDiagnostic, GEMINI_FREE_MODEL, GEMINI_PROVIDER } from "./free/gemini-ai.mjs";
 
 export const FREE_PROJECT_CONFIRMATION = "FREE PROJECT BILLING DISABLED";
 const fields = ["factsSupported", "attributionAccurate", "analysisSupported", "usefulAndSpecific"];
@@ -27,6 +27,7 @@ export async function checkGeminiWriter({ apiKey, freeProjectConfirmation,
   const cases = geminiQualificationCases();
   const receipts = [], verdicts = [];
   let modelRequests = 0, stage = "configuration", code = null, draftedStories = 0, reviewedStories = 0;
+  let failureDiagnostic = {};
   const request = async (prompt, data, schema, validatePayload) => {
     if (modelRequests >= 5) fail("GEMINI_CONFIGURATION_INVALID");
     const options = { apiKey, freeTierConfirmed: true, model: GEMINI_FREE_MODEL,
@@ -81,8 +82,9 @@ export async function checkGeminiWriter({ apiKey, freeProjectConfirmation,
     stage = "complete";
   } catch (error) {
     code = safeErrors.has(error?.code) ? error.code : "GEMINI_QUALIFICATION_FAILED";
+    failureDiagnostic = geminiFailureDiagnostic(error);
   }
-  return { status: code ? "failed" : "passed", code, stage,
+  return { status: code ? "failed" : "passed", code, stage, ...failureDiagnostic,
     mode: "offline-evidence-model-qualification-not-a-paper", provider: GEMINI_PROVIDER, model: GEMINI_FREE_MODEL,
     billingCheck: "caller-confirmation-only-not-provider-verification", productionEnabled: false,
     modelRequests, maxModelRequests: 5, maxRequestedOutputTokens: 40000,

@@ -15,6 +15,40 @@ const clone = value => JSON.parse(JSON.stringify(value));
 const cancel = target => {
   try { Promise.resolve(target?.cancel()).catch(() => {}); } catch { /* best effort, never block completion */ }
 };
+const safeStatuses = new Set(["INVALID_ARGUMENT", "UNAUTHENTICATED", "PERMISSION_DENIED", "NOT_FOUND",
+  "RESOURCE_EXHAUSTED", "FAILED_PRECONDITION", "INTERNAL", "UNAVAILABLE", "DEADLINE_EXCEEDED"]);
+const safeReasons = new Set(["API_KEY_INVALID", "API_KEY_SERVICE_BLOCKED", "API_KEY_IP_ADDRESS_BLOCKED",
+  "API_KEY_HTTP_REFERRER_BLOCKED", "SERVICE_DISABLED", "CONSUMER_INVALID", "BILLING_DISABLED"]);
+// Error prose may echo credentials or source input. Retain only known enums and
+// exact request-field names, never messages, metadata or arbitrary field paths.
+function safeFailureDetails(envelope) {
+  const value = envelope?.error;
+  const result = {};
+  if (safeStatuses.has(value?.status)) result.providerStatus = value.status;
+  const reasons = [], fields = [];
+  for (const item of Array.isArray(value?.details) ? value.details.slice(0, 10) : []) {
+    if (safeReasons.has(item?.reason)) reasons.push(item.reason);
+    for (const violation of Array.isArray(item?.fieldViolations) ? item.fieldViolations.slice(0, 10) : []) {
+      if (["generation_config.response_json_schema", "generationConfig.responseJsonSchema",
+        "generation_config.thinking_config", "generationConfig.thinkingConfig", "model", "contents",
+        "generation_config.max_output_tokens", "generationConfig.maxOutputTokens"].includes(violation?.field)) fields.push(violation.field);
+    }
+  }
+  if (reasons.length) result.providerReasons = [...new Set(reasons)];
+  if (fields.length) result.invalidFields = [...new Set(fields)];
+  return result;
+}
+export function geminiFailureDiagnostic(failure) {
+  if (!["GEMINI_HTTP_ERROR", "GEMINI_FREE_QUOTA_EXHAUSTED"].includes(failure?.code)) return {};
+  return {
+    ...(Number.isInteger(failure.httpStatus) && failure.httpStatus >= 400 && failure.httpStatus <= 599
+      ? { httpStatus: failure.httpStatus } : {}),
+    ...safeFailureDetails({ error: { status: failure.providerStatus, details: [
+      ...(Array.isArray(failure.providerReasons) ? failure.providerReasons.map(reason => ({ reason })) : []),
+      { fieldViolations: Array.isArray(failure.invalidFields) ? failure.invalidFields.map(field => ({ field })) : [] },
+    ] } }),
+  };
+}
 
 export function buildGeminiRequest({ model = GEMINI_FREE_MODEL, messages, schema, maxTokens = 8000,
   thinking = "medium", tools, cachedContent, endpoint } = {}) {
@@ -58,8 +92,23 @@ export async function requestGeminiEditorial({ apiKey, freeTierConfirmed, valida
       throw error("GEMINI_RESPONSE_INVALID");
     }
     if (!response.ok) {
-      cancel(response.body); // Never read or log a provider error body.
-      throw error(response.status === 429 ? "GEMINI_FREE_QUOTA_EXHAUSTED" : "GEMINI_HTTP_ERROR", response.status);
+      let details = {};
+      if (/^application\/json(?:\s*;|$)/iu.test(response.headers?.get("content-type") ?? "") && response.body?.getReader) {
+        reader = response.body.getReader();
+        let bytes = 0, encoded = "";
+        const decoder = new TextDecoder("utf-8", { fatal: true });
+        try {
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (controller.signal.aborted) throw error("GEMINI_TIMEOUT");
+            if (done) break;
+            if (!(value instanceof Uint8Array) || (bytes += value.byteLength) > 16000) break;
+            encoded += decoder.decode(value, { stream: true });
+          }
+          if (bytes <= 16000) details = safeFailureDetails(JSON.parse(encoded + decoder.decode()));
+        } catch { /* HTTP status remains useful; do not echo body or parser errors. */ }
+      } else cancel(response.body);
+      throw Object.assign(error(response.status === 429 ? "GEMINI_FREE_QUOTA_EXHAUSTED" : "GEMINI_HTTP_ERROR", response.status), details);
     }
     if (!/^application\/json(?:\s*;|$)/iu.test(response.headers.get("content-type") ?? "")) throw error("GEMINI_RESPONSE_INVALID");
     if (!response.body?.getReader) throw error("GEMINI_RESPONSE_INVALID");

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildGeminiRequest, requestGeminiEditorial, GEMINI_FREE_MODEL, GEMINI_PROVIDER, GEMINI_URL } from "../scripts/automation/free/gemini-ai.mjs";
+import { buildGeminiRequest, requestGeminiEditorial, geminiFailureDiagnostic, GEMINI_FREE_MODEL, GEMINI_PROVIDER, GEMINI_URL } from "../scripts/automation/free/gemini-ai.mjs";
 
 const secret = "test-key-never-log-this-value";
 const options = () => ({ apiKey: secret, freeTierConfirmed: true,
@@ -92,6 +92,26 @@ test("response limits cover content type, bytes, UTF-8 and unexpected redirects"
     new Response(new Uint8Array([0xff]), { headers: { "content-type": "application/json" } }),
     { status: 200, ok: true, redirected: true }, { status: 200, ok: true, url: "https://other.example" }];
   for (const item of responses) await assert.rejects(requestGeminiEditorial({ ...options(), fetchImpl: async () => item }));
+});
+
+test("HTTP diagnostics retain only allowlisted provider enums and bounded field names", async () => {
+  const body = { error: { status: "INVALID_ARGUMENT", message: secret, details: [
+    { reason: "API_KEY_INVALID", metadata: { key: secret } }, { reason: secret },
+    { fieldViolations: [{ field: "generationConfig.responseJsonSchema", description: secret }, { field: secret }] },
+  ] } };
+  await assert.rejects(requestGeminiEditorial({ ...options(), fetchImpl: async () => new Response(JSON.stringify(body),
+    { status: 400, headers: { "content-type": "application/json" } }) }), failure => {
+    assert.deepEqual(geminiFailureDiagnostic(failure), { httpStatus: 400, providerStatus: "INVALID_ARGUMENT",
+      providerReasons: ["API_KEY_INVALID"], invalidFields: ["generationConfig.responseJsonSchema"] });
+    assert.doesNotMatch(JSON.stringify(failure), /never-log/);
+    return true;
+  });
+  assert.deepEqual(geminiFailureDiagnostic({ code: "GEMINI_HTTP_ERROR", httpStatus: 999,
+    providerStatus: secret, providerReasons: [secret], invalidFields: [secret] }), {});
+  for (const content of ["x".repeat(16001), "{broken-json"]) {
+    await assert.rejects(requestGeminiEditorial({ ...options(), fetchImpl: async () => new Response(content,
+      { status: 403, headers: { "content-type": "application/json" } }) }), { code: "GEMINI_HTTP_ERROR", httpStatus: 403 });
+  }
 });
 
 test("deadline covers fetch, stream, validation and non-cooperative cleanup", async () => {

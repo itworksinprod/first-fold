@@ -115,6 +115,7 @@ test("absent key, billing confirmation, provider errors and quota exhaustions fa
     assert.equal(report.status, "failed");
     assert.equal(report.modelRequests, 1);
     assert.equal(report.receipts.length, 0);
+    assert.equal(report.httpStatus, status);
     assert.doesNotMatch(JSON.stringify(report), /PRIVATE_PROVIDER_ERROR/);
   }
 });
