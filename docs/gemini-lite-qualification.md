@@ -22,3 +22,23 @@ free standard input/output, but not free Google Search grounding. This test uses
 search tools. [Model documentation](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite)
 lists structured outputs. Neither published availability nor passing local tests
 proves live service access, useful news quality, or successful delivery.
+
+## Live result — September 16, 2026
+
+[Run 35136151174](https://github.com/itworksinprod/first-fold/actions/runs/35136151174)
+used commit `46ee0ef`. The project visibly remained Free tier before launch.
+All 1,002 local tests passed. The availability probe succeeded, and all three
+regression batches returned structured verdicts without provider errors.
+
+Six of eight cases passed. The reviewer falsely approved both
+`hypothetical-path-as-measured-result` and
+`research-misrepresented-as-product-release`. These are substantive failures,
+not transport failures. The existing prompt already requires factual support for
+measurements and for headline/deck assertions, so availability is not a fix for
+the demonstrated quality problem. Preserve these verdicts; do not repeatedly
+sample this unchanged test until it passes or lower expected outcomes.
+
+The gate stopped before writer controls: zero drafted stories, zero delivered
+emails and no production changes. Free model access is demonstrated; automatic
+editorial qualification is not. A future reviewed design change needs a new
+version and additional regression coverage, not relabeling this failed result.
