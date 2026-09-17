@@ -1,0 +1,60 @@
+{
+  "purpose": "Rejected raw draft regression; never an approved story",
+  "sourceRun": "35276594259",
+  "sourceCommit": "8a9ff9e730f9047c55455d011ac02aa115a6f9c4",
+  "originalDraftSha256": "10e31001a37deb576cd5ca3fd3083bdfcba4ff022bb23bfdbb51b0cc54ae526b",
+  "originalEvidenceMapSha256": "fd59b8ae4f9a071d228c35103bca18179649ae13a1b39d92e26d35f601328e98",
+  "sourceTextSha256": "faf087fa51485f1b22275ff4aa674e91050fa9619888d05ee2bd16d1cc86c1a2",
+  "passagesSha256": "c38b1e91cbe65047c36e48e952da667fdc7a0fff4b814f68e5ef7e28c8f42b57",
+  "draft": {
+    "candidateId": "candidate-639685085e012b47",
+    "headline": "CISA Details Account Hijacking Flaw in Siemens Mendix SAML Modules",
+    "deck": "A security advisory from CISA warns that improper cryptographic signature verification in certain Mendix SAML modules could permit unauthenticated remote session hijacking.",
+    "claims": [
+      {
+        "text": "According to a CISA advisory, the Siemens Mendix SAML module contains a vulnerability designated as CVE-2026-80465 that fails to properly validate SAML response signatures.",
+        "supports": [
+          {
+            "evidenceId": "S1P5"
+          },
+          {
+            "evidenceId": "S1P18"
+          }
+        ]
+      },
+      {
+        "text": "CISA reports that this improper verification flaw could allow unauthenticated remote attackers to hijack user sessions in certain single sign-on configurations.",
+        "supports": [
+          {
+            "evidenceId": "S1P5"
+          },
+          {
+            "evidenceId": "S1P18"
+          }
+        ]
+      }
+    ],
+    "whyItMatters": "The vulnerability carries a high CVSS base score of 8.7 because it affects authentication integrity across critical manufacturing and information technology sectors. When deployed improperly without signature checks, remote attackers can bypass authentication controls and compromise active accounts without requiring prior credentials or user interaction, potentially disrupting secure operations.",
+    "whatToDoOrWatch": "Prior to deploying defensive measures, organizations should perform proper impact analysis and risk assessment. Following these evaluations, administrators should apply vendor updates to upgrade compatible Mendix installations to version 3.6.27 or version 4.2.3 and later."
+  },
+  "evidenceForFields": {
+    "headline": [
+      "S1P1",
+      "S1P5"
+    ],
+    "deck": [
+      "S1P2",
+      "S1P18"
+    ],
+    "whyItMatters": [
+      "S1P10",
+      "S1P12",
+      "S1P31"
+    ],
+    "whatToDoOrWatch": [
+      "S1P26",
+      "S1P27",
+      "S1P49"
+    ]
+  }
+}

@@ -4,6 +4,7 @@
 import { createHash } from "node:crypto";
 import { validateGroundedStory } from "./grounded-draft.mjs";
 import { previewSourceIntegrityHolds } from "./preview-evidence-gate.mjs";
+import { advisoryDraftAlarms } from "./preview-advisory-contract.mjs";
 
 const FIELDS = ["headline", "deck", "whyItMatters", "whatToDoOrWatch"];
 const hash = value => createHash("sha256").update(JSON.stringify(value) ?? "undefined").digest("hex");
@@ -19,6 +20,7 @@ export function buildPreviewReviewPacket(draft, dossier, evidenceForFields) {
   const structural = validateGroundedStory(draft, dossier, reason => errors.push(reason), { previewFieldEvidence: evidenceForFields });
   const holds = [...previewSourceIntegrityHolds(dossier)];
   if (!structural) holds.push("STRUCTURAL_VALIDATION_FAILED");
+  holds.push(...advisoryDraftAlarms(draft, dossier, evidenceForFields).map(a => a.code));
   const units = [
     ...FIELDS.map(field => ({ field, text: draft?.[field], evidenceIds: evidenceForFields?.[field] })),
     ...(draft?.claims ?? []).map((claim, i) => ({ field: `claims.${i}`, text: claim.text, evidenceIds: claim.supports?.map(s => s.evidenceId) })),

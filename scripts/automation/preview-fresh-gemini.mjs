@@ -67,6 +67,7 @@ export async function previewFreshGemini({ publicKey, apiKey, freeProjectConfirm
     // one initial call reserved for each remaining candidate; never retry quota,
     // provider or semantic-review failures, or repeatedly sample a verdict.
     if (result.report?.code === "GEMINI_EDITORIAL_VALIDATION_FAILED" &&
+        !result.report.structuralErrors?.some(code => code.startsWith('ADVISORY_')) &&
         result.rejectedDiagnostic?.rejectionDetails?.length && requests + (candidates.length - i - 1) < 4) {
       record.initialRejection = result;
       requests++;

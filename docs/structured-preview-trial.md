@@ -193,3 +193,33 @@ before readiness and the unchanged final desk/entity-diversity selection.
 Ordinary production candidate limits are unchanged. An end-to-end collector
 fixture verifies three unreadable leaders plus a readable fourth candidate
 produce one ready selection; no threshold, source veto or fetch limit is relaxed.
+
+## Fifth live result: real draft produced, independent editorial review rejected it
+
+Run `35276594259` at `8a9ff9e` completed 47/48 feeds, 24 capture attempts and
+eight replacements. It produced one draft after an initial structural rejection
+and the existing single correction (two model calls, zero email requests).
+The encrypted artifact SHA256 was
+`655acd7b9d2080c26fb2d9e500fbcaf5d38ac92b024224eca59eed73dad2ce24`.
+This is evidence of functioning research-to-draft plumbing, not writing quality
+or delivery readiness. The independent reviewer held the unedited raw draft:
+its claims were supported, but the deck lost an attack condition, its analysis
+invented score causality and operator error, its action omitted update-branch
+applicability, and its chronology omitted the vendor origin/republication.
+
+The raw rejected draft and field map are retained as a negative regression.
+A preview-only advisory outline now asks for concrete scope and action facts,
+with chronology and conditions made explicit. Narrow known-defect alarms are
+also rebuilt during final review; they are not an entailment checker and cannot
+approve prose. The ordinary production writer and editorial scorecard are not
+changed. Fresh previews do not automatically retry an advisory editorial alarm.
+
+The next isolated experiment reconstructs the same 59 source passages from the
+already-public stored CISA main capture. Both source text and serialized passage
+hashes must match run11. That fixture is NOT the same full HTTP response: its
+capture hash is distinct, retrieval timestamps are unknown, and a new dossier
+and review binding are generated. It is labelled stored-evidence correction,
+not fresh research or today's paper. One actual Gemini request maximum, no
+retry, no search/email credentials, and encrypted outputs including failures.
+The raw result requires a new independent field-by-field review. No manual
+prose rewrite is part of the experiment.

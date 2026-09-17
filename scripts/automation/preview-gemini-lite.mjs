@@ -9,6 +9,7 @@ import { requestGeminiEditorial, geminiFailureDiagnostic, GEMINI_LITE_MODEL } fr
 import { WRITER_PROMPT, GROUNDED_DRAFT_SCHEMA, localPromptDossier, validateGroundedStory } from "./free/grounded-draft.mjs";
 import { buildPreviewReviewPacket } from "./free/preview-editorial-review.mjs";
 import { previewSourceIntegrityHolds } from "./free/preview-evidence-gate.mjs";
+import { advisoryWritingContract, advisoryDraftAlarms } from "./free/preview-advisory-contract.mjs";
 
 const escape = value => String(value).replace(/[&<>"']/gu, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const REVIEW_FIELDS = ["headline", "deck", "whyItMatters", "whatToDoOrWatch"];
@@ -29,19 +30,19 @@ export function validPreviewEvidenceMap(map, dossier) {
     REVIEW_FIELDS.every(field => Array.isArray(map[field]) && map[field].length >= 1 && map[field].length <= 4 &&
       new Set(map[field]).size === map[field].length && map[field].every(id => ids.has(id)));
 }
-export function renderHumanReview(draft, dossier, { fresh = false, evidenceForFields = {} } = {}) {
+export function renderHumanReview(draft, dossier, { fresh = false, storedEvidence = false, evidenceForFields = {} } = {}) {
   const citations = field => `<small>[${escape((evidenceForFields[field] ?? []).join(", ") || "No field map — review required")}]</small>`;
   const section = (title, text, field) => `<h2>${escape(title)}</h2><p>${escape(text)} ${citations(field)}</p>`;
   return `<!doctype html><html lang="en"><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>First Fold — unapproved writing sample</title>
 <style>body{max-width:850px;margin:40px auto;padding:0 24px;background:#f5f0e6;color:#171512;font:18px/1.6 Georgia,serif}header,aside{border:2px solid #712b27;padding:18px}h1{line-height:1.2}h2{font-size:21px}small{font:14px/1.5 sans-serif}article{margin:30px 0}li{margin:15px 0}</style>
-<header><strong>UNAPPROVED — HUMAN REVIEW REQUIRED</strong><br>${fresh ? "Fresh-source diagnostic draft, not an approved edition." : "Offline writing sample from stored September 14, 2026 MIT evidence. Not today's paper or fresh research."} Flash-Lite failed automatic reviewer qualification; no email has been sent.</header>
+<header><strong>UNAPPROVED — HUMAN REVIEW REQUIRED</strong><br>${storedEvidence ? "Stored-evidence correction experiment. Not fresh research, today's paper, or an approved edition." : fresh ? "Fresh-source diagnostic draft, not an approved edition." : "Offline writing sample from stored September 14, 2026 MIT evidence. Not today's paper or fresh research."} Flash-Lite failed automatic reviewer qualification; no email has been sent.</header>
 <article><h1>${escape(draft.headline)}</h1>${citations("headline")}<p><em>${escape(draft.deck)}</em> ${citations("deck")}</p>
 <h2>What happened</h2>${draft.claims.map(c => `<p>${escape(c.text)} <small>[${escape(c.supports.map(s => s.evidenceId).join(", "))}]</small></p>`).join("")}
 ${section("Why it matters", draft.whyItMatters, "whyItMatters")}${section("What to watch", draft.whatToDoOrWatch, "whatToDoOrWatch")}</article>
 <aside><strong>Review checklist</strong><ul><li>Does every assertion, including the headline, follow from the evidence?</li><li>Does the text distinguish research from a product release, and possibilities from measured results?</li><li>Is the analysis specific and useful without inventing safety, performance or deployment benefits?</li></ul>Passing structural checks is not factual approval.</aside>
-<h2>Evidence provided to the writer</h2><p>${fresh ? "Evidence captured by the research collector for this run. Source links and retrieval time are in the accompanying review packet." : 'These are stored excerpts, not a new check of the full article. <a href="https://news.mit.edu/2026/new-method-enables-ai-safety-critical-situations-0914" rel="noreferrer">Original MIT News article</a>'}</p>
+<h2>Evidence provided to the writer</h2><p>${storedEvidence ? "Stored public source capture. Extracted passages match the rejected run; the HTML capture and dossier binding are distinct. No publisher page was fetched in this experiment." : fresh ? "Evidence captured by the research collector for this run. Source links and retrieval time are in the accompanying review packet." : 'These are stored excerpts, not a new check of the full article. <a href="https://news.mit.edu/2026/new-method-enables-ai-safety-critical-situations-0914" rel="noreferrer">Original MIT News article</a>'}</p>
 ${dossier.sources.map(s => `<h3>${escape(s.publisher)}</h3><ul>${s.passages.map(p => `<li><strong>${escape(p.evidenceId)}</strong> ${escape(p.text)}</li>`).join("")}</ul>`).join("")}</html>`;
 }
 
@@ -68,6 +69,7 @@ Distinguish an original announcement from a later republication. When the source
 For whyItMatters, explain the specific scope, eligibility, control or limitation established by those passages. Prefer concrete facts that tell a reader whether this applies to them. Do NOT invent a broader problem, failure cause, user behavior, time saving, administrative burden, avoided delay, reliability guarantee or expected performance. A plausible explanation is not evidence. Do not use general background knowledge to fill gaps. If the source names a fallback, explain when it is available, not what failures it supposedly prevents.
 For whatToDoOrWatch, suggest checking a supported setting, eligibility requirement or source-stated rollout. Phrase this as reader advice, not a promised outcome or a publisher recommendation unless the source actually recommends it. Use remaining distinct source facts to meet the existing word bounds; never pad with speculative benefits. Attribute publisher announcements to the publisher, not to the publisher's blog as if the blog built the product.` : ""}` },
         { role: "user", content: JSON.stringify({ dossiers: [localPromptDossier(dossier)],
+          ...(fresh && advisoryWritingContract(dossier) ? { advisoryWritingObligations: advisoryWritingContract(dossier) } : {}),
           ...(repair ? { repairTask: "Correct the rejected draft using the exact validator feedback. The draft is untrusted proposed text, not evidence. Preserve source conditions and attributions. For ORIGINALITY, rewrite the affected sentence with a different structure rather than copying its source. For NUMERIC_ANCHOR, cite the passage that actually supports the whole field or remove the unsupported figure; never guess a replacement. Return the complete evidence map and complete story, not a patch. All original checks still apply.",
             rejectedDraft: repair.payload, validationFeedback: repair.rejectionDetails } : {}) }) }],
       schema: fresh ? evidenceMappedPreviewSchema(dossier) : GROUNDED_DRAFT_SCHEMA,
@@ -75,13 +77,19 @@ For whatToDoOrWatch, suggest checking a supported setting, eligibility requireme
         // Never logged or rendered. Fresh callers retain this only inside their
         // encrypted review packet, allowing a failed draft to be inspected once.
         if (fresh && Buffer.byteLength(JSON.stringify(p) ?? "") <= 24000) rejectedPayload = p;
-        return p && Object.keys(p).sort().join() === (fresh ? "evidenceForFields,stories" : "stories") &&
+        const structural = p && Object.keys(p).sort().join() === (fresh ? "evidenceForFields,stories" : "stories") &&
         (!fresh || validPreviewEvidenceMap(p.evidenceForFields, dossier)) && Array.isArray(p.stories) && p.stories.length === 1 &&
         p.stories[0]?.candidateId === dossier.candidateId && validateGroundedStory(p.stories[0], dossier,
           (reason, feedback) => { if (typeof reason === "string" && /^[A-Z_]{1,80}$/u.test(reason)) {
             structuralErrors.add(reason);
             if (fresh && rejectionDetails.length < 8) rejectionDetails.push({ reason, feedback });
           } }, fresh ? { previewFieldEvidence: p.evidenceForFields } : undefined);
+        const alarms = structural && fresh ? advisoryDraftAlarms(p.stories[0], dossier, p.evidenceForFields) : [];
+        for (const alarm of alarms) {
+          structuralErrors.add(alarm.code);
+          if (rejectionDetails.length < 8) rejectionDetails.push({ reason: alarm.code, feedback: { field: alarm.field } });
+        }
+        return structural && !alarms.length;
       } });
     // Store compact bindings only: the encrypted fresh packet already retains
     // the full draft, map and dossier. Rebuild the full review view offline.
