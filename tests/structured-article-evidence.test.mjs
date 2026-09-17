@@ -6,6 +6,7 @@ import { enrichShortlist } from "../scripts/automation/free/article-evidence.mjs
 import { buildEvidencePacketSources } from "../scripts/automation/free/evidence-packets.mjs";
 import { previewEvidenceHolds } from "../scripts/automation/free/preview-evidence-gate.mjs";
 import { collectFreeResearchSnapshot } from "../scripts/automation/free/feed-engine.mjs";
+import { selectPreviewReadyCandidates } from '../scripts/automation/preview-fresh-gemini.mjs';
 const intro = "Example Server contains two distinct local vulnerabilities. The installed version and the relevant advisory determine the applicable remediation.";
 const article = s => `<article><h1>Example Server security advisory</h1><p>${intro}</p>${s}</article>`;
 const table = '<table><caption>Affected releases</caption><tr><th>CVE</th><th>Version</th><th>CVSS</th></tr><tr><td>CVE-2026-1111</td><td>1.0</td><td>7.2</td></tr><tr><td>CVE-2026-2222</td><td>2.0</td><td>9.1</td></tr></table>';
@@ -194,4 +195,27 @@ test("unallocated feed evidence cannot silently retain a legacy excerpt in stric
   });
   assert.equal(item.articleExcerpt, "");
   assert.deepEqual(item.articleExtraction.holds, ["ARTICLE_NOT_CAPTURED_UNDER_ALLOCATION"]);
+});
+test('strict collector exposes an accepted fourth candidate after three unreadable leaders',async()=>{
+  const titles=Array.from({length:5},(_,i)=>`Google patches Example${i} vulnerability CVE-2026-${10000+i}`);
+  const urls=titles.map((_,i)=>`https://workspaceupdates.googleblog.com/2026/09/security-${i}.html`);
+  const text='A critical vulnerability permits unauthenticated remote code execution and exposes customer data. Administrators must install the available security patch to remediate affected versions. The update protects enterprise deployments and provides mitigation guidance.';
+  const xml=`<rss><channel>${titles.map((title,i)=>`<item><title>${title}</title><link>${urls[i]}</link><pubDate>Thu, 17 Sep 2026 12:00:00 GMT</pubDate><description>${text}</description></item>`).join('')}</channel></rss>`;
+  const window={startInclusive:'2026-09-14T21:00:00Z',endExclusive:'2026-09-17T21:00:00Z'};
+  const run=async structured=>collectFreeResearchSnapshot({reportingWindow:window,retrievedAt:window.endExclusive,enrichArticles:true,
+    ...(structured?{articleEvidenceMode:'structured-preview'}:{}),evidencePolicy:'authoritative-or-corroborated',
+    lookupImpl:async()=>[{address:'93.184.216.34',family:4}],
+    requestImpl:async url=>url==='https://feeds.feedburner.com/GoogleAppsUpdates'?{status:200,headers:{'content-type':'application/rss+xml'},body:xml}:{status:503,headers:{},body:''},
+    articlePageFetcher:async item=>{
+      const i=urls.indexOf(item.url);return {body:`<link rel="canonical" href="${item.url}"><article><h1>${titles[i]}</h1>${i<3?'<div>Unsupported primary prose.</div>':`<p>${text}</p>`}</article>`,finalUrl:item.url,redirects:[],retrievedAt:window.endExclusive};
+    }});
+  const snapshot=await run(true);
+  assert.ok(snapshot.diagnostics.rankedCandidateCount>3,JSON.stringify(snapshot.diagnostics));
+  assert.equal(snapshot.candidates.length,snapshot.diagnostics.rankedCandidateCount);
+  // All accepted alternatives reach readiness; their own capture holds remain.
+  assert.equal(new Set(snapshot.candidates.map(c=>c.candidateId)).size,snapshot.candidates.length);
+  const selection=selectPreviewReadyCandidates(snapshot,window,{requireStructured:true});
+  assert.ok(selection.held.length>=3);
+  assert.equal(selection.selectedCandidates.length,1);
+  const legacy=await run(false);assert.ok(legacy.candidates.length<=3);
 });

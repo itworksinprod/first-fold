@@ -3607,8 +3607,13 @@ export async function collectFreeResearchSnapshot(options = {}) {
     maxCandidatesPerDesk: options.maxCandidatesPerDesk,
     evidencePolicy: normalizedEvidencePolicy,
   });
-  const candidates = Object.values(selection.desks)
-    .flatMap((desk) => desk.candidates)
+  // The preview readiness gate must see accepted alternatives after held
+  // leaders. Truncating to the normal three/desk first can hide a captured,
+  // accepted reserve behind three unreadable higher-ranked candidates.
+  // Still bounded at ten/desk (40 total), using the unchanged accepted ranker.
+  const candidates = (options.articleEvidenceMode === 'structured-preview'
+    ? FREE_DESKS.flatMap(desk => rankedCandidates.filter(c => c.suggestedDesk === desk).slice(0,10))
+    : Object.values(selection.desks).flatMap((desk) => desk.candidates))
     .sort((left, right) =>
       right.ranking.score - left.ranking.score ||
       Date.parse(right.firstPublishedAt) - Date.parse(left.firstPublishedAt) ||

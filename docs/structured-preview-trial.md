@@ -176,3 +176,20 @@ distinguish disabled, no-request, completed and failed stages without recording
 arbitrary exception text. Prior `webSearch:null` does not establish search usage
 or remaining quota. No daily writer, recipient, billing or delivery changes are
 part of this experiment. Raw resulting prose still requires independent review.
+
+## Fourth live result: reserve capture reached; readiness shortlist truncated
+
+Run `35275761499` at `75fcca1` completed 24 capture attempts, including eight
+replacements, and retained four usable captures. It still made zero model calls
+and produced no drafts. Discovery recorded zero requests (not an invented
+successful search receipt). Its original encrypted artifact SHA256 is
+`e777bdb93c563263fce69efc6a208104122ec8e2b737b8bb6e63d0dece9920e4`.
+
+The collector applied its ordinary three-candidate-per-desk display shortlist
+before the preview readiness gate. Three held leaders could therefore conceal
+a captured accepted alternative. Strict previews now expose up to ten already
+accepted candidates per desk, within the existing 40-candidate preview ceiling,
+before readiness and the unchanged final desk/entity-diversity selection.
+Ordinary production candidate limits are unchanged. An end-to-end collector
+fixture verifies three unreadable leaders plus a readable fourth candidate
+produce one ready selection; no threshold, source veto or fetch limit is relaxed.
