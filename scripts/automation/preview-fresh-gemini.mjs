@@ -6,13 +6,30 @@ import { pathToFileURL } from "node:url";
 import { collectFreeResearchSnapshot, selectFreeDeskCandidates } from "./free/feed-engine.mjs";
 import { FREE_FEED_SOURCES } from "./free/feed-sources.mjs";
 import { assertFreeResearchCoverage } from "./draft-free-edition.mjs";
-import { groundedDossiers } from "./free/grounded-draft.mjs";
+import { groundedDossiers, GROUNDED_DRAFT_SCHEMA } from "./free/grounded-draft.mjs";
 import { createTavilyDiscovery } from "./free/web-search.mjs";
 import { previewEvidenceHolds } from "./free/preview-evidence-gate.mjs";
 import { previewGeminiLite } from "./preview-gemini-lite.mjs";
 import { FREE_PROJECT_CONFIRMATION } from "./check-gemini-writer.mjs";
 import { diagnosticPublicKey, sealDiagnostic } from "./private-writer-diagnostic.mjs";
 import { createPreviewNewsworthiness } from './free/preview-newsworthiness.mjs';
+
+export function previewMechanicalRepairAllowed(result) {
+  if(result?.report?.code!=='GEMINI_EDITORIAL_VALIDATION_FAILED')return false;
+  const details=result.rejectedDiagnostic?.rejectionDetails;
+  if(!Array.isArray(details)||!details.length||details.length>8||details.some(d=>!d||typeof d!=='object'))return false;
+  if(result.report.structuralErrors!==undefined&&(!Array.isArray(result.report.structuralErrors)||
+    result.report.structuralErrors.some(code=>!['SHAPE','ORIGINALITY'].includes(code))))return false;
+  const fields=GROUNDED_DRAFT_SCHEMA.properties.stories.items.properties;
+  return details.every(({reason,feedback})=>{
+    if(reason==='ORIGINALITY')return ['headline','deck','whyItMatters','whatToDoOrWatch','claims[0].text','claims[1].text','readerCopy'].includes(feedback?.field);
+    if(reason!=='SHAPE'||!['headline','deck','whyItMatters','whatToDoOrWatch'].includes(feedback?.field))return false;
+    const schema=fields[feedback.field],text=result.rejectedDiagnostic.payload?.stories?.[0]?.[feedback.field];
+    return typeof text==='string'&&text.length<=24000&&feedback.actualCharacters===text.length&&
+      feedback.minCharacters===schema.minLength&&feedback.maxCharacters===schema.maxLength&&
+      (text.length<schema.minLength||text.length>schema.maxLength||/\b(?:access token|api key)\b/iu.test(text));
+  });
+}
 
 export function selectPreviewReadyCandidates(snapshot, reportingWindow, { requireStructured = false } = {}) {
   const pool = snapshot.candidates ?? snapshot.selectedCandidates;
@@ -65,13 +82,15 @@ export async function previewFreshGemini({ publicKey, apiKey, freeProjectConfirm
   try {selection = selectPreviewReadyCandidates(snapshot, reportingWindow, { requireStructured: true });}
   catch {return heldResult('PREVIEW_SELECTION_HELD');}
   const availableCandidates = selection.selectedCandidates;
-  const candidates = [...availableCandidates].sort((a,b)=>b.ranking.score-a.ranking.score||a.candidateId.localeCompare(b.candidateId)).slice(0,4-editorial.modelRequests);
-  const budgetOmissions=availableCandidates.filter(c=>!candidates.includes(c)).map(c=>({candidateId:c.candidateId,desk:c.suggestedDesk,reason:'PREVIEW_MODEL_BUDGET_RESERVED_FOR_EDITOR'}));
+  // Reserve ONE correction call rather than spending every slot on first drafts.
+  // This trades diagnostic breadth for correction capacity, not lower standards.
+  const candidates = [...availableCandidates].sort((a,b)=>b.ranking.score-a.ranking.score||a.candidateId.localeCompare(b.candidateId)).slice(0,3-editorial.modelRequests);
+  const budgetOmissions=availableCandidates.filter(c=>!candidates.includes(c)).map(c=>({candidateId:c.candidateId,desk:c.suggestedDesk,reason:'PREVIEW_MODEL_BUDGET_RESERVED_FOR_CORRECTION'}));
   if (!Array.isArray(candidates) || candidates.length > 4 || new Set(candidates.map(c => c.suggestedDesk)).size !== candidates.length) {
     throw Error("PREVIEW_SELECTION_INVALID");
   }
   const records = [], dossiers = groundedDossiers(candidates);
-  let requests = editorial.modelRequests, stopped = editorial.stopModels;
+  let requests = editorial.modelRequests, repairRequests=0, stopped = editorial.stopModels;
   // Reserve bounded raw results before spending writer requests. The encrypted
   // diagnostic envelope permits 350KB; duplicate rendered HTML is regenerated
   // from the retained draft/map/dossier offline, never stored three times.
@@ -88,14 +107,11 @@ export async function previewFreshGemini({ publicKey, apiKey, freeProjectConfirm
     if (holds.length) continue;
     requests++;
     let result = await draftImpl({ apiKey, freeProjectConfirmation, dossier, fresh: true });
-    // One targeted correction only, within the SAME four-request ceiling. Keep
-    // one initial call reserved for each remaining candidate; never retry quota,
-    // provider or semantic-review failures, or repeatedly sample a verdict.
-    if (result.report?.code === "GEMINI_EDITORIAL_VALIDATION_FAILED" &&
-        !result.report.structuralErrors?.some(code => code.startsWith('ADVISORY_')) &&
-        result.rejectedDiagnostic?.rejectionDetails?.length && requests + (candidates.length - i - 1) < 4) {
+    // One targeted mechanical correction across the ENTIRE experiment. Preserve
+    // every rejection; never retry provider/quota or semantic/advisory failures.
+    if (repairRequests===0 && previewMechanicalRepairAllowed(result) && requests + (candidates.length - i - 1) < 4) {
       record.initialRejection = result;
-      requests++;
+      requests++;repairRequests++;
       result = await draftImpl({ apiKey, freeProjectConfirmation, dossier, fresh: true, repair: result.rejectedDiagnostic });
     }
     record.result = result;
@@ -104,7 +120,7 @@ export async function previewFreshGemini({ publicKey, apiKey, freeProjectConfirm
   const draftCount = records.filter(r => r.result?.html).length;
   const report = { status: draftCount ? "human-review-required" : "no-reviewable-drafts",
     approved: false, qualified: false, productionEnabled: false, emailRequests: 0,
-    retrievedAt, modelRequests: requests, maxModelRequests: 4, draftCount,
+    retrievedAt, modelRequests: requests, maxModelRequests: 4, repairRequests, draftCount,
     editorialStatus:editorial.status,editorialModelRequests:editorial.modelRequests,budgetOmissions,
     evidenceMode: "structured-preview-v1", manualProseEdits: 0,
     selectedCount: candidates.length, heldCount: selection.held.length + records.filter(r => r.holds.length).length,

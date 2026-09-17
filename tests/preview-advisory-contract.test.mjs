@@ -9,6 +9,8 @@ import { assertStoredCorrectionAuthority, previewStoredCorrection } from '../scr
 import { openDiagnostic } from '../scripts/automation/private-writer-diagnostic.mjs';
 import { GEMINI_LITE_MODEL } from '../scripts/automation/free/gemini-ai.mjs';
 import { captureStructuredArticle } from '../scripts/automation/free/structured-article-evidence.mjs';
+import {previewGeminiLite} from '../scripts/automation/preview-gemini-lite.mjs';
+import {previewMechanicalRepairAllowed} from '../scripts/automation/preview-fresh-gemini.mjs';
 const { record, previousCorrection, dossier, provenance } = await storedAdvisoryCorrectionFixture();
 const rawCitationGap=JSON.parse(await readFile(new URL('./fixtures/raw-citation-gap-preview.json',import.meta.url),'utf8'));
 const sha = v => createHash('sha256').update(JSON.stringify(v)).digest('hex');
@@ -114,6 +116,15 @@ test('alarms are not an entailment checker: unknown fabricated nonnumeric assert
   d.whatToDoOrWatch='Verify the compatible vendor fix for the installed branch.';m.whatToDoOrWatch=['S1P23'];
   d.claims[0].text+=' Siemens ProductCERT original release 2026-09-03; CISA republication 2026-09-15.';
   assert.deepEqual(alarms(d,m),[]); // Deliberately NOT a positive factual verdict.
+});
+test('originality failure cannot mask a simultaneous known advisory alarm',async()=>{
+  const d=structuredClone(record.draft),map=structuredClone(record.evidenceForFields);
+  d.whyItMatters=dossier.sources[0].passages.find(p=>p.evidenceId==='S1P5').text;
+  map.whyItMatters=['S1P5'];
+  const result=await previewGeminiLite({apiKey:'synthetic-key-never-real',freeProjectConfirmation:'FREE PROJECT BILLING DISABLED',dossier,fresh:true,fetchImpl:async()=>new Response(JSON.stringify({modelVersion:GEMINI_LITE_MODEL,candidates:[{finishReason:'STOP',content:{role:'model',parts:[{text:JSON.stringify({stories:[d],evidenceForFields:map})}]}}]}),{headers:{'content-type':'application/json'}})});
+  assert.ok(result.report.structuralErrors.includes('ORIGINALITY'),JSON.stringify(result.report));
+  assert.ok(result.report.structuralErrors.includes('ADVISORY_SCOPE_EVIDENCE_REQUIRED'));
+  assert.equal(previewMechanicalRepairAllowed(result),false);
 });
 const keys=generateKeyPairSync('rsa',{modulusLength:3072});
 const settings={publicKey:keys.publicKey.export({type:'spki',format:'der'}).toString('base64'),apiKey:'synthetic-key-never-real',freeProjectConfirmation:'FREE PROJECT BILLING DISABLED'};

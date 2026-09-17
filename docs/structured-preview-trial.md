@@ -372,3 +372,29 @@ attribution alarm, keeps applicability prose away from unsupported causal benefi
 and sends separate intact per-CVE descriptions/conditions to discourage merged
 impact scopes. Raw run-13 drafts remain negative fixtures. These remain narrow
 alarms and prompt obligations, not an automatic semantic approval system.
+
+## Third trial: reserve correction capacity, keep rejected outputs
+
+Run `35285896178` at `c2730d9` retained zero drafts: GitLab encountered the
+legacy prose guard's literal `access token` ban in otherwise legitimate
+authentication advice; AWS and Bransys repeated twelve-word source sequences.
+Independent reading found no further substantive GitLab defect, but its raw
+output remains held. Bransys's deck still needs scope/impact review. Artifact
+SHA256: `c9da23f64ae5613c8eff4886cfd6d11b8c9c80246ef1618563fcec1c035b500f`.
+Web search now positively records `quota_exhausted`; no paid or extra-account
+workaround was enabled. Feed research remains available.
+
+The isolated preview now reserves one of the unchanged four calls for a single
+targeted mechanical correction, selecting up to two first drafts after its
+editor call. Omitted lower-ranked desks are explicitly budget omissions, not
+quiet desks. Only originality and recognized bounded text-field shape feedback
+qualify; broad unknown shape, provider, quota and semantic/advisory failures do
+not. Original rejection and correction remain encrypted and separately auditable.
+The credential guard is unchanged; the writer can describe authentication
+generically. A corrected draft still needs the same independent semantic review.
+Known advisory/reader alarms are evaluated even when an earlier structural check
+fails, provided the parsed fields have a safe bounded shape. Mixed shape/certainty
+and copying/advisory regressions prevent such failures from being misclassified
+as mechanical-only corrections. Unassessable malformed drafts receive an explicit
+non-mechanical hold instead of an empty alarm list. The full suite passes 1,095 tests before another
+live experiment; this is not a live quality or delivery success.

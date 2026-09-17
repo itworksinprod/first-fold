@@ -5,10 +5,36 @@ import { previewGeminiLite, renderHumanReview, evidenceMappedPreviewSchema, vali
 import { reviewerResearchScopeCases } from "./fixtures/reviewer-research-scope.mjs";
 import { GEMINI_LITE_MODEL } from "../scripts/automation/free/gemini-ai.mjs";
 import { validateGroundedStory, GROUNDED_DRAFT_SCHEMA } from "../scripts/automation/free/grounded-draft.mjs";
+import {previewMechanicalRepairAllowed} from '../scripts/automation/preview-fresh-gemini.mjs';
 const settings = { apiKey: "synthetic-preview-key-not-real", freeProjectConfirmation: "FREE PROJECT BILLING DISABLED" };
 const response = draft => new Response(JSON.stringify({ modelVersion: GEMINI_LITE_MODEL,
   candidates: [{ finishReason: "STOP", content: { role: "model", parts: [{ text: JSON.stringify({ stories: [draft] }) }] } }] }),
   { headers: { "content-type": "application/json" } });
+test('early SHAPE cannot mask a known certainty alarm and authorize mechanical repair',async()=>{
+  const {draft,dossier}=structuredClone(reviewerResearchScopeCases()[0]);
+  draft.whatToDoOrWatch='Check the personal access token configuration against the documented source limits before deciding whether any change applies to this installation.';
+  draft.whyItMatters='These controls ensure performance for everyone. The proposed approach applies to the systems described in the source account.';
+  const map=Object.fromEntries(['headline','deck','whyItMatters','whatToDoOrWatch'].map(f=>[f,[dossier.sources[0].passages[0].evidenceId]]));
+  let calls=0;
+  const result=await previewGeminiLite({...settings,dossier,fresh:true,fetchImpl:async()=>{
+    calls++;return new Response(JSON.stringify({modelVersion:GEMINI_LITE_MODEL,candidates:[{finishReason:'STOP',content:{role:'model',parts:[{text:JSON.stringify({stories:[draft],evidenceForFields:map})}]}}]}),{headers:{'content-type':'application/json'}});
+  }});
+  assert.equal(calls,1);
+  assert.ok(result.report.structuralErrors.includes('SHAPE'));
+  assert.ok(result.report.structuralErrors.includes('CERTAINTY_REVIEW_REQUIRED'));
+  assert.equal(previewMechanicalRepairAllowed(result),false);
+});
+test('unassessable claims cannot make a recognized SHAPE look mechanically repairable',async()=>{
+  const {draft,dossier}=structuredClone(reviewerResearchScopeCases()[0]);
+  draft.whatToDoOrWatch='Check the personal access token configuration against the documented source limits before deciding whether any change applies to this installation.';
+  draft.whyItMatters='These controls ensure performance for everyone. The proposed approach applies to the systems described in the source account.';
+  draft.claims[0].text=null;
+  const map=Object.fromEntries(['headline','deck','whyItMatters','whatToDoOrWatch'].map(f=>[f,[dossier.sources[0].passages[0].evidenceId]]));
+  const result=await previewGeminiLite({...settings,dossier,fresh:true,fetchImpl:async()=>new Response(JSON.stringify({modelVersion:GEMINI_LITE_MODEL,candidates:[{finishReason:'STOP',content:{role:'model',parts:[{text:JSON.stringify({stories:[draft],evidenceForFields:map})}]}}]}),{headers:{'content-type':'application/json'}})});
+  assert.ok(result.report.structuralErrors.includes('SHAPE'));
+  assert.ok(result.report.structuralErrors.includes('PREVIEW_ALARM_INPUT_UNASSESSABLE'));
+  assert.equal(previewMechanicalRepairAllowed(result),false);
+});
 test("one call creates only an unapproved evidence-paired sample, never a sendable edition", async () => {
   let calls = 0;
   const { draft } = reviewerResearchScopeCases()[0];

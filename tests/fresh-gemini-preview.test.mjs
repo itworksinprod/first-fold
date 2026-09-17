@@ -106,7 +106,7 @@ test("held top choice yields to an already-qualified reserve without duplicating
   assert.ok(["reserve", "same-entity"].includes(result.selectedCandidates[0].candidateId));
   assert.deepEqual(result.held.map(h => h.candidateId), ["broken", "low"]);
 });
-test("one targeted repair per story shares the four-call ceiling and cannot loop", async () => {
+test("one mechanical repair for the whole experiment reserves capacity within four calls", async () => {
   const evidence = strictEvidence();
   const first = { ...candidate(), feedEvidence: [evidence],
     sources: [{ id: "cert-advisory", title: evidence.title, publisher: "CERT/CC", relationship: "originating",
@@ -121,10 +121,12 @@ test("one targeted repair per story shares the four-call ceiling and cannot loop
       researchImpl: async () => ({ candidates, diagnostics: { sourceResults: [] } }), coverageImpl: () => {},
       draftImpl: async ({ repair }) => { calls++; if (repair) repairs++;
         return { report: { status: "failed", code: "GEMINI_EDITORIAL_VALIDATION_FAILED" }, html: null,
-          rejectedDiagnostic: { unapproved: true, rejectionDetails: [{ reason: "ORIGINALITY" }] } }; } });
-    assert.equal(calls, 4);
-    assert.equal(repairs, count === 2 ? 2 : 0);
-    assert.equal(result.report.modelRequests, 4);
+          rejectedDiagnostic: { unapproved: true, rejectionDetails: [{ reason: "ORIGINALITY",feedback:{field:'claims[0].text'} }] } }; } });
+    assert.equal(calls, count===2?3:4);
+    assert.equal(repairs,1);
+    assert.equal(result.report.modelRequests,calls);
+    assert.equal(result.report.repairRequests,1);
+    assert.equal(result.report.budgetOmissions.length,count===4?1:0);
     assert.equal(result.report.draftCount, 0);
   }
 });

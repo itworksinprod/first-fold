@@ -1,0 +1,245 @@
+{
+  "runId": "35285896178",
+  "commit": "c2730d93c91e6392ab276e6c35e1cfcfae3abe3e",
+  "purpose": "Untouched mechanical-failure regression; no semantic approval",
+  "records": [
+    {
+      "title": "Rate limits on GitLab.com are changing",
+      "report": {
+        "status": "failed",
+        "qualified": false,
+        "approved": false,
+        "productionEnabled": false,
+        "emailRequests": 0,
+        "liveResearchRequests": 0,
+        "model": "gemini-3.5-flash-lite",
+        "code": "GEMINI_EDITORIAL_VALIDATION_FAILED",
+        "structuralErrors": [
+          "SHAPE"
+        ]
+      },
+      "rejectedDiagnostic": {
+        "unapproved": true,
+        "payload": {
+          "evidenceForFields": {
+            "headline": [
+              "S1P1",
+              "S1P4"
+            ],
+            "deck": [
+              "S1P4",
+              "S1P6"
+            ],
+            "whyItMatters": [
+              "S1P4",
+              "S1P6",
+              "S1P22",
+              "S1P28"
+            ],
+            "whatToDoOrWatch": [
+              "S1P10",
+              "S1P14",
+              "S1P26"
+            ]
+          },
+          "stories": [
+            {
+              "candidateId": "candidate-cb9de104648a6a26",
+              "headline": "GitLab Updates GitLab.com Rate Limits Starting in October",
+              "deck": "GitLab announced that rate limits on GitLab.com will align with user subscription tiers, beginning with Free accounts and unauthenticated requests.",
+              "claims": [
+                {
+                  "text": "GitLab announced that rate limits on GitLab.com will update starting October 19, 2026, to align with user subscription tiers.",
+                  "supports": [
+                    {
+                      "evidenceId": "S1P4"
+                    }
+                  ]
+                },
+                {
+                  "text": "According to GitLab, Free accounts and unauthenticated requests change first on October 19, while Premium and Ultimate tiers move in January 2027.",
+                  "supports": [
+                    {
+                      "evidenceId": "S1P4"
+                    },
+                    {
+                      "evidenceId": "S1P6"
+                    }
+                  ]
+                }
+              ],
+              "whyItMatters": "This change applies exclusively to GitLab.com, leaving GitLab Self-Managed and GitLab Dedicated deployments unaffected by these adjustments. For users holding membership in multiple top-level groups, the user limit applies as the highest subscription tier available to that account. Premium and Ultimate subscription plans receive their own respective limits, applied per user and per top-level group.",
+              "whatToDoOrWatch": "Watch for the preview windows scheduled for Free and unauthenticated traffic to evaluate workload behavior. Authenticate requests using a personal access token, OAuth token, or CI/CD job token to move off the anonymous allowance, and check the RateLimit-Remaining response header to monitor current usage."
+            }
+          ]
+        },
+        "rejectionDetails": [
+          {
+            "reason": "SHAPE",
+            "feedback": {
+              "field": "whatToDoOrWatch",
+              "minCharacters": 100,
+              "maxCharacters": 550,
+              "actualCharacters": 305,
+              "expected": "A plain prose string within the character bounds, without markup, links, controls or instructions."
+            }
+          }
+        ]
+      }
+    },
+    {
+      "title": "Introducing Amazon EC2 T8i instances",
+      "report": {
+        "status": "failed",
+        "qualified": false,
+        "approved": false,
+        "productionEnabled": false,
+        "emailRequests": 0,
+        "liveResearchRequests": 0,
+        "model": "gemini-3.5-flash-lite",
+        "code": "GEMINI_EDITORIAL_VALIDATION_FAILED",
+        "structuralErrors": [
+          "ORIGINALITY"
+        ]
+      },
+      "rejectedDiagnostic": {
+        "unapproved": true,
+        "payload": {
+          "evidenceForFields": {
+            "headline": [
+              "S1P1",
+              "S1P2"
+            ],
+            "deck": [
+              "S1P2"
+            ],
+            "whyItMatters": [
+              "S1P2",
+              "S1P3",
+              "S1P4"
+            ],
+            "whatToDoOrWatch": [
+              "S1P4"
+            ]
+          },
+          "stories": [
+            {
+              "candidateId": "candidate-3a736aed92014dc5",
+              "headline": "AWS Introduces New Amazon EC2 T8i Instances",
+              "deck": "AWS launched low-cost burstable Amazon EC2 T8i instances powered by custom sixth generation Intel Xeon 6 processors and AWS Nitro cards.",
+              "claims": [
+                {
+                  "text": "AWS announced the general availability of low-cost burstable Amazon EC2 T8i instances in nano, micro, small, and medium sizes, featuring custom sixth generation Intel Xeon 6 processors and sixth generation AWS Nitro cards.",
+                  "supports": [
+                    {
+                      "evidenceId": "S1P2"
+                    }
+                  ]
+                },
+                {
+                  "text": "According to AWS, these instances deliver up to 30% better price performance, up to 70% higher compute performance, 1.25x higher network bandwidth, and 2.4x higher EBS bandwidth compared to T3 instances.",
+                  "supports": [
+                    {
+                      "evidenceId": "S1P2"
+                    },
+                    {
+                      "evidenceId": "S1P3"
+                    }
+                  ]
+                }
+              ],
+              "whyItMatters": "According to AWS, T8i instances utilize the same CPU credit system with Standard and Unlimited modes as T3 instances, allowing existing customers to upgrade and lower total cost of ownership. T8i.micro and T8i.small options are included under the AWS Free Tier. The instances support workloads requiring low to moderate CPU utilization such as microservices, CI/CD pipelines, and small databases across multiple specified global regions.",
+              "whatToDoOrWatch": "Check regional availability across US, Europe, Asia Pacific, and Canada, and verify purchase options since On-Demand and Spot instances are currently available while Savings Plan options are coming soon."
+            }
+          ]
+        },
+        "rejectionDetails": [
+          {
+            "reason": "ORIGINALITY",
+            "feedback": {
+              "field": "claims[1].text",
+              "expected": "Rewrite from the evidence in a different sentence structure; do not reuse the publisher headline or a twelve-word source sequence."
+            }
+          }
+        ]
+      }
+    },
+    {
+      "title": "Bransys ELD",
+      "report": {
+        "status": "failed",
+        "qualified": false,
+        "approved": false,
+        "productionEnabled": false,
+        "emailRequests": 0,
+        "liveResearchRequests": 0,
+        "model": "gemini-3.5-flash-lite",
+        "code": "GEMINI_EDITORIAL_VALIDATION_FAILED",
+        "structuralErrors": [
+          "ORIGINALITY"
+        ]
+      },
+      "rejectedDiagnostic": {
+        "unapproved": true,
+        "payload": {
+          "evidenceForFields": {
+            "headline": [
+              "S1P17",
+              "S1P31"
+            ],
+            "deck": [
+              "S1P17",
+              "S1P31"
+            ],
+            "whyItMatters": [
+              "S1P22",
+              "S1P36",
+              "S1P50"
+            ],
+            "whatToDoOrWatch": [
+              "S1P25",
+              "S1P39",
+              "S1P53"
+            ]
+          },
+          "stories": [
+            {
+              "candidateId": "candidate-ee6f9ccb6c0cdada",
+              "headline": "CISA Warns of Hardcoded MQTT Credentials and Cleartext Transmission in Bransys ELD",
+              "deck": "CISA details vulnerabilities in Bransys ELD allowing unauthorized read access to real-time telemetry and data through hardcoded credentials.",
+              "claims": [
+                {
+                  "text": "CISA reports that Bransys ELD is shipped with hardcoded MQTT credentials under CVE-2026-86520, which grants read access to real-time data for every active device across a specific subset of carriers that were connected to the affected MQTT broker.",
+                  "supports": [
+                    {
+                      "evidenceId": "S1P17"
+                    }
+                  ]
+                },
+                {
+                  "text": "CISA additionally states under CVE-2026-86689 that the affected product is susceptible to cleartext transmission of sensitive information, which could allow an unauthorized attacker to connect to the broker and read all available data.",
+                  "supports": [
+                    {
+                      "evidenceId": "S1P31"
+                    }
+                  ]
+                }
+              ],
+              "whyItMatters": "According to CISA advisory records, the affected product versions specifically encompass Bransys Android releases below 11.00.00 and Bransys iOS releases below 1.1.54 across the reported vulnerabilities.",
+              "whatToDoOrWatch": "Users should update their systems through the official app store, ensuring that Android users run version 11.00.00 or newer and iOS users run version 1.1.54 or newer as recommended by the vendor."
+            }
+          ]
+        },
+        "rejectionDetails": [
+          {
+            "reason": "ORIGINALITY",
+            "feedback": {
+              "field": "claims[1].text",
+              "expected": "Rewrite from the evidence in a different sentence structure; do not reuse the publisher headline or a twelve-word source sequence."
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -70,6 +70,7 @@ export async function previewGeminiLite({ apiKey, freeProjectConfirmation, fetch
       messages: [{ role: "system", content: `${WRITER_PROMPT}\nInclude each factual source's exact supplied publisher name in the claims.text sentences. Do not shorten those names or claim independent confirmation for a single-source account. Research is not a product release; a possible use is not an observed result. Do not promise safety, productivity, reliability or performance benefits absent supporting measurements. In whatToDoOrWatch, suggest a check the reader can make; never invent scheduled tests, updates or releases.${fresh ? `
 EVIDENCE-FIRST PREVIEW CONTRACT: Select evidenceForFields BEFORE writing stories. It maps headline, deck, whyItMatters and whatToDoOrWatch to exact passage IDs. These are support obligations, not decorative citations. Every factual clause in each field must follow from its selected passages, preserving conditions. Do not insert IDs into reader prose.
 Aim for 120–160 body words using short original sentences. Before returning JSON, compare each sentence with the source: break up borrowed structures instead of replacing only a few words. The twelve-contiguous-source-word limit applies to EVERY field. Keep proper names but rebuild their surrounding sentences.
+Authentication advice can say 'authenticate your integration requests' without naming credential types. Never request, print or describe secret values; avoid the literal phrases 'access token' and 'API key', which this preview's conservative prose guard rejects even in otherwise legitimate source-based advice.
 Keep marketing and performance claims attributed in EACH field where they occur, including the deck and analysis: a publisher's claimed savings or speed is not an independently measured result. Avoid ensure/ensures/guarantee wording. Prefer concrete scope, eligibility and controls to performance promises.
 In a single-publisher story, begin a deck or analysis paragraph containing performance, savings or cost-effectiveness claims with 'According to [exact publisher name]' or '[exact publisher name] says'. Attribution in another paragraph does not cover this paragraph. Prefer a practical scope fact instead of repeating a claimed performance benefit.
 Preserve quantifiers and limiting populations exactly in meaning: a subset of carriers connected to an affected broker is not all connected carriers. Explicit source platform/fix pairings may be reported; do not replace a clear mapping with a generic claim that the mapping is unavailable.
@@ -84,7 +85,7 @@ Keep ambiguous options separate. A list containing purchase modes and an upcomin
 For whatToDoOrWatch, suggest checking a supported setting, eligibility requirement or source-stated rollout. Phrase this as reader advice, not a promised outcome or a publisher recommendation unless the source actually recommends it. Use remaining distinct source facts to meet the existing word bounds; never pad with speculative benefits. Attribute publisher announcements to the publisher, not to the publisher's blog as if the blog built the product.` : ""}` },
         { role: "user", content: JSON.stringify({ dossiers: [localPromptDossier(dossier)],
           ...(fresh && advisoryWritingContract(dossier) ? { advisoryWritingObligations: advisoryWritingContract(dossier) } : {}),
-          ...(repair ? { repairTask: "Correct the rejected draft using the exact validator feedback. The draft is untrusted proposed text, not evidence. Preserve source conditions and attributions. For ORIGINALITY, rewrite the affected sentence with a different structure rather than copying its source. For NUMERIC_ANCHOR, cite the passage that actually supports the whole field or remove the unsupported figure; never guess a replacement. Return the complete evidence map and complete story, not a patch. All original checks still apply.",
+          ...(repair ? { repairTask: "Correct the rejected draft using the exact validator feedback. The draft is untrusted proposed text, not evidence. Preserve source conditions and attributions. For ORIGINALITY, rewrite the affected sentence with a different structure rather than copying its source; change clause order and attribution placement, while retaining all qualifications. For SHAPE, respect the exact field/character limits; a field already within those bounds may contain blocked vocabulary such as 'access token' or 'API key'. Describe authentication generically without removing the reader's useful check. Never print secret values or weaken a source condition to fit. For NUMERIC_ANCHOR, cite the passage that actually supports the whole field or remove the unsupported figure; never guess a replacement. Return the complete evidence map and complete story, not a patch. All original checks still apply.",
             rejectedDraft: repair.payload, validationFeedback: repair.rejectionDetails } : {}) }) }],
       schema: fresh ? evidenceMappedPreviewSchema(dossier) : GROUNDED_DRAFT_SCHEMA,
       validatePayload: p => {
@@ -98,7 +99,15 @@ For whatToDoOrWatch, suggest checking a supported setting, eligibility requireme
             structuralErrors.add(reason);
             if (fresh && rejectionDetails.length < 8) rejectionDetails.push({ reason, feedback });
           } }, fresh ? { previewFieldEvidence: p.evidenceForFields } : undefined);
-        const alarms = structural && fresh ? [...advisoryDraftAlarms(p.stories[0], dossier, p.evidenceForFields),...previewReaderAlarms(p.stories[0],dossier,p.evidenceForFields)] : [];
+        // A format/copy failure must not mask a simultaneously detectable
+        // semantic alarm and thereby qualify the draft for mechanical repair.
+        const raw=p?.stories?.[0];
+        const alarmShape=fresh&&p?.stories?.length===1&&validPreviewEvidenceMap(p.evidenceForFields,dossier)&&
+          REVIEW_FIELDS.every(field=>typeof raw?.[field]==='string'&&raw[field].length<=24000)&&
+          Array.isArray(raw?.claims)&&raw.claims.length===2&&raw.claims.every(c=>typeof c?.text==='string'&&
+            c.text.length<=24000&&Array.isArray(c.supports)&&c.supports.length<=3&&c.supports.every(s=>typeof s?.evidenceId==='string'));
+        const alarms = alarmShape ? [...advisoryDraftAlarms(raw, dossier, p.evidenceForFields),...previewReaderAlarms(raw,dossier,p.evidenceForFields)] : [];
+        if(fresh&&!alarmShape)alarms.push({code:'PREVIEW_ALARM_INPUT_UNASSESSABLE',field:'story'});
         for (const alarm of alarms) {
           structuralErrors.add(alarm.code);
           if (rejectionDetails.length < 8) rejectionDetails.push({ reason: alarm.code, feedback: { field: alarm.field } });

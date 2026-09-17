@@ -63,10 +63,10 @@ test('editor plus drafts and repairs share four actual calls; budget omission is
     const result=await previewFreshGemini({publicKey:key,apiKey:'synthetic-key-never-real',freeProjectConfirmation:'FREE PROJECT BILLING DISABLED',now:new Date(window.endExclusive),
       coverageImpl:()=>{},researchImpl:async options=>({candidates:(await options.reviewNewsworthiness(entries)).map(e=>e.candidate).filter(c=>c.ranking.score>=70),diagnostics:{sourceResults:[]}}),
       editorialRequestImpl:async()=>{editors++;if(failEditor)throw Error('quota');return{editorialPayload:{assessments:entries.map(e=>verdict(e.candidate.candidateId))}}},
-      draftImpl:async()=>{writers++;return {report:{status:'failed',code:'GEMINI_EDITORIAL_VALIDATION_FAILED'},html:null,rejectedDiagnostic:{unapproved:true,rejectionDetails:[{reason:'ORIGINALITY'}]}};}});
+      draftImpl:async()=>{writers++;return {report:{status:'failed',code:'GEMINI_EDITORIAL_VALIDATION_FAILED'},html:null,rejectedDiagnostic:{unapproved:true,rejectionDetails:[{reason:'ORIGINALITY',feedback:{field:'claims[0].text'}}]}};}});
     assert.equal(editors,1);assert.equal(editors+writers,failEditor?1:4);
     assert.equal(result.report.modelRequests,editors+writers);assert.equal(result.report.emailRequests,0);
-    assert.equal(result.report.budgetOmissions.length,!failEditor&&count===4?1:0);
+    assert.equal(result.report.budgetOmissions.length,!failEditor&&count===4?2:0);
     const packet=openDiagnostic(result.sealed,privateKey);assert.equal(packet.editorial.status,failEditor?'failed':'human-review-required');
     assert.equal(packet.editorial.submitted.length,count);assert.equal(packet.editorial.submitted[0].initialScorecard.score,61);
     if(failEditor){assert.equal(packet.editorial.rawParsedResponse,null);assert.equal(packet.editorial.code,'EDITORIAL_PROVIDER_OR_FORMAT_FAILURE');}
