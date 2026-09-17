@@ -138,3 +138,41 @@ conditions that begin with “Cookie,” duplicated ranges, stale capture timest
 and unique passage IDs. Both advisories identify their CISA posting as a later
 vendor republication; the writer must not portray it as a newly discovered flaw
 or newly released fix. All 1,042 tests pass before the next live experiment.
+
+## Third live result and bounded replacement repair
+
+Run `35272033595` at `29c4052` read 47/48 feeds and made zero model calls and
+zero email requests. New ABB and Bransys advisory formats were held; Mendix
+was not allocated a capture. This was not a writing success. The encrypted
+artifact SHA256 was `d5c10dbb3182c037b6ceaa120055d94e8b3b53524b8b470af195d88e36c33529`.
+
+The preview adapter now supports ordinary `<dotted-version` platform ranges
+with CVE-specific accordion membership, exact product/version agreement,
+known-affected status, remediation presence and separately labelled metric
+tables. Complete source context is still retained. Unsupported compound/mixed
+status ABB material remains held. Both complete and unmatched heading resets
+that could lose CVE attribution are rejected. Tests cover reordered CVE sections
+and table columns, duplicate/missing products/CVEs, orphaned relationships,
+and the late exploitation caveat.
+
+Preview allocation reserves four initial attempts per desk (16 total), then
+up to eight remaining attempts round-robin across desks. At most two usable
+captures per publisher/desk and six per desk are retained, with a separate
+four-attempt publisher/desk and eight-attempt desk ceiling. All attempts share
+the existing 24-page network cache; search may already have consumed some
+slots. Failed captures remain visible. Legacy allocation is unchanged.
+
+Local current-feed checks exposed scoring excerpt contamination: generic CISA
+recommended practices crowded actual event/CVE details out of the 1,200-character
+scoring input. A preview advisory scoring view now rotates through complete
+summary, vulnerability, remediation and product-scope blocks. It excludes
+generic legal/defensive boilerplate from scoring only; all of that context still
+reaches the writer. Score weights, component floors and thresholds are unchanged.
+The saved two-source replay leaves Bransys below its materiality floor and
+restores Mendix's topicality; the change does not force a candidate to pass.
+
+Verified identities survive extraction holds. Optional-search diagnostics now
+distinguish disabled, no-request, completed and failed stages without recording
+arbitrary exception text. Prior `webSearch:null` does not establish search usage
+or remaining quota. No daily writer, recipient, billing or delivery changes are
+part of this experiment. Raw resulting prose still requires independent review.

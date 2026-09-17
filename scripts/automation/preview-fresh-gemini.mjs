@@ -84,6 +84,8 @@ export async function previewFreshGemini({ publicKey, apiKey, freeProjectConfirm
     successfulFeeds: snapshot.diagnostics.sourceResults.filter(s => s.status === "ok").length,
     totalFeeds: snapshot.diagnostics.sourceResults.length,
     webSearch: snapshot.diagnostics.webSearch ?? null,
+    webSearchOutcome: snapshot.diagnostics.webSearchOutcome ?? {status:'not-recorded'},
+    articleAllocation: snapshot.diagnostics.articleAllocation ?? null,
     failures: records.filter(r => r.result?.report.status === "failed").map(r => ({ code: r.result.report.code,
       structuralErrors: r.result.report.structuralErrors ?? [] })) };
   const packet = { purpose: "fresh-news-unapproved-human-review-not-an-edition", report, reportingWindow,

@@ -5,6 +5,7 @@ import { prepareArticleRegion, plainArticleText, MAX_ARTICLE_EXCERPT_CHARS, divR
 import { inspectPreviewIdentity, textHash } from "./preview-article-identity.mjs";
 import { selectEvidencePassages } from "./evidence-packets.mjs";
 import { previewSourceIntegrityHolds } from "./preview-evidence-gate.mjs";
+import { inspectPlatformRanges } from './advisory-platform-ranges.mjs';
 const version = "structured-preview-v1";
 const critical = /\b(?:not|no|only|unless|requires?|must|except|if|when|affected|versions?|mitigations?|patch|fixed|limitations?|eligibility|rollout)\b/iu;
 const held = (reason, diagnostic) => ({ version, status: "held", holds: [reason], excerpt: "", blocks: [], inputBlocks: 0, omittedBlocks: 0,
@@ -60,7 +61,13 @@ function extractAdvisory(body, identity) {
     const m = /^(.*?) vers:intdot\/(<\d+(?:\.\d+)+) \((CVE-\d{4}-\d+)\)$/.exec(text);
     return m ? `${m[1]} < V${m[2].slice(1)}` : null;
   });
-  if (!ranges.length || cves.size !== 1 || allCves.size !== 1 || mappedRanges.includes(null) ||
+  if (!ranges.length) {
+    const platform = inspectPlatformRanges(body, regions);
+    if (platform.code) return held('ADVISORY_VERSION_RANGE_UNVERIFIED', { category: 'advisory', code: platform.code });
+    return extractRegion({ body: converted, title: identity.title }, { advisory: true,
+      prefix: `${identity.advisoryCode} — ${identity.releaseDate}`, ranges: platform.ranges, rangeFormat: 'platform-cve-v1', scopes: platform.scopes });
+  }
+  if (cves.size !== 1 || allCves.size !== 1 || mappedRanges.includes(null) ||
       new Set(mappedRanges).size !== mappedRanges.length || new Set(productGroups).size !== productGroups.length ||
       JSON.stringify([...mappedRanges].sort()) !== JSON.stringify([...productGroups].sort())) return held("ADVISORY_VERSION_RANGE_UNVERIFIED");
   return extractRegion({ body: converted, title: identity.title }, { advisory: true,
@@ -119,7 +126,7 @@ export function extractStructuredArticleEvidence(html) {
   return extractRegion(region);
 }
 
-function extractRegion(region, { advisory = false, prefix = "", ranges = [] } = {}) {
+function extractRegion(region, { advisory = false, prefix = "", ranges = [], rangeFormat, scopes } = {}) {
   const { body, title } = region;
   if (/<(?:article|main)\b/iu.test(body)) return held("NESTED_ARTICLE_REGION");
   // Fetched H1 may sit outside a narrowed articleBody container. Keep that
@@ -159,7 +166,8 @@ function extractRegion(region, { advisory = false, prefix = "", ranges = [] } = 
   } catch (error) { return held(error.message); }
   if (!blocks.length || blocks.length > 1000) return held("ARTICLE_CONTENT_UNAVAILABLE");
   const fullText = blocks.join("\n");
-  const structuredContext = advisory ? { kind: "cisa-csaf-complete-v1", textSha256: textHash(fullText), ranges } : undefined;
+  const structuredContext = advisory ? { kind: "cisa-csaf-complete-v1", textSha256: textHash(fullText), ranges,
+    ...(rangeFormat ? {rangeFormat, scopes} : {}) } : undefined;
   const damage = previewSourceIntegrityHolds({ sources: [{ text: fullText, passages: blocks.map(text => ({ text })), structuredContext }] });
   // Flattened advisory text remains unsupported here too. Correct table rows
   // retain header/value associations but are not automatically exempted.

@@ -3521,12 +3521,16 @@ export async function collectFreeResearchSnapshot(options = {}) {
     requestImpl: options.requestImpl, lookupImpl: options.lookupImpl,
   });
   let webSearch;
+  let webSearchOutcome = { status: 'disabled', stage: 'configuration' };
+  let articleAllocation;
   if (options.enrichArticles === true && typeof options.discoverWebArticles === "function") {
+    let searchStage = 'discovery';
     try {
       const assessed = assessFeedCandidates({ ...options, items: ingestion.items,
         reportingWindow: ingestion.reportingWindow, evidencePolicy: normalizedEvidencePolicy });
       const followupQueries = buildFreeFollowupQueries(assessed);
       const discovered = await options.discoverWebArticles({ reportingWindow: ingestion.reportingWindow, followupQueries });
+      searchStage = 'receipt';
       const queriesUsed = discovered.diagnostics.searchRequests;
       const receipt = { provider: "tavily", queriesUsed,
         creditsReserved: discovered.diagnostics.creditsReserved, admittedArticles: 0 };
@@ -3535,6 +3539,7 @@ export async function collectFreeResearchSnapshot(options = {}) {
           throw new Error("Search returned results without a valid request receipt.");
         }
       } else if (!isValidWebSearchReceipt(receipt)) throw new Error("Search returned an invalid receipt.");
+      searchStage = 'article-admission';
       const admission = await admitSearchArticles({ results: discovered.results,
         reportingWindow: ingestion.reportingWindow, retrievedAt: ingestion.retrievedAt, fetchArticlePage,
         maxFetches: 16 }); // Reserve eight of the shared twenty-four page reads for feed leads.
@@ -3554,7 +3559,10 @@ export async function collectFreeResearchSnapshot(options = {}) {
       options.onSearchDiagnostic?.({ stage: "web-search-admission", queriesUsed,
         fetched: admission.diagnostics.fetched, admitted: admission.items.length,
         rejectionCounts: admission.diagnostics.rejected });
+      webSearchOutcome = {status:queriesUsed ? 'completed' : 'no-requests',stage:'complete',
+        queriesUsed,admittedArticles:admission.items.length};
     } catch {
+      webSearchOutcome = {status:'failed',stage:searchStage,code:'OPTIONAL_SEARCH_UNAVAILABLE'};
       options.onSearchDiagnostic?.({ stage: "web-search-admission", status: "unavailable" });
       // Search is optional; an unavailable service never weakens feed gates.
     }
@@ -3563,6 +3571,7 @@ export async function collectFreeResearchSnapshot(options = {}) {
     const structuredPreview = options.articleEvidenceMode === "structured-preview";
     ingestion.items = await enrichShortlist(ingestion.items, {
       structuredPreview,
+      onAllocation: receipt => { articleAllocation = receipt; },
       assess: (items) => assessFeedCandidates({ ...options, items,
         reportingWindow: ingestion.reportingWindow, evidencePolicy: normalizedEvidencePolicy }),
       // Strict previews re-extract even cached search pages. Legacy excerpts
@@ -3611,6 +3620,8 @@ export async function collectFreeResearchSnapshot(options = {}) {
     ...selection,
     diagnostics: {
       ...(webSearch ? { webSearch } : {}),
+      webSearchOutcome,
+      ...(articleAllocation ? {articleAllocation} : {}),
       sourceResults: ingestion.sourceResults,
       parsedItemCount: ingestion.parsedItemCount,
       eligibleItemCount: ingestion.eligibleItemCount,

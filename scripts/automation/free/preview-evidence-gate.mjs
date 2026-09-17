@@ -3,11 +3,20 @@
 import { createHash } from "node:crypto";
 export function intactAdvisoryContext(source) {
   const c = source?.structuredContext;
+  const platform = c?.rangeFormat === 'platform-cve-v1';
+  const rangesValid = Array.isArray(c?.ranges) && c.ranges.length > 0 && c.ranges.length <= 50 &&
+    c.ranges.every(range => typeof range === 'string' && (platform
+      ? /^.+ <\d+(?:\.\d+)+ \(CVE-\d{4}-\d+(?:, CVE-\d{4}-\d+)*\)$/.test(range)
+      : / vers:intdot\/<\d+(?:\.\d+)+ \(CVE-\d{4}-\d+\)$/.test(range)) && source.text?.includes(range));
+  const scopesValid = !platform || (Array.isArray(c.scopes) && c.scopes.length > 0 && c.scopes.length <= 6 &&
+    new Set(c.scopes.map(s => s.cve)).size === c.scopes.length && c.scopes.every(s => /^CVE-\d{4}-\d+$/.test(s.cve) &&
+      source.text?.includes(s.cve) && Array.isArray(s.products) && s.products.length > 0 &&
+      s.products.every(p => typeof p === 'string' && source.text.includes(p)) &&
+      Array.isArray(s.metricVersions) && s.metricVersions.length > 0 && s.metricVersions.every(v => ['3.1','4.0'].includes(v))));
   return c?.kind === "cisa-csaf-complete-v1" && typeof source.text === "string" && source.text.length <= 18_000 &&
     Array.isArray(source.passages) && source.passages.map(p => p.text).join("\n") === source.text &&
     createHash("sha256").update(source.text).digest("hex") === c.textSha256 &&
-    Array.isArray(c.ranges) && c.ranges.length > 0 && c.ranges.length <= 50 &&
-    c.ranges.every(range => typeof range === "string" && / vers:intdot\/<\d+(?:\.\d+)+ \(CVE-\d{4}-\d+\)$/.test(range) && source.text.includes(range));
+    rangesValid && scopesValid;
 }
 export function previewSourceIntegrityHolds(dossier) {
   const holds = new Set();

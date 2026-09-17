@@ -123,6 +123,8 @@ test("a search outage preserves feed coverage and cannot invent a search receipt
     onSearchDiagnostic: (event) => notices.push(event) });
   assert.equal(snapshot.diagnostics.webSearch, undefined);
   assert.equal(snapshot.diagnostics.sourceResults.length, FREE_FEED_SOURCES.length);
+  assert.deepEqual(snapshot.diagnostics.webSearchOutcome,{status:'failed',stage:'discovery',code:'OPTIONAL_SEARCH_UNAVAILABLE'});
+  assert.doesNotMatch(JSON.stringify(snapshot.diagnostics),/sensitive-key-value/);
   assert.ok(snapshot.candidates.some((entry) => entry.sources.some((source) => source.url === articleUrl)));
   assert.doesNotMatch(JSON.stringify(notices), /sensitive-key-value/);
 });
@@ -134,7 +136,15 @@ test("search results without trustworthy article dates remain leads, not candida
   assert.equal(snapshot.candidates.length, 0);
   assert.deepEqual(snapshot.diagnostics.webSearch,
     { provider: "tavily", queriesUsed: 8, creditsReserved: 16, admittedArticles: 0 });
+  assert.deepEqual(snapshot.diagnostics.webSearchOutcome,{status:'completed',stage:'complete',queriesUsed:8,admittedArticles:0});
   assert.ok(snapshot.diagnostics.sourceResults.every((entry) => entry.status === "ok"));
+});
+
+test('disabled discovery and intentional zero-request discovery have distinct safe outcomes',async()=>{
+  const disabled=await collect(fixture(),{discoverWebArticles:undefined});
+  assert.deepEqual(disabled.diagnostics.webSearchOutcome,{status:'disabled',stage:'configuration'});
+  const zero=await collect(fixture(),{discoverWebArticles:async()=>({results:[],diagnostics:{searchRequests:0,creditsReserved:0}})});
+  assert.deepEqual(zero.diagnostics.webSearchOutcome,{status:'no-requests',stage:'complete',queriesUsed:0,admittedArticles:0});
 });
 
 test("the reviewed article cache shares in-flight duplicates, failures and its twenty-four fetch budget", async () => {

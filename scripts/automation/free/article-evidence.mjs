@@ -105,7 +105,31 @@ export function articleScoringSummary(excerpt, title) {
   }).join("\n");
 }
 
-export async function enrichShortlist(items, { assess, fetchArticle, structuredPreview = false } = {}) {
+// Scoring-only view of a complete advisory. Generic legal/defensive boilerplate
+// must not crowd out the actual event and CVE descriptions. The writer still
+// receives every captured block, not this 1,200-character scoring sample.
+export function advisoryScoringSummary(blocks) {
+  const priority = block => / — Summary — /.test(block) && !/:$/.test(block) && !/\(CVE-\d/.test(block) ? 0
+    : / — Vulnerabilities — CVE-\d{4}-\d+ — (?!Affected Products|Metrics|View CVE Details)/.test(block) ? 1
+    : / — Remediations — /.test(block) ? 2
+    : / — Affected Products — .*Product Version:/.test(block) ? 3 : 4;
+  const candidates = blocks.map((text,index)=>({text,index,priority:priority(text)})).filter(b=>b.priority<4)
+    .sort((a,b)=>a.priority-b.priority||a.index-b.index);
+  const selected=[];let length=0;
+  // Give event, description, remediation and product scope one opportunity
+  // each before a long multi-CVE section consumes the scoring budget.
+  const queues=[0,1,2,3].map(p=>candidates.filter(b=>b.priority===p));
+  while(queues.some(q=>q.length)) {
+    for(const queue of queues) {
+      const block=queue.shift();
+      if (!block || block.text.length<30 || length+block.text.length+(selected.length?1:0)>1200) continue;
+      selected.push(block);length+=block.text.length+(selected.length>1?1:0);
+    }
+  }
+  return selected.sort((a,b)=>a.index-b.index).map(b=>b.text).join('\n');
+}
+
+export async function enrichShortlist(items, { assess, fetchArticle, structuredPreview = false, onAllocation } = {}) {
   const assessments = assess(items);
   // Never rescue a vetoed promotion, opinion, rumor, repeat, or routine notice.
   const recoverable = new Set(["BELOW_EDITORIAL_THRESHOLD",
@@ -116,14 +140,19 @@ export async function enrichShortlist(items, { assess, fetchArticle, structuredP
       a.canonicalEventKey.localeCompare(b.canonicalEventKey));
   const shortlist = [];
   const seen = new Set();
-  for (const desk of ["ai", "work-and-tools", "security-and-privacy", "platforms-and-power"]) {
+  const desks = ["ai", "work-and-tools", "security-and-privacy", "platforms-and-power"];
+  const allocatedDesk = new Map();
+  for (const desk of desks) {
     const owners = new Map();
     let count = 0;
     for (const entry of eligible.filter((value) => value.candidate.suggestedDesk === desk)) {
       for (const source of entry.candidate.sources.filter((value) => value.relationship !== "context")) {
         const item = items.find((value) => value.url === source.url);
-        if (!item || seen.has(item.url) || (owners.get(item.publisherKey) ?? 0) >= 2 || count >= 6) continue;
+        // Strict previews reserve eight of the 24 capture attempts for later
+        // replacement. Legacy allocation remains six first-pass reads/desk.
+        if (!item || seen.has(item.url) || (owners.get(item.publisherKey) ?? 0) >= 2 || count >= (structuredPreview ? 4 : 6)) continue;
         seen.add(item.url);
+        allocatedDesk.set(item.url, desk);
         owners.set(item.publisherKey, (owners.get(item.publisherKey) ?? 0) + 1);
         shortlist.push(item);
         count++;
@@ -131,26 +160,34 @@ export async function enrichShortlist(items, { assess, fetchArticle, structuredP
     }
   }
   const enriched = new Map();
+  const attempted = new Set();
+  let budgetExhausted = false;
   let cursor = 0;
-  await Promise.all(Array.from({ length: 4 }, async () => {
-    while (cursor < Math.min(shortlist.length, MAX_RESEARCH_ARTICLES)) {
-      const item = shortlist[cursor++];
+  async function captureItem(item) {
+      attempted.add(item.url);
       try {
         const capture = await fetchArticle(item);
+        if (capture?.diagnostic?.code === 'ARTICLE_BUDGET_EXHAUSTED') budgetExhausted = true;
         if (structuredPreview && capture?.status !== "usable") {
           enriched.set(item.url, { ...item, articleExcerpt: "", articleBlocks: [],
             articleExtraction: { version: "structured-preview-v1", status: "held", holds: capture?.holds ?? ["ARTICLE_EXTRACTION_FAILED"],
+              ...(capture?.identity ? { identity: capture.identity } : {}),
               ...(capture?.diagnostic ? { diagnostic: capture.diagnostic } : {}) } });
-          continue;
+          return;
         }
         const excerpt = structuredPreview ? capture.excerpt : capture;
         const advisory = structuredPreview && capture.version === "structured-advisory-preview-v1";
-        if (typeof excerpt !== "string" || excerpt.length < 120 || excerpt.length > (advisory ? 18_000 : MAX_ARTICLE_EXCERPT_CHARS)) continue;
+        if (typeof excerpt !== "string" || excerpt.length < 120 || excerpt.length > (advisory ? 18_000 : MAX_ARTICLE_EXCERPT_CHARS)) {
+          if (structuredPreview) enriched.set(item.url, {...item, articleExcerpt:'', articleBlocks:[],
+            articleExtraction:{version:'structured-preview-v1',status:'held',holds:['ARTICLE_CONTENT_INSUFFICIENT'],
+              ...(capture?.identity ? {identity:capture.identity} : {})}});
+          return;
+        }
         // Identical scoring rules, now with substantive article evidence. Keep
         // the input length the same as feed summaries to limit keyword volume.
         // Scoring receives complete source sentences inside the old 1,200-char
         // limit, never a mid-word fragment later recycled as factual evidence.
-        const summary = advisory ? selectEvidencePassages(capture.blocks, { title: item.title, maxChars: 1_200, minChars: 20 }).join("\n") : articleScoringSummary(excerpt, item.title);
+        const summary = advisory ? advisoryScoringSummary(capture.blocks) : articleScoringSummary(excerpt, item.title);
         enriched.set(item.url, { ...item, articleExcerpt: excerpt, summary: summary || item.summary,
           ...(structuredPreview ? { articleBlocks: capture.blocks,
             articleExtraction: { version: capture.version, status: capture.status, holds: capture.holds,
@@ -164,8 +201,40 @@ export async function enrichShortlist(items, { assess, fetchArticle, structuredP
         // A blocked or unavailable page is not evidence of a quiet news day.
         // The original feed stays eligible under the unchanged evidence rules.
       }
-    }
+  }
+  await Promise.all(Array.from({ length: 4 }, async () => {
+    while (cursor < Math.min(shortlist.length, MAX_RESEARCH_ARTICLES)) await captureItem(shortlist[cursor++]);
   }));
+  let replacementAttempts = 0;
+  if (structuredPreview && !budgetExhausted) {
+    // Finish every initially reserved publisher/desk opportunity first. Then
+    // replace holds, round-robin across desks, never widening accepted quotas.
+    // Limits: 24 capture attempts globally, 8/desk, 4/publisher/desk; retained
+    // usable captures remain at most 6/desk and 2/publisher/desk.
+    const reserves = new Map(desks.map(desk => [desk, eligible.filter(e => e.candidate.suggestedDesk === desk)
+      .flatMap(e => e.candidate.sources.filter(s => s.relationship !== 'context')
+        .map(s => items.find(item => item.url === s.url)).filter(Boolean))]));
+    const count = (desk, owner, usable) => [...attempted].filter(url => {
+      const item = items.find(i => i.url === url);
+      return allocatedDesk.get(url) === desk && (!owner || item.publisherKey === owner) &&
+        (!usable || enriched.get(url)?.articleExtraction?.status === 'usable');
+    }).length;
+    let progressed = true;
+    while (progressed && !budgetExhausted && attempted.size < MAX_RESEARCH_ARTICLES) {
+      progressed = false;
+      for (const desk of desks) {
+        if (budgetExhausted || attempted.size >= MAX_RESEARCH_ARTICLES) break;
+        if (count(desk,null,false) >= 8 || count(desk,null,true) >= 6) continue;
+        const item = reserves.get(desk).find(i => !attempted.has(i.url) &&
+          count(desk,i.publisherKey,false) < 4 && count(desk,i.publisherKey,true) < 2);
+        if (!item) continue;
+        allocatedDesk.set(item.url,desk); replacementAttempts++; progressed = true;
+        await captureItem(item);
+      }
+    }
+  }
+  if (structuredPreview) onAllocation?.({captureAttempts:attempted.size,replacementAttempts,budgetExhausted,
+    usableCaptures:[...enriched.values()].filter(i => i.articleExtraction?.status === 'usable').length});
   return items.map((item) => enriched.get(item.url) ?? (structuredPreview ? { ...item,
     articleExcerpt: "", articleBlocks: [], articleExtraction: { version: "structured-preview-v1", status: "held",
       holds: ["ARTICLE_NOT_CAPTURED_UNDER_ALLOCATION"] } } : item));
