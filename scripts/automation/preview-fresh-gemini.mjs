@@ -3,7 +3,7 @@
 import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { collectFreeResearchSnapshot } from "./free/feed-engine.mjs";
+import { collectFreeResearchSnapshot, selectFreeDeskCandidates } from "./free/feed-engine.mjs";
 import { FREE_FEED_SOURCES } from "./free/feed-sources.mjs";
 import { assertFreeResearchCoverage } from "./draft-free-edition.mjs";
 import { groundedDossiers } from "./free/grounded-draft.mjs";
@@ -12,6 +12,21 @@ import { previewEvidenceHolds } from "./free/preview-evidence-gate.mjs";
 import { previewGeminiLite } from "./preview-gemini-lite.mjs";
 import { FREE_PROJECT_CONFIRMATION } from "./check-gemini-writer.mjs";
 import { diagnosticPublicKey, sealDiagnostic } from "./private-writer-diagnostic.mjs";
+
+export function selectPreviewReadyCandidates(snapshot, reportingWindow) {
+  const pool = snapshot.candidates ?? snapshot.selectedCandidates;
+  if (!Array.isArray(pool) || pool.length > 40) throw Error("PREVIEW_SHORTLIST_INVALID");
+  const held = [], ready = [];
+  for (const candidate of pool) {
+    const dossier = groundedDossiers([candidate])[0];
+    const reasons = previewEvidenceHolds(candidate, dossier, reportingWindow);
+    if (reasons.length) held.push({ candidateId: candidate.candidateId, desk: candidate.suggestedDesk, reasons });
+    else ready.push(candidate);
+  }
+  // Reuse the existing desk/entity-diversity assignment, not a weaker ranker.
+  // This pool contains only candidates already accepted by the scorecard.
+  return { ...selectFreeDeskCandidates(ready, { evidencePolicy: "authoritative-or-corroborated" }), held };
+}
 
 export async function previewFreshGemini({ publicKey, apiKey, freeProjectConfirmation,
   tavilyApiKey, tavilyPaygoDisabledVerified = false, now = new Date(),
@@ -29,7 +44,8 @@ export async function previewFreshGemini({ publicKey, apiKey, freeProjectConfirm
     ...(tavilyApiKey ? { discoverWebArticles: createTavilyDiscovery({ apiKey: tavilyApiKey,
       paygoDisabledVerified: tavilyPaygoDisabledVerified }) } : {}) });
   coverageImpl(snapshot, { feedSources: FREE_FEED_SOURCES, reportingWindow, retrievedAt });
-  const candidates = snapshot.selectedCandidates;
+  const selection = selectPreviewReadyCandidates(snapshot, reportingWindow);
+  const candidates = selection.selectedCandidates;
   if (!Array.isArray(candidates) || candidates.length > 4 || new Set(candidates.map(c => c.suggestedDesk)).size !== candidates.length) {
     throw Error("PREVIEW_SELECTION_INVALID");
   }
@@ -52,13 +68,14 @@ export async function previewFreshGemini({ publicKey, apiKey, freeProjectConfirm
   const report = { status: draftCount ? "human-review-required" : "no-reviewable-drafts",
     approved: false, qualified: false, productionEnabled: false, emailRequests: 0,
     retrievedAt, modelRequests: requests, maxModelRequests: 4, draftCount,
-    selectedCount: candidates.length, heldCount: records.filter(r => r.holds.length).length,
+    selectedCount: candidates.length, heldCount: selection.held.length + records.filter(r => r.holds.length).length,
     successfulFeeds: snapshot.diagnostics.sourceResults.filter(s => s.status === "ok").length,
     totalFeeds: snapshot.diagnostics.sourceResults.length,
     webSearch: snapshot.diagnostics.webSearch ?? null,
     failures: records.filter(r => r.result?.report.status === "failed").map(r => ({ code: r.result.report.code,
       structuralErrors: r.result.report.structuralErrors ?? [] })) };
-  const packet = { purpose: "fresh-news-unapproved-human-review-not-an-edition", report, reportingWindow, records };
+  const packet = { purpose: "fresh-news-unapproved-human-review-not-an-edition", report, reportingWindow,
+    preDraftHolds: selection.held, records };
   if (Buffer.byteLength(JSON.stringify(packet)) > 160000) throw Error("PREVIEW_PACKET_TOO_LARGE");
   return { report, sealed: sealDiagnostic(packet, publicKey) };
 }

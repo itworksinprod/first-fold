@@ -3,13 +3,14 @@ import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { previewEvidenceHolds } from "../scripts/automation/free/preview-evidence-gate.mjs";
-import { previewFreshGemini } from "../scripts/automation/preview-fresh-gemini.mjs";
+import { previewFreshGemini, selectPreviewReadyCandidates } from "../scripts/automation/preview-fresh-gemini.mjs";
 import { openDiagnostic } from "../scripts/automation/private-writer-diagnostic.mjs";
 import { groundedEvidence } from "./fixtures/grounded-summary.mjs";
 const { publicKey, privateKey } = generateKeyPairSync("rsa", { modulusLength: 3072 });
 const key = publicKey.export({ type: "spki", format: "der" }).toString("base64");
 const window = { startInclusive: "2026-09-14T00:00:00Z", endExclusive: "2026-09-17T00:00:00Z" };
-const candidate = () => ({ candidateId: "test", suggestedDesk: "work-and-tools", ranking: { score: 77, evidenceTier: "authoritative-single" },
+const candidate = () => ({ candidateId: "test", primaryEntity: "Example", canonicalEventKey: "example-event",
+  firstPublishedAt: "2026-09-15T12:00:00Z", suggestedDesk: "work-and-tools", ranking: { score: 77, evidenceTier: "authoritative-single" },
   sources: [{ url: "https://example.com/2026/09/article", publisher: "Example" }] });
 const dossier = () => ({ candidateId: "test", sources: [{ publishedAt: "2026-09-15T12:00:00Z",
   text: "First complete fact. Second complete fact.", passages: [{ text: "First complete fact." }, { text: "Second complete fact." }] }] });
@@ -51,7 +52,7 @@ test("eligible draft is retained only in ciphertext and quota failure stops rema
   const first = { ...candidate(), feedEvidence: [evidence],
     sources: [{ id: "cert-advisory", title: evidence.title, publisher: "CERT/CC", relationship: "originating",
       publishedAt: evidence.publishedAt, url: "https://example.com/2026/09/advisory" }] };
-  const second = { ...first, candidateId: "second", suggestedDesk: "security-and-privacy" };
+  const second = { ...first, candidateId: "second", primaryEntity: "Second", canonicalEventKey: "second-event", suggestedDesk: "security-and-privacy" };
   for (const quota of [false, true]) {
     let calls = 0;
     const result = await previewFreshGemini({ publicKey: key, apiKey: "synthetic-test-key-not-real",
@@ -67,4 +68,21 @@ test("eligible draft is retained only in ciphertext and quota failure stops rema
     else assert.equal(packet.records[0].result.html, "UNAPPROVED TEST COPY");
     assert.doesNotMatch(JSON.stringify(result), /UNAPPROVED TEST COPY|synthetic-test-key/);
   }
+});
+test("held top choice yields to an already-qualified reserve without duplicating desks or entities", () => {
+  const evidence = { ...groundedEvidence, publishedAt: "2026-09-15T12:00:00Z" };
+  const reserve = { ...candidate(), candidateId: "reserve", feedEvidence: [evidence],
+    sources: [{ id: "cert-advisory", title: evidence.title, publisher: "CERT/CC", relationship: "originating",
+      publishedAt: evidence.publishedAt, url: "https://example.com/2026/09/advisory" }] };
+  const broken = structuredClone(reserve);
+  broken.candidateId = "broken"; broken.ranking.score = 90;
+  broken.feedEvidence[0].articleExcerpt = "Incomplete version details: vers:intdot/ Update to V3";
+  const duplicate = { ...reserve, candidateId: "same-entity", suggestedDesk: "security-and-privacy" };
+  const low = { ...reserve, candidateId: "low", primaryEntity: "Other", suggestedDesk: "ai",
+    ranking: { ...reserve.ranking, score: 69 } };
+  assert.equal(selectPreviewReadyCandidates({ candidates: [broken, reserve] }, window).selectedCandidates[0].candidateId, "reserve");
+  const result = selectPreviewReadyCandidates({ selectedCandidates: [broken], candidates: [broken, reserve, duplicate, low] }, window);
+  assert.equal(result.selectedCandidates.length, 1);
+  assert.ok(["reserve", "same-entity"].includes(result.selectedCandidates[0].candidateId));
+  assert.deepEqual(result.held.map(h => h.candidateId), ["broken", "low"]);
 });
