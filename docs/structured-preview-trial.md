@@ -46,3 +46,31 @@ summary cannot quietly substitute for an article.
 
 The earlier edited Google preview is a regression/reference sample only. It
 cannot be counted as autonomous success in this trial.
+
+## First live result and observed-layout repair
+
+Run `35239292531` at `ba338a5` read 47/48 feeds but held all four shortlisted
+candidates before writing: zero model calls, zero drafts, zero email. Three
+were held for unsupported article text layout; the remaining advisory retained
+its damaged-evidence hold. This is a failed experiment, not a successful edition.
+
+Direct browser inspection of the Google article identified an observed
+`blog-post-full__body` container: the surrounding article contains a Back control
+and tags, while the uniquely bounded body contains the full prose and caveats.
+The strict extractor now recognizes that body only with unique, balanced div
+boundaries, preserves its fetched H1 and retains the existing leftover-text
+hold. A provenance-labelled DOM-fragment fixture retains all article prose,
+headings and inline links, omitting image URLs; it is not advertised as the
+original HTTP response. Tests verify every previously captured source fact
+survives into the writer dossier. Unsupported text added inside the body still
+causes a hold, including a short new condition.
+
+Encrypted hold records now include candidate URLs and bounded extraction
+diagnostics. Public logs retain counts, not source snippets. The unchanged
+failed-run packet remains the baseline; a subsequent live result must be
+reported separately rather than replacing it.
+
+Independent review also reproduced an unmatched closing-div case that could
+hide a later caveat. Strict mode now rejects both unmatched opening and closing
+divs. The reviewer verified the regression and cleared one additional bounded
+experiment. All 1,036 automated tests pass; this is not editorial approval.

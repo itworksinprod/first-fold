@@ -106,3 +106,19 @@ test("independent-review neighbors: single-column headers, duplicate captions an
   const source = buildEvidencePacketSources(candidateFor(result))[0];
   assert.match(source.text, /Example Product version 3.7 — Impact — No patch available/);
 });
+test("observed Google DOM retains every captured fact and excludes surrounding navigation", () => {
+  const html = readFileSync(new URL("./fixtures/google-meet-dom-2026-09-17.html", import.meta.url), "utf8");
+  const capture = extract(html);
+  assert.equal(capture.status, "usable"); assert.equal(capture.omittedBlocks, 0);
+  const source = buildEvidencePacketSources(candidateFor(capture))[0];
+  const original = JSON.parse(readFileSync(new URL("./fixtures/rejected-preview-run6.json", import.meta.url), "utf8")).records[0].dossier.sources[0];
+  for (const passage of original.passages) assert.ok(source.text.includes(passage.text), passage.text);
+  assert.doesNotMatch(source.text, /arrow_back|CONTAMINATED/);
+  const changed = html.replace('<p><br></p>', '<div>No patch available.</div><p><br></p>');
+  const result = extract(changed);
+  assert.equal(result.status, "held");
+  assert.match(result.diagnostic.snippet, /No patch available/);
+  assert.ok(result.diagnostic.snippet.length <= 240);
+  assert.equal(extract(html.replace('</article>', '<div class="blog-post-full__body"><p>Another ambiguous body contains competing evidence.</p></div></article>')).status, "held");
+  assert.equal(extract('<article><h1>Title</h1><div class="blog-post-full__body"><p>A supported fact appears in the publisher article.</p><p>A second fact provides additional context for the update.</p></div><p>No patch available.</p></div></article>').status, "held");
+});

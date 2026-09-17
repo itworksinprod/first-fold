@@ -6,7 +6,8 @@ import { selectEvidencePassages } from "./evidence-packets.mjs";
 import { previewSourceIntegrityHolds } from "./preview-evidence-gate.mjs";
 const version = "structured-preview-v1";
 const critical = /\b(?:not|no|only|unless|requires?|must|except|if|when|affected|versions?|mitigations?|patch|fixed|limitations?|eligibility|rollout)\b/iu;
-const held = reason => ({ version, status: "held", holds: [reason], excerpt: "", blocks: [], inputBlocks: 0, omittedBlocks: 0 });
+const held = (reason, diagnostic) => ({ version, status: "held", holds: [reason], excerpt: "", blocks: [], inputBlocks: 0, omittedBlocks: 0,
+  ...(diagnostic ? { diagnostic } : {}) });
 const count = (s, tag) => (s.match(new RegExp(`<${tag}\\b`, "gi")) ?? []).length;
 
 function tableUnits(markup, heading) {
@@ -51,7 +52,7 @@ function definitionUnits(markup, heading) {
 }
 
 export function extractStructuredArticleEvidence(html) {
-  const region = prepareArticleRegion(html);
+  const region = prepareArticleRegion(html, { structuredPreview: true });
   if (!region?.body) return held("ARTICLE_REGION_UNAVAILABLE");
   const { body, title } = region;
   if (/<(?:article|main)\b/iu.test(body)) return held("NESTED_ARTICLE_REGION");
@@ -59,12 +60,14 @@ export function extractStructuredArticleEvidence(html) {
   // captured identity, never replace it with a feed/search title.
   const blocks = title ? [title] : [];
   const headings = title ? [title] : [];
-  let heading = title, tables = 0, definitions = 0, cursor = 0, unparsed = "";
+  let heading = title, tables = 0, definitions = 0, cursor = 0, unparsed = "", unsupportedOffset = null;
   try {
     // Compound structures are consumed as a whole before paragraph matching.
     const pattern = /<table\b[^>]*>[\s\S]*?<\/table\s*>|<dl\b[^>]*>[\s\S]*?<\/dl\s*>|<(p|h[1-6]|li)\b[^>]*>([\s\S]*?)(?=<(?:p|h[1-6]|li|table|dl)\b|<\/(?:p|h[1-6]|li|article|main|div|section)\s*>|$)/giu;
     for (const match of body.matchAll(pattern)) {
-      unparsed += body.slice(cursor, match.index); cursor = match.index + match[0].length;
+      const gap = body.slice(cursor, match.index);
+      if (unsupportedOffset === null && plainArticleText(gap)) unsupportedOffset = cursor;
+      unparsed += gap; cursor = match.index + match[0].length;
       if (/^<table\b/iu.test(match[0])) { tables++; blocks.push(...tableUnits(match[0], heading)); }
       else if (/^<dl\b/iu.test(match[0])) { definitions++; blocks.push(...definitionUnits(match[0], heading)); }
       else {
@@ -80,7 +83,10 @@ export function extractStructuredArticleEvidence(html) {
       }
     }
     unparsed += body.slice(cursor);
-    if (plainArticleText(unparsed)) throw Error("UNSUPPORTED_ARTICLE_TEXT_STRUCTURE");
+    if (plainArticleText(unparsed)) return held("UNSUPPORTED_ARTICLE_TEXT_STRUCTURE", {
+      category: "unconsumed-text", regionOffset: unsupportedOffset ?? cursor,
+      snippet: plainArticleText(unparsed).slice(0, 240),
+    });
     if (tables !== count(body, "table")) throw Error("AMBIGUOUS_TABLE");
     if (definitions !== count(body, "dl")) throw Error("AMBIGUOUS_DEFINITION_LIST");
   } catch (error) { return held(error.message); }

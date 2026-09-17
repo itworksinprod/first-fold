@@ -20,7 +20,9 @@ export function selectPreviewReadyCandidates(snapshot, reportingWindow, { requir
   for (const candidate of pool) {
     const dossier = groundedDossiers([candidate])[0];
     const reasons = previewEvidenceHolds(candidate, dossier, reportingWindow, { requireStructured });
-    if (reasons.length) held.push({ candidateId: candidate.candidateId, desk: candidate.suggestedDesk, reasons });
+    if (reasons.length) held.push({ candidateId: candidate.candidateId, desk: candidate.suggestedDesk, reasons,
+      title: candidate.title, sources: candidate.sources.map(s => ({ publisher: s.publisher, url: s.url })),
+      extraction: (candidate.feedEvidence ?? []).map(r => ({ sourceId: r.sourceId, ...r.articleExtraction })) });
     else ready.push(candidate);
   }
   // Reuse the existing desk/entity-diversity assignment, not a weaker ranker.

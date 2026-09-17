@@ -17,12 +17,13 @@ function plain(value) {
 // Publisher templates often put ads, recommendations and author widgets inside
 // <article>. Match the observed content containers with balanced div boundaries,
 // not a lazy regex that stops at an inner </div> and loses later caveats.
-function divRegions(html) {
+function divRegions(html, strict = false) {
   const stack = [];
   const regions = [];
   for (const match of html.matchAll(/<\/?div\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi)) {
     if (/^<\//.test(match[0])) {
       const start = stack.pop();
+      if (strict && !start) return null;
       if (start) regions.push({ ...start, end: match.index + match[0].length, innerEnd: match.index });
     } else if (!/\/\s*>$/.test(match[0])) {
       if (stack.length >= 128) return null;
@@ -33,14 +34,16 @@ function divRegions(html) {
       stack.push({ start: match.index, innerStart: match.index + match[0].length, attributes });
     }
   }
-  return regions.sort((a, b) => a.start - b.start);
+  return strict && stack.length ? null : regions.sort((a, b) => a.start - b.start);
 }
 
-function cleanArticleContainers(body) {
-  const regions = divRegions(body);
+function cleanArticleContainers(body, structuredPreview = false) {
+  const regions = divRegions(body, structuredPreview);
   if (!regions) return "";
-  const dedicated = regions.find(({ attributes }) => attributes.itemprop?.includes("articlebody") ||
-    attributes.class?.some(name => ["articlebody", "zox-post-body"].includes(name)));
+  const matching = regions.filter(({ attributes }) => attributes.itemprop?.includes("articlebody") ||
+    attributes.class?.some(name => ["articlebody", "zox-post-body", ...(structuredPreview ? ["blog-post-full__body"] : [])].includes(name)));
+  if (structuredPreview && matching.length > 1) return "";
+  const dedicated = matching[0];
   if (dedicated) body = body.slice(dedicated.innerStart, dedicated.innerEnd);
   const inner = divRegions(body);
   if (!inner) return "";
@@ -55,7 +58,7 @@ function cleanArticleContainers(body) {
   return cleaned + body.slice(end);
 }
 
-export function prepareArticleRegion(html) {
+export function prepareArticleRegion(html, { structuredPreview = false } = {}) {
   if (typeof html !== "string" || Buffer.byteLength(html) > 600_000) return "";
   // Reject pathological markup before repeated region scans. Normal article
   // templates stay well below these bounds; failure retains the feed summary.
@@ -70,7 +73,7 @@ export function prepareArticleRegion(html) {
     body.match(/<h3\b[^>]*id=["']overview["'][^>]*>([\s\S]*?)(?=<div\b[^>]*id=["']vendorinfo["'])/i)?.[1] ?? "";
   if (!body) return ""; // No confident article region: retain the feed evidence.
   const title = plain(body.match(/<h1\b[^>]*>([\s\S]*?)<\/h1\s*>/i)?.[1] ?? "");
-  body = cleanArticleContainers(body);
+  body = cleanArticleContainers(body, structuredPreview);
   return { body, title };
 }
 
@@ -136,7 +139,8 @@ export async function enrichShortlist(items, { assess, fetchArticle, structuredP
         const capture = await fetchArticle(item);
         if (structuredPreview && capture?.status !== "usable") {
           enriched.set(item.url, { ...item, articleExcerpt: "", articleBlocks: [],
-            articleExtraction: { version: "structured-preview-v1", status: "held", holds: capture?.holds ?? ["ARTICLE_EXTRACTION_FAILED"] } });
+            articleExtraction: { version: "structured-preview-v1", status: "held", holds: capture?.holds ?? ["ARTICLE_EXTRACTION_FAILED"],
+              ...(capture?.diagnostic ? { diagnostic: capture.diagnostic } : {}) } });
           continue;
         }
         const excerpt = structuredPreview ? capture.excerpt : capture;
