@@ -6,10 +6,12 @@ import { pathToFileURL } from "node:url";
 import { collectFreeResearchSnapshot, selectFreeDeskCandidates } from "./free/feed-engine.mjs";
 import { FREE_FEED_SOURCES } from "./free/feed-sources.mjs";
 import { assertFreeResearchCoverage } from "./draft-free-edition.mjs";
-import { groundedDossiers, GROUNDED_DRAFT_SCHEMA } from "./free/grounded-draft.mjs";
+import { groundedDossiers, GROUNDED_DRAFT_SCHEMA, validateGroundedStory } from "./free/grounded-draft.mjs";
 import { createTavilyDiscovery } from "./free/web-search.mjs";
 import { previewEvidenceHolds } from "./free/preview-evidence-gate.mjs";
-import { previewGeminiLite } from "./preview-gemini-lite.mjs";
+import { previewGeminiLite, validPreviewEvidenceMap } from "./preview-gemini-lite.mjs";
+import { previewReaderAlarms, previewReaderObligations } from './free/preview-reader-alarms.mjs';
+import { advisoryDraftAlarms } from './free/preview-advisory-contract.mjs';
 import { FREE_PROJECT_CONFIRMATION } from "./check-gemini-writer.mjs";
 import { diagnosticPublicKey, sealDiagnostic } from "./private-writer-diagnostic.mjs";
 import { createPreviewNewsworthiness } from './free/preview-newsworthiness.mjs';
@@ -29,6 +31,34 @@ export function previewMechanicalRepairAllowed(result) {
       feedback.minCharacters===schema.minLength&&feedback.maxCharacters===schema.maxLength&&
       (text.length<schema.minLength||text.length>schema.maxLength||/\b(?:access token|api key)\b/iu.test(text));
   });
+}
+
+export function previewSourceQualificationRepairAllowed(result,dossier) {
+  // This is a source-qualification correction, NOT a mechanical or factual
+  // approval. Only one named, reproducible omission can use the shared spare.
+  if(result?.report?.code!=='GEMINI_EDITORIAL_VALIDATION_FAILED')return false;
+  const raw=result.rejectedDiagnostic,payload=raw?.payload,details=raw?.rejectionDetails;
+  const allowed=['PREVIEW_AUDIENCE_SCOPE_REQUIRED','SHAPE','ORIGINALITY'];
+  if(!Array.isArray(dossier?.sources)||raw?.unapproved!==true||payload?.stories?.length!==1||payload.stories[0]?.candidateId!==dossier?.candidateId||
+    !validPreviewEvidenceMap(payload.evidenceForFields,dossier)||!Array.isArray(details)||!details.length||details.length>8||
+    details.some(d=>!allowed.includes(d?.reason))||!Array.isArray(result.report.structuralErrors)||
+    !result.report.structuralErrors.includes('PREVIEW_AUDIENCE_SCOPE_REQUIRED')||result.report.structuralErrors.some(c=>!allowed.includes(c)))return false;
+  const qualifiers=details.filter(d=>d.reason==='PREVIEW_AUDIENCE_SCOPE_REQUIRED');
+  if(!qualifiers.length||qualifiers.some(d=>!['headline','deck','whyItMatters','whatToDoOrWatch'].includes(d.feedback?.field)))return false;
+  try{
+    const draft=payload.stories[0],map=payload.evidenceForFields,obligations=previewReaderObligations(dossier);
+    const detected=[];
+    validateGroundedStory(draft,dossier,code=>detected.push(code),{previewFieldEvidence:map});
+    if(detected.some(c=>!['SHAPE','ORIGINALITY'].includes(c)))return false;
+    const alarms=previewReaderAlarms(draft,dossier,map);
+    if(alarms.some(a=>a.code!=='PREVIEW_AUDIENCE_SCOPE_REQUIRED')||advisoryDraftAlarms(draft,dossier,map).length||
+      qualifiers.some(d=>!alarms.some(a=>a.field===d.feedback.field&&a.code===d.reason)||
+        !obligations.some(o=>map[d.feedback.field].includes(o.evidenceId))))return false;
+  }catch{return false;}
+  const mechanical=details.filter(d=>d.reason!=='PREVIEW_AUDIENCE_SCOPE_REQUIRED');
+  return mechanical.length===0||previewMechanicalRepairAllowed({...result,report:{...result.report,
+    structuralErrors:result.report.structuralErrors.filter(c=>c!=='PREVIEW_AUDIENCE_SCOPE_REQUIRED')},
+    rejectedDiagnostic:{...raw,rejectionDetails:mechanical}});
 }
 
 export function selectPreviewReadyCandidates(snapshot, reportingWindow, { requireStructured = false } = {}) {
@@ -107,10 +137,13 @@ export async function previewFreshGemini({ publicKey, apiKey, freeProjectConfirm
     if (holds.length) continue;
     requests++;
     let result = await draftImpl({ apiKey, freeProjectConfirmation, dossier, fresh: true });
-    // One targeted mechanical correction across the ENTIRE experiment. Preserve
-    // every rejection; never retry provider/quota or semantic/advisory failures.
-    if (repairRequests===0 && previewMechanicalRepairAllowed(result) && requests + (candidates.length - i - 1) < 4) {
+    // One correction across the ENTIRE experiment. Missing preview-audience
+    // qualification is the sole allowed source-scope correction; every other
+    // semantic/advisory and all provider/quota failures remain nonretryable.
+    const repairKind=previewMechanicalRepairAllowed(result)?'mechanical':previewSourceQualificationRepairAllowed(result,dossier)?'source-qualification':null;
+    if (repairRequests===0 && repairKind && requests + (candidates.length - i - 1) < 4) {
       record.initialRejection = result;
+      record.repairKind=repairKind;
       requests++;repairRequests++;
       result = await draftImpl({ apiKey, freeProjectConfirmation, dossier, fresh: true, repair: result.rejectedDiagnostic });
     }

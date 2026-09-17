@@ -419,3 +419,27 @@ each disposition stay in the encrypted audit. Entirely unusable slates stop;
 surviving bound proposals still face unchanged score floors, evidence checks,
 selection and independent draft review. This is failure isolation, not semantic
 entailment or proof of adequate editorial calibration, and adds no model calls.
+
+## Fifth trial: source-qualification correction remains independently gated
+
+Run `35288058141` at `83cfcb3` correctly isolated Corretto's invalid quote and
+reached two writers. It used three calls, 47/48 feeds, 24 article requests and
+10 usable captures, with search still `quota_exhausted`. Neither draft passed.
+Artifact SHA256: `ea76a6df128f8154ed7be0f8120742961607e8f08ee50af3eb24dd740c15c48e`.
+GitLab omitted its preview audience and its deck cited a passage that did not
+name unauthenticated traffic. Bransys's warnings included lexical false positives,
+but independent review also found omitted affected-broker scope and unsupported
+"server files"/"stored data" wording. Both unchanged drafts remain negative
+fixtures. Some editorial rationales again exceeded their cited quotes; quote
+binding must not be represented as factual entailment or ranking calibration.
+
+A narrowly named source-qualification correction can now use the existing
+single spare call: only `PREVIEW_AUDIENCE_SCOPE_REQUIRED`, reproducible in the
+named field and tied to its intact source passage, optionally alongside already
+eligible mechanical errors. Every other semantic/advisory error and all provider
+or quota errors remain nonretryable. First drafts also receive the exact source
+audience paragraph as an explicit obligation. Corrections must recheck all own-
+field citations, including unflagged fields; flags are not exhaustive semantic
+review. Original and correction remain separate, the repair kind is recorded,
+and the unchanged validator and independent review still gate private preview.
+No raw fixture, alarm, quality threshold, daily workflow or billing was bypassed.

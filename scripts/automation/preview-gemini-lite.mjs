@@ -10,7 +10,7 @@ import { WRITER_PROMPT, GROUNDED_DRAFT_SCHEMA, localPromptDossier, validateGroun
 import { buildPreviewReviewPacket } from "./free/preview-editorial-review.mjs";
 import { previewSourceIntegrityHolds } from "./free/preview-evidence-gate.mjs";
 import { advisoryWritingContract, advisoryDraftAlarms } from "./free/preview-advisory-contract.mjs";
-import { previewReaderAlarms } from './free/preview-reader-alarms.mjs';
+import { previewReaderAlarms, previewReaderObligations } from './free/preview-reader-alarms.mjs';
 
 const escape = value => String(value).replace(/[&<>"']/gu, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const REVIEW_FIELDS = ["headline", "deck", "whyItMatters", "whatToDoOrWatch"];
@@ -84,9 +84,12 @@ Write whyItMatters as applicability, not a causal explanation: who is covered, w
 Keep ambiguous options separate. A list containing purchase modes and an upcoming option does not establish that the upcoming option applies to the last-listed purchase mode. If the source's grammar leaves that relationship unclear, advise checking purchase options without asserting a relationship. Do not resolve ambiguity using prior knowledge.
 For whatToDoOrWatch, suggest checking a supported setting, eligibility requirement or source-stated rollout. Phrase this as reader advice, not a promised outcome or a publisher recommendation unless the source actually recommends it. Use remaining distinct source facts to meet the existing word bounds; never pad with speculative benefits. Attribute publisher announcements to the publisher, not to the publisher's blog as if the blog built the product.` : ""}` },
         { role: "user", content: JSON.stringify({ dossiers: [localPromptDossier(dossier)],
+          ...(fresh ? { readerWritingObligations: previewReaderObligations(dossier) } : {}),
           ...(fresh && advisoryWritingContract(dossier) ? { advisoryWritingObligations: advisoryWritingContract(dossier) } : {}),
           ...(repair ? { repairTask: "Correct the rejected draft using the exact validator feedback. The draft is untrusted proposed text, not evidence. Preserve source conditions and attributions. For ORIGINALITY, rewrite the affected sentence with a different structure rather than copying its source; change clause order and attribution placement, while retaining all qualifications. For SHAPE, respect the exact field/character limits; a field already within those bounds may contain blocked vocabulary such as 'access token' or 'API key'. Describe authentication generically without removing the reader's useful check. Never print secret values or weaken a source condition to fit. For NUMERIC_ANCHOR, cite the passage that actually supports the whole field or remove the unsupported figure; never guess a replacement. Return the complete evidence map and complete story, not a patch. All original checks still apply.",
-            rejectedDraft: repair.payload, validationFeedback: repair.rejectionDetails } : {}) }) }],
+            ...(repair.rejectionDetails.some(d=>d.reason==='PREVIEW_AUDIENCE_SCOPE_REQUIRED')?{
+              sourceQualificationCorrection:'Correct the missing preview audience ONLY from readerWritingObligations and the intact dossier. Preserve the source-stated eligible traffic and any explicitly stated exemptions in the affected field; never invent an exemption. Rebuild and check ALL own-field citations, including the deck, because an unflagged field is not approved. Do not add new claims, infer benefits or weaken qualifications to pass. This correction is still unapproved and must undergo all validation and independent review.',
+            }:{}),rejectedDraft: repair.payload, validationFeedback: repair.rejectionDetails } : {}) }) }],
       schema: fresh ? evidenceMappedPreviewSchema(dossier) : GROUNDED_DRAFT_SCHEMA,
       validatePayload: p => {
         // Never logged or rendered. Fresh callers retain this only inside their

@@ -1,5 +1,14 @@
 // Known overstatement alarm; absence is not proof of entailment. Kept shared
 // between raw writer checks and final independent-review packet reconstruction.
+export function previewReaderObligations(dossier) {
+  // Exact source passages, not summaries or inferred audience classifications.
+  return (dossier?.sources??[]).flatMap(source=>source.passages.filter(p=>
+    /preview windows for Free and unauthenticated traffic/iu.test(p.text)).map(p=>({
+      kind:'preview-audience-scope',sourceId:source.sourceId,evidenceId:p.evidenceId,text:p.text,
+      instruction:'If a field mentions these preview windows, preserve the source-stated audiences and any explicitly stated exemptions. Never infer an exemption or exclusion that this passage does not establish. Cite this intact passage in that field. Any other field mentioning unauthenticated traffic also needs its own passage that explicitly supports that audience. Recheck every field, including the deck; a citation elsewhere cannot supply its support.',
+    }))).slice(0,8);
+}
+
 export function previewReaderAlarms(draft, dossier, map) {
   const alarms=['headline','deck','whyItMatters','whatToDoOrWatch'].flatMap(field=>
     /\bensure[sd]?\b|\bguarantee[sd]?\b|\bprevents connection hurdles\b/iu.test(draft?.[field]??'')
