@@ -398,3 +398,24 @@ and copying/advisory regressions prevent such failures from being misclassified
 as mechanical-only corrections. Unassessable malformed drafts receive an explicit
 non-mechanical hold instead of an empty alarm list. The full suite passes 1,095 tests before another
 live experiment; this is not a live quality or delivery success.
+
+## Fourth trial: isolate invalid editorial citations
+
+Run `35287063892` at `97e10aa` stopped after one editor call, before any writer.
+It completed 47/48 feeds and 11 usable captures within 24 article requests.
+Web discovery explicitly remained `quota_exhausted`. The encrypted artifact
+SHA256 is `dcfd072a2341e58e93b3c6250425d8d4af93ce45ed0ff730381012956bc338ef`.
+Independent inspection confirmed five exact own-passage editorial quotations;
+Corretto inserted `/of`, and ECS cited P1 while quoting P2. Neither raw binding
+has been corrected or presented as valid.
+
+The isolated editor now separates global schema/ID failures from per-candidate
+source binding failures. Malformed, empty, duplicate or unknown-ID responses and
+provider failures still stop all model work. A well-shaped invalid citation
+explicitly rejects its candidate, even if the prior scorecard had accepted it.
+Submitted omissions are also explicitly rejected; unsubmitted candidates remain
+unchanged and distinguishable. The original scores, complete raw response and
+each disposition stay in the encrypted audit. Entirely unusable slates stop;
+surviving bound proposals still face unchanged score floors, evidence checks,
+selection and independent draft review. This is failure isolation, not semantic
+entailment or proof of adequate editorial calibration, and adds no model calls.

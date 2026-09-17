@@ -38,24 +38,35 @@ export function createPreviewNewsworthiness({apiKey, freeTierConfirmed, reportin
     }
     if(!slate.length) return assessments;
     used=true;
-    const schema=object({assessments:{type:'array',maxItems:slate.length,items:object({
+    const schema=object({assessments:{type:'array',minItems:1,maxItems:slate.length,items:object({
       candidateId:{type:'string',enum:slate.map(v=>v.dossier.candidateId)},
       importance:{type:'integer',minimum:0,maximum:30},usefulness:{type:'integer',minimum:0,maximum:15},
-      rationale:{type:'string',minLength:20,maxLength:500},sourceId:{type:'string'},evidenceId:{type:'string'},quote:{type:'string',minLength:25,maxLength:500},
+      rationale:{type:'string',minLength:20,maxLength:500},sourceId:{type:'string',minLength:1,maxLength:200},evidenceId:{type:'string',minLength:1,maxLength:40},quote:{type:'string',minLength:25,maxLength:500},
     })}});
-    const valid = payload => Array.isArray(payload?.assessments) && payload.assessments.length<=slate.length &&
+    const exactKeys=(value,keys)=>value!==null&&typeof value==='object'&&!Array.isArray(value)&&
+      Object.keys(value).length===keys.length&&keys.every(key=>Object.hasOwn(value,key));
+    // Bad envelopes/IDs stop the sequence. A well-shaped candidate with a bad
+    // citation is isolated below, never silently corrected or accepted by fallback.
+    const validShape = payload => exactKeys(payload,['assessments'])&&Array.isArray(payload.assessments) && payload.assessments.length>0&&payload.assessments.length<=slate.length &&
       new Set(payload.assessments.map(v=>v?.candidateId)).size===payload.assessments.length && payload.assessments.every(v=>{
-        const source=slate.find(s=>s.dossier.candidateId===v.candidateId)?.dossier.sources.find(s=>s.sourceId===v.sourceId);
+        if(!exactKeys(v,['candidateId','importance','usefulness','rationale','sourceId','evidenceId','quote'])||!slate.some(s=>s.dossier.candidateId===v.candidateId))return false;
         return Number.isInteger(v.importance)&&v.importance>=0&&v.importance<=30&&Number.isInteger(v.usefulness)&&v.usefulness>=0&&v.usefulness<=15&&
           typeof v.rationale==='string'&&v.rationale.length>=20&&v.rationale.length<=500&&typeof v.quote==='string'&&v.quote.length>=25&&v.quote.length<=500&&
-          source?.passages.some(p=>p.evidenceId===v.evidenceId&&p.text.includes(v.quote));
+          typeof v.sourceId==='string'&&v.sourceId.length>=1&&v.sourceId.length<=200&&typeof v.evidenceId==='string'&&v.evidenceId.length>=1&&v.evidenceId.length<=40;
       });
+    const bindingFailure=verdict=>{
+      const source=slate.find(s=>s.dossier.candidateId===verdict.candidateId).dossier.sources.find(s=>s.sourceId===verdict.sourceId);
+      if(!source)return 'EDITORIAL_SOURCE_NOT_FOUND';
+      const passage=source.passages.find(p=>p.evidenceId===verdict.evidenceId);
+      if(!passage)return 'EDITORIAL_PASSAGE_NOT_FOUND';
+      return passage.text.includes(verdict.quote)?null:'EDITORIAL_QUOTE_NOT_BOUND';
+    };
     const submitted=slate.map(v=>({dossier:v.dossier,initialScorecard:v.entry.candidate.ranking,
       initialDecision:v.entry.decision,initialRejectionReasons:v.entry.rejectionReasons}));
     let result,rawParsedResponse=null;
     const validateAndRetain=payload=>{
       if(Buffer.byteLength(JSON.stringify(payload)??'')<=12_000) rawParsedResponse=structuredClone(payload);
-      return valid(payload);
+      return validShape(payload);
     };
     try {
       result=await requestImpl({apiKey,freeTierConfirmed,model:GEMINI_LITE_MODEL,maxTokens:4000,thinking:'medium',maxAttempts:1,timeoutMs:180000,
@@ -69,9 +80,20 @@ export function createPreviewNewsworthiness({apiKey, freeTierConfirmed, reportin
     }
     const audit=[];
     const revised=assessments.map(entry=>{
+      const submittedItem=slate.find(s=>s.dossier.candidateId===entry.candidate?.candidateId);
+      if(!submittedItem)return entry;
       const verdict=result.editorialPayload.assessments.find(v=>v.candidateId===entry.candidate?.candidateId);
-      if(!verdict) return entry;
       const next=structuredClone(entry),r=next.candidate.ranking;
+      const failure=verdict?bindingFailure(verdict):'EDITORIAL_ASSESSMENT_OMITTED';
+      if(failure){
+        // Retain old scores for audit, but explicitly revoke admission even if
+        // the preliminary scorecard had accepted this candidate.
+        next.rejectionReasons.push({code:failure,message:'No usable source-bound editorial assessment was returned.'});
+        next.decision='rejected';r.editorialValidation.decision='rejected';r.editorialValidation.rejectionReasons=next.rejectionReasons;
+        audit.push({candidateId:entry.candidate.candidateId,disposition:'rejected',reason:failure,
+          scoreBefore:entry.candidate.ranking.score,scoreAfter:r.score,dossierSha256:hash(submittedItem.dossier),verdict:verdict??null});
+        return next;
+      }
       r.components.materialityNewsworthiness=verdict.importance;
       r.components.readerUsefulnessActionability=verdict.usefulness;
       r.score=Object.values(r.components).reduce((a,b)=>a+b,0);
@@ -80,12 +102,14 @@ export function createPreviewNewsworthiness({apiKey, freeTierConfirmed, reportin
       if(r.evidenceTier==='authoritative-single'&&(verdict.importance<20||(verdict.importance<24&&verdict.usefulness<8))) reasons.push({code:'AUTHORITATIVE_SINGLE_COMPONENT_FLOOR',message:'Originating source below unchanged component floors.'});
       next.rejectionReasons=reasons;next.decision=reasons.length?'rejected':'accepted';
       r.editorialValidation.decision=next.decision;r.editorialValidation.rejectionReasons=reasons;
-      audit.push({candidateId:verdict.candidateId,scoreBefore:entry.candidate.ranking.score,scoreAfter:r.score,
-        dossierSha256:hash(slate.find(s=>s.dossier.candidateId===verdict.candidateId).dossier),verdict});
+      audit.push({candidateId:verdict.candidateId,disposition:'source-bound-score-proposal',scoreBefore:entry.candidate.ranking.score,scoreAfter:r.score,
+        dossierSha256:hash(submittedItem.dossier),verdict});
       return next;
     });
-    onResult({status:'human-review-required',modelRequests:1,stopModels:false,slateCount:slate.length,submitted,rawParsedResponse,
-      omittedCandidateIds:slate.filter(v=>!audit.some(a=>a.candidateId===v.dossier.candidateId)).map(v=>v.dossier.candidateId),audit});
+    const usableCount=audit.filter(a=>a.disposition==='source-bound-score-proposal').length;
+    onResult({status:usableCount?'human-review-required':'failed',...(usableCount?{}:{code:'GEMINI_EDITORIAL_VALIDATION_FAILED'}),
+      modelRequests:1,stopModels:usableCount===0,slateCount:slate.length,submitted,rawParsedResponse,
+      omittedCandidateIds:audit.filter(a=>a.reason==='EDITORIAL_ASSESSMENT_OMITTED').map(a=>a.candidateId),audit});
     return revised;
   };
 }
