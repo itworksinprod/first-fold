@@ -9,6 +9,24 @@ import { requestGeminiEditorial, geminiFailureDiagnostic, GEMINI_LITE_MODEL } fr
 import { WRITER_PROMPT, GROUNDED_DRAFT_SCHEMA, localPromptDossier, validateGroundedStory } from "./free/grounded-draft.mjs";
 
 const escape = value => String(value).replace(/[&<>"']/gu, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const REVIEW_FIELDS = ["headline", "deck", "whyItMatters", "whatToDoOrWatch"];
+export function evidenceMappedPreviewSchema(dossier) {
+  const ids = dossier.sources.flatMap(s => s.passages.map(p => p.evidenceId));
+  return { type: "object", additionalProperties: false, required: ["evidenceForFields", "stories"],
+    properties: {
+      evidenceForFields: { type: "object", additionalProperties: false, required: REVIEW_FIELDS,
+        properties: Object.fromEntries(REVIEW_FIELDS.map(field => [field, { type: "array", minItems: 1,
+          maxItems: 4, items: { type: "string", enum: ids } }])) },
+      stories: structuredClone(GROUNDED_DRAFT_SCHEMA.properties.stories),
+    } };
+}
+export function validPreviewEvidenceMap(map, dossier) {
+  const ids = new Set(dossier.sources.flatMap(s => s.passages.map(p => p.evidenceId)));
+  return map && typeof map === "object" && !Array.isArray(map) &&
+    Object.keys(map).sort().join() === [...REVIEW_FIELDS].sort().join() &&
+    REVIEW_FIELDS.every(field => Array.isArray(map[field]) && map[field].length >= 1 && map[field].length <= 4 &&
+      new Set(map[field]).size === map[field].length && map[field].every(id => ids.has(id)));
+}
 export function renderHumanReview(draft, dossier, { fresh = false } = {}) {
   const section = (title, text) => `<h2>${escape(title)}</h2><p>${escape(text)}</p>`;
   return `<!doctype html><html lang="en"><meta charset="utf-8">
@@ -31,15 +49,20 @@ export async function previewGeminiLite({ apiKey, freeProjectConfirmation, fetch
     const result = await requestGeminiEditorial({ apiKey, model: GEMINI_LITE_MODEL,
       freeTierConfirmed: freeProjectConfirmation === FREE_PROJECT_CONFIRMATION, fetchImpl,
       maxTokens: 8000, thinking: "medium", timeoutMs: 180000,
-      messages: [{ role: "system", content: `${WRITER_PROMPT}\nInclude each factual source's exact supplied publisher name in the claims.text sentences. Do not shorten those names or claim independent confirmation for a single-source account. Research is not a product release; a possible use is not an observed result. Do not promise safety, productivity, reliability or performance benefits absent supporting measurements. In whatToDoOrWatch, suggest a check the reader can make; never invent scheduled tests, updates or releases.` },
+      messages: [{ role: "system", content: `${WRITER_PROMPT}\nInclude each factual source's exact supplied publisher name in the claims.text sentences. Do not shorten those names or claim independent confirmation for a single-source account. Research is not a product release; a possible use is not an observed result. Do not promise safety, productivity, reliability or performance benefits absent supporting measurements. In whatToDoOrWatch, suggest a check the reader can make; never invent scheduled tests, updates or releases.${fresh ? `
+EVIDENCE-FIRST PREVIEW CONTRACT: Select evidenceForFields BEFORE writing stories. It maps headline, deck, whyItMatters and whatToDoOrWatch to exact passage IDs. These are support obligations, not decorative citations. Every factual clause in each field must follow from its selected passages, preserving conditions. Do not insert IDs into reader prose.
+For whyItMatters, explain the specific scope, eligibility, control or limitation established by those passages. Prefer concrete facts that tell a reader whether this applies to them. Do NOT invent a broader problem, failure cause, user behavior, time saving, administrative burden, avoided delay, reliability guarantee or expected performance. A plausible explanation is not evidence. Do not use general background knowledge to fill gaps. If the source names a fallback, explain when it is available, not what failures it supposedly prevents.
+For whatToDoOrWatch, suggest checking a supported setting, eligibility requirement or source-stated rollout. Phrase this as reader advice, not a promised outcome or a publisher recommendation unless the source actually recommends it. Use remaining distinct source facts to meet the existing word bounds; never pad with speculative benefits. Attribute publisher announcements to the publisher, not to the publisher's blog as if the blog built the product.` : ""}` },
         { role: "user", content: JSON.stringify({ dossiers: [localPromptDossier(dossier)] }) }],
-      schema: GROUNDED_DRAFT_SCHEMA,
-      validatePayload: p => p && Object.keys(p).join() === "stories" && Array.isArray(p.stories) && p.stories.length === 1 &&
+      schema: fresh ? evidenceMappedPreviewSchema(dossier) : GROUNDED_DRAFT_SCHEMA,
+      validatePayload: p => p && Object.keys(p).sort().join() === (fresh ? "evidenceForFields,stories" : "stories") &&
+        (!fresh || validPreviewEvidenceMap(p.evidenceForFields, dossier)) && Array.isArray(p.stories) && p.stories.length === 1 &&
         p.stories[0]?.candidateId === dossier.candidateId && validateGroundedStory(p.stories[0], dossier,
           reason => { if (typeof reason === "string" && /^[A-Z_]{1,80}$/u.test(reason)) structuralErrors.add(reason); }) });
     return { report: { status: "human-review-required", qualified: false, approved: false,
       productionEnabled: false, emailRequests: 0, liveResearchRequests: 0, model: result.model,
       modelRequests: 1, requestSha256: result.requestSha256, responseSha256: result.responseSha256 },
+    ...(fresh ? { evidenceForFields: result.editorialPayload.evidenceForFields } : {}),
     draft: result.editorialPayload.stories[0], html: renderHumanReview(result.editorialPayload.stories[0], dossier, { fresh }) };
   } catch (error) {
     return { report: { status: "failed", qualified: false, approved: false, productionEnabled: false,

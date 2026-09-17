@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { previewGeminiLite, renderHumanReview } from "../scripts/automation/preview-gemini-lite.mjs";
+import { previewGeminiLite, renderHumanReview, evidenceMappedPreviewSchema, validPreviewEvidenceMap } from "../scripts/automation/preview-gemini-lite.mjs";
 import { reviewerResearchScopeCases } from "./fixtures/reviewer-research-scope.mjs";
 import { GEMINI_LITE_MODEL } from "../scripts/automation/free/gemini-ai.mjs";
 const settings = { apiKey: "synthetic-preview-key-not-real", freeProjectConfirmation: "FREE PROJECT BILLING DISABLED" };
@@ -61,4 +61,30 @@ test("preview workflow cannot send mail or publish an edition", async () => {
   assert.match(workflow, /contents: read/);
   assert.doesNotMatch(workflow, /RESEND|OPENAI|schedule:|contents: write/);
   assert.equal((workflow.match(/secrets\./g) ?? []).length, 1);
+});
+test("fresh preview selects valid evidence for every non-claim field without granting semantic approval", async () => {
+  const { draft, dossier } = reviewerResearchScopeCases()[0];
+  const fields = ["headline", "deck", "whyItMatters", "whatToDoOrWatch"];
+  const map = Object.fromEntries(fields.map(field => [field, [dossier.sources[0].passages[0].evidenceId]]));
+  assert.deepEqual(Object.keys(evidenceMappedPreviewSchema(dossier).properties), ["evidenceForFields", "stories"]);
+  assert.equal(validPreviewEvidenceMap(map, dossier), true);
+  for (const invalid of [null, {}, { ...map, whyItMatters: [] }, { ...map, deck: ["S9P999"] },
+    { ...map, headline: [...map.headline, ...map.headline] }, { ...map, extra: [] }]) {
+    assert.ok(!validPreviewEvidenceMap(invalid, dossier));
+  }
+  for (const includeMap of [false, true]) {
+    let calls = 0;
+    const result = await previewGeminiLite({ ...settings, dossier, fresh: true, fetchImpl: async (url, options) => {
+      calls++;
+      assert.match(JSON.parse(options.body).systemInstruction.parts[0].text, /A plausible explanation is not evidence/);
+      return new Response(JSON.stringify({ modelVersion: GEMINI_LITE_MODEL,
+        candidates: [{ finishReason: "STOP", content: { role: "model", parts: [{ text: JSON.stringify({
+          ...(includeMap ? { evidenceForFields: map } : {}), stories: [draft] }) }] } }] }),
+        { headers: { "content-type": "application/json" } });
+    } });
+    assert.equal(calls, 1);
+    assert.equal(result.report.approved, false);
+    assert.equal(result.report.status, includeMap ? "human-review-required" : "failed");
+    if (includeMap) assert.deepEqual(result.evidenceForFields, map);
+  }
 });
