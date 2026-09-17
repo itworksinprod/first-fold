@@ -140,3 +140,20 @@ requests and initial calls remain reserved for the other candidates. It retains
 the initial rejection, repeats all checks and does not retry provider/quota errors
 or semantic reviewer verdicts. No repeated-until-green loop or billing fallback
 exists. Automatic reviewer qualification remains unresolved.
+
+Run `35176112523` at `ba979a0` succeeded in 2m29s with 1,017 passing software
+tests, 47/48 feeds, two model requests and two structurally valid drafts. No
+correction request was needed in this run, so the bounded correction mechanism
+has local test coverage but was not exercised live here. Three shortlist items
+were held; the CISA reserve was selected successfully. Search made one request
+and admitted zero extra articles; do not describe this run as twelve searches.
+
+Manual review still found overconfident connectivity wording in the Google draft
+and a need to keep the vendor's non-exploitability condition alongside the CISA
+impact statement. The local two-story reading preview is explicitly assistant-
+edited, not unmodified model output. Google was checked directly; CISA was
+checked against captured passages because a separate fetch returned 403. The
+pipeline can produce a useful human-reviewed preview for free, but unattended
+editorial quality and daily delivery are NOT fixed or enabled by this result.
+The Tavily dashboard session expired; its remaining allowance was not verified
+in the UI. Existing API-based free-budget guards stayed enabled throughout.
