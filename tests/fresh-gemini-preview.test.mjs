@@ -9,6 +9,10 @@ import { groundedEvidence } from "./fixtures/grounded-summary.mjs";
 const { publicKey, privateKey } = generateKeyPairSync("rsa", { modulusLength: 3072 });
 const key = publicKey.export({ type: "spki", format: "der" }).toString("base64");
 const window = { startInclusive: "2026-09-14T00:00:00Z", endExclusive: "2026-09-17T00:00:00Z" };
+const strictEvidence = () => ({ ...groundedEvidence, publishedAt: "2026-09-15T12:00:00Z",
+  articleExcerpt: groundedEvidence.summary.split(/(?<=[.]) /u).join("\n"),
+  articleBlocks: groundedEvidence.summary.split(/(?<=[.]) /u),
+  articleExtraction: { version: "structured-preview-v1", status: "usable", holds: [] } });
 const candidate = () => ({ candidateId: "test", primaryEntity: "Example", canonicalEventKey: "example-event",
   firstPublishedAt: "2026-09-15T12:00:00Z", suggestedDesk: "work-and-tools", ranking: { score: 77, evidenceTier: "authoritative-single" },
   sources: [{ url: "https://example.com/2026/09/article", publisher: "Example" }] });
@@ -41,6 +45,20 @@ test("empty selection is encrypted and never claimed as a successful paper", asy
   assert.equal(openDiagnostic(result.sealed, privateKey).purpose, "fresh-news-unapproved-human-review-not-an-edition");
   assert.doesNotMatch(JSON.stringify(result.sealed), /synthetic-test|records/);
 });
+test("legacy article excerpts cannot enter a strict preview or reach the writer", async () => {
+  const evidence = { ...groundedEvidence, publishedAt: "2026-09-15T12:00:00Z", articleExcerpt: groundedEvidence.summary };
+  const legacy = { ...candidate(), feedEvidence: [evidence], sources: [{ id: evidence.sourceId,
+    publisher: evidence.publisher, title: evidence.title, relationship: "originating", publishedAt: evidence.publishedAt, url: "https://example.com/advisory" }] };
+  const result = await previewFreshGemini({ publicKey: key, apiKey: "synthetic-test-key-not-real",
+    freeProjectConfirmation: "FREE PROJECT BILLING DISABLED", now: new Date(window.endExclusive),
+    researchImpl: async options => {
+      assert.equal(options.articleEvidenceMode, "structured-preview");
+      return { selectedCandidates: [legacy], diagnostics: { sourceResults: [{ status: "ok" }] } };
+    }, coverageImpl: () => {}, draftImpl: () => assert.fail("legacy evidence must not reach a writer") });
+  assert.equal(result.report.modelRequests, 0); assert.equal(result.report.draftCount, 0);
+  const packet = openDiagnostic(result.sealed, privateKey);
+  assert.ok(packet.preDraftHolds[0].reasons.includes("USABLE_STRUCTURED_ARTICLE_REQUIRED"));
+});
 test("fresh workflow has no email credentials or plaintext artifact upload", async () => {
   const workflow = await readFile(new URL("../.github/workflows/gemini-fresh-human-preview.yml", import.meta.url), "utf8");
   assert.match(workflow, /contents: read/);
@@ -48,7 +66,7 @@ test("fresh workflow has no email credentials or plaintext artifact upload", asy
   assert.doesNotMatch(workflow, /RESEND|OPENAI|CLOUDFLARE|schedule:|contents: write/);
 });
 test("eligible draft is retained only in ciphertext and quota failure stops remaining models", async () => {
-  const evidence = { ...groundedEvidence, publishedAt: "2026-09-15T12:00:00Z" };
+  const evidence = strictEvidence();
   const first = { ...candidate(), feedEvidence: [evidence],
     sources: [{ id: "cert-advisory", title: evidence.title, publisher: "CERT/CC", relationship: "originating",
       publishedAt: evidence.publishedAt, url: "https://example.com/2026/09/advisory" }] };
@@ -87,7 +105,7 @@ test("held top choice yields to an already-qualified reserve without duplicating
   assert.deepEqual(result.held.map(h => h.candidateId), ["broken", "low"]);
 });
 test("one targeted repair per story shares the four-call ceiling and cannot loop", async () => {
-  const evidence = { ...groundedEvidence, publishedAt: "2026-09-15T12:00:00Z" };
+  const evidence = strictEvidence();
   const first = { ...candidate(), feedEvidence: [evidence],
     sources: [{ id: "cert-advisory", title: evidence.title, publisher: "CERT/CC", relationship: "originating",
       publishedAt: evidence.publishedAt, url: "https://example.com/2026/09/advisory" }] };

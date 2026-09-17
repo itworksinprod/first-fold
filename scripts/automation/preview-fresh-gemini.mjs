@@ -13,13 +13,13 @@ import { previewGeminiLite } from "./preview-gemini-lite.mjs";
 import { FREE_PROJECT_CONFIRMATION } from "./check-gemini-writer.mjs";
 import { diagnosticPublicKey, sealDiagnostic } from "./private-writer-diagnostic.mjs";
 
-export function selectPreviewReadyCandidates(snapshot, reportingWindow) {
+export function selectPreviewReadyCandidates(snapshot, reportingWindow, { requireStructured = false } = {}) {
   const pool = snapshot.candidates ?? snapshot.selectedCandidates;
   if (!Array.isArray(pool) || pool.length > 40) throw Error("PREVIEW_SHORTLIST_INVALID");
   const held = [], ready = [];
   for (const candidate of pool) {
     const dossier = groundedDossiers([candidate])[0];
-    const reasons = previewEvidenceHolds(candidate, dossier, reportingWindow);
+    const reasons = previewEvidenceHolds(candidate, dossier, reportingWindow, { requireStructured });
     if (reasons.length) held.push({ candidateId: candidate.candidateId, desk: candidate.suggestedDesk, reasons });
     else ready.push(candidate);
   }
@@ -39,12 +39,12 @@ export async function previewFreshGemini({ publicKey, apiKey, freeProjectConfirm
   const retrievedAt = now.toISOString();
   const reportingWindow = { startInclusive: new Date(now.getTime() - 72 * 3600000).toISOString(),
     endExclusive: retrievedAt, displayLabel: "Manual rolling 72-hour research preview" };
-  const snapshot = await researchImpl({ reportingWindow, retrievedAt, enrichArticles: true,
+  const snapshot = await researchImpl({ reportingWindow, retrievedAt, enrichArticles: true, articleEvidenceMode: "structured-preview",
     evidencePolicy: "authoritative-or-corroborated", minimumScore: 70, minimumAuthoritativeScore: 70,
     ...(tavilyApiKey ? { discoverWebArticles: createTavilyDiscovery({ apiKey: tavilyApiKey,
       paygoDisabledVerified: tavilyPaygoDisabledVerified }) } : {}) });
   coverageImpl(snapshot, { feedSources: FREE_FEED_SOURCES, reportingWindow, retrievedAt });
-  const selection = selectPreviewReadyCandidates(snapshot, reportingWindow);
+  const selection = selectPreviewReadyCandidates(snapshot, reportingWindow, { requireStructured: true });
   const candidates = selection.selectedCandidates;
   if (!Array.isArray(candidates) || candidates.length > 4 || new Set(candidates.map(c => c.suggestedDesk)).size !== candidates.length) {
     throw Error("PREVIEW_SELECTION_INVALID");
@@ -53,7 +53,7 @@ export async function previewFreshGemini({ publicKey, apiKey, freeProjectConfirm
   let requests = 0, stopped = false;
   for (let i = 0; i < candidates.length; i++) {
     const candidate = candidates[i], dossier = dossiers[i];
-    const holds = previewEvidenceHolds(candidate, dossier, reportingWindow);
+    const holds = previewEvidenceHolds(candidate, dossier, reportingWindow, { requireStructured: true });
     if (stopped) holds.push("MODEL_REQUESTS_STOPPED");
     const record = { candidateId: candidate.candidateId, title: candidate.title, desk: candidate.suggestedDesk,
       score: candidate.ranking.score, sources: candidate.sources.map(s => ({ publisher: s.publisher, url: s.url })), dossier, holds };
@@ -77,6 +77,7 @@ export async function previewFreshGemini({ publicKey, apiKey, freeProjectConfirm
   const report = { status: draftCount ? "human-review-required" : "no-reviewable-drafts",
     approved: false, qualified: false, productionEnabled: false, emailRequests: 0,
     retrievedAt, modelRequests: requests, maxModelRequests: 4, draftCount,
+    evidenceMode: "structured-preview-v1", manualProseEdits: 0,
     selectedCount: candidates.length, heldCount: selection.held.length + records.filter(r => r.holds.length).length,
     successfulFeeds: snapshot.diagnostics.sourceResults.filter(s => s.status === "ok").length,
     totalFeeds: snapshot.diagnostics.sourceResults.length,

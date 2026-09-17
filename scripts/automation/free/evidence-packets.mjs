@@ -106,6 +106,14 @@ export function selectEvidencePassages(blocks, {
 }
 
 function sourceSentences(record) {
+  if (record.articleExtraction?.version === "structured-preview-v1") {
+    if (record.articleExtraction.status !== "usable" || !Array.isArray(record.articleBlocks) ||
+        record.articleBlocks.length > 32 || record.articleBlocks.join("\n") !== record.articleExcerpt ||
+        record.articleExcerpt.length > 5_000) return [];
+    // These atomic units already carry headings and table/definition labels.
+    // Never re-split them or mix in title/summary feed fragments.
+    return boundedBlocks(record.articleBlocks, 1);
+  }
   // Sentence boundaries preserve version decimals and driver filenames. Titles
   // remain their own passage, so the existing short-source evidence IDs agree.
   const blocks = [record.title, record.summary, record.articleExcerpt ?? ""];
@@ -134,7 +142,8 @@ export function buildEvidencePacketSources(candidate) {
     }
     seen.set(record.sourceId, serialized);
     const allPassages = sourceSentences(record);
-    const selected = selectEvidencePassages(allPassages, { title: record.title });
+    const selected = selectEvidencePassages(allPassages, { title: record.title,
+      ...(record.articleExtraction?.version === "structured-preview-v1" ? { minChars: 1 } : {}) });
     return { sourceId: source.id, publisher: source.publisher, publisherKey: source.publisherKey ?? source.publisher,
       relationship: source.relationship, publishedAt: source.publishedAt,
       text: selected.join("\n"), selected, allPassages,

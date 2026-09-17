@@ -16,13 +16,25 @@ export function previewSourceIntegrityHolds(dossier) {
   return [...holds];
 }
 
-export function previewEvidenceHolds(candidate, dossier, reportingWindow) {
+export function previewEvidenceHolds(candidate, dossier, reportingWindow, { requireStructured = false } = {}) {
   const holds = new Set();
   if (!candidate || candidate.ranking?.score < 70 || !Number.isFinite(candidate.ranking?.score) ||
       !["authoritative-single", "corroborated"].includes(candidate.ranking?.evidenceTier) ||
-      !dossier?.sources?.length || candidate.candidateId !== dossier.candidateId) return ["SELECTION_INVALID"];
+      !Array.isArray(dossier?.sources) || candidate.candidateId !== dossier.candidateId) return ["SELECTION_INVALID"];
+  if (!dossier.sources.length) holds.add("EVIDENCE_INCOMPLETE");
   const start = Date.parse(reportingWindow?.startInclusive), end = Date.parse(reportingWindow?.endExclusive);
   if (!Number.isFinite(start) || !Number.isFinite(end) || start >= end) return ["WINDOW_INVALID"];
+  if (requireStructured) {
+    for (const record of candidate.feedEvidence ?? []) {
+      if (record.articleExtraction?.version !== "structured-preview-v1" || record.articleExtraction.status !== "usable" ||
+          record.articleExtraction.holds?.length || !record.articleBlocks?.length) {
+        holds.add("USABLE_STRUCTURED_ARTICLE_REQUIRED");
+        for (const reason of record.articleExtraction?.holds ?? []) holds.add(reason);
+      }
+    }
+    if (!candidate.feedEvidence?.length || dossier.sources.some(source => !candidate.feedEvidence.some(record =>
+      record.sourceId === source.sourceId && record.articleExtraction?.status === "usable"))) holds.add("USABLE_STRUCTURED_ARTICLE_REQUIRED");
+  }
   for (const source of dossier.sources) {
     const published = Date.parse(source.publishedAt);
     if (!Number.isFinite(published) || published < start || published >= end) holds.add("SOURCE_DATE_REVIEW");

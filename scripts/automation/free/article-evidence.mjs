@@ -55,7 +55,7 @@ function cleanArticleContainers(body) {
   return cleaned + body.slice(end);
 }
 
-export function extractArticleEvidence(html) {
+export function prepareArticleRegion(html) {
   if (typeof html !== "string" || Buffer.byteLength(html) > 600_000) return "";
   // Reject pathological markup before repeated region scans. Normal article
   // templates stay well below these bounds; failure retains the feed summary.
@@ -71,6 +71,13 @@ export function extractArticleEvidence(html) {
   if (!body) return ""; // No confident article region: retain the feed evidence.
   const title = plain(body.match(/<h1\b[^>]*>([\s\S]*?)<\/h1\s*>/i)?.[1] ?? "");
   body = cleanArticleContainers(body);
+  return { body, title };
+}
+
+export function extractArticleEvidence(html) {
+  const region = prepareArticleRegion(html);
+  if (!region) return "";
+  const { body, title } = region;
   // HTML permits omitted </p> and </li> tags. A new block closes the previous
   // block; otherwise an entire article can collapse into one giant paragraph.
   const blocks = [...body.matchAll(/<(p|h[1-4]|li)\b[^>]*>([\s\S]*?)(?=<(?:p|h[1-4]|li)\b|<\/(?:p|h[1-4]|li)\s*>|$)/gi)]
@@ -86,6 +93,8 @@ export function extractArticleEvidence(html) {
   return text;
 }
 
+export { plain as plainArticleText };
+
 export function articleScoringSummary(excerpt, title) {
   if (typeof excerpt !== "string" || excerpt.length > MAX_ARTICLE_EXCERPT_CHARS) return "";
   return selectEvidencePassages(excerpt.split(/\n+|(?<=[.!?])\s+(?=[A-Z0-9])/u), {
@@ -93,7 +102,7 @@ export function articleScoringSummary(excerpt, title) {
   }).join("\n");
 }
 
-export async function enrichShortlist(items, { assess, fetchArticle } = {}) {
+export async function enrichShortlist(items, { assess, fetchArticle, structuredPreview = false } = {}) {
   const assessments = assess(items);
   // Never rescue a vetoed promotion, opinion, rumor, repeat, or routine notice.
   const recoverable = new Set(["BELOW_EDITORIAL_THRESHOLD",
@@ -124,15 +133,26 @@ export async function enrichShortlist(items, { assess, fetchArticle } = {}) {
     while (cursor < Math.min(shortlist.length, MAX_RESEARCH_ARTICLES)) {
       const item = shortlist[cursor++];
       try {
-        const excerpt = await fetchArticle(item);
+        const capture = await fetchArticle(item);
+        if (structuredPreview && capture?.status !== "usable") {
+          enriched.set(item.url, { ...item, articleExcerpt: "", articleBlocks: [],
+            articleExtraction: { version: "structured-preview-v1", status: "held", holds: capture?.holds ?? ["ARTICLE_EXTRACTION_FAILED"] } });
+          continue;
+        }
+        const excerpt = structuredPreview ? capture.excerpt : capture;
         if (typeof excerpt !== "string" || excerpt.length < 120 || excerpt.length > MAX_ARTICLE_EXCERPT_CHARS) continue;
         // Identical scoring rules, now with substantive article evidence. Keep
         // the input length the same as feed summaries to limit keyword volume.
         // Scoring receives complete source sentences inside the old 1,200-char
         // limit, never a mid-word fragment later recycled as factual evidence.
         const summary = articleScoringSummary(excerpt, item.title);
-        enriched.set(item.url, { ...item, articleExcerpt: excerpt, summary: summary || item.summary });
+        enriched.set(item.url, { ...item, articleExcerpt: excerpt, summary: summary || item.summary,
+          ...(structuredPreview ? { articleBlocks: capture.blocks,
+            articleExtraction: { version: capture.version, status: capture.status, holds: capture.holds,
+              inputBlocks: capture.inputBlocks, retainedBlocks: capture.blocks.length, omittedBlocks: capture.omittedBlocks } } : {}) });
       } catch {
+        if (structuredPreview) enriched.set(item.url, { ...item, articleExcerpt: "", articleBlocks: [],
+          articleExtraction: { version: "structured-preview-v1", status: "held", holds: ["ARTICLE_FETCH_OR_EXTRACTION_UNAVAILABLE"] } });
         // A blocked or unavailable page is not evidence of a quiet news day.
         // The original feed stays eligible under the unchanged evidence rules.
       }

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { extractArticleEvidence, enrichShortlist } from "./article-evidence.mjs";
+import { extractStructuredArticleEvidence } from "./structured-article-evidence.mjs";
 import { lookup as dnsLookup } from "node:dns/promises";
 import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
@@ -2951,6 +2952,7 @@ function groupToCandidate(group, reportingWindow) {
       title: item.title,
       summary: item.summary,
       articleExcerpt: item.articleExcerpt ?? "",
+      ...(item.articleExtraction ? { articleExtraction: item.articleExtraction, articleBlocks: item.articleBlocks ?? [] } : {}),
       categories: item.categories.slice(0, 12),
       publishedAt: item.publishedAt,
     });
@@ -3557,10 +3559,16 @@ export async function collectFreeResearchSnapshot(options = {}) {
     }
   }
   if (options.enrichArticles === true) {
+    const structuredPreview = options.articleEvidenceMode === "structured-preview";
     ingestion.items = await enrichShortlist(ingestion.items, {
+      structuredPreview,
       assess: (items) => assessFeedCandidates({ ...options, items,
         reportingWindow: ingestion.reportingWindow, evidencePolicy: normalizedEvidencePolicy }),
-      fetchArticle: async (item) => item.articleExcerpt ?? extractArticleEvidence((await fetchArticlePage(item)).body),
+      // Strict previews re-extract even cached search pages. Legacy excerpts
+      // cannot masquerade as verified structured capture.
+      fetchArticle: async (item) => structuredPreview
+        ? extractStructuredArticleEvidence((await fetchArticlePage(item)).body)
+        : item.articleExcerpt ?? extractArticleEvidence((await fetchArticlePage(item)).body),
     });
   }
   let assessments = assessFeedCandidates({
