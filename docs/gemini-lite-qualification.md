@@ -42,3 +42,24 @@ The gate stopped before writer controls: zero drafted stories, zero delivered
 emails and no production changes. Free model access is demonstrated; automatic
 editorial qualification is not. A future reviewed design change needs a new
 version and additional regression coverage, not relabeling this failed result.
+
+## Human-review writing experiment
+
+The separate manual `gemini-lite-human-preview.yml` workflow makes one bounded
+8,000-token writing request using only the stored MIT source dossier. It retains
+an escaped, script-disabled HTML sample alongside the evidence, prominently
+marked unapproved. It has no delivery credentials, receipt, schedule or live
+research. A successful job means sample creation, never editorial approval.
+
+Run `35165174732` failed the unchanged attribution validator. Commit `fc1dbc9`
+clarified the existing exact-publisher-name requirement in the isolated preview
+prompt; no validator or quality expectation was relaxed. Run `35165325394`
+then produced a sample. All 1,007 local software tests passed.
+
+Direct inspection still rejected the original model prose: it generalized to
+operational safety assurances, asserted future evaluations without evidence,
+and included architecture-specific wording not established by its paired
+citations. An assistant-edited sample and explicit review notes were provided
+locally to Carlos, separate from the preserved original model output. That edit
+is not a successful automatic generation result. Nothing was emailed or enabled
+in production. The free model can draft; factual editing remains necessary.
