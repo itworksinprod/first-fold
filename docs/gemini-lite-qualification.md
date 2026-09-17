@@ -88,3 +88,11 @@ failure causes and benefits, and asks for source-established eligibility, contro
 and limitations instead. IDs are checked locally, but ID validity alone does not
 prove entailment. Human review remains mandatory; the earlier 6/8 reviewer result
 is unchanged, and no production qualification or delivery is implied.
+
+Run `35174101359` at `f88ea68` again completed 47/48 feeds and 12 searches,
+but its one writing response failed `NUMERIC_ANCHOR`. The shared validator
+requires non-claim numbers to occur in the two claims' cited passages; the new
+analysis reference map does not override that rule. The next prompt explicitly
+states this existing constraint. Failed fresh payloads and detailed validation
+feedback are retained only inside the encrypted review packet (never rendered
+or logged) to make further diagnosis evidence-based. No validator was relaxed.

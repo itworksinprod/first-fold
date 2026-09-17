@@ -45,20 +45,31 @@ ${dossier.sources.map(s => `<h3>${escape(s.publisher)}</h3><ul>${s.passages.map(
 export async function previewGeminiLite({ apiKey, freeProjectConfirmation, fetchImpl = globalThis.fetch,
   dossier = reviewerResearchScopeCases()[0].dossier, fresh = false } = {}) {
   const structuralErrors = new Set();
+  let rejectedPayload = null;
+  const rejectionDetails = [];
   try {
     const result = await requestGeminiEditorial({ apiKey, model: GEMINI_LITE_MODEL,
       freeTierConfirmed: freeProjectConfirmation === FREE_PROJECT_CONFIRMATION, fetchImpl,
       maxTokens: 8000, thinking: "medium", timeoutMs: 180000,
       messages: [{ role: "system", content: `${WRITER_PROMPT}\nInclude each factual source's exact supplied publisher name in the claims.text sentences. Do not shorten those names or claim independent confirmation for a single-source account. Research is not a product release; a possible use is not an observed result. Do not promise safety, productivity, reliability or performance benefits absent supporting measurements. In whatToDoOrWatch, suggest a check the reader can make; never invent scheduled tests, updates or releases.${fresh ? `
 EVIDENCE-FIRST PREVIEW CONTRACT: Select evidenceForFields BEFORE writing stories. It maps headline, deck, whyItMatters and whatToDoOrWatch to exact passage IDs. These are support obligations, not decorative citations. Every factual clause in each field must follow from its selected passages, preserving conditions. Do not insert IDs into reader prose.
+The unchanged numeric validator additionally requires every number anywhere in headline, deck or analysis to appear in the passages cited by the TWO claims.supports arrays. The new evidenceForFields map does not replace that requirement. Plan the two factual claims and their citations to cover the figures needed throughout the story; otherwise omit the extra numeric detail rather than inventing or borrowing it.
 For whyItMatters, explain the specific scope, eligibility, control or limitation established by those passages. Prefer concrete facts that tell a reader whether this applies to them. Do NOT invent a broader problem, failure cause, user behavior, time saving, administrative burden, avoided delay, reliability guarantee or expected performance. A plausible explanation is not evidence. Do not use general background knowledge to fill gaps. If the source names a fallback, explain when it is available, not what failures it supposedly prevents.
 For whatToDoOrWatch, suggest checking a supported setting, eligibility requirement or source-stated rollout. Phrase this as reader advice, not a promised outcome or a publisher recommendation unless the source actually recommends it. Use remaining distinct source facts to meet the existing word bounds; never pad with speculative benefits. Attribute publisher announcements to the publisher, not to the publisher's blog as if the blog built the product.` : ""}` },
         { role: "user", content: JSON.stringify({ dossiers: [localPromptDossier(dossier)] }) }],
       schema: fresh ? evidenceMappedPreviewSchema(dossier) : GROUNDED_DRAFT_SCHEMA,
-      validatePayload: p => p && Object.keys(p).sort().join() === (fresh ? "evidenceForFields,stories" : "stories") &&
+      validatePayload: p => {
+        // Never logged or rendered. Fresh callers retain this only inside their
+        // encrypted review packet, allowing a failed draft to be inspected once.
+        if (fresh && Buffer.byteLength(JSON.stringify(p) ?? "") <= 24000) rejectedPayload = p;
+        return p && Object.keys(p).sort().join() === (fresh ? "evidenceForFields,stories" : "stories") &&
         (!fresh || validPreviewEvidenceMap(p.evidenceForFields, dossier)) && Array.isArray(p.stories) && p.stories.length === 1 &&
         p.stories[0]?.candidateId === dossier.candidateId && validateGroundedStory(p.stories[0], dossier,
-          reason => { if (typeof reason === "string" && /^[A-Z_]{1,80}$/u.test(reason)) structuralErrors.add(reason); }) });
+          (reason, feedback) => { if (typeof reason === "string" && /^[A-Z_]{1,80}$/u.test(reason)) {
+            structuralErrors.add(reason);
+            if (fresh && rejectionDetails.length < 8) rejectionDetails.push({ reason, feedback });
+          } });
+      } });
     return { report: { status: "human-review-required", qualified: false, approved: false,
       productionEnabled: false, emailRequests: 0, liveResearchRequests: 0, model: result.model,
       modelRequests: 1, requestSha256: result.requestSha256, responseSha256: result.responseSha256 },
@@ -68,7 +79,8 @@ For whatToDoOrWatch, suggest checking a supported setting, eligibility requireme
     return { report: { status: "failed", qualified: false, approved: false, productionEnabled: false,
       emailRequests: 0, liveResearchRequests: 0, model: GEMINI_LITE_MODEL,
       code: /^GEMINI_[A-Z_]+$/u.test(error?.code ?? "") ? error.code : "GEMINI_PREVIEW_FAILED",
-      ...geminiFailureDiagnostic(error), structuralErrors: [...structuralErrors] }, html: null };
+      ...geminiFailureDiagnostic(error), structuralErrors: [...structuralErrors] }, html: null,
+      ...(fresh && rejectedPayload ? { rejectedDiagnostic: { unapproved: true, payload: rejectedPayload, rejectionDetails } } : {}) };
   }
 }
 

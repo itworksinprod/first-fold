@@ -86,5 +86,11 @@ test("fresh preview selects valid evidence for every non-claim field without gra
     assert.equal(result.report.approved, false);
     assert.equal(result.report.status, includeMap ? "human-review-required" : "failed");
     if (includeMap) assert.deepEqual(result.evidenceForFields, map);
+    else {
+      assert.equal(result.rejectedDiagnostic.unapproved, true);
+      assert.deepEqual(result.rejectedDiagnostic.payload.stories, [draft]);
+      assert.equal(result.html, null);
+      assert.ok(!JSON.stringify(result.report).includes(draft.headline));
+    }
   }
 });
