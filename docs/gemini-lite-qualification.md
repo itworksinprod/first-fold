@@ -126,3 +126,17 @@ headline. The original model output and evidence remain available separately.
 This demonstrates a working free research-to-draft preview, not a qualified
 automatic editor, a complete multi-desk paper, or deployed daily delivery.
 The automatic reviewer remains unqualified (6/8); daily behavior is unchanged.
+
+The preview now filters the already-accepted shortlist for evidence holds before
+reusing the existing desk/entity-diverse assignment. It never admits a rejected
+or lower-threshold candidate. Run `35175567442` at `48ecada` found a usable CISA
+reserve after the top advisory was held, but both model drafts failed validation:
+Google Meet copied a source sequence; the CISA deck cited a passage that did not
+contain its version number. That run is a failure, despite the prior success.
+
+A subsequent preview-only change permits one feedback-directed correction for a
+structurally rejected draft, provided the entire run remains within four model
+requests and initial calls remain reserved for the other candidates. It retains
+the initial rejection, repeats all checks and does not retry provider/quota errors
+or semantic reviewer verdicts. No repeated-until-green loop or billing fallback
+exists. Automatic reviewer qualification remains unresolved.

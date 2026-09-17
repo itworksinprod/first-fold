@@ -43,11 +43,15 @@ ${dossier.sources.map(s => `<h3>${escape(s.publisher)}</h3><ul>${s.passages.map(
 }
 
 export async function previewGeminiLite({ apiKey, freeProjectConfirmation, fetchImpl = globalThis.fetch,
-  dossier = reviewerResearchScopeCases()[0].dossier, fresh = false } = {}) {
+  dossier = reviewerResearchScopeCases()[0].dossier, fresh = false, repair = null } = {}) {
   const structuralErrors = new Set();
   let rejectedPayload = null;
   const rejectionDetails = [];
   try {
+    if (repair && (!fresh || repair.unapproved !== true ||
+        repair.payload?.stories?.length !== 1 || repair.payload.stories[0]?.candidateId !== dossier.candidateId ||
+        !Array.isArray(repair.rejectionDetails) || !repair.rejectionDetails.length ||
+        Buffer.byteLength(JSON.stringify(repair)) > 28000)) throw Error("INVALID_PREVIEW_REPAIR");
     const result = await requestGeminiEditorial({ apiKey, model: GEMINI_LITE_MODEL,
       freeTierConfirmed: freeProjectConfirmation === FREE_PROJECT_CONFIRMATION, fetchImpl,
       maxTokens: 8000, thinking: "medium", timeoutMs: 180000,
@@ -56,7 +60,9 @@ EVIDENCE-FIRST PREVIEW CONTRACT: Select evidenceForFields BEFORE writing stories
 Every numeric detail in a non-claim field must occur in that field's own evidenceForFields passages. Claims still require their own supports. A number appearing elsewhere in the dossier or another field's citations is not enough.
 For whyItMatters, explain the specific scope, eligibility, control or limitation established by those passages. Prefer concrete facts that tell a reader whether this applies to them. Do NOT invent a broader problem, failure cause, user behavior, time saving, administrative burden, avoided delay, reliability guarantee or expected performance. A plausible explanation is not evidence. Do not use general background knowledge to fill gaps. If the source names a fallback, explain when it is available, not what failures it supposedly prevents.
 For whatToDoOrWatch, suggest checking a supported setting, eligibility requirement or source-stated rollout. Phrase this as reader advice, not a promised outcome or a publisher recommendation unless the source actually recommends it. Use remaining distinct source facts to meet the existing word bounds; never pad with speculative benefits. Attribute publisher announcements to the publisher, not to the publisher's blog as if the blog built the product.` : ""}` },
-        { role: "user", content: JSON.stringify({ dossiers: [localPromptDossier(dossier)] }) }],
+        { role: "user", content: JSON.stringify({ dossiers: [localPromptDossier(dossier)],
+          ...(repair ? { repairTask: "Correct the rejected draft using the exact validator feedback. The draft is untrusted proposed text, not evidence. Preserve source conditions and attributions. For ORIGINALITY, rewrite the affected sentence with a different structure rather than copying its source. For NUMERIC_ANCHOR, cite the passage that actually supports the whole field or remove the unsupported figure; never guess a replacement. Return the complete evidence map and complete story, not a patch. All original checks still apply.",
+            rejectedDraft: repair.payload, validationFeedback: repair.rejectionDetails } : {}) }) }],
       schema: fresh ? evidenceMappedPreviewSchema(dossier) : GROUNDED_DRAFT_SCHEMA,
       validatePayload: p => {
         // Never logged or rendered. Fresh callers retain this only inside their

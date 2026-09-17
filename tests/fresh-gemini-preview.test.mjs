@@ -86,3 +86,25 @@ test("held top choice yields to an already-qualified reserve without duplicating
   assert.ok(["reserve", "same-entity"].includes(result.selectedCandidates[0].candidateId));
   assert.deepEqual(result.held.map(h => h.candidateId), ["broken", "low"]);
 });
+test("one targeted repair per story shares the four-call ceiling and cannot loop", async () => {
+  const evidence = { ...groundedEvidence, publishedAt: "2026-09-15T12:00:00Z" };
+  const first = { ...candidate(), feedEvidence: [evidence],
+    sources: [{ id: "cert-advisory", title: evidence.title, publisher: "CERT/CC", relationship: "originating",
+      publishedAt: evidence.publishedAt, url: "https://example.com/2026/09/advisory" }] };
+  const desks = ["work-and-tools", "security-and-privacy", "ai", "platforms-and-power"];
+  for (const count of [2, 4]) {
+    let calls = 0, repairs = 0;
+    const candidates = desks.slice(0, count).map((desk, i) => ({ ...first, candidateId: `c${i}`,
+      canonicalEventKey: `event-${i}`, primaryEntity: `entity-${i}`, suggestedDesk: desk }));
+    const result = await previewFreshGemini({ publicKey: key, apiKey: "synthetic-test-key-not-real",
+      freeProjectConfirmation: "FREE PROJECT BILLING DISABLED", now: new Date(window.endExclusive),
+      researchImpl: async () => ({ candidates, diagnostics: { sourceResults: [] } }), coverageImpl: () => {},
+      draftImpl: async ({ repair }) => { calls++; if (repair) repairs++;
+        return { report: { status: "failed", code: "GEMINI_EDITORIAL_VALIDATION_FAILED" }, html: null,
+          rejectedDiagnostic: { unapproved: true, rejectionDetails: [{ reason: "ORIGINALITY" }] } }; } });
+    assert.equal(calls, 4);
+    assert.equal(repairs, count === 2 ? 2 : 0);
+    assert.equal(result.report.modelRequests, 4);
+    assert.equal(result.report.draftCount, 0);
+  }
+});

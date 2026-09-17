@@ -60,7 +60,16 @@ export async function previewFreshGemini({ publicKey, apiKey, freeProjectConfirm
     records.push(record);
     if (holds.length) continue;
     requests++;
-    const result = await draftImpl({ apiKey, freeProjectConfirmation, dossier, fresh: true });
+    let result = await draftImpl({ apiKey, freeProjectConfirmation, dossier, fresh: true });
+    // One targeted correction only, within the SAME four-request ceiling. Keep
+    // one initial call reserved for each remaining candidate; never retry quota,
+    // provider or semantic-review failures, or repeatedly sample a verdict.
+    if (result.report?.code === "GEMINI_EDITORIAL_VALIDATION_FAILED" &&
+        result.rejectedDiagnostic?.rejectionDetails?.length && requests + (candidates.length - i - 1) < 4) {
+      record.initialRejection = result;
+      requests++;
+      result = await draftImpl({ apiKey, freeProjectConfirmation, dossier, fresh: true, repair: result.rejectedDiagnostic });
+    }
     record.result = result;
     if (result.report?.status === "failed" && result.report.code !== "GEMINI_EDITORIAL_VALIDATION_FAILED") stopped = true;
   }

@@ -114,3 +114,24 @@ test("fresh preview selects valid evidence for every non-claim field without gra
     }
   }
 });
+test("targeted repair is fresh-only, candidate-bound and keeps rejected prose out of logs", async () => {
+  const { draft, dossier } = reviewerResearchScopeCases()[0];
+  const repair = { unapproved: true, payload: { stories: [draft] },
+    rejectionDetails: [{ reason: "ORIGINALITY", feedback: { field: "claims[0].text" } }] };
+  for (const options of [{ fresh: false, repair }, { fresh: true, repair: { ...repair, unapproved: false } },
+    { fresh: true, repair: { ...repair, payload: { stories: [{ ...draft, candidateId: "wrong" }] } } }]) {
+    await previewGeminiLite({ ...settings, dossier, ...options, fetchImpl: () => assert.fail("must not request") });
+  }
+  let calls = 0;
+  const result = await previewGeminiLite({ ...settings, dossier, fresh: true, repair, fetchImpl: async (url, options) => {
+    calls++;
+    const data = JSON.parse(JSON.parse(options.body).contents[0].parts[0].text);
+    assert.deepEqual(data.validationFeedback, repair.rejectionDetails);
+    assert.deepEqual(data.rejectedDraft, repair.payload);
+    assert.match(data.repairTask, /untrusted proposed text, not evidence/);
+    return new Response("private error", { status: 429 });
+  } });
+  assert.equal(calls, 1);
+  assert.ok(!JSON.stringify(result.report).includes(draft.headline));
+  assert.equal(result.html, null);
+});
