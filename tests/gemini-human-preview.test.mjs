@@ -13,7 +13,9 @@ test("one call creates only an unapproved evidence-paired sample, never a sendab
   const { draft } = reviewerResearchScopeCases()[0];
   const result = await previewGeminiLite({ ...settings, fetchImpl: async (url, options) => {
     calls++; assert.match(url, /gemini-3\.5-flash-lite:generateContent$/);
-    const data = JSON.parse(JSON.parse(options.body).contents[0].parts[0].text);
+    const body = JSON.parse(options.body);
+    assert.match(body.systemInstruction.parts[0].text, /exact supplied publisher name/);
+    const data = JSON.parse(body.contents[0].parts[0].text);
     assert.deepEqual(Object.keys(data), ["dossiers"]);
     assert.doesNotMatch(JSON.stringify(data), /"expected"|"headline"|"caseId"/);
     return response(draft);

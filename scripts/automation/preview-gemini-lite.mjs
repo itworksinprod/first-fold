@@ -31,7 +31,7 @@ export async function previewGeminiLite({ apiKey, freeProjectConfirmation, fetch
     const result = await requestGeminiEditorial({ apiKey, model: GEMINI_LITE_MODEL,
       freeTierConfirmed: freeProjectConfirmation === FREE_PROJECT_CONFIRMATION, fetchImpl,
       maxTokens: 8000, thinking: "medium", timeoutMs: 180000,
-      messages: [{ role: "system", content: WRITER_PROMPT },
+      messages: [{ role: "system", content: `${WRITER_PROMPT}\nFor this single-source review sample, include the source's exact supplied publisher name in at least one claims.text sentence. Do not shorten that name or claim independent confirmation.` },
         { role: "user", content: JSON.stringify({ dossiers: [localPromptDossier(dossier)] }) }],
       schema: GROUNDED_DRAFT_SCHEMA,
       validatePayload: p => p && Object.keys(p).join() === "stories" && Array.isArray(p.stories) && p.stories.length === 1 &&
