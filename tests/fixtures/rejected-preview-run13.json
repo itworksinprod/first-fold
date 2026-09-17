@@ -1,0 +1,159 @@
+{
+  "runId": "35284845154",
+  "commit": "e668236f02d81b00a6c074419777760dfadf9dce",
+  "purpose": "Untouched negative live draft regressions, not approved copy",
+  "records": [
+    {
+      "title": "Rate limits on GitLab.com are changing",
+      "draft": {
+        "candidateId": "candidate-cb9de104648a6a26",
+        "headline": "GitLab.com Revises Rate Limits by Subscription Tier Starting October 19",
+        "deck": "Free accounts and unauthenticated calls face new restrictions first, while Premium and Ultimate tiers transition in January 2027.",
+        "claims": [
+          {
+            "text": "According to GitLab, rate limits on GitLab.com will align with user subscription tiers starting October 19, 2026, with Free accounts and unauthenticated requests taking effect during the initial rollout phase.",
+            "supports": [
+              {
+                "evidenceId": "S1P4"
+              }
+            ]
+          },
+          {
+            "text": "GitLab notes that unauthenticated requests will be capped at 60 requests per hour per IP address, while Premium and Ultimate subscription plans will transition in January 2027.",
+            "supports": [
+              {
+                "evidenceId": "S1P7"
+              },
+              {
+                "evidenceId": "S1P6"
+              }
+            ]
+          }
+        ],
+        "whyItMatters": "GitLab explains that predictable limits keep the platform fast as demand grows, preventing heavy automation from slowing service for other users. Unauthenticated traffic and Free accounts face these restrictions first, while GitLab Self-Managed and GitLab Dedicated deployments remain entirely unaffected by this update.",
+        "whatToDoOrWatch": "GitLab advises checking your busiest minute against published plan limits or reviewing the RateLimit-Remaining header on API responses. Authenticating integration calls via tokens moves traffic off the strict anonymous allowance onto your specific plan limits."
+      },
+      "evidenceForFields": {
+        "headline": [
+          "S1P2",
+          "S1P4"
+        ],
+        "deck": [
+          "S1P4",
+          "S1P6"
+        ],
+        "whyItMatters": [
+          "S1P3",
+          "S1P4",
+          "S1P7",
+          "S1P22"
+        ],
+        "whatToDoOrWatch": [
+          "S1P8",
+          "S1P14",
+          "S1P26"
+        ]
+      }
+    },
+    {
+      "title": "Introducing Amazon EC2 T8i instances",
+      "draft": {
+        "candidateId": "candidate-3a736aed92014dc5",
+        "headline": "AWS Launches T8i Burstable EC2 Instances With Custom Intel Xeon Processors",
+        "deck": "The new burstable instances offer up to 30% better price performance and up to 70% higher compute performance than T3 instances.",
+        "claims": [
+          {
+            "text": "AWS announced the general availability of new low-cost burstable Amazon EC2 T8i instances powered by custom sixth generation Intel Xeon 6 processors and sixth generation AWS Nitro cards.",
+            "supports": [
+              {
+                "evidenceId": "S1P2"
+              }
+            ]
+          },
+          {
+            "text": "According to AWS, these instances deliver up to 30% better price performance, up to 70% higher compute performance, up to 1.25x higher network bandwidth, and up to 2.4x higher EBS bandwidth compared to previous generation T3 instances.",
+            "supports": [
+              {
+                "evidenceId": "S1P2"
+              },
+              {
+                "evidenceId": "S1P3"
+              }
+            ]
+          }
+        ],
+        "whyItMatters": "For workloads requiring low to moderate CPU utilization like microservices, data processing, and small databases, T8i instances provide a cost-effective option. They use the same CPU credit system with Standard and Unlimited modes as T3, enabling existing customers to upgrade and potentially lower their total cost of ownership.",
+        "whatToDoOrWatch": "Check if your target deployment region is supported and whether your workloads qualify for the T8i.micro or T8i.small tiers included in the AWS Free Tier. Watch for the upcoming Savings Plan option for Spot instances."
+      },
+      "evidenceForFields": {
+        "headline": [
+          "S1P1",
+          "S1P2"
+        ],
+        "deck": [
+          "S1P2",
+          "S1P3"
+        ],
+        "whyItMatters": [
+          "S1P2",
+          "S1P3"
+        ],
+        "whatToDoOrWatch": [
+          "S1P4"
+        ]
+      }
+    },
+    {
+      "title": "Bransys ELD",
+      "draft": {
+        "candidateId": "candidate-ee6f9ccb6c0cdada",
+        "headline": "Bransys ELD Flaws Expose Telemetry via Hardcoded Credentials and Cleartext Transmission",
+        "deck": "CISA reports that Bransys ELD versions contain hardcoded credentials and cleartext channels, allowing unauthorized read access to telemetry data under specific connection conditions.",
+        "claims": [
+          {
+            "text": "According to CISA advisories, the Bransys ELD product ships with hardcoded MQTT and FTP credentials that can grant attackers read access to real-time data across connected carriers.",
+            "supports": [
+              {
+                "evidenceId": "S1P17"
+              },
+              {
+                "evidenceId": "S1P45"
+              }
+            ]
+          },
+          {
+            "text": "CISA also notes that the affected software suffers from cleartext transmission of sensitive information, potentially allowing external connections to read all stored data.",
+            "supports": [
+              {
+                "evidenceId": "S1P31"
+              }
+            ]
+          }
+        ],
+        "whyItMatters": "This vulnerability directly affects Android versions below 11.00.00 and iOS versions below 1.1.54 of the Bransys ELD application deployed in transportation sectors. Operators using these unpatched mobile versions face unauthorized data exposure because the application transmits sensitive telemetry without adequate cryptographic safeguards or relies on predictable authentication defaults.",
+        "whatToDoOrWatch": "Users should review their application store updates and verify whether their installations meet the vendor-recommended version thresholds. Android deployments must be updated to version 11.00.00 or newer, while iOS deployments require version 1.1.54 or newer."
+      },
+      "evidenceForFields": {
+        "headline": [
+          "S1P17",
+          "S1P31",
+          "S1P45"
+        ],
+        "deck": [
+          "S1P17",
+          "S1P5"
+        ],
+        "whyItMatters": [
+          "S1P22",
+          "S1P36",
+          "S1P50"
+        ],
+        "whatToDoOrWatch": [
+          "S1P25",
+          "S1P39",
+          "S1P53"
+        ]
+      }
+    }
+  ]
+}

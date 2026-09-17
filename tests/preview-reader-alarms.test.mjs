@@ -5,6 +5,15 @@ import {previewReaderAlarms as alarms} from '../scripts/automation/free/preview-
 const dossier={sources:[{passages:[{evidenceId:'S1P1',text:'The vendor claims up to 30% price improvement and up to 70% compute improvement.'},
   {evidenceId:'S1P2',text:'There will be preview windows for Free and unauthenticated traffic. Signed-in paid accounts are not affected.'}]}]};
 const raw=JSON.parse(readFileSync(new URL('./fixtures/rejected-preview-run12.json',import.meta.url))).records;
+const run13=JSON.parse(readFileSync(new URL('./fixtures/rejected-preview-run13.json',import.meta.url))).records;
+test('untouched live AWS deck and analysis need their own performance attribution',()=>{
+  const ds={sources:[{publisher:'AWS',passages:[]}]};
+  const held=alarms(run13[1].draft,ds,run13[1].evidenceForFields);
+  for(const field of ['deck','whyItMatters'])assert.ok(held.some(a=>a.field===field&&a.code==='PUBLISHER_PERFORMANCE_ATTRIBUTION_REQUIRED'));
+  for(const text of ['AWS says this offers better performance.','According to AWS, this is a cost-effective option.'])assert.deepEqual(alarms({deck:text},ds,{}),[]);
+  assert.ok(alarms({deck:'Customers of AWS get better performance.'},ds,{}).some(a=>a.code==='PUBLISHER_PERFORMANCE_ATTRIBUTION_REQUIRED'));
+  assert.deepEqual(alarms({deck:'The change applies to the listed regions.'},ds,{}),[]);
+});
 test('untouched live GitLab guarantee and AWS lost upper bound are negative regressions',()=>{
   assert.ok(alarms(raw[0].draft).some(a=>a.code==='CERTAINTY_REVIEW_REQUIRED'));
   const ds={sources:[{passages:[{evidenceId:'S1P3',text:'The vendor reports up to 70% higher compute performance.'}]}]};

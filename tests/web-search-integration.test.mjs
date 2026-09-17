@@ -147,6 +147,22 @@ test('disabled discovery and intentional zero-request discovery have distinct sa
   assert.deepEqual(zero.diagnostics.webSearchOutcome,{status:'no-requests',stage:'complete',queriesUsed:0,admittedArticles:0});
 });
 
+test('search provider holds retain a safe reason without leaking credentials or changing feed selection',async()=>{
+  for(const status of ['quota_exhausted','free_plan_required','authentication_failed']) {
+    const snapshot=await collect(fixture({activeFeed:true}),{discoverWebArticles:async()=>({results:[],
+      diagnostics:{searchRequests:0,creditsReserved:0,status,body:'sensitive-key-value'}})});
+    assert.equal(snapshot.diagnostics.webSearchOutcome.providerStatus,status);
+    assert.equal(snapshot.diagnostics.webSearchOutcome.status,'no-requests');
+    assert.equal(snapshot.diagnostics.webSearch,undefined);
+    assert.ok(snapshot.candidates.some(c=>c.sources.some(s=>s.url===articleUrl)));
+    assert.doesNotMatch(JSON.stringify(snapshot.diagnostics),/sensitive-key-value/);
+  }
+  const unknown=await collect(fixture(),{discoverWebArticles:async()=>({results:[],
+    diagnostics:{searchRequests:0,creditsReserved:0,status:'sensitive-key-value'}})});
+  assert.equal(unknown.diagnostics.webSearchOutcome.providerStatus,undefined);
+  assert.doesNotMatch(JSON.stringify(unknown.diagnostics),/sensitive-key-value/);
+});
+
 test("the reviewed article cache shares in-flight duplicates, failures and its twenty-four fetch budget", async () => {
   let requests = 0;
   const fetchPage = createReviewedArticlePageFetcher({ lookupImpl: publicLookup, requestImpl: async (url) => {

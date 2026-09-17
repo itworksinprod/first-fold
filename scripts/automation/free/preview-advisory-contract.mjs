@@ -29,13 +29,18 @@ export function advisoryWritingContract(dossier) {
     : 'Attribute the originating account. Do not infer a separate vendor release or republication sequence that the source does not identify.';
   return {
     version: 'advisory-writing-obligations-v1', singleCve,
+    // Keep each technical account intact rather than supplying a blended impact
+    // list: credentials for different protocols may expose different data.
+    perVulnerability: descriptions.map(p=>({evidenceId:p.evidenceId,
+      cve:p.text.match(/CVE-\d{4}-\d+/u)?.[0]??null,description:p.text,
+      task:'If using this defect, keep its protocol, affected subset, connection prerequisite and impact together in one claim. Do not borrow real-time access, stored data, affected carriers or other consequences from a different CVE. One or two accurately scoped defects are better than compressing every defect into a misleading combined claim.'})),
     // Full context is still sent. This outline does not excerpt or rewrite facts.
     outline: {
       headline: { task: 'Name the actual issue, not a generic development. Do not imply new discovery. If naming a signature or cryptographic defect, cite the technical description in this headline field; an identifier or general impact summary does not establish the mechanism.', evidenceIds: ids(descriptions) },
       deck: { task: 'State the source-described impact WITH its attack conditions in the same sentence.', evidenceIds: ids(descriptions) },
       claims: { task: `Report the defect and conditional impact. ${chronologyTask}`,
         evidenceIds: ids([...descriptions, ...origin, ...originalDate, ...republicationDate]) },
-      whyItMatters: { task: 'Use concrete affected-product and compatibility scope to explain who should check their installation. Do not explain why a score was assigned, infer an operator mistake, or invent consequences. You may omit the score entirely.', evidenceIds: ids(scope) },
+      whyItMatters: { task: 'Use concrete affected-product and compatibility scope to explain who should check their installation. This field should identify affected versions and exclusions, not re-explain the attack. Product-version passages do not support deployment sectors, cryptographic mechanisms, authentication defaults or causes. Omit those details here instead of inventing an explanation. Do not explain why a score was assigned, infer an operator mistake, or invent consequences. You may omit the score entirely.', evidenceIds: ids(scope) },
       whatToDoOrWatch: { task: ambiguousRemedyLists ? 'Tell readers to identify their installed product/compatibility branch and verify its corresponding vendor fix before choosing an update. Product and remedy lists may differ in order: never zip or pair them by position. Do not present all updates as interchangeable. Where separate lists show multiple fixed releases without explicit branch/fix associations, do not give specific fixed-version numbers or worked upgrade examples in this field: ask readers to verify the vendor mapping instead. Advice is an editorial check, not a promise of safety.' : 'Use the source-stated remediation and preserve any explicit platform/version pairing. Identical remedy instructions repeated for multiple CVEs are not conflicting fix lists. Never invent a pairing absent from the cited remediation. Distinguish reader checks from promises of safety.', evidenceIds: ids([...scope, ...remedies]) },
     },
     checks: {

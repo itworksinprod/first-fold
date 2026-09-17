@@ -3559,8 +3559,16 @@ export async function collectFreeResearchSnapshot(options = {}) {
       options.onSearchDiagnostic?.({ stage: "web-search-admission", queriesUsed,
         fetched: admission.diagnostics.fetched, admitted: admission.items.length,
         rejectionCounts: admission.diagnostics.rejected });
+      // Preserve only known status enums, never provider bodies or arbitrary
+      // diagnostics. A zero-query quota/billing hold must remain explainable.
+      const safeProviderStatuses = new Set(['complete','disabled','invalid_key','invalid_request',
+        'usage_unverified','free_plan_required','key_limit_required','quota_exhausted',
+        'authentication_failed','provider_unavailable','provider_timeout','redirect_blocked',
+        'malformed_response','response_too_large']);
+      const providerStatus = discovered.diagnostics.status;
       webSearchOutcome = {status:queriesUsed ? 'completed' : 'no-requests',stage:'complete',
-        queriesUsed,admittedArticles:admission.items.length};
+        queriesUsed,admittedArticles:admission.items.length,
+        ...(safeProviderStatuses.has(providerStatus) ? {providerStatus} : {})};
     } catch {
       webSearchOutcome = {status:'failed',stage:searchStage,code:'OPTIONAL_SEARCH_UNAVAILABLE'};
       options.onSearchDiagnostic?.({ stage: "web-search-admission", status: "unavailable" });

@@ -346,3 +346,29 @@ use shorter original sentence structures. The editor must keep rationale facts
 within its own quoted passage. These instructions and narrow alarms are not
 semantic proof; another unchanged-budget experiment still needs independent
 review, with no email, billing or daily-production changes.
+
+## Second publisher/editor trial: two structured drafts, still held
+
+Run `35284845154` at `e668236` completed 47/48 feeds, 24 article requests and
+10 usable captures. One editor and three writer calls remained within four.
+Two drafts passed structural checks, but independent review held both: GitLab's
+analysis omitted its own detailed workload-rationale passage; AWS's deck and
+analysis still needed publisher attribution, and its action resolved ambiguous
+purchase-option wording into an unsupported specific relationship. Bransys was
+correctly held for subset loss and also merged different protocols' impacts.
+No prose, map or source was changed to turn either result into a live success.
+The encrypted artifact SHA256 is
+`65593aaad28a77b238b01e054c09704889507e79bf65a68fd4f568536d8a35db`.
+
+All seven editorial rationales stayed within their quoted passage in substance;
+six scores increased and one was unchanged. Every assessed candidate passed,
+so ranking calibration and selectivity are still unproven. Search again issued
+zero requests. A narrow diagnostic fix now retains only an allowlisted provider
+status, so future zero-request quota/billing holds have an explanation. No quota
+increase, credential exposure, retry, source admission or selection change results.
+
+The next isolated writer revision adds a shared single-publisher performance
+attribution alarm, keeps applicability prose away from unsupported causal benefits,
+and sends separate intact per-CVE descriptions/conditions to discourage merged
+impact scopes. Raw run-13 drafts remain negative fixtures. These remain narrow
+alarms and prompt obligations, not an automatic semantic approval system.
