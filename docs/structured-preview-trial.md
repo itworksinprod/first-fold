@@ -319,3 +319,30 @@ delivery authority or independent factual approval.
 Post-editor research, coverage and selection failures also return a fixed-code
 sealed no-draft record, preserving the spent call and its original audit rather
 than throwing away the diagnostic when a later gate fails.
+
+## First publisher/editor live trial: more coverage, no approved drafts
+
+Run `35283661213` at `fe7e574` read 47/48 feeds and captured 11 usable articles
+within 24 requests. Web discovery recorded zero search requests. One editor call
+and three writer calls selected GitLab rate limits, AWS T8i and Bransys ELD. The
+workflow was green because GitLab passed structural checks; independent review
+held it. The encrypted download SHA256 was
+`f8220abe1014cf9350a2ed7af29a919cdef0a5adae9487b9898360e00bd8b4b5`.
+
+GitLab's deck lacked its own cited Free-account support; the analysis turned the
+publisher's rationale into a guarantee and lost preview-window audience limits.
+AWS failed originality and dropped the second percentage's upper bound. Bransys
+lost the source's subset-of-carriers restriction and invented remedy ambiguity.
+All seven model-assessed scores increased; several rationales drew details from
+uncited passages. This is not evidence of editor selectivity or autonomous quality.
+
+The untouched three outputs remain negative regressions. Shared preview alarms
+now cover the observed guarantee, percentage upper-bound and preview-audience
+losses; advisory checks cover the specific subset scope. Identical remedy texts
+repeated by CVE no longer falsely trigger the ambiguous-fix-list rule; genuinely
+different unmapped fixes retain it. The writer is instructed to attribute vendor
+performance claims in each field, preserve scope, cite eligibility locally and
+use shorter original sentence structures. The editor must keep rationale facts
+within its own quoted passage. These instructions and narrow alarms are not
+semantic proof; another unchanged-budget experiment still needs independent
+review, with no email, billing or daily-production changes.

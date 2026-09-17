@@ -13,6 +13,7 @@ export function advisoryWritingContract(dossier) {
   const descriptions = select(/ — Vulnerabilities — CVE-\d{4}-\d+ — (?!Affected Products|Metrics|View CVE Details)/u);
   const scope = select(/ — Product Version: /u);
   const remedies = select(/ — Remediations — Vendor fix /u);
+  const ambiguousRemedyLists = new Set(remedies.map(p=>p.text.split(' — Vendor fix ')[1])).size>1;
   const origin = select(/ — Advisory Conversion Disclaimer — .*verbatim republication/u);
   const originalDate = select(/ — Revision History — Initial Release Date: \d{4}-\d{2}-\d{2}$/u);
   const republicationDate = select(/ — Revision History — Date: \d{4}-\d{2}-\d{2}; .*Initial CISA Republication/u);
@@ -35,11 +36,11 @@ export function advisoryWritingContract(dossier) {
       claims: { task: `Report the defect and conditional impact. ${chronologyTask}`,
         evidenceIds: ids([...descriptions, ...origin, ...originalDate, ...republicationDate]) },
       whyItMatters: { task: 'Use concrete affected-product and compatibility scope to explain who should check their installation. Do not explain why a score was assigned, infer an operator mistake, or invent consequences. You may omit the score entirely.', evidenceIds: ids(scope) },
-      whatToDoOrWatch: { task: 'Tell readers to identify their installed product/compatibility branch and verify its corresponding vendor fix before choosing an update. Product and remedy lists may differ in order: never zip or pair them by position. Do not present all updates as interchangeable. Where separate lists show multiple fixed releases without explicit branch/fix associations, do not give specific fixed-version numbers or worked upgrade examples in this field: ask readers to verify the vendor mapping instead. Advice is an editorial check, not a promise of safety.', evidenceIds: ids([...scope, ...remedies]) },
+      whatToDoOrWatch: { task: ambiguousRemedyLists ? 'Tell readers to identify their installed product/compatibility branch and verify its corresponding vendor fix before choosing an update. Product and remedy lists may differ in order: never zip or pair them by position. Do not present all updates as interchangeable. Where separate lists show multiple fixed releases without explicit branch/fix associations, do not give specific fixed-version numbers or worked upgrade examples in this field: ask readers to verify the vendor mapping instead. Advice is an editorial check, not a promise of safety.' : 'Use the source-stated remediation and preserve any explicit platform/version pairing. Identical remedy instructions repeated for multiple CVEs are not conflicting fix lists. Never invent a pairing absent from the cited remediation. Distinguish reader checks from promises of safety.', evidenceIds: ids([...scope, ...remedies]) },
     },
     checks: {
       ssoCondition: singleCve && descriptions.some(p => /in specific SSO configurations/u.test(p.text)),
-      descriptions: ids(descriptions), scope: ids(scope), remedies: ids(remedies), origin: ids(origin),
+      descriptions: ids(descriptions), scope: ids(scope), remedies: ids(remedies), origin: ids(origin), ambiguousRemedyLists,
       unpairedFixedVersions: [...new Set(remedies.flatMap(p => [...p.text.matchAll(/Vendor fix Update to V(\d+(?:\.\d+)+)/gu)].map(m => m[1])))],
       republication, chronologyIncomplete: origin.length > 0 && !republication,
     },
@@ -63,6 +64,8 @@ export function advisoryDraftAlarms(draft, dossier, map) {
   ];
   for(const unit of units) if (/\bverbatim\b|\b(?:advisory|vendor) conversion\b/iu.test(unit.text) &&
       !unit.ids.some(id=>contract.checks.origin.includes(id))) add('ADVISORY_ORIGIN_EVIDENCE_REQUIRED',unit.field);
+  for(const unit of units) if(/\bcarriers?\b/iu.test(unit.text) && !/\b(?:subset|some)\b/iu.test(unit.text) &&
+    dossier.sources.some(s=>s.passages.some(p=>unit.ids.includes(p.evidenceId)&&/\bsubset of carriers\b/iu.test(p.text)))) add('ADVISORY_SUBSET_SCOPE_REQUIRED',unit.field);
   for (const [i,claim] of (draft?.claims ?? []).entries()) {
     if (/\b(?:signature|hijack\w*|cryptographic|validation flaw)\b/iu.test(claim.text) &&
         contract.checks.descriptions.length && !claim.supports?.some(s=>contract.checks.descriptions.includes(s.evidenceId))) add('ADVISORY_TECHNICAL_CLAIM_EVIDENCE_REQUIRED', `claims.${i}`);
@@ -73,7 +76,7 @@ export function advisoryDraftAlarms(draft, dossier, map) {
   const why = draft?.whyItMatters ?? '';
   if (/\b(?:score|rating|CVSS)\b(?:[^.!?]|\.(?=\d)){0,160}\b(?:because|due to|owing to|as it|since it)\b/iu.test(why)) add('ADVISORY_SCORE_CAUSALITY_REVIEW', 'whyItMatters');
   if (/\b(?:deployed|configured|installed) improperly\b|\b(?:improper|incorrect) (?:deployment|configuration|installation)\b|\bmisconfigur(?:ed|ation)\b/iu.test(why)) add('ADVISORY_OPERATOR_FAULT_REVIEW', 'whyItMatters');
-  if (contract.checks.remedies.length > 1 && (!/\b(?:check|verify|confirm|consult|match|identify)\b/iu.test(draft?.whatToDoOrWatch ?? '') ||
+  if (contract.checks.ambiguousRemedyLists && (!/\b(?:check|verify|confirm|consult|match|identify)\b/iu.test(draft?.whatToDoOrWatch ?? '') ||
       !/\b(?:compatib\w*|branch(?:es)?|version-specific)\b/iu.test(draft?.whatToDoOrWatch ?? '') ||
       !map?.whatToDoOrWatch?.some(id => contract.checks.scope.includes(id)))) add('ADVISORY_FIX_COMPATIBILITY_REVIEW', 'whatToDoOrWatch');
   const r = contract.checks.republication;

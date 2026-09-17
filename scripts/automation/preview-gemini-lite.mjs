@@ -10,6 +10,7 @@ import { WRITER_PROMPT, GROUNDED_DRAFT_SCHEMA, localPromptDossier, validateGroun
 import { buildPreviewReviewPacket } from "./free/preview-editorial-review.mjs";
 import { previewSourceIntegrityHolds } from "./free/preview-evidence-gate.mjs";
 import { advisoryWritingContract, advisoryDraftAlarms } from "./free/preview-advisory-contract.mjs";
+import { previewReaderAlarms } from './free/preview-reader-alarms.mjs';
 
 const escape = value => String(value).replace(/[&<>"']/gu, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const REVIEW_FIELDS = ["headline", "deck", "whyItMatters", "whatToDoOrWatch"];
@@ -68,6 +69,10 @@ export async function previewGeminiLite({ apiKey, freeProjectConfirmation, fetch
       maxTokens: 8000, thinking: "medium", timeoutMs: 180000,
       messages: [{ role: "system", content: `${WRITER_PROMPT}\nInclude each factual source's exact supplied publisher name in the claims.text sentences. Do not shorten those names or claim independent confirmation for a single-source account. Research is not a product release; a possible use is not an observed result. Do not promise safety, productivity, reliability or performance benefits absent supporting measurements. In whatToDoOrWatch, suggest a check the reader can make; never invent scheduled tests, updates or releases.${fresh ? `
 EVIDENCE-FIRST PREVIEW CONTRACT: Select evidenceForFields BEFORE writing stories. It maps headline, deck, whyItMatters and whatToDoOrWatch to exact passage IDs. These are support obligations, not decorative citations. Every factual clause in each field must follow from its selected passages, preserving conditions. Do not insert IDs into reader prose.
+Aim for 120–160 body words using short original sentences. Before returning JSON, compare each sentence with the source: break up borrowed structures instead of replacing only a few words. The twelve-contiguous-source-word limit applies to EVERY field. Keep proper names but rebuild their surrounding sentences.
+Keep marketing and performance claims attributed in EACH field where they occur, including the deck and analysis: a publisher's claimed savings or speed is not an independently measured result. Avoid ensure/ensures/guarantee wording. Prefer concrete scope, eligibility and controls to performance promises.
+Preserve quantifiers and limiting populations exactly in meaning: a subset of carriers connected to an affected broker is not all connected carriers. Explicit source platform/fix pairings may be reported; do not replace a clear mapping with a generic claim that the mapping is unavailable.
+Repeat 'up to' for EACH source upper-bound performance percentage, even within one sentence. When mentioning trial/preview windows, name the eligible audience and preserve exemptions. If a field names Free accounts or other eligibility classes, cite a passage that explicitly names that class; it cannot borrow support from a different field's map.
 Every numeric detail in a non-claim field must occur in that field's own evidenceForFields passages. Claims still require their own supports. A number appearing elsewhere in the dossier or another field's citations is not enough.
 Preview date exception: a complete valid calendar date may be written as YYYY-MM-DD or Month D, YYYY when the exact same calendar date occurs in that field's cited evidence. This does not allow borrowing isolated day/year numbers, changing dates, or converting version identifiers.
 Preview citation capacity: each claim may cite one to THREE distinct evidenceId objects if needed to support all its clauses (for example, vendor origin plus two publication dates). Every clause must still follow from that claim's own citations. Cite technical descriptions in headlines that name technical defects, not just a general summary or CVE identifier.
@@ -90,7 +95,7 @@ For whatToDoOrWatch, suggest checking a supported setting, eligibility requireme
             structuralErrors.add(reason);
             if (fresh && rejectionDetails.length < 8) rejectionDetails.push({ reason, feedback });
           } }, fresh ? { previewFieldEvidence: p.evidenceForFields } : undefined);
-        const alarms = structural && fresh ? advisoryDraftAlarms(p.stories[0], dossier, p.evidenceForFields) : [];
+        const alarms = structural && fresh ? [...advisoryDraftAlarms(p.stories[0], dossier, p.evidenceForFields),...previewReaderAlarms(p.stories[0],dossier,p.evidenceForFields)] : [];
         for (const alarm of alarms) {
           structuralErrors.add(alarm.code);
           if (rejectionDetails.length < 8) rejectionDetails.push({ reason: alarm.code, feedback: { field: alarm.field } });

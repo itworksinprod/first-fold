@@ -64,6 +64,19 @@ test('original CISA advisory does not receive a fabricated vendor republication 
   assert.equal(c.checks.republication,null);assert.equal(c.checks.chronologyIncomplete,false);
   assert.match(c.outline.claims.task,/Do not infer a separate vendor release/);
   assert.doesNotMatch(c.outline.claims.task,/Use the supplied exact dates/);
+  assert.equal(c.checks.ambiguousRemedyLists,false);
+  assert.match(c.outline.whatToDoOrWatch.task,/Identical remedy instructions/);
+  const d={claims:[{text:'CISA reports read access across connected carriers.',supports:[{evidenceId:'S1P17'}]}],whatToDoOrWatch:'Check the source-stated Android and iOS update versions.'};
+  const ds={sources:[{text:capture.excerpt,structuredContext:capture.structuredContext,passages:capture.blocks.map((text,i)=>({evidenceId:`S1P${i+1}`,text}))}]};
+  assert.ok(advisoryDraftAlarms(d,ds,{}).some(a=>a.code==='ADVISORY_SUBSET_SCOPE_REQUIRED'));
+  assert.ok(!advisoryDraftAlarms(d,ds,{}).some(a=>a.code==='ADVISORY_FIX_COMPATIBILITY_REVIEW'));
+  d.claims[0].text='CISA reports read access across a subset of carriers connected to the affected broker.';
+  assert.ok(!advisoryDraftAlarms(d,ds,{}).some(a=>a.code==='ADVISORY_SUBSET_SCOPE_REQUIRED'));
+  const live=JSON.parse(await readFile(new URL('./fixtures/rejected-preview-run12.json',import.meta.url),'utf8')).records[2];
+  const liveHolds=advisoryDraftAlarms(live.draft,ds,live.evidenceForFields);
+  assert.ok(liveHolds.some(a=>a.code==='ADVISORY_SUBSET_SCOPE_REQUIRED'&&a.field==='deck'));
+  assert.ok(liveHolds.some(a=>a.code==='ADVISORY_SUBSET_SCOPE_REQUIRED'&&a.field==='claims.0'));
+  assert.ok(!liveHolds.some(a=>a.code==='ADVISORY_FIX_COMPATIBILITY_REVIEW'));
 });
 test('declared republication with missing chronology is explicitly held, not invented',()=>{
   const d=structuredClone(dossier);d.sources[0].passages=d.sources[0].passages.filter(p=>p.evidenceId!=='S1P56');

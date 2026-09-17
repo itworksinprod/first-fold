@@ -1,0 +1,148 @@
+{
+  "purpose": "Untouched rejected outputs from live no-email run35283661213. Negative regressions only; no approval.",
+  "records": [
+    {
+      "desk": "work-and-tools",
+      "draft": {
+        "candidateId": "candidate-cb9de104648a6a26",
+        "headline": "GitLab Aligns GitLab.com Rate Limits With Subscription Tiers Starting October 19",
+        "deck": "GitLab announces that GitLab.com rate limits will align with user subscriptions, with Free accounts updating in October and Premium or Ultimate changes arriving in January.",
+        "claims": [
+          {
+            "text": "GitLab announced that rate limits on GitLab.com will align with subscription tiers, beginning with Free accounts and unauthenticated requests on October 19, 2026.",
+            "supports": [
+              {
+                "evidenceId": "S1P4"
+              }
+            ]
+          },
+          {
+            "text": "GitLab stated that Premium and Ultimate subscription tiers will transition to their respective subscription-aligned rate limits in January 2027.",
+            "supports": [
+              {
+                "evidenceId": "S1P4"
+              }
+            ]
+          }
+        ],
+        "whyItMatters": "Platform demand is growing quickly, and these predictable limits ensure GitLab.com remains fast for everyone, including automation and agent workloads. To help users prepare, GitLab scheduled preview windows where new limits temporarily activate so teams can observe workload behavior weeks before enforcement.",
+        "whatToDoOrWatch": "Authenticate API requests using personal access tokens, OAuth, or CI/CD job tokens to move away from the anonymous hourly allowance. Monitor the RateLimit-Remaining response header or check upcoming product views to see how your usage compares to plan limits."
+      },
+      "evidenceForFields": {
+        "headline": [
+          "S1P4"
+        ],
+        "deck": [
+          "S1P2"
+        ],
+        "whyItMatters": [
+          "S1P3",
+          "S1P10",
+          "S1P19"
+        ],
+        "whatToDoOrWatch": [
+          "S1P14",
+          "S1P15",
+          "S1P26"
+        ]
+      }
+    },
+    {
+      "desk": "platforms-and-power",
+      "draft": {
+        "candidateId": "candidate-3a736aed92014dc5",
+        "headline": "AWS Announces General Availability of New Amazon EC2 T8i Burstable Instances",
+        "deck": "Powered by custom Intel Xeon 6 processors and AWS Nitro cards, the new T8i instances deliver up to 30% better price performance than T3 instances.",
+        "claims": [
+          {
+            "text": "AWS announced the general availability of new low-cost burstable Amazon EC2 T8i instances powered by custom sixth generation Intel Xeon 6 processors and sixth generation AWS Nitro cards.",
+            "supports": [
+              {
+                "evidenceId": "S1P2"
+              }
+            ]
+          },
+          {
+            "text": "AWS stated that T8i instances deliver up to 30% better price performance and 70% higher compute performance compared to previous generation T3 instances.",
+            "supports": [
+              {
+                "evidenceId": "S1P2"
+              },
+              {
+                "evidenceId": "S1P3"
+              }
+            ]
+          }
+        ],
+        "whyItMatters": "These instances offer four sizes including nano, micro, small, and medium, and use the same CPU credit system as T3 with Standard and Unlimited modes. Existing T3 customers can upgrade to lower their total cost of ownership while running workloads that require low to moderate CPU utilization, such as microservices, CI/CD pipelines, and small databases.",
+        "whatToDoOrWatch": "Verify whether your region and workloads qualify for the AWS Free Tier, which applies to T8i.micro and T8i.small instances. Review regional availability across supported locations and check purchasing options like On-Demand or upcoming Savings Plan support."
+      },
+      "evidenceForFields": {
+        "headline": [
+          "S1P1",
+          "S1P2"
+        ],
+        "deck": [
+          "S1P2",
+          "S1P3"
+        ],
+        "whyItMatters": [
+          "S1P2",
+          "S1P3"
+        ],
+        "whatToDoOrWatch": [
+          "S1P4"
+        ]
+      }
+    },
+    {
+      "desk": "security-and-privacy",
+      "draft": {
+        "candidateId": "candidate-ee6f9ccb6c0cdada",
+        "headline": "Bransys ELD Hardcoded MQTT Credentials Expose Real-Time Telemetry Data",
+        "deck": "CISA warns that shipped hardcoded MQTT credentials in Bransys ELD grant read access to real-time data across connected carriers.",
+        "claims": [
+          {
+            "text": "CISA reported that the affected Bransys ELD product is shipped with hardcoded MQTT credentials that grant read access to real-time data for every active device across connected carriers.",
+            "supports": [
+              {
+                "evidenceId": "S1P17"
+              }
+            ]
+          },
+          {
+            "text": "CISA noted that the product is susceptible to cleartext transmission of sensitive information and hardcoded FTP credentials, allowing unauthorized server and broker reads.",
+            "supports": [
+              {
+                "evidenceId": "S1P31"
+              },
+              {
+                "evidenceId": "S1P45"
+              }
+            ]
+          }
+        ],
+        "whyItMatters": "This security issue directly impacts users running Bransys Android versions prior to 11.00.00 and Bransys iOS versions prior to 1.1.54. Fleet operators and transportation system administrators using these specific mobile application versions should check their installations immediately to determine if their deployments fall within the affected compatibility scope.",
+        "whatToDoOrWatch": "Users should identify their currently installed product version and verify the corresponding vendor fix in the official advisory before applying any updates. Because separate remedy lists apply, check the vendor mapping directly rather than assuming all versions share a single upgrade path."
+      },
+      "evidenceForFields": {
+        "headline": [
+          "S1P17"
+        ],
+        "deck": [
+          "S1P17"
+        ],
+        "whyItMatters": [
+          "S1P22",
+          "S1P36",
+          "S1P50"
+        ],
+        "whatToDoOrWatch": [
+          "S1P25",
+          "S1P39",
+          "S1P53"
+        ]
+      }
+    }
+  ]
+}

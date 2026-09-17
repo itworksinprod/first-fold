@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { validateGroundedStory } from "./grounded-draft.mjs";
 import { previewSourceIntegrityHolds } from "./preview-evidence-gate.mjs";
 import { advisoryDraftAlarms } from "./preview-advisory-contract.mjs";
+import { previewReaderAlarms } from './preview-reader-alarms.mjs';
 
 const FIELDS = ["headline", "deck", "whyItMatters", "whatToDoOrWatch"];
 const hash = value => createHash("sha256").update(JSON.stringify(value) ?? "undefined").digest("hex");
@@ -32,7 +33,7 @@ export function buildPreviewReviewPacket(draft, dossier, evidenceForFields) {
     return { evidenceId: id, missing: true };
   }) }));
   // Known overstatement alarm only. Absence does not imply semantic support.
-  if (units.some(u => /\bensures\b|\bprevents connection hurdles\b/iu.test(u.text ?? ""))) holds.push("CERTAINTY_REVIEW_REQUIRED");
+  holds.push(...previewReaderAlarms(draft,dossier,evidenceForFields).map(a=>a.code));
   return {
     version: "preview-field-review-v1", purpose: "private-preview-not-delivery",
     binding: { draftSha256: hash(draft), dossierSha256: hash(dossier), evidenceMapSha256: hash(evidenceForFields), renderedStorySha256: hash(renderPreviewStory(draft)) },
