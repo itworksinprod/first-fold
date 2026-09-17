@@ -45,7 +45,7 @@ export function previewEvidenceHolds(candidate, dossier, reportingWindow, { requ
   if (!Number.isFinite(start) || !Number.isFinite(end) || start >= end) return ["WINDOW_INVALID"];
   if (requireStructured) {
     for (const record of candidate.feedEvidence ?? []) {
-      if (!["structured-preview-v1", "structured-advisory-preview-v1"].includes(record.articleExtraction?.version) || record.articleExtraction.status !== "usable" ||
+      if (!["structured-preview-v1", "structured-advisory-preview-v1", "structured-complete-preview-v1"].includes(record.articleExtraction?.version) || record.articleExtraction.status !== "usable" ||
           record.articleExtraction.holds?.length || !record.articleBlocks?.length) {
         holds.add("USABLE_STRUCTURED_ARTICLE_REQUIRED");
         for (const reason of record.articleExtraction?.holds ?? []) holds.add(reason);

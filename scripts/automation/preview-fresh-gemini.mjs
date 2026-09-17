@@ -12,6 +12,7 @@ import { previewEvidenceHolds } from "./free/preview-evidence-gate.mjs";
 import { previewGeminiLite } from "./preview-gemini-lite.mjs";
 import { FREE_PROJECT_CONFIRMATION } from "./check-gemini-writer.mjs";
 import { diagnosticPublicKey, sealDiagnostic } from "./private-writer-diagnostic.mjs";
+import { createPreviewNewsworthiness } from './free/preview-newsworthiness.mjs';
 
 export function selectPreviewReadyCandidates(snapshot, reportingWindow, { requireStructured = false } = {}) {
   const pool = snapshot.candidates ?? snapshot.selectedCandidates;
@@ -33,7 +34,7 @@ export function selectPreviewReadyCandidates(snapshot, reportingWindow, { requir
 export async function previewFreshGemini({ publicKey, apiKey, freeProjectConfirmation,
   tavilyApiKey, tavilyPaygoDisabledVerified = false, now = new Date(),
   researchImpl = collectFreeResearchSnapshot, draftImpl = previewGeminiLite,
-  coverageImpl = assertFreeResearchCoverage } = {}) {
+  coverageImpl = assertFreeResearchCoverage, editorialRequestImpl } = {}) {
   diagnosticPublicKey(publicKey);
   if (freeProjectConfirmation !== FREE_PROJECT_CONFIRMATION || !/^[A-Za-z0-9_.-]{20,256}$/u.test(apiKey ?? "")) {
     throw Error("PREVIEW_CONFIGURATION_INVALID");
@@ -41,22 +42,46 @@ export async function previewFreshGemini({ publicKey, apiKey, freeProjectConfirm
   const retrievedAt = now.toISOString();
   const reportingWindow = { startInclusive: new Date(now.getTime() - 72 * 3600000).toISOString(),
     endExclusive: retrievedAt, displayLabel: "Manual rolling 72-hour research preview" };
-  const snapshot = await researchImpl({ reportingWindow, retrievedAt, enrichArticles: true, articleEvidenceMode: "structured-preview",
+  let editorial = {status:'not-requested',modelRequests:0,stopModels:false,audit:[]};
+  const reviewNewsworthiness=createPreviewNewsworthiness({apiKey,freeTierConfirmed:freeProjectConfirmation===FREE_PROJECT_CONFIRMATION,
+    reportingWindow,requestImpl:editorialRequestImpl,onResult:result=>{editorial=result;}});
+  const heldResult=code=>{
+    const report={status:'no-reviewable-drafts',code,approved:false,qualified:false,productionEnabled:false,emailRequests:0,
+      retrievedAt,modelRequests:editorial.modelRequests,maxModelRequests:4,draftCount:0,selectedCount:0,
+      editorialStatus:editorial.status,editorialModelRequests:editorial.modelRequests,budgetOmissions:[]};
+    return {report,sealed:sealDiagnostic({purpose:'fresh-news-unapproved-human-review-not-an-edition',report,reportingWindow,
+      editorial,preDraftHolds:[{reasons:[code]}],records:[]},publicKey)};
+  };
+  let snapshot;
+  try { snapshot = await researchImpl({ reportingWindow, retrievedAt, enrichArticles: true, articleEvidenceMode: "structured-preview",
+    reviewNewsworthiness,
     evidencePolicy: "authoritative-or-corroborated", minimumScore: 70, minimumAuthoritativeScore: 70,
     ...(tavilyApiKey ? { discoverWebArticles: createTavilyDiscovery({ apiKey: tavilyApiKey,
-      paygoDisabledVerified: tavilyPaygoDisabledVerified }) } : {}) });
-  coverageImpl(snapshot, { feedSources: FREE_FEED_SOURCES, reportingWindow, retrievedAt });
-  const selection = selectPreviewReadyCandidates(snapshot, reportingWindow, { requireStructured: true });
-  const candidates = selection.selectedCandidates;
+      paygoDisabledVerified: tavilyPaygoDisabledVerified }) } : {}) }); }
+  catch {return heldResult('PREVIEW_RESEARCH_FAILED');}
+  try {coverageImpl(snapshot, { feedSources: FREE_FEED_SOURCES, reportingWindow, retrievedAt });}
+  catch {return heldResult('PREVIEW_COVERAGE_HELD');}
+  let selection;
+  try {selection = selectPreviewReadyCandidates(snapshot, reportingWindow, { requireStructured: true });}
+  catch {return heldResult('PREVIEW_SELECTION_HELD');}
+  const availableCandidates = selection.selectedCandidates;
+  const candidates = [...availableCandidates].sort((a,b)=>b.ranking.score-a.ranking.score||a.candidateId.localeCompare(b.candidateId)).slice(0,4-editorial.modelRequests);
+  const budgetOmissions=availableCandidates.filter(c=>!candidates.includes(c)).map(c=>({candidateId:c.candidateId,desk:c.suggestedDesk,reason:'PREVIEW_MODEL_BUDGET_RESERVED_FOR_EDITOR'}));
   if (!Array.isArray(candidates) || candidates.length > 4 || new Set(candidates.map(c => c.suggestedDesk)).size !== candidates.length) {
     throw Error("PREVIEW_SELECTION_INVALID");
   }
   const records = [], dossiers = groundedDossiers(candidates);
-  let requests = 0, stopped = false;
+  let requests = editorial.modelRequests, stopped = editorial.stopModels;
+  // Reserve bounded raw results before spending writer requests. The encrypted
+  // diagnostic envelope permits 350KB; duplicate rendered HTML is regenerated
+  // from the retained draft/map/dossier offline, never stored three times.
+  const diagnosticReservation=Buffer.byteLength(JSON.stringify({editorial,dossiers,preDraftHolds:selection.held}))+148_000;
+  const diagnosticBudgetHeld=diagnosticReservation>340_000;
+  if(diagnosticBudgetHeld) stopped=true;
   for (let i = 0; i < candidates.length; i++) {
     const candidate = candidates[i], dossier = dossiers[i];
     const holds = previewEvidenceHolds(candidate, dossier, reportingWindow, { requireStructured: true });
-    if (stopped) holds.push("MODEL_REQUESTS_STOPPED");
+    if (stopped) holds.push(diagnosticBudgetHeld?'PREVIEW_DIAGNOSTIC_BUDGET_HELD':"MODEL_REQUESTS_STOPPED");
     const record = { candidateId: candidate.candidateId, title: candidate.title, desk: candidate.suggestedDesk,
       score: candidate.ranking.score, sources: candidate.sources.map(s => ({ publisher: s.publisher, url: s.url })), dossier, holds };
     records.push(record);
@@ -80,6 +105,7 @@ export async function previewFreshGemini({ publicKey, apiKey, freeProjectConfirm
   const report = { status: draftCount ? "human-review-required" : "no-reviewable-drafts",
     approved: false, qualified: false, productionEnabled: false, emailRequests: 0,
     retrievedAt, modelRequests: requests, maxModelRequests: 4, draftCount,
+    editorialStatus:editorial.status,editorialModelRequests:editorial.modelRequests,budgetOmissions,
     evidenceMode: "structured-preview-v1", manualProseEdits: 0,
     selectedCount: candidates.length, heldCount: selection.held.length + records.filter(r => r.holds.length).length,
     successfulFeeds: snapshot.diagnostics.sourceResults.filter(s => s.status === "ok").length,
@@ -90,8 +116,11 @@ export async function previewFreshGemini({ publicKey, apiKey, freeProjectConfirm
     failures: records.filter(r => r.result?.report.status === "failed").map(r => ({ code: r.result.report.code,
       structuralErrors: r.result.report.structuralErrors ?? [] })) };
   const packet = { purpose: "fresh-news-unapproved-human-review-not-an-edition", report, reportingWindow,
-    preDraftHolds: selection.held, records };
-  if (Buffer.byteLength(JSON.stringify(packet)) > 160000) throw Error("PREVIEW_PACKET_TOO_LARGE");
+    editorial, preDraftHolds: selection.held, records:records.map(record=>{
+      const compact=result=>{if(!result)return result;const{html,...rest}=result;return {...rest,hasDraftPreview:Boolean(html)};};
+      return {...record,result:compact(record.result),...(record.initialRejection?{initialRejection:compact(record.initialRejection)}:{})};
+    }) };
+  if (Buffer.byteLength(JSON.stringify(packet)) > 340000) throw Error("PREVIEW_PACKET_TOO_LARGE");
   return { report, sealed: sealDiagnostic(packet, publicKey) };
 }
 

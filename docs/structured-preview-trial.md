@@ -272,3 +272,50 @@ claim counts, word limits, source checks and independent review are unchanged.
 Tests reject zero, duplicate, unknown and excess supports. All 1,072 tests pass.
 No email, recipient, daily writer, billing or public-edition settings changed.
 Fresh multi-desk research and unattended citation correctness remain unproven.
+
+## Publisher coverage and evidence-based selection experiment
+
+The untouched second correction is now an exact negative fixture. Field-local
+alarms require technical-description evidence in a technical headline and the
+origin disclaimer in the same claim that describes verbatim conversion. These
+are known-gap alarms, not proof of entailment or automatic citation repair.
+
+Read-only current-feed diagnostics on September 17 exposed unreadable GitLab,
+AWS What's New and DOJ layouts. Preview-only, exact-host/path adapters now
+preserve the balanced primary body, GitLab's visible standfirst and DOJ's
+subtitle. AWS's distinct date/prose containers are explicitly checked. Unknown,
+duplicate or unbalanced containers and unparsed substantive text remain held.
+These sources use a complete-context ceiling of 12,000 characters/96 blocks,
+with no omitted blocks or re-selection in the writer dossier. Repeated blocks
+receive distinct source-order citation IDs. Production extraction is unchanged.
+
+The first read-only comparison improved usable captures from 4 to 11, but still
+selected one story: keyword-only ranking discarded useful non-security evidence.
+The isolated fresh preview now includes one evidence-based editorial assessment
+using the existing importance/usefulness rubric, 70-point threshold and single-
+source component floors. It receives only structurally verified, in-window
+source passages, with at most two candidates per desk/eight total and a 52KB
+slate ceiling; whole dossiers are omitted rather than clipped. Hard vetoes,
+source strength, freshness, desk assignment and other score components cannot
+be changed by this model. Scores, exact passage-bound quotations, rationale and
+dossier hashes are retained privately for independent review. A valid quotation
+does not itself establish that the model's proposed significance is justified.
+
+The editor shares the unchanged four-model-request cap: one assessment leaves
+at most three story calls, including any structural corrections. Budget omissions
+are explicit, not described as quiet desks. Provider/format/quote-validation
+failures stop later model requests. No paid fallback, automatic approval, email
+credential or production policy change is introduced. Full local suite: 1,084
+tests pass before the live experiment; this is not a successful-live-paper claim.
+
+Independent review required retention of the exact editor slate, initial
+scorecards, omitted candidates and bounded parsed failures, not merely hashes.
+These now remain inside the encrypted audit. Fresh diagnostics retain raw
+draft/map/evidence rather than duplicate rendered HTML; a review view can be
+rebuilt offline. The packet is bounded to 340KB inside the pre-existing 350KB
+encryption envelope, with a conservative reservation before writer calls.
+Neither encrypted artifact storage nor a model's selection verdict grants
+delivery authority or independent factual approval.
+Post-editor research, coverage and selection failures also return a fixed-code
+sealed no-draft record, preserving the spent call and its original audit rather
+than throwing away the diagnostic when a later gate fails.

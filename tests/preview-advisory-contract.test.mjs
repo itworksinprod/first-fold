@@ -10,6 +10,7 @@ import { openDiagnostic } from '../scripts/automation/private-writer-diagnostic.
 import { GEMINI_LITE_MODEL } from '../scripts/automation/free/gemini-ai.mjs';
 import { captureStructuredArticle } from '../scripts/automation/free/structured-article-evidence.mjs';
 const { record, previousCorrection, dossier, provenance } = await storedAdvisoryCorrectionFixture();
+const rawCitationGap=JSON.parse(await readFile(new URL('./fixtures/raw-citation-gap-preview.json',import.meta.url),'utf8'));
 const sha = v => createHash('sha256').update(JSON.stringify(v)).digest('hex');
 const alarms = (draft = record.draft, map = record.evidenceForFields) => advisoryDraftAlarms(draft, dossier, map).map(a => a.code);
 
@@ -30,6 +31,23 @@ test('outline uses supplied evidence categories without prewriting a news story'
   assert.match(c.limitation, /not semantic approval/);
   assert.equal(advisoryWritingContract({sources:[]}), null);
   const broken=structuredClone(dossier);broken.sources[0].text+=' changed';assert.equal(advisoryWritingContract(broken),null);
+});
+test('untouched live citation gaps are held; exact reviewer-assisted additions resolve only those alarms',()=>{
+  const raw=advisoryDraftAlarms(rawCitationGap.draft,dossier,rawCitationGap.evidenceForFields);
+  assert.deepEqual(raw,[{code:'ADVISORY_HEADLINE_TECHNICAL_EVIDENCE_REQUIRED',field:'headline'},{code:'ADVISORY_ORIGIN_EVIDENCE_REQUIRED',field:'claims.0'}]);
+  const d=structuredClone(rawCitationGap.draft),m=structuredClone(rawCitationGap.evidenceForFields);
+  d.claims[0].supports.push({evidenceId:'S1P54'});m.headline.push('S1P18');
+  assert.deepEqual(advisoryDraftAlarms(d,dossier,m),[]);
+  assert.deepEqual(d.claims.map(c=>c.text),rawCitationGap.draft.claims.map(c=>c.text));
+  const wrong=structuredClone(d);wrong.claims[0].supports[2]={evidenceId:'S1P54-unknown'};
+  assert.ok(advisoryDraftAlarms(wrong,dossier,m).some(a=>a.code==='ADVISORY_ORIGIN_EVIDENCE_REQUIRED'));
+});
+test('origin evidence in another field cannot justify conversion in this claim',()=>{
+  const d=structuredClone(rawCitationGap.draft),m=structuredClone(rawCitationGap.evidenceForFields);
+  m.headline.push('S1P18','S1P54');
+  assert.ok(advisoryDraftAlarms(d,dossier,m).some(a=>a.field==='claims.0'));
+  d.claims[0].text=d.claims[0].text.replace('verbatim vendor advisory conversion','vendor conversion');
+  assert.ok(advisoryDraftAlarms(d,dossier,m).some(a=>a.field==='claims.0'));
 });
 test('unchanged rejected run11 cannot pass the preview gate with a synthetic positive review', () => {
   assert.deepEqual(alarms(), ['ADVISORY_ATTACK_CONDITION_REQUIRED','ADVISORY_SCOPE_EVIDENCE_REQUIRED','ADVISORY_SCORE_CAUSALITY_REVIEW','ADVISORY_OPERATOR_FAULT_REVIEW','ADVISORY_FIX_COMPATIBILITY_REVIEW','ADVISORY_ORIGIN_CHRONOLOGY_REQUIRED','ADVISORY_UNPAIRED_FIX_VERSION_REVIEW']);

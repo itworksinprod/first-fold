@@ -6,6 +6,7 @@ import { inspectPreviewIdentity, textHash } from "./preview-article-identity.mjs
 import { selectEvidencePassages } from "./evidence-packets.mjs";
 import { previewSourceIntegrityHolds } from "./preview-evidence-gate.mjs";
 import { inspectPlatformRanges } from './advisory-platform-ranges.mjs';
+import { previewPublisherRegion } from './preview-publisher-region.mjs';
 const version = "structured-preview-v1";
 const critical = /\b(?:not|no|only|unless|requires?|must|except|if|when|affected|versions?|mitigations?|patch|fixed|limitations?|eligibility|rollout)\b/iu;
 const held = (reason, diagnostic) => ({ version, status: "held", holds: [reason], excerpt: "", blocks: [], inputBlocks: 0, omittedBlocks: 0,
@@ -28,8 +29,11 @@ export async function captureStructuredArticle(item, fetchPage) {
   try { verified = inspectPreviewIdentity(item, page); }
   catch (error) { return held("ARTICLE_IDENTITY_NOT_VERIFIED", { category: "identity", code: identityCodes.has(error.message) ? error.message : "INVALID_IDENTITY" }); }
   try {
+    let publisherRegion;
+    try { publisherRegion = previewPublisherRegion(page.body, verified.identity); }
+    catch { return { ...held('PUBLISHER_REGION_NOT_VERIFIED'), identity: verified.identity }; }
     const capture = verified.advisoryBody ? extractAdvisory(verified.advisoryBody, verified.identity)
-      : extractStructuredArticleEvidence(page.body);
+      : publisherRegion ? extractRegion(publisherRegion, { completePreview: true }) : extractStructuredArticleEvidence(page.body);
     return { ...capture, identity: verified.identity };
   }
   catch { return held("ARTICLE_PROCESSING_FAILED", { category: "extract", code: "UNEXPECTED_EXTRACTION_FAILURE" }); }
@@ -126,7 +130,7 @@ export function extractStructuredArticleEvidence(html) {
   return extractRegion(region);
 }
 
-function extractRegion(region, { advisory = false, prefix = "", ranges = [], rangeFormat, scopes } = {}) {
+function extractRegion(region, { advisory = false, completePreview = false, prefix = "", ranges = [], rangeFormat, scopes } = {}) {
   const { body, title } = region;
   if (/<(?:article|main)\b/iu.test(body)) return held("NESTED_ARTICLE_REGION");
   // Fetched H1 may sit outside a narrowed articleBody container. Keep that
@@ -172,6 +176,12 @@ function extractRegion(region, { advisory = false, prefix = "", ranges = [], ran
   // Flattened advisory text remains unsupported here too. Correct table rows
   // retain header/value associations but are not automatically exempted.
   if (damage.length) return held(damage[0]);
+  if (completePreview) {
+    if (fullText.length > 12_000 || blocks.length > 96) return held('REQUIRED_CONTEXT_EXCEEDS_BUDGET');
+    if (fullText.length < 120 || blocks.length < 2) return held('ARTICLE_CONTENT_INSUFFICIENT');
+    return { version: 'structured-complete-preview-v1', status: 'usable', holds: [], excerpt: fullText,
+      blocks, inputBlocks: blocks.length, omittedBlocks: 0 };
+  }
   if (advisory) {
     if (fullText.length > 18_000 || blocks.length > 128) return held("REQUIRED_CONTEXT_EXCEEDS_BUDGET");
     return { version: "structured-advisory-preview-v1", status: "usable", holds: [], excerpt: fullText,

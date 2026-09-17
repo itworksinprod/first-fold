@@ -1,0 +1,60 @@
+{
+  "purpose": "Untouched model output with two reviewer-identified citation gaps; not approved",
+  "sourceRun": "35279835448",
+  "sourceCommit": "1f7b0ba50355ef010fd0649ea2559f1b61dba910",
+  "draft": {
+    "candidateId": "candidate-639685085e012b47",
+    "headline": "Siemens Mendix SAML Signature Flaw Permits Account Hijacking",
+    "deck": "Unauthenticated remote attackers may hijack user sessions in specific SSO configurations because affected modules fail to properly validate SAML response signatures.",
+    "claims": [
+      {
+        "text": "According to Siemens ProductCERT, an advisory was initially released on September 3, 2026, and later republished by CISA on September 15, 2026, as a verbatim vendor advisory conversion.",
+        "supports": [
+          {
+            "evidenceId": "S1P56"
+          },
+          {
+            "evidenceId": "S1P58"
+          }
+        ]
+      },
+      {
+        "text": "Siemens ProductCERT noted that affected Mendix SAML modules fail to validate response signatures, potentially allowing unauthenticated remote attackers to hijack sessions under specific SSO setups.",
+        "supports": [
+          {
+            "evidenceId": "S1P18"
+          },
+          {
+            "evidenceId": "S1P54"
+          }
+        ]
+      }
+    ],
+    "whyItMatters": "Administrators must review deployments running Siemens Mendix SAML modules compatible with Mendix 10 or Mendix 11 below version 4.2.3, alongside Mendix 9.24 compatible editions under version 3.6.27. Verifying the exact compatibility branch helps determine if a deployment houses a vulnerable module instance.",
+    "whatToDoOrWatch": "Operators should inspect their installed product version and corresponding compatibility branch before selecting an update. Always check the vendor advisory directly to verify the correct mapping for your specific module variant."
+  },
+  "evidenceForFields": {
+    "headline": [
+      "S1P5",
+      "S1P17"
+    ],
+    "deck": [
+      "S1P18"
+    ],
+    "whyItMatters": [
+      "S1P23"
+    ],
+    "whatToDoOrWatch": [
+      "S1P23",
+      "S1P26",
+      "S1P27",
+      "S1P28"
+    ]
+  },
+  "binding": {
+    "draftSha256": "38386d0c34bb01aa5d4c56ce94dde22d51d71874395beb473f50aaea0ad5a79d",
+    "dossierSha256": "432559cdbd5463630879dd4bb74c1564780969b0d4d94fd0d027dd340f6f61c8",
+    "evidenceMapSha256": "4f2a66bf0bc9c4cc9361569639ad6afcb33f0418f519cbd04884f8d0a6b85b40",
+    "renderedStorySha256": "d98a7122fbee721ed2715e901e36d8d7643bbdd415ae01afe345ce7ccebd9660"
+  }
+}

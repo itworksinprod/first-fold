@@ -85,7 +85,7 @@ test("eligible draft is retained only in ciphertext and quota failure stops rema
     assert.equal(result.report.draftCount, quota ? 0 : 2);
     const packet = openDiagnostic(result.sealed, privateKey);
     if (quota) assert.ok(packet.records[1].holds.includes("MODEL_REQUESTS_STOPPED"));
-    else assert.equal(packet.records[0].result.html, "UNAPPROVED TEST COPY");
+    else {assert.equal(packet.records[0].result.hasDraftPreview, true);assert.equal(packet.records[0].result.html,undefined);}
     assert.doesNotMatch(JSON.stringify(result), /UNAPPROVED TEST COPY|synthetic-test-key/);
   }
 });

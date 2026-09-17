@@ -28,7 +28,7 @@ export function divRegions(html, strict = false) {
     } else if (!/\/\s*>$/.test(match[0])) {
       if (stack.length >= 128) return null;
       const attributes = {};
-      for (const attr of match[0].matchAll(/\s(class|itemprop)\s*=\s*(["'])(.*?)\2/gi)) {
+      for (const attr of match[0].matchAll(/\s(class|itemprop|id)\s*=\s*(["'])(.*?)\2/gi)) {
         attributes[attr[1].toLowerCase()] = attr[3].toLowerCase().split(/\s+/u);
       }
       stack.push({ start: match.index, innerStart: match.index + match[0].length, attributes });
@@ -98,8 +98,8 @@ export function extractArticleEvidence(html) {
 
 export { plain as plainArticleText };
 
-export function articleScoringSummary(excerpt, title) {
-  if (typeof excerpt !== "string" || excerpt.length > MAX_ARTICLE_EXCERPT_CHARS) return "";
+export function articleScoringSummary(excerpt, title, { completePreview = false } = {}) {
+  if (typeof excerpt !== "string" || excerpt.length > (completePreview ? 12_000 : MAX_ARTICLE_EXCERPT_CHARS)) return "";
   return selectEvidencePassages(excerpt.split(/\n+|(?<=[.!?])\s+(?=[A-Z0-9])/u), {
     title, maxChars: 1_200, minChars: 20,
   }).join("\n");
@@ -177,7 +177,8 @@ export async function enrichShortlist(items, { assess, fetchArticle, structuredP
         }
         const excerpt = structuredPreview ? capture.excerpt : capture;
         const advisory = structuredPreview && capture.version === "structured-advisory-preview-v1";
-        if (typeof excerpt !== "string" || excerpt.length < 120 || excerpt.length > (advisory ? 18_000 : MAX_ARTICLE_EXCERPT_CHARS)) {
+        const completePreview = structuredPreview && capture.version === "structured-complete-preview-v1";
+        if (typeof excerpt !== "string" || excerpt.length < 120 || excerpt.length > (advisory ? 18_000 : completePreview ? 12_000 : MAX_ARTICLE_EXCERPT_CHARS)) {
           if (structuredPreview) enriched.set(item.url, {...item, articleExcerpt:'', articleBlocks:[],
             articleExtraction:{version:'structured-preview-v1',status:'held',holds:['ARTICLE_CONTENT_INSUFFICIENT'],
               ...(capture?.identity ? {identity:capture.identity} : {})}});
@@ -187,7 +188,7 @@ export async function enrichShortlist(items, { assess, fetchArticle, structuredP
         // the input length the same as feed summaries to limit keyword volume.
         // Scoring receives complete source sentences inside the old 1,200-char
         // limit, never a mid-word fragment later recycled as factual evidence.
-        const summary = advisory ? advisoryScoringSummary(capture.blocks) : articleScoringSummary(excerpt, item.title);
+        const summary = advisory ? advisoryScoringSummary(capture.blocks) : articleScoringSummary(excerpt, item.title, { completePreview });
         enriched.set(item.url, { ...item, articleExcerpt: excerpt, summary: summary || item.summary,
           ...(structuredPreview ? { articleBlocks: capture.blocks,
             articleExtraction: { version: capture.version, status: capture.status, holds: capture.holds,

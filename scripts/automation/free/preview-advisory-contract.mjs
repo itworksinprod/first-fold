@@ -23,14 +23,14 @@ export function advisoryWritingContract(dossier) {
     republicationDate: republicationDate[0].text.match(/ — Date: (\d{4}-\d{2}-\d{2});/u)[1],
   } : null;
   const chronologyTask = republication
-    ? 'Use claim 1 ONLY for vendor origin and publication chronology, mapping the original and republication dates. Use claim 2 for the technical defect and conditional impact, mapping the vulnerability description. Do not insert a defect assertion into a date-only claim. These are one originating account, not two independent reports.'
+    ? 'Use claim 1 ONLY for vendor origin and publication chronology, mapping the original and republication dates. If describing verbatim republication or conversion, also cite the disclaimer in that SAME claim; three supports are available for origin plus both dates. Use claim 2 for the technical defect and conditional impact, mapping the vulnerability description. Do not insert a defect assertion into a date-only claim. These are one originating account, not two independent reports.'
     : origin.length ? 'The source declares republication but complete chronology is unavailable. Do not invent dates or a publication sequence; retain the uncertainty for review.'
     : 'Attribute the originating account. Do not infer a separate vendor release or republication sequence that the source does not identify.';
   return {
     version: 'advisory-writing-obligations-v1', singleCve,
     // Full context is still sent. This outline does not excerpt or rewrite facts.
     outline: {
-      headline: 'Name the actual issue, not a generic development. Do not imply new discovery.',
+      headline: { task: 'Name the actual issue, not a generic development. Do not imply new discovery. If naming a signature or cryptographic defect, cite the technical description in this headline field; an identifier or general impact summary does not establish the mechanism.', evidenceIds: ids(descriptions) },
       deck: { task: 'State the source-described impact WITH its attack conditions in the same sentence.', evidenceIds: ids(descriptions) },
       claims: { task: `Report the defect and conditional impact. ${chronologyTask}`,
         evidenceIds: ids([...descriptions, ...origin, ...originalDate, ...republicationDate]) },
@@ -39,7 +39,7 @@ export function advisoryWritingContract(dossier) {
     },
     checks: {
       ssoCondition: singleCve && descriptions.some(p => /in specific SSO configurations/u.test(p.text)),
-      descriptions: ids(descriptions), scope: ids(scope), remedies: ids(remedies),
+      descriptions: ids(descriptions), scope: ids(scope), remedies: ids(remedies), origin: ids(origin),
       unpairedFixedVersions: [...new Set(remedies.flatMap(p => [...p.text.matchAll(/Vendor fix Update to V(\d+(?:\.\d+)+)/gu)].map(m => m[1])))],
       republication, chronologyIncomplete: origin.length > 0 && !republication,
     },
@@ -55,6 +55,14 @@ export function advisoryDraftAlarms(draft, dossier, map) {
   if (contract.checks.chronologyIncomplete) add('ADVISORY_CHRONOLOGY_CONTEXT_REQUIRED', 'story');
   const fieldTexts = ['headline','deck','whyItMatters','whatToDoOrWatch'].map(f => draft?.[f] ?? '');
   const all = [...fieldTexts, ...(draft?.claims ?? []).map(c => c.text)].join(' ');
+  if (/\b(?:signature|cryptographic|validation flaw)\b/iu.test(draft?.headline ?? '') && contract.checks.descriptions.length &&
+      !map?.headline?.some(id=>contract.checks.descriptions.includes(id))) add('ADVISORY_HEADLINE_TECHNICAL_EVIDENCE_REQUIRED','headline');
+  const units = [
+    ...['headline','deck','whyItMatters','whatToDoOrWatch'].map(field=>({field,text:draft?.[field]??'',ids:map?.[field]??[]})),
+    ...(draft?.claims??[]).map((claim,i)=>({field:`claims.${i}`,text:claim.text,ids:claim.supports?.map(s=>s.evidenceId)??[]})),
+  ];
+  for(const unit of units) if (/\bverbatim\b|\b(?:advisory|vendor) conversion\b/iu.test(unit.text) &&
+      !unit.ids.some(id=>contract.checks.origin.includes(id))) add('ADVISORY_ORIGIN_EVIDENCE_REQUIRED',unit.field);
   for (const [i,claim] of (draft?.claims ?? []).entries()) {
     if (/\b(?:signature|hijack\w*|cryptographic|validation flaw)\b/iu.test(claim.text) &&
         contract.checks.descriptions.length && !claim.supports?.some(s=>contract.checks.descriptions.includes(s.evidenceId))) add('ADVISORY_TECHNICAL_CLAIM_EVIDENCE_REQUIRED', `claims.${i}`);

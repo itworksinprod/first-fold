@@ -106,6 +106,12 @@ export function selectEvidencePassages(blocks, {
 }
 
 function sourceSentences(record) {
+  if (record.articleExtraction?.version === 'structured-complete-preview-v1') {
+    if (record.articleExtraction.status !== 'usable' || !Array.isArray(record.articleBlocks) ||
+        record.articleBlocks.length > 96 || record.articleBlocks.some(b => typeof b !== 'string') ||
+        record.articleBlocks.join('\n') !== record.articleExcerpt || record.articleExcerpt.length > 12_000) return [];
+    return record.articleBlocks;
+  }
   if (record.articleExtraction?.version === "structured-advisory-preview-v1") {
     if (record.articleExtraction.status !== "usable" || !Array.isArray(record.articleBlocks) ||
         record.articleBlocks.length > 128 || record.articleBlocks.join("\n") !== record.articleExcerpt ||
@@ -149,11 +155,13 @@ export function buildEvidencePacketSources(candidate) {
     seen.set(record.sourceId, serialized);
     const allPassages = sourceSentences(record);
     const advisory = record.articleExtraction?.version === "structured-advisory-preview-v1";
-    const selected = advisory ? allPassages : selectEvidencePassages(allPassages, { title: record.title,
+    const completePreview = record.articleExtraction?.version === 'structured-complete-preview-v1';
+    const selected = (advisory || completePreview) ? allPassages : selectEvidencePassages(allPassages, { title: record.title,
       ...(record.articleExtraction?.version === "structured-preview-v1" ? { minChars: 1 } : {}) });
     return { sourceId: source.id, publisher: source.publisher, publisherKey: source.publisherKey ?? source.publisher,
       relationship: source.relationship, publishedAt: source.publishedAt,
       text: selected.join("\n"), selected, allPassages,
+      completePreview,
       ...(record.articleExtraction?.identity ? { articleIdentity: record.articleExtraction.identity } : {}),
       ...(advisory ? { structuredContext: record.articleExtraction.structuredContext } : {}),
       hasArticle: Boolean(record.articleExcerpt?.trim()) };
@@ -166,9 +174,9 @@ export function buildEvidencePacketSources(candidate) {
   const otherPublishers = ordered.filter((source) => source.publisherKey !== first.publisherKey);
   const second = otherPublishers.find((source) => source.relationship !== first.relationship) ?? otherPublishers[0];
   return [first, second].filter(Boolean).slice(0, MAX_PACKET_SOURCES).map((source, index) => {
-    const { selected, allPassages, hasArticle: _hasArticle, ...fields } = source;
+    const { selected, allPassages, hasArticle: _hasArticle, completePreview, ...fields } = source;
     return { ...fields, passages: selected.map((text, passageIndex) => ({
-      evidenceId: `S${index + 1}P${source.structuredContext ? passageIndex + 1 : allPassages.indexOf(text) + 1}`, text,
+      evidenceId: `S${index + 1}P${source.structuredContext || completePreview ? passageIndex + 1 : allPassages.indexOf(text) + 1}`, text,
     })) };
   });
 }
