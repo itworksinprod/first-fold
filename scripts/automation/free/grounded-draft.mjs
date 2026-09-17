@@ -331,7 +331,7 @@ function immutableClaimsEligible(draft, dossier) {
   return sourceOverlap(claims, evidenceText(dossier)) === null;
 }
 
-export function validateGroundedStory(draft, dossier, onFailure = () => {}) {
+export function validateGroundedStory(draft, dossier, onFailure = () => {}, { previewFieldEvidence } = {}) {
   const reject = (code, feedback = {}) => { onFailure(code, feedback); return false; };
   const fields = GROUNDED_DRAFT_SCHEMA.properties.stories.items.properties;
   if (!keys(draft, ["candidateId", "headline", "deck", "claims", "whyItMatters", "whatToDoOrWatch"]) ||
@@ -368,8 +368,20 @@ export function validateGroundedStory(draft, dossier, onFailure = () => {}) {
   }
   // Exact numeric/version anchors, plus a separate semantic review below.
   const knownNumbers = new Set(numericTokens([...citedPassages].join(" ")).map((value) => value.toLowerCase()));
+  // Isolated evidence-mapped human preview only. Production callers omit this
+  // option and retain the existing claim-citation contract. Each preview field
+  // must instead anchor numbers to its OWN exact supplied passages, never to an
+  // arbitrary number elsewhere in the dossier or in another analysis field.
+  const mappedPassages = new Map(dossier.sources.flatMap(source => source.passages.map(p => [p.evidenceId, p.text])));
+  if (previewFieldEvidence !== undefined && (!keys(previewFieldEvidence, ["headline", "deck", "whyItMatters", "whatToDoOrWatch"]) ||
+      Object.values(previewFieldEvidence).some(ids => !Array.isArray(ids) || ids.length < 1 || ids.length > 4 ||
+        new Set(ids).size !== ids.length || ids.some(id => !mappedPassages.has(id))))) {
+    return reject("FIELD_EVIDENCE_SHAPE");
+  }
   for (const field of ["headline", "deck", "whyItMatters", "whatToDoOrWatch"]) {
-    const unsupported = numericTokens(draft[field]).filter((value) => !knownNumbers.has(value.toLowerCase()));
+    const fieldNumbers = previewFieldEvidence === undefined ? knownNumbers :
+      new Set(numericTokens(previewFieldEvidence[field].map(id => mappedPassages.get(id)).join(" ")).map(value => value.toLowerCase()));
+    const unsupported = numericTokens(draft[field]).filter((value) => !fieldNumbers.has(value.toLowerCase()));
     if (unsupported.length) return reject("NUMERIC_ANCHOR", { field, unsupportedNumericTokens: [...new Set(unsupported)].slice(0, 8),
       expected: "Use numeric details from the story's cited passages only; do not borrow an unrelated dossier figure.",
     });

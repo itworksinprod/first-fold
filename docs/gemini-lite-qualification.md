@@ -96,3 +96,14 @@ analysis reference map does not override that rule. The next prompt explicitly
 states this existing constraint. Failed fresh payloads and detailed validation
 feedback are retained only inside the encrypted review packet (never rendered
 or logged) to make further diagnosis evidence-based. No validator was relaxed.
+
+Run `35174476728` at `6399212` preserved the precise rejection. Its watch paragraph
+used September 15, 2026 and explicitly cited `S1P8`, which contained that rollout
+date. The old numeric rule nevertheless searched only the claims' citations.
+This was a false rejection under the new field-mapped preview contract, not an
+invented date. The unchanged saved response passed a local replay after adding
+an explicit preview-only field-evidence option: each field's numbers must occur
+in that field's own supplied passages. Unknown IDs, duplicate IDs, wrong-field
+borrowing and unsupported numbers still fail. All existing production callers
+omit the option and retain their previous behavior. This does not establish
+semantic support by itself and does not override human review.

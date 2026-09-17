@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { previewGeminiLite, renderHumanReview, evidenceMappedPreviewSchema, validPreviewEvidenceMap } from "../scripts/automation/preview-gemini-lite.mjs";
 import { reviewerResearchScopeCases } from "./fixtures/reviewer-research-scope.mjs";
 import { GEMINI_LITE_MODEL } from "../scripts/automation/free/gemini-ai.mjs";
+import { validateGroundedStory } from "../scripts/automation/free/grounded-draft.mjs";
 const settings = { apiKey: "synthetic-preview-key-not-real", freeProjectConfirmation: "FREE PROJECT BILLING DISABLED" };
 const response = draft => new Response(JSON.stringify({ modelVersion: GEMINI_LITE_MODEL,
   candidates: [{ finishReason: "STOP", content: { role: "model", parts: [{ text: JSON.stringify({ stories: [draft] }) }] } }] }),
@@ -28,6 +29,25 @@ test("one call creates only an unapproved evidence-paired sample, never a sendab
   assert.match(result.html, /UNAPPROVED — HUMAN REVIEW REQUIRED/);
   assert.match(result.html, /S1P32/);
   assert.doesNotMatch(JSON.stringify(result.report), /headline|synthetic-preview/);
+});
+test("preview numbers must match the same field's cited passages; production behavior is unchanged", () => {
+  const { draft, dossier } = structuredClone(reviewerResearchScopeCases()[0]);
+  dossier.sources[0].passages.push({ evidenceId: "S1P99", text: "The next documentation update is planned for October 29, 2031." });
+  dossier.sources[0].text += "\nThe next documentation update is planned for October 29, 2031.";
+  draft.whatToDoOrWatch = "Check the documentation update planned for October 29, 2031, and compare the stated research limitations with the requirements of your intended use before making a deployment decision.";
+  const map = Object.fromEntries(["headline", "deck", "whyItMatters", "whatToDoOrWatch"].map(field =>
+    [field, [...new Set(draft.claims.flatMap(c => c.supports.map(s => s.evidenceId)))].slice(0, 4)]));
+  map.whatToDoOrWatch = ["S1P99"];
+  const reasons = [];
+  assert.equal(validateGroundedStory(draft, dossier, reason => reasons.push(reason)), false);
+  assert.ok(reasons.includes("NUMERIC_ANCHOR"));
+  assert.equal(validateGroundedStory(draft, dossier, () => {}, { previewFieldEvidence: map }), true);
+  for (const invalid of [{ ...map, whatToDoOrWatch: map.headline }, { ...map, whatToDoOrWatch: ["S9P999"] },
+    { ...map, whatToDoOrWatch: [] }, { ...map, whatToDoOrWatch: ["S1P99", "S1P99"] }]) {
+    assert.equal(validateGroundedStory(draft, dossier, () => {}, { previewFieldEvidence: invalid }), false);
+  }
+  draft.whatToDoOrWatch = draft.whatToDoOrWatch.replace("2031", "2032");
+  assert.equal(validateGroundedStory(draft, dossier, () => {}, { previewFieldEvidence: map }), false);
 });
 test("invalid writing and quota failures do not create a preview or retry", async () => {
   for (const quota of [false, true]) {

@@ -53,7 +53,7 @@ export async function previewGeminiLite({ apiKey, freeProjectConfirmation, fetch
       maxTokens: 8000, thinking: "medium", timeoutMs: 180000,
       messages: [{ role: "system", content: `${WRITER_PROMPT}\nInclude each factual source's exact supplied publisher name in the claims.text sentences. Do not shorten those names or claim independent confirmation for a single-source account. Research is not a product release; a possible use is not an observed result. Do not promise safety, productivity, reliability or performance benefits absent supporting measurements. In whatToDoOrWatch, suggest a check the reader can make; never invent scheduled tests, updates or releases.${fresh ? `
 EVIDENCE-FIRST PREVIEW CONTRACT: Select evidenceForFields BEFORE writing stories. It maps headline, deck, whyItMatters and whatToDoOrWatch to exact passage IDs. These are support obligations, not decorative citations. Every factual clause in each field must follow from its selected passages, preserving conditions. Do not insert IDs into reader prose.
-The unchanged numeric validator additionally requires every number anywhere in headline, deck or analysis to appear in the passages cited by the TWO claims.supports arrays. The new evidenceForFields map does not replace that requirement. Plan the two factual claims and their citations to cover the figures needed throughout the story; otherwise omit the extra numeric detail rather than inventing or borrowing it.
+Every numeric detail in a non-claim field must occur in that field's own evidenceForFields passages. Claims still require their own supports. A number appearing elsewhere in the dossier or another field's citations is not enough.
 For whyItMatters, explain the specific scope, eligibility, control or limitation established by those passages. Prefer concrete facts that tell a reader whether this applies to them. Do NOT invent a broader problem, failure cause, user behavior, time saving, administrative burden, avoided delay, reliability guarantee or expected performance. A plausible explanation is not evidence. Do not use general background knowledge to fill gaps. If the source names a fallback, explain when it is available, not what failures it supposedly prevents.
 For whatToDoOrWatch, suggest checking a supported setting, eligibility requirement or source-stated rollout. Phrase this as reader advice, not a promised outcome or a publisher recommendation unless the source actually recommends it. Use remaining distinct source facts to meet the existing word bounds; never pad with speculative benefits. Attribute publisher announcements to the publisher, not to the publisher's blog as if the blog built the product.` : ""}` },
         { role: "user", content: JSON.stringify({ dossiers: [localPromptDossier(dossier)] }) }],
@@ -68,7 +68,7 @@ For whatToDoOrWatch, suggest checking a supported setting, eligibility requireme
           (reason, feedback) => { if (typeof reason === "string" && /^[A-Z_]{1,80}$/u.test(reason)) {
             structuralErrors.add(reason);
             if (fresh && rejectionDetails.length < 8) rejectionDetails.push({ reason, feedback });
-          } });
+          } }, fresh ? { previewFieldEvidence: p.evidenceForFields } : undefined);
       } });
     return { report: { status: "human-review-required", qualified: false, approved: false,
       productionEnabled: false, emailRequests: 0, liveResearchRequests: 0, model: result.model,
