@@ -107,3 +107,22 @@ in that field's own supplied passages. Unknown IDs, duplicate IDs, wrong-field
 borrowing and unsupported numbers still fail. All existing production callers
 omit the option and retain their previous behavior. This does not establish
 semantic support by itself and does not override human review.
+
+## Repaired live preview result
+
+[Run 35175031563](https://github.com/itworksinprod/first-fold/actions/runs/35175031563)
+at `61dc77d` succeeded in 2m45s. All 1,014 software tests passed. Research completed
+47/48 feeds, 12 free-budgeted searches and 13 admitted publisher articles. One
+Flash-Lite request produced a structurally valid Google Meet story; the CISA
+candidate remained held for damaged extraction. No email was sent.
+
+Manual comparison with the source found the body grounded in the feature,
+eligibility, device-level controls and rollout facts, without the first run's
+invented meeting-delay causes and guaranteed benefits. The headline still
+awkwardly credited the publication as the product actor. A local reviewed sample
+preserves the exact model body and explicitly identifies an assistant-edited
+headline. The original model output and evidence remain available separately.
+
+This demonstrates a working free research-to-draft preview, not a qualified
+automatic editor, a complete multi-desk paper, or deployed daily delivery.
+The automatic reviewer remains unqualified (6/8); daily behavior is unchanged.
