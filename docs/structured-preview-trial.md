@@ -245,3 +245,30 @@ from technical substance, and known-defect alarms retain the remaining citation
 and unpaired-fix failures. The next single-request experiment uses the latest
 raw rejection and preserves both failed predecessors. All 1,071 tests pass;
 independent review cleared the experiment only, not its output or delivery.
+
+## Second stored correction and citation-assisted private handoff
+
+Run `35279835448` at `1f7b0ba` completed one model request and passed structural
+checks. Its encrypted artifact SHA256 is
+`2f10611aa93a4507e02674c2edb7f901d905e291f3b3ea5b787e78218879f549`.
+Independent review found the factual writing supportable but held two exact
+citation gaps: the headline needed S1P18 for the signature flaw, and the
+chronology claim needed S1P54 for verbatim vendor conversion. The original
+model output and held review remain preserved; this was not untouched-output
+semantic approval.
+
+For the private handoff only, the assistant added those two citations with
+zero prose edits and generated a new packet, audit and independent review.
+The reviewer approved all six fields of that exact corrected packet. The
+rendered-story hash stayed
+`d98a7122fbee721ed2715e901e36d8d7643bbdd415ae01afe345ce7ccebd9660`.
+The review gate reports readyForPrivatePreview true, humanApproved false and
+deliveryAuthorized false. This is explicitly citation-assisted stored evidence,
+not fresh research, a complete paper or unattended delivery qualification.
+
+Preview claims can now include three distinct supporting passages when origin
+and two dates need separate citations. Production remains at two supports;
+claim counts, word limits, source checks and independent review are unchanged.
+Tests reject zero, duplicate, unknown and excess supports. All 1,072 tests pass.
+No email, recipient, daily writer, billing or public-edition settings changed.
+Fresh multi-desk research and unattended citation correctness remain unproven.

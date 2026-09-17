@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { previewGeminiLite, renderHumanReview, evidenceMappedPreviewSchema, validPreviewEvidenceMap } from "../scripts/automation/preview-gemini-lite.mjs";
 import { reviewerResearchScopeCases } from "./fixtures/reviewer-research-scope.mjs";
 import { GEMINI_LITE_MODEL } from "../scripts/automation/free/gemini-ai.mjs";
-import { validateGroundedStory } from "../scripts/automation/free/grounded-draft.mjs";
+import { validateGroundedStory, GROUNDED_DRAFT_SCHEMA } from "../scripts/automation/free/grounded-draft.mjs";
 const settings = { apiKey: "synthetic-preview-key-not-real", freeProjectConfirmation: "FREE PROJECT BILLING DISABLED" };
 const response = draft => new Response(JSON.stringify({ modelVersion: GEMINI_LITE_MODEL,
   candidates: [{ finishReason: "STOP", content: { role: "model", parts: [{ text: JSON.stringify({ stories: [draft] }) }] } }] }),
@@ -148,4 +148,18 @@ test("targeted repair is fresh-only, candidate-bound and keeps rejected prose ou
   assert.equal(calls, 1);
   assert.ok(!JSON.stringify(result.report).includes(draft.headline));
   assert.equal(result.html, null);
+});
+test('preview can cite origin plus both dates without expanding production citation or word limits',()=>{
+  const {draft,dossier}=structuredClone(reviewerResearchScopeCases()[0]);
+  draft.claims[0].supports.push({evidenceId:'S1P11'});
+  const map=Object.fromEntries(['headline','deck','whyItMatters','whatToDoOrWatch'].map(f=>[f,['S1P4','S1P5','S1P11']]));
+  assert.equal(evidenceMappedPreviewSchema(dossier).properties.stories.items.properties.claims.items.properties.supports.maxItems,3);
+  assert.equal(GROUNDED_DRAFT_SCHEMA.properties.stories.items.properties.claims.items.properties.supports.maxItems,2);
+  const errors=[];
+  assert.equal(validateGroundedStory(draft,dossier,(r)=>errors.push(r),{previewFieldEvidence:map}),true,JSON.stringify(errors));
+  assert.equal(validateGroundedStory(draft,dossier),false);
+  for(const supports of [[],[...draft.claims[0].supports,{evidenceId:'S1P8'}],[...draft.claims[0].supports.slice(0,2),{evidenceId:'S9P99'}],[...draft.claims[0].supports.slice(0,2),{evidenceId:'S1P4'}]]){
+    const d=structuredClone(draft);d.claims[0].supports=supports;
+    assert.equal(validateGroundedStory(d,dossier,()=>{},{previewFieldEvidence:map}),false);
+  }
 });

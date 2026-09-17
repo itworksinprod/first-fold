@@ -15,12 +15,16 @@ const escape = value => String(value).replace(/[&<>"']/gu, c => ({ "&": "&amp;",
 const REVIEW_FIELDS = ["headline", "deck", "whyItMatters", "whatToDoOrWatch"];
 export function evidenceMappedPreviewSchema(dossier) {
   const ids = dossier.sources.flatMap(s => s.passages.map(p => p.evidenceId));
+  const stories = structuredClone(GROUNDED_DRAFT_SCHEMA.properties.stories);
+  // A chronology may need origin + original date + republication date. This
+  // adds citation capacity, not claim capacity or semantic approval.
+  stories.items.properties.claims.items.properties.supports.maxItems = 3;
   return { type: "object", additionalProperties: false, required: ["evidenceForFields", "stories"],
     properties: {
       evidenceForFields: { type: "object", additionalProperties: false, required: REVIEW_FIELDS,
         properties: Object.fromEntries(REVIEW_FIELDS.map(field => [field, { type: "array", minItems: 1,
           maxItems: 4, items: { type: "string", enum: ids } }])) },
-      stories: structuredClone(GROUNDED_DRAFT_SCHEMA.properties.stories),
+      stories,
     } };
 }
 export function validPreviewEvidenceMap(map, dossier) {
@@ -66,6 +70,7 @@ export async function previewGeminiLite({ apiKey, freeProjectConfirmation, fetch
 EVIDENCE-FIRST PREVIEW CONTRACT: Select evidenceForFields BEFORE writing stories. It maps headline, deck, whyItMatters and whatToDoOrWatch to exact passage IDs. These are support obligations, not decorative citations. Every factual clause in each field must follow from its selected passages, preserving conditions. Do not insert IDs into reader prose.
 Every numeric detail in a non-claim field must occur in that field's own evidenceForFields passages. Claims still require their own supports. A number appearing elsewhere in the dossier or another field's citations is not enough.
 Preview date exception: a complete valid calendar date may be written as YYYY-MM-DD or Month D, YYYY when the exact same calendar date occurs in that field's cited evidence. This does not allow borrowing isolated day/year numbers, changing dates, or converting version identifiers.
+Preview citation capacity: each claim may cite one to THREE distinct evidenceId objects if needed to support all its clauses (for example, vendor origin plus two publication dates). Every clause must still follow from that claim's own citations. Cite technical descriptions in headlines that name technical defects, not just a general summary or CVE identifier.
 Distinguish an original announcement from a later republication. When the source identifies itself as a verbatim vendor republication, say so and do not describe its posting date as a new vulnerability discovery or newly released fix. A republisher is not independent corroboration. Preserve attack prerequisites, user interaction and per-CVE severity. Product and remediation lists may use different orders: never pair them by position; if the source does not explicitly associate a fix with a product, direct the reader to verify that mapping in the vendor advisory.
 For whyItMatters, explain the specific scope, eligibility, control or limitation established by those passages. Prefer concrete facts that tell a reader whether this applies to them. Do NOT invent a broader problem, failure cause, user behavior, time saving, administrative burden, avoided delay, reliability guarantee or expected performance. A plausible explanation is not evidence. Do not use general background knowledge to fill gaps. If the source names a fallback, explain when it is available, not what failures it supposedly prevents.
 For whatToDoOrWatch, suggest checking a supported setting, eligibility requirement or source-stated rollout. Phrase this as reader advice, not a promised outcome or a publisher recommendation unless the source actually recommends it. Use remaining distinct source facts to meet the existing word bounds; never pad with speculative benefits. Attribute publisher announcements to the publisher, not to the publisher's blog as if the blog built the product.` : ""}` },

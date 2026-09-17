@@ -261,7 +261,7 @@ function assertsIndependentConfirmation(copy) {
   return false;
 }
 
-function claimEvidenceContext(draft, dossier, reject, { requireCorroboration = true, previewDateEquivalence = false } = {}) {
+function claimEvidenceContext(draft, dossier, reject, { requireCorroboration = true, previewDateEquivalence = false, maxSupports = 2 } = {}) {
   const evidenceById = new Map(dossier.sources.flatMap((source) =>
     source.passages.map((passage) => [passage.evidenceId, { source, passage }])));
   const cited = new Set();
@@ -269,10 +269,10 @@ function claimEvidenceContext(draft, dossier, reject, { requireCorroboration = t
   for (const [index, claim] of draft.claims.entries()) {
     const field = `claims[${index}]`;
     if (!keys(claim, ["text", "supports"]) || !withinTextSchema(claim.text, CLAIM_SCHEMA.properties.text) ||
-        !Array.isArray(claim.supports) || claim.supports.length < 1 || claim.supports.length > 2) return reject("CLAIM_SHAPE", {
+        !Array.isArray(claim.supports) || claim.supports.length < 1 || claim.supports.length > maxSupports) return reject("CLAIM_SHAPE", {
       field, minCharacters: CLAIM_SCHEMA.properties.text.minLength, maxCharacters: CLAIM_SCHEMA.properties.text.maxLength,
       actualCharacters: typeof claim?.text === "string" ? claim.text.length : null,
-      expected: "Only text and supports; supports must contain one or two evidenceId-only objects.",
+      expected: `Only text and supports; supports must contain one to ${maxSupports} evidenceId-only objects.`,
     });
     const reasons = readerProseErrors(claim.text, { paragraph: true });
     if (reasons.length) return reject("READER_COPY", { field: `${field}.text`, reasons });
@@ -350,7 +350,8 @@ export function validateGroundedStory(draft, dossier, onFailure = () => {}, { pr
       return reject("READER_COPY", { field, reasons, expected: "Fresh, complete plain prose with no serialized field fragments." });
     }
   }
-  const claimContext = claimEvidenceContext(draft, dossier, reject, { previewDateEquivalence: previewFieldEvidence !== undefined });
+  const claimContext = claimEvidenceContext(draft, dossier, reject, { previewDateEquivalence: previewFieldEvidence !== undefined,
+    maxSupports: previewFieldEvidence !== undefined ? 3 : 2 });
   if (!claimContext) return false;
   const { citedPassages } = claimContext;
   const story = { ...draft, whatHappened: draft.claims.map((claim) => claim.text).join(" ") };
