@@ -12,7 +12,9 @@ const window = { startInclusive: "2026-09-14T00:00:00Z", endExclusive: "2026-09-
 const strictEvidence = () => ({ ...groundedEvidence, publishedAt: "2026-09-15T12:00:00Z",
   articleExcerpt: groundedEvidence.summary.split(/(?<=[.]) /u).join("\n"),
   articleBlocks: groundedEvidence.summary.split(/(?<=[.]) /u),
-  articleExtraction: { version: "structured-preview-v1", status: "usable", holds: [] } });
+  articleExtraction: { version: "structured-preview-v1", status: "usable", holds: [], identity: {
+    requestedUrl: "https://example.com/2026/09/advisory", finalUrl: "https://example.com/2026/09/advisory",
+    title: groundedEvidence.title, bodySha256: "a".repeat(64), retrievedAt: "2026-09-16T12:00:00Z" } } });
 const candidate = () => ({ candidateId: "test", primaryEntity: "Example", canonicalEventKey: "example-event",
   firstPublishedAt: "2026-09-15T12:00:00Z", suggestedDesk: "work-and-tools", ranking: { score: 77, evidenceTier: "authoritative-single" },
   sources: [{ url: "https://example.com/2026/09/article", publisher: "Example" }] });

@@ -12,7 +12,7 @@ const table = '<table><caption>Affected releases</caption><tr><th>CVE</th><th>Ve
 const candidateFor = capture => ({ candidateId: "test", ranking: { score: 80, evidenceTier: "authoritative-single" },
   sources: [{ id: "s", publisher: "Example", publisherKey: "example", title: "Feed title", relationship: "originating", publishedAt: "2026-09-16T12:00:00Z", url: "https://example.com/advisory" }],
   feedEvidence: [{ sourceId: "s", publisher: "Example", title: "Feed title", summary: "CONTAMINATED truncated feed fragment", publishedAt: "2026-09-16T12:00:00Z",
-    articleExcerpt: capture.excerpt, articleBlocks: capture.blocks, articleExtraction: { version: capture.version, status: capture.status, holds: capture.holds } }] });
+    articleExcerpt: capture.excerpt, articleBlocks: capture.blocks, articleExtraction: { version: capture.version, status: capture.status, holds: capture.holds, identity: capture.identity, structuredContext: capture.structuredContext } }] });
 
 test("table cells retain exact headers, row identity and caption through writer dossier", () => {
   const capture = extract(article(table + '<h2>Remediation</h2><p>No patch available.</p><p>Exploitation requires an authenticated local user. Remote access alone does not establish vulnerability.</p>'));
@@ -71,7 +71,7 @@ test("collector re-extracts feed articles and writer dossiers exclude feed-summa
   const title = original.passages[0].text;
   const url = "https://workspaceupdates.googleblog.com/2026/09/test-access-controls.html";
   const summary = original.passages.slice(1, 4).map(p => p.text).join(" ") + " CONTAMINATED summary fragment.";
-  const html = `<article><h1>${title}</h1>${original.passages.slice(1).map(p => `<p>${p.text}</p>`).join("")}</article>`;
+  const html = `<link rel="canonical" href="${url}"><article><h1>${title}</h1>${original.passages.slice(1).map(p => `<p>${p.text}</p>`).join("")}</article>`;
   const xml = `<rss version="2.0"><channel><title>Workspace Updates</title><item><title>${title}</title><category>Google Workspace</category><link>${url}</link><pubDate>Wed, 16 Sep 2026 12:00:00 GMT</pubDate><description>${summary}</description></item></channel></rss>`;
   let pageReads = 0;
   const snapshot = await collectFreeResearchSnapshot({ reportingWindow: { startInclusive: "2026-09-15T00:00:00Z", endExclusive: "2026-09-17T00:00:00Z" },
@@ -80,7 +80,7 @@ test("collector re-extracts feed articles and writer dossiers exclude feed-summa
     requestImpl: async requestUrl => requestUrl === "https://feeds.feedburner.com/GoogleAppsUpdates"
       ? { status: 200, headers: { "content-type": "application/rss+xml" }, body: xml }
       : { status: 503, headers: {}, body: "unavailable" },
-    articlePageFetcher: async () => { pageReads++; return { body: html, url }; } });
+    articlePageFetcher: async () => { pageReads++; return { body: html, finalUrl: url, redirects: [] }; } });
   assert.equal(pageReads, 1, JSON.stringify(snapshot.diagnostics.rejectionCounts));
   assert.ok(snapshot.candidates.length, JSON.stringify(snapshot.diagnostics));
   const candidate = snapshot.candidates[0];
@@ -134,7 +134,59 @@ test("capture failure diagnostics are stage-specific and exclude arbitrary excep
     assert.doesNotMatch(JSON.stringify(capture), /SECRET_TOKEN_TEXT|private provider details/);
   }
   const capture = await captureStructuredArticle({}, async () => ({ get body() { throw Error("private body failure"); } }));
-  assert.deepEqual(capture.diagnostic, { category: "extract", code: "UNEXPECTED_EXTRACTION_FAILURE" });
+  assert.equal(capture.diagnostic.category, "identity");
+  assert.doesNotMatch(JSON.stringify(capture), /private body failure/);
+});
+test("actual CISA HTTP main captures retain full advisory context, ranges and late republication dates", async () => {
+  for (const [id,title,code,cve] of [["cisa-mendix","Siemens Mendix SAML","06","CVE-2026-80465"], ["cisa-teamcenter","Siemens Teamcenter","07","CVE-2026-58113"]]) {
+    const body = JSON.parse(readFileSync(new URL(`./fixtures/${id}-http-main.json`, import.meta.url), "utf8")).body;
+    const url = `https://www.cisa.gov/news-events/ics-advisories/icsa-26-258-${code}`;
+    const item = { title, url, publisherKey: "cisa" };
+    const capture = await captureStructuredArticle(item, async () => ({ body, finalUrl: url, redirects: [] }));
+    assert.equal(capture.status, "usable", JSON.stringify(capture.holds));
+    assert.equal(capture.omittedBlocks, 0);
+    const source = buildEvidencePacketSources(candidateFor(capture))[0];
+    assert.equal(source.text, capture.excerpt);
+    assert.equal(source.passages.length, capture.blocks.length);
+    assert.equal(new Set(source.passages.map(p => p.evidenceId)).size, source.passages.length);
+    assert.match(source.text, /verbatim republication of Siemens ProductCERT/);
+    assert.match(source.text, /Initial CISA Republication/);
+    assert.match(source.text, /Initial Release Date/);
+    assert.match(source.text, new RegExp(cve));
+    assert.doesNotMatch(source.text, /mySCADA myPRO Manager|ICSA-26-258-03/);
+    assert.ok(source.passages.some(p => p.text.includes(cve) && p.text.includes("Base Score:")));
+    const badRange = body.replace('vers:intdot/&lt;', 'vers:intdot/&gt;');
+    assert.equal((await captureStructuredArticle(item, async () => ({ body: badRange, finalUrl: url, redirects: [] }))).status, "held");
+    const wrongId = body.replace(`<div class="c-field__content">ICSA-26-258-${code}`, '<div class="c-field__content">ICSA-26-258-99');
+    assert.equal((await captureStructuredArticle(item, async () => ({ body: wrongId, finalUrl: url, redirects: [] }))).status, "held");
+  }
+});
+test("reviewer regressions: source prose conditions, version bijection and original capture time", async () => {
+  const body = JSON.parse(readFileSync(new URL('./fixtures/cisa-mendix-http-main.json', import.meta.url), 'utf8')).body;
+  const url = 'https://www.cisa.gov/news-events/ics-advisories/icsa-26-258-06';
+  const item = {url,title:'Siemens Mendix SAML',publisherKey:'cisa'};
+  const fetcher = html => async () => ({body:html,finalUrl:url,redirects:[],retrievedAt:'2026-09-16T12:00:00Z'});
+  const condition = 'Cookie validation is required before this fix is effective.';
+  const retained = await captureStructuredArticle(item,fetcher(body.replace('<h2>Summary</h2>',`<p>${condition}</p><h2>Summary</h2>`)));
+  assert.equal(retained.status,'usable'); assert.ok(retained.excerpt.includes(condition));
+  assert.equal(retained.identity.retrievedAt,'2026-09-16T12:00:00Z');
+  assert.notEqual(retained.identity.inspectedAt,retained.identity.retrievedAt);
+  const duplicate = body.replace('Mendix 11 compatible) vers:intdot/', 'Mendix 10 compatible) vers:intdot/');
+  assert.deepEqual((await captureStructuredArticle(item,fetcher(duplicate))).holds,['ADVISORY_VERSION_RANGE_UNVERIFIED']);
+});
+test("identity binds exact title, transport and canonical metadata with narrow HTTP metadata equivalence", async () => {
+  const url = 'https://workspaceupdates.googleblog.com/2026/09/identity-test.html';
+  const title = 'Observed article';
+  const body = `<meta property="og:url" content="${url.replace('https:', 'http:')}"><link rel="canonical" href="${url}"><article><h1>${title}</h1><p>${intro}</p></article>`;
+  const item = { url, title, publisherKey: 'google' };
+  assert.equal((await captureStructuredArticle(item, async () => ({ body, finalUrl: url, redirects: [] }))).status, 'usable');
+  for(const page of [
+    {body,finalUrl:url+'?other=1',redirects:[]},
+    {body:body.replace('<h1>Observed article','<h1>Other article'),finalUrl:url,redirects:[]},
+    {body:body.replace('http://workspaceupdates.googleblog.com','http://example.com'),finalUrl:url,redirects:[]},
+    {body:body+'<h1>Extra title</h1>',finalUrl:url,redirects:[]},
+    {body,finalUrl:url,redirects:[url+'?other=1']},
+  ]) assert.deepEqual((await captureStructuredArticle(item,async()=>page)).holds,['ARTICLE_IDENTITY_NOT_VERIFIED']);
 });
 test("unallocated feed evidence cannot silently retain a legacy excerpt in strict mode", async () => {
   const [item] = await enrichShortlist([{ url: "https://example.com/unallocated", articleExcerpt: intro }], {

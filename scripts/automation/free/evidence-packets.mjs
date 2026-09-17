@@ -106,6 +106,12 @@ export function selectEvidencePassages(blocks, {
 }
 
 function sourceSentences(record) {
+  if (record.articleExtraction?.version === "structured-advisory-preview-v1") {
+    if (record.articleExtraction.status !== "usable" || !Array.isArray(record.articleBlocks) ||
+        record.articleBlocks.length > 128 || record.articleBlocks.join("\n") !== record.articleExcerpt ||
+        record.articleExcerpt.length > 18_000) return [];
+    return record.articleBlocks; // complete source-order context; no further selection
+  }
   if (record.articleExtraction?.version === "structured-preview-v1") {
     if (record.articleExtraction.status !== "usable" || !Array.isArray(record.articleBlocks) ||
         record.articleBlocks.length > 32 || record.articleBlocks.join("\n") !== record.articleExcerpt ||
@@ -142,11 +148,14 @@ export function buildEvidencePacketSources(candidate) {
     }
     seen.set(record.sourceId, serialized);
     const allPassages = sourceSentences(record);
-    const selected = selectEvidencePassages(allPassages, { title: record.title,
+    const advisory = record.articleExtraction?.version === "structured-advisory-preview-v1";
+    const selected = advisory ? allPassages : selectEvidencePassages(allPassages, { title: record.title,
       ...(record.articleExtraction?.version === "structured-preview-v1" ? { minChars: 1 } : {}) });
     return { sourceId: source.id, publisher: source.publisher, publisherKey: source.publisherKey ?? source.publisher,
       relationship: source.relationship, publishedAt: source.publishedAt,
       text: selected.join("\n"), selected, allPassages,
+      ...(record.articleExtraction?.identity ? { articleIdentity: record.articleExtraction.identity } : {}),
+      ...(advisory ? { structuredContext: record.articleExtraction.structuredContext } : {}),
       hasArticle: Boolean(record.articleExcerpt?.trim()) };
   }).filter((source) => source.selected.length > 0);
   const priority = (source) => source.relationship === "originating" ? 0 : 1;
@@ -158,8 +167,8 @@ export function buildEvidencePacketSources(candidate) {
   const second = otherPublishers.find((source) => source.relationship !== first.relationship) ?? otherPublishers[0];
   return [first, second].filter(Boolean).slice(0, MAX_PACKET_SOURCES).map((source, index) => {
     const { selected, allPassages, hasArticle: _hasArticle, ...fields } = source;
-    return { ...fields, passages: selected.map((text) => ({
-      evidenceId: `S${index + 1}P${allPassages.indexOf(text) + 1}`, text,
+    return { ...fields, passages: selected.map((text, passageIndex) => ({
+      evidenceId: `S${index + 1}P${source.structuredContext ? passageIndex + 1 : allPassages.indexOf(text) + 1}`, text,
     })) };
   });
 }

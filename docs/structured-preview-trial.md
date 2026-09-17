@@ -101,3 +101,40 @@ All 1,039 tests pass after these diagnostic/containment changes. Neither live
 trial produced a summary for independent editorial approval. No thresholds,
 paid services, recipients or daily writer settings were changed. Do not rerun
 the writer merely to obtain a green result; diagnose the source boundary first.
+
+## Primary identity and observed advisory support
+
+Guarded local HTTPS replay on September 17 retrieved the actual Google page
+(HTTP 200; 204,035 bytes) and both CISA pages (HTTP 200). Google produced 13
+usable evidence units locally. This does not retrospectively establish the
+cause of the earlier GitHub transport/processing exception.
+
+Strict capture now binds the requested/final URLs, redirects, canonical/og:url
+metadata, unique H1 and feed title. It retains the response body hash and capture
+time separately from inspection time. A metadata-only HTTP→HTTPS equivalence
+requires the same host/path/query and never permits an HTTP request. Contradictory
+identities are held. Candidate and dossier identities must also agree.
+
+The observed CISA layout requires a unique primary main, title, alert-code,
+release-date and csaf-imported body; it never chooses related advisory cards.
+The preview-only advisory format keeps the complete supported body in source
+order, including version groups, remediation statements, CVE-scoped metric
+rows, disclaimer and revision history. Its explicit ceiling is 18,000 characters
+and 128 passages per source. Oversized or unsupported bodies remain held;
+the ordinary/production excerpt limits are unchanged.
+
+`vers:intdot/` is version-range notation, not intrinsically a broken fragment
+([VERS types](https://www.packageurl.org/docs/vers/vers-types.html)). The narrow
+adapter supports only the observed single-CVE, complete `<` integer-dot ranges,
+keeps their original wording, and requires exact unique agreement with the
+separately labelled product-version group. Other forms remain held. It never
+pairs product and fix lists by their DOM order. The prior flattened-advisory
+alarms remain for legacy evidence; intact, hash-bound complete advisory context
+gets the explicit structured handling. Changed/incomplete context is held.
+
+Local fixtures preserve actual main HTML and identity metadata (original whole
+response hashes are in their provenance comments). Reviewer regressions cover
+conditions that begin with “Cookie,” duplicated ranges, stale capture timestamps,
+and unique passage IDs. Both advisories identify their CISA posting as a later
+vendor republication; the writer must not portray it as a newly discovered flaw
+or newly released fix. All 1,042 tests pass before the next live experiment.

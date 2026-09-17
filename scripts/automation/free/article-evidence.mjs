@@ -17,7 +17,7 @@ function plain(value) {
 // Publisher templates often put ads, recommendations and author widgets inside
 // <article>. Match the observed content containers with balanced div boundaries,
 // not a lazy regex that stops at an inner </div> and loses later caveats.
-function divRegions(html, strict = false) {
+export function divRegions(html, strict = false) {
   const stack = [];
   const regions = [];
   for (const match of html.matchAll(/<\/?div\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi)) {
@@ -144,15 +144,18 @@ export async function enrichShortlist(items, { assess, fetchArticle, structuredP
           continue;
         }
         const excerpt = structuredPreview ? capture.excerpt : capture;
-        if (typeof excerpt !== "string" || excerpt.length < 120 || excerpt.length > MAX_ARTICLE_EXCERPT_CHARS) continue;
+        const advisory = structuredPreview && capture.version === "structured-advisory-preview-v1";
+        if (typeof excerpt !== "string" || excerpt.length < 120 || excerpt.length > (advisory ? 18_000 : MAX_ARTICLE_EXCERPT_CHARS)) continue;
         // Identical scoring rules, now with substantive article evidence. Keep
         // the input length the same as feed summaries to limit keyword volume.
         // Scoring receives complete source sentences inside the old 1,200-char
         // limit, never a mid-word fragment later recycled as factual evidence.
-        const summary = articleScoringSummary(excerpt, item.title);
+        const summary = advisory ? selectEvidencePassages(capture.blocks, { title: item.title, maxChars: 1_200, minChars: 20 }).join("\n") : articleScoringSummary(excerpt, item.title);
         enriched.set(item.url, { ...item, articleExcerpt: excerpt, summary: summary || item.summary,
           ...(structuredPreview ? { articleBlocks: capture.blocks,
             articleExtraction: { version: capture.version, status: capture.status, holds: capture.holds,
+              ...(capture.identity ? { identity: capture.identity } : {}),
+              ...(capture.structuredContext ? { structuredContext: capture.structuredContext } : {}),
               inputBlocks: capture.inputBlocks, retainedBlocks: capture.blocks.length, omittedBlocks: capture.omittedBlocks } } : {}) });
       } catch {
         if (structuredPreview) enriched.set(item.url, { ...item, articleExcerpt: "", articleBlocks: [],

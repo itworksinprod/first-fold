@@ -985,6 +985,7 @@ async function fetchReviewedText(source, options, allowedTypes, allowCompression
       finalUrl: current.href,
       redirects,
       status,
+      retrievedAt: new Date().toISOString(),
     };
   }
 }
