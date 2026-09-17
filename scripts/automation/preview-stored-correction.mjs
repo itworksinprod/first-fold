@@ -19,16 +19,15 @@ export function assertStoredCorrectionAuthority(env) {
 export async function previewStoredCorrection({ publicKey, apiKey, freeProjectConfirmation, fetchImpl = globalThis.fetch } = {}) {
   diagnosticPublicKey(publicKey);
   if (freeProjectConfirmation !== FREE_PROJECT_CONFIRMATION || !/^[A-Za-z0-9_.-]{20,256}$/u.test(apiKey ?? '')) throw Error('STORED_CORRECTION_CONFIGURATION_INVALID');
-  const { record, dossier, provenance } = await storedAdvisoryCorrectionFixture();
+  const { record, previousCorrection, dossier, provenance } = await storedAdvisoryCorrectionFixture();
   let requests = 0;
   const result = await previewGeminiLite({ apiKey, freeProjectConfirmation, dossier, fresh: true,
-    repair: { unapproved: true, payload: { stories: [record.draft], evidenceForFields: record.evidenceForFields },
+    repair: { unapproved: true, payload: previousCorrection.payload,
       rejectionDetails: [
         { reason: 'INDEPENDENT_EDITORIAL_REJECTION', feedback: {
-          deck: 'Preserve the specific-SSO attack condition, not just certain modules.',
-          whyItMatters: 'The source does not explain the score by industry or blame improper deployment. Explain actual affected compatibility scope instead.',
-          whatToDoOrWatch: 'Do not offer two update branches without applicability. Require verifying the matching vendor fix.',
-          story: 'Disclose Siemens ProductCERT origin and both the original release and CISA republication dates.' } },
+          claims: 'The first claim cites only chronology but also asserts a technical defect. Restrict it to source provenance and chronology. Put the technical defect and conditional impact in the second claim, with its actual evidence. Complete written calendar dates equivalent to cited ISO dates are now supported.',
+          whatToDoOrWatch: 'The latest action still inferred branch-to-fix pairings from separate lists. Remove the specific fixed-version examples from the action. Instead require verifying the applicable vendor fix for the installed branch. The affected-version scope in whyItMatters is separately supported.',
+          story: 'Retain explicit vendor origin, both dates, attack conditions, exact affected-version scope, and source-specific citations. Do not invent score causality or operator error.' } },
       ] },
     fetchImpl: async (url, options) => {
       if (requests >= 1 || url !== `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_LITE_MODEL}:generateContent` ||
@@ -40,9 +39,9 @@ export async function previewStoredCorrection({ publicKey, apiKey, freeProjectCo
   const report = { ...result.report, purpose: 'stored-evidence-correction', freshResearch: false,
     searchRequests: 0, articleRequests: 0, modelRequests: requests, maxModelRequests: 1,
     emailRequests: 0, approved: false, qualified: false, productionEnabled: false,
-    sourceRun: record.sourceRun, manualProseEdits: 0 };
+    sourceRun: record.sourceRun, previousCorrectionRun: previousCorrection.sourceRun, manualProseEdits: 0 };
   return { report, sealed: sealDiagnostic({ report, provenance, dossier,
-    originalRejection: record, obligations: advisoryWritingContract(dossier), result }, publicKey) };
+    originalRejection: record, previousCorrection, obligations: advisoryWritingContract(dossier), result }, publicKey) };
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   try {

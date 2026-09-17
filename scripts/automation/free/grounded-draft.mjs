@@ -3,6 +3,7 @@ import { countReaderFacingStoryWords, MIN_PRIVATE_GROUNDED_STORY_WORDS } from ".
 import { readerProseErrors } from "../../reader-prose.mjs";
 import { readerSummaryErrors } from "../../reader-summary.mjs";
 import { claimCaveatErrors } from "./claim-caveats.mjs";
+import { previewNumericAnchors } from './preview-numeric-anchors.mjs';
 import { expandSupportedCvePairs } from "./supported-identifiers.mjs";
 import { DAILY_REPAIR_PROMPT } from "./daily-repair-prompt.mjs";
 import { EXPLICIT_CLAIM_REVIEW_PROFILE, LEGACY_CLAIM_REVIEW_PROFILE,
@@ -260,7 +261,7 @@ function assertsIndependentConfirmation(copy) {
   return false;
 }
 
-function claimEvidenceContext(draft, dossier, reject, { requireCorroboration = true } = {}) {
+function claimEvidenceContext(draft, dossier, reject, { requireCorroboration = true, previewDateEquivalence = false } = {}) {
   const evidenceById = new Map(dossier.sources.flatMap((source) =>
     source.passages.map((passage) => [passage.evidenceId, { source, passage }])));
   const cited = new Set();
@@ -291,8 +292,9 @@ function claimEvidenceContext(draft, dossier, reject, { requireCorroboration = t
     if (new Set(claim.supports.map((support) => support.evidenceId)).size !== claim.supports.length) return reject("CITATION_UNKNOWN", {
       field: `${field}.supports`, expected: "Use distinct supporting passages, not duplicate evidence IDs.",
     });
-    const supportedNumbers = new Set(numericTokens([...supportingPassages].join(" ")).map((token) => token.toLowerCase()));
-    const unsupportedNumbers = numericTokens(claim.text).filter((token) => !supportedNumbers.has(token.toLowerCase()));
+    const tokenise = previewDateEquivalence ? previewNumericAnchors : numericTokens;
+    const supportedNumbers = new Set(tokenise([...supportingPassages].join(" ")).map((token) => token.toLowerCase()));
+    const unsupportedNumbers = tokenise(claim.text).filter((token) => token === 'invalid-calendar-date' || !supportedNumbers.has(token.toLowerCase()));
     if (unsupportedNumbers.length) return reject("NUMERIC_CITATION", {
       field: `${field}.text`, unsupportedNumericTokens: [...new Set(unsupportedNumbers)].slice(0, 8),
       evidenceIds: claim.supports.map((support) => support.evidenceId),
@@ -348,7 +350,7 @@ export function validateGroundedStory(draft, dossier, onFailure = () => {}, { pr
       return reject("READER_COPY", { field, reasons, expected: "Fresh, complete plain prose with no serialized field fragments." });
     }
   }
-  const claimContext = claimEvidenceContext(draft, dossier, reject);
+  const claimContext = claimEvidenceContext(draft, dossier, reject, { previewDateEquivalence: previewFieldEvidence !== undefined });
   if (!claimContext) return false;
   const { citedPassages } = claimContext;
   const story = { ...draft, whatHappened: draft.claims.map((claim) => claim.text).join(" ") };
@@ -380,8 +382,8 @@ export function validateGroundedStory(draft, dossier, onFailure = () => {}, { pr
   }
   for (const field of ["headline", "deck", "whyItMatters", "whatToDoOrWatch"]) {
     const fieldNumbers = previewFieldEvidence === undefined ? knownNumbers :
-      new Set(numericTokens(previewFieldEvidence[field].map(id => mappedPassages.get(id)).join(" ")).map(value => value.toLowerCase()));
-    const unsupported = numericTokens(draft[field]).filter((value) => !fieldNumbers.has(value.toLowerCase()));
+      new Set(previewNumericAnchors(previewFieldEvidence[field].map(id => mappedPassages.get(id)).join(" ")));
+    const unsupported = (previewFieldEvidence === undefined ? numericTokens : previewNumericAnchors)(draft[field]).filter((value) => value === 'invalid-calendar-date' || !fieldNumbers.has(value.toLowerCase()));
     if (unsupported.length) return reject("NUMERIC_ANCHOR", { field, unsupportedNumericTokens: [...new Set(unsupported)].slice(0, 8),
       expected: "Use numeric details from the story's cited passages only; do not borrow an unrelated dossier figure.",
     });

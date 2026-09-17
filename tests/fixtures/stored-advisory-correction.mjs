@@ -5,6 +5,9 @@ const hash = value => createHash('sha256').update(JSON.stringify(value)).digest(
 
 export async function storedAdvisoryCorrectionFixture() {
   const record = JSON.parse(await readFile(new URL('./rejected-preview-run11.json', import.meta.url), 'utf8'));
+  const previousCorrection = JSON.parse(await readFile(new URL('./rejected-stored-correction-1.json', import.meta.url), 'utf8'));
+  if (hash(previousCorrection.payload) !== previousCorrection.payloadSha256 ||
+      previousCorrection.payload.stories[0].candidateId !== record.draft.candidateId) throw Error('STORED_CORRECTION_PRIOR_BINDING_FAILED');
   const { body } = JSON.parse(await readFile(new URL('./cisa-mendix-http-main.json', import.meta.url), 'utf8'));
   const url = 'https://www.cisa.gov/news-events/ics-advisories/icsa-26-258-06';
   const capture = await captureStructuredArticle({ title: 'Siemens Mendix SAML', url, publisherKey: 'cisa' },
@@ -22,7 +25,8 @@ export async function storedAdvisoryCorrectionFixture() {
     articleIdentity: { ...capture.identity, retrievedAt: null, inspectedAt: null, captureMode: 'stored-public-fixture' },
     structuredContext: capture.structuredContext, passages,
   }] };
-  return { record, dossier, provenance: { mode: 'stored-evidence-correction', sourceRun: record.sourceRun,
+  return { record, previousCorrection, dossier, provenance: { mode: 'stored-evidence-correction', sourceRun: record.sourceRun,
+    previousCorrectionRun: previousCorrection.sourceRun,
     identicalExtractedText: true, identicalHttpResponse: false, freshResearch: false,
     sourceTextSha256: record.sourceTextSha256, passagesSha256: record.passagesSha256 } };
 }

@@ -1,6 +1,7 @@
 // Preview-only writing obligations. These alarms detect known editorial defects;
 // neither their absence nor a matching citation establishes factual entailment.
 import { intactAdvisoryContext } from './preview-evidence-gate.mjs';
+import { previewNumericAnchors } from './preview-numeric-anchors.mjs';
 
 const ids = passages => passages.map(p => p.evidenceId);
 export function advisoryWritingContract(dossier) {
@@ -22,7 +23,7 @@ export function advisoryWritingContract(dossier) {
     republicationDate: republicationDate[0].text.match(/ — Date: (\d{4}-\d{2}-\d{2});/u)[1],
   } : null;
   const chronologyTask = republication
-    ? 'Also distinguish the original vendor release from the later CISA republication. Use the supplied exact dates. These are one originating account, not two independent reports.'
+    ? 'Use claim 1 ONLY for vendor origin and publication chronology, mapping the original and republication dates. Use claim 2 for the technical defect and conditional impact, mapping the vulnerability description. Do not insert a defect assertion into a date-only claim. These are one originating account, not two independent reports.'
     : origin.length ? 'The source declares republication but complete chronology is unavailable. Do not invent dates or a publication sequence; retain the uncertainty for review.'
     : 'Attribute the originating account. Do not infer a separate vendor release or republication sequence that the source does not identify.';
   return {
@@ -34,11 +35,12 @@ export function advisoryWritingContract(dossier) {
       claims: { task: `Report the defect and conditional impact. ${chronologyTask}`,
         evidenceIds: ids([...descriptions, ...origin, ...originalDate, ...republicationDate]) },
       whyItMatters: { task: 'Use concrete affected-product and compatibility scope to explain who should check their installation. Do not explain why a score was assigned, infer an operator mistake, or invent consequences. You may omit the score entirely.', evidenceIds: ids(scope) },
-      whatToDoOrWatch: { task: 'Tell readers to identify their installed product/compatibility branch and verify its corresponding vendor fix before choosing an update. Product and remedy lists may differ in order: never zip or pair them by position. Do not present all updates as interchangeable. Advice is an editorial check, not a promise of safety.', evidenceIds: ids([...scope, ...remedies]) },
+      whatToDoOrWatch: { task: 'Tell readers to identify their installed product/compatibility branch and verify its corresponding vendor fix before choosing an update. Product and remedy lists may differ in order: never zip or pair them by position. Do not present all updates as interchangeable. Where separate lists show multiple fixed releases without explicit branch/fix associations, do not give specific fixed-version numbers or worked upgrade examples in this field: ask readers to verify the vendor mapping instead. Advice is an editorial check, not a promise of safety.', evidenceIds: ids([...scope, ...remedies]) },
     },
     checks: {
       ssoCondition: singleCve && descriptions.some(p => /in specific SSO configurations/u.test(p.text)),
       descriptions: ids(descriptions), scope: ids(scope), remedies: ids(remedies),
+      unpairedFixedVersions: [...new Set(remedies.flatMap(p => [...p.text.matchAll(/Vendor fix Update to V(\d+(?:\.\d+)+)/gu)].map(m => m[1])))],
       republication, chronologyIncomplete: origin.length > 0 && !republication,
     },
     limitation: 'A source-based outline and known-defect alarms are not semantic approval. Independent field-by-field review of the raw output remains mandatory.',
@@ -53,6 +55,10 @@ export function advisoryDraftAlarms(draft, dossier, map) {
   if (contract.checks.chronologyIncomplete) add('ADVISORY_CHRONOLOGY_CONTEXT_REQUIRED', 'story');
   const fieldTexts = ['headline','deck','whyItMatters','whatToDoOrWatch'].map(f => draft?.[f] ?? '');
   const all = [...fieldTexts, ...(draft?.claims ?? []).map(c => c.text)].join(' ');
+  for (const [i,claim] of (draft?.claims ?? []).entries()) {
+    if (/\b(?:signature|hijack\w*|cryptographic|validation flaw)\b/iu.test(claim.text) &&
+        contract.checks.descriptions.length && !claim.supports?.some(s=>contract.checks.descriptions.includes(s.evidenceId))) add('ADVISORY_TECHNICAL_CLAIM_EVIDENCE_REQUIRED', `claims.${i}`);
+  }
   if (contract.checks.ssoCondition && (!/\b(?:specific|certain|particular) (?:SSO|single.sign.on) configurations?\b/iu.test(draft?.deck ?? '') ||
       !map?.deck?.some(id => contract.checks.descriptions.includes(id)))) add('ADVISORY_ATTACK_CONDITION_REQUIRED', 'deck');
   if (contract.checks.scope.length && !map?.whyItMatters?.some(id => contract.checks.scope.includes(id))) add('ADVISORY_SCOPE_EVIDENCE_REQUIRED', 'whyItMatters');
@@ -63,7 +69,10 @@ export function advisoryDraftAlarms(draft, dossier, map) {
       !/\b(?:compatib\w*|branch(?:es)?|version-specific)\b/iu.test(draft?.whatToDoOrWatch ?? '') ||
       !map?.whatToDoOrWatch?.some(id => contract.checks.scope.includes(id)))) add('ADVISORY_FIX_COMPATIBILITY_REVIEW', 'whatToDoOrWatch');
   const r = contract.checks.republication;
+  const calendar = new Set(previewNumericAnchors(all));
   if (r && (!/\brepublicat\w*|\brepublish\w*/iu.test(all) || (r.vendor && !all.includes(r.vendor)) ||
-      !all.includes(r.originalDate) || !all.includes(r.republicationDate))) add('ADVISORY_ORIGIN_CHRONOLOGY_REQUIRED', 'story');
+      !calendar.has(`calendar:${r.originalDate}`) || !calendar.has(`calendar:${r.republicationDate}`))) add('ADVISORY_ORIGIN_CHRONOLOGY_REQUIRED', 'story');
+  if (contract.checks.unpairedFixedVersions.length > 1 && previewNumericAnchors(draft?.whatToDoOrWatch ?? '')
+      .some(token=>contract.checks.unpairedFixedVersions.includes(token))) add('ADVISORY_UNPAIRED_FIX_VERSION_REVIEW', 'whatToDoOrWatch');
   return holds;
 }

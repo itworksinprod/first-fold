@@ -1,0 +1,57 @@
+{
+  "purpose": "Rejected first stored correction; never approved",
+  "sourceRun": "35278773452",
+  "sourceCommit": "127846cb66c8bee726410822a89a46141ae83eb2",
+  "payloadSha256": "237ee546c52487f84c1589a0851ca973aab1295e387ba23e6b675ba3ff910653",
+  "payload": {
+    "evidenceForFields": {
+      "headline": [
+        "S1P5"
+      ],
+      "deck": [
+        "S1P18"
+      ],
+      "whyItMatters": [
+        "S1P23"
+      ],
+      "whatToDoOrWatch": [
+        "S1P23",
+        "S1P26",
+        "S1P27"
+      ]
+    },
+    "stories": [
+      {
+        "candidateId": "candidate-639685085e012b47",
+        "headline": "Siemens Mendix SAML Signature Flaw Permits Account Hijacking",
+        "deck": "Unauthenticated remote attackers may hijack user sessions in specific SSO configurations because affected modules fail to properly validate SAML response signatures.",
+        "claims": [
+          {
+            "text": "In a notice originally issued by Siemens ProductCERT on September 3, 2026, and republished by CISA on September 15, 2026, the Siemens Mendix SAML module contains an improper cryptographic signature verification flaw.",
+            "supports": [
+              {
+                "evidenceId": "S1P56"
+              },
+              {
+                "evidenceId": "S1P58"
+              }
+            ]
+          },
+          {
+            "text": "This defect fails to properly validate SAML response signatures, which could allow unauthenticated remote attackers to hijack a user session in specific SSO configurations.",
+            "supports": [
+              {
+                "evidenceId": "S1P18"
+              },
+              {
+                "evidenceId": "S1P54"
+              }
+            ]
+          }
+        ],
+        "whyItMatters": "Organizations should review installations of Mendix SAML compatible with Mendix 10 or Mendix 11 below version 4.2.3, as well as Mendix 9.24 compatible versions below version 3.6.27. Identifying the exact compatibility branch is essential to determine whether an environment contains a vulnerable module instance.",
+        "whatToDoOrWatch": "Operators must check their installed product version and compatibility branch to verify the matching vendor fix, such as upgrading Mendix 9.24 modules to version 3.6.27 or Mendix 10 and 11 modules to version 4.2.3. Do not assume update paths are interchangeable across different branches."
+      }
+    ]
+  }
+}

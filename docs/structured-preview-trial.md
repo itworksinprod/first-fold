@@ -223,3 +223,25 @@ not fresh research or today's paper. One actual Gemini request maximum, no
 retry, no search/email credentials, and encrypted outputs including failures.
 The raw result requires a new independent field-by-field review. No manual
 prose rewrite is part of the experiment.
+
+## First stored correction: date false alarm and remaining editorial defects
+
+Run `35278773452` at `127846c` made exactly one model request and no research
+or email requests. The artifact SHA256 is
+`ea2d4837866b3e9f7943e62e6c62161a9ec99191e3825414518e94e92fafa229`.
+It was held for `NUMERIC_CITATION`: correctly written calendar dates were
+compared with ISO source strings as unrelated numeric tokens. Independent
+review also found a date-only citation attached to a technical claim and
+inferred compatibility/fix pairings. The scope analysis genuinely improved,
+but this remained an unapproved failed attempt, saved as another regression.
+
+Evidence-mapped previews now treat calendar-valid ISO and full-month written
+dates as atomic equivalent anchors within the same field's cited passages.
+No day/year fragments are added to a numeric allowlist; wrong dates, invalid
+dates, versions and dates available only to another claim remain constrained.
+Production callers retain their existing numeric contract. The chronology
+alarm uses the same complete-date equivalence. The outline separates provenance
+from technical substance, and known-defect alarms retain the remaining citation
+and unpaired-fix failures. The next single-request experiment uses the latest
+raw rejection and preserves both failed predecessors. All 1,071 tests pass;
+independent review cleared the experiment only, not its output or delivery.
