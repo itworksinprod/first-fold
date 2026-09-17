@@ -156,11 +156,14 @@ export async function enrichShortlist(items, { assess, fetchArticle, structuredP
               inputBlocks: capture.inputBlocks, retainedBlocks: capture.blocks.length, omittedBlocks: capture.omittedBlocks } } : {}) });
       } catch {
         if (structuredPreview) enriched.set(item.url, { ...item, articleExcerpt: "", articleBlocks: [],
-          articleExtraction: { version: "structured-preview-v1", status: "held", holds: ["ARTICLE_FETCH_OR_EXTRACTION_UNAVAILABLE"] } });
+          articleExtraction: { version: "structured-preview-v1", status: "held", holds: ["ARTICLE_FETCH_OR_EXTRACTION_UNAVAILABLE"],
+            diagnostic: { category: "enrich", code: "UNEXPECTED_ENRICHMENT_FAILURE" } } });
         // A blocked or unavailable page is not evidence of a quiet news day.
         // The original feed stays eligible under the unchanged evidence rules.
       }
     }
   }));
-  return items.map((item) => enriched.get(item.url) ?? item);
+  return items.map((item) => enriched.get(item.url) ?? (structuredPreview ? { ...item,
+    articleExcerpt: "", articleBlocks: [], articleExtraction: { version: "structured-preview-v1", status: "held",
+      holds: ["ARTICLE_NOT_CAPTURED_UNDER_ALLOCATION"] } } : item));
 }

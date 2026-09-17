@@ -10,6 +10,20 @@ const held = (reason, diagnostic) => ({ version, status: "held", holds: [reason]
   ...(diagnostic ? { diagnostic } : {}) });
 const count = (s, tag) => (s.match(new RegExp(`<${tag}\\b`, "gi")) ?? []).length;
 
+// Only fixed codes leave an exception boundary. Never retain arbitrary provider
+// errors: they can contain URLs, credentials, or source-controlled text.
+const fetchCodes = new Set(["TIMEOUT", "REQUEST_FAILED", "HTTP_STATUS", "STATUS_INVALID",
+  "BODY_TOO_LARGE", "CONTENT_TYPE_INVALID", "ENCODING_UNSUPPORTED", "REDIRECT_LIMIT",
+  "REDIRECT_INVALID", "DNS_FAILED", "DNS_EMPTY", "DNS_UNSAFE", "HOST_UNSAFE",
+  "URL_INVALID", "URL_UNSAFE", "HOST_NOT_ALLOWED", "URL_TOO_LONG", "ARTICLE_BUDGET_EXHAUSTED"]);
+export async function captureStructuredArticle(item, fetchPage) {
+  let page;
+  try { page = await fetchPage(item); }
+  catch (error) { return held("ARTICLE_FETCH_FAILED", { category: "fetch", code: fetchCodes.has(error?.code) ? error.code : "UNCLASSIFIED_FETCH_FAILURE" }); }
+  try { return extractStructuredArticleEvidence(page.body); }
+  catch { return held("ARTICLE_PROCESSING_FAILED", { category: "extract", code: "UNEXPECTED_EXTRACTION_FAILURE" }); }
+}
+
 function tableUnits(markup, heading) {
   if (count(markup, "table") !== 1 || /\b(?:rowspan|colspan|scope|headers)\s*=/iu.test(markup)) throw Error("AMBIGUOUS_TABLE");
   if (count(markup, "caption") > 1) throw Error("AMBIGUOUS_TABLE");
@@ -52,6 +66,11 @@ function definitionUnits(markup, heading) {
 }
 
 export function extractStructuredArticleEvidence(html) {
+  // Observed CISA pages use <main> for the advisory and <article> only for
+  // related-story cards. Never attach the first such card to the feed story.
+  const firstArticle = typeof html === "string" ? html.replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<(script|style|noscript)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, " ").match(/<article\b[^>]*>/i)?.[0] : "";
+  if (/\bclass\s*=\s*(["'])[^"']*\bc-teaser\b[^"']*\1/iu.test(firstArticle ?? "")) return held("RELATED_ARTICLE_NOT_PRIMARY");
   const region = prepareArticleRegion(html, { structuredPreview: true });
   if (!region?.body) return held("ARTICLE_REGION_UNAVAILABLE");
   const { body, title } = region;

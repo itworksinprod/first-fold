@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { extractArticleEvidence, enrichShortlist } from "./article-evidence.mjs";
-import { extractStructuredArticleEvidence } from "./structured-article-evidence.mjs";
+import { captureStructuredArticle } from "./structured-article-evidence.mjs";
 import { lookup as dnsLookup } from "node:dns/promises";
 import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
@@ -900,7 +900,7 @@ export function createReviewedArticlePageFetcher(options = {}) {
     if (!reviewed || !item?.publisherKey) return Promise.reject(new Error("Article is not reviewed."));
     const key = `${reviewed.source.publisherKey}:${reviewed.url}`;
     if (cache.has(key)) return cache.get(key);
-    if (cache.size >= 24) return Promise.reject(new Error("The edition article-fetch budget is exhausted."));
+    if (cache.size >= 24) return Promise.reject(new FeedError("ARTICLE_BUDGET_EXHAUSTED", "The edition article-fetch budget is exhausted."));
     const pending = fetchReviewedArticlePage({ url: reviewed.url, publisherKey: item.publisherKey }, options);
     cache.set(key, pending);
     return pending;
@@ -3567,7 +3567,7 @@ export async function collectFreeResearchSnapshot(options = {}) {
       // Strict previews re-extract even cached search pages. Legacy excerpts
       // cannot masquerade as verified structured capture.
       fetchArticle: async (item) => structuredPreview
-        ? extractStructuredArticleEvidence((await fetchArticlePage(item)).body)
+        ? captureStructuredArticle(item, fetchArticlePage)
         : item.articleExcerpt ?? extractArticleEvidence((await fetchArticlePage(item)).body),
     });
   }

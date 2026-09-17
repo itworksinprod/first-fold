@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { extractStructuredArticleEvidence as extract } from "../scripts/automation/free/structured-article-evidence.mjs";
+import { extractStructuredArticleEvidence as extract, captureStructuredArticle } from "../scripts/automation/free/structured-article-evidence.mjs";
 import { enrichShortlist } from "../scripts/automation/free/article-evidence.mjs";
 import { buildEvidencePacketSources } from "../scripts/automation/free/evidence-packets.mjs";
 import { previewEvidenceHolds } from "../scripts/automation/free/preview-evidence-gate.mjs";
@@ -121,4 +121,25 @@ test("observed Google DOM retains every captured fact and excludes surrounding n
   assert.ok(result.diagnostic.snippet.length <= 240);
   assert.equal(extract(html.replace('</article>', '<div class="blog-post-full__body"><p>Another ambiguous body contains competing evidence.</p></div></article>')).status, "held");
   assert.equal(extract('<article><h1>Title</h1><div class="blog-post-full__body"><p>A supported fact appears in the publisher article.</p><p>A second fact provides additional context for the update.</p></div><p>No patch available.</p></div></article>').status, "held");
+});
+test("observed related-advisory cards cannot become primary article evidence", () => {
+  const html = '<main><h1>Siemens Mendix SAML</h1><p>Primary advisory ICSA-26-258-06.</p><section><h2>Related Advisories</h2><article class="is-promoted c-teaser c-teaser--horizontal"><p>ICSA-26-258-03 is another advisory with a different product and different scope.</p></article></section></main>';
+  assert.deepEqual(extract(html).holds, ["RELATED_ARTICLE_NOT_PRIMARY"]);
+});
+test("capture failure diagnostics are stage-specific and exclude arbitrary exception text", async () => {
+  for (const code of ["TIMEOUT", "HTTP_STATUS", "ARTICLE_BUDGET_EXHAUSTED", "SECRET_TOKEN_TEXT"]) {
+    const capture = await captureStructuredArticle({}, async () => { throw Object.assign(Error("private provider details"), { code }); });
+    assert.equal(capture.diagnostic.category, "fetch");
+    assert.equal(capture.diagnostic.code, code === "SECRET_TOKEN_TEXT" ? "UNCLASSIFIED_FETCH_FAILURE" : code);
+    assert.doesNotMatch(JSON.stringify(capture), /SECRET_TOKEN_TEXT|private provider details/);
+  }
+  const capture = await captureStructuredArticle({}, async () => ({ get body() { throw Error("private body failure"); } }));
+  assert.deepEqual(capture.diagnostic, { category: "extract", code: "UNEXPECTED_EXTRACTION_FAILURE" });
+});
+test("unallocated feed evidence cannot silently retain a legacy excerpt in strict mode", async () => {
+  const [item] = await enrichShortlist([{ url: "https://example.com/unallocated", articleExcerpt: intro }], {
+    structuredPreview: true, assess: () => [], fetchArticle: () => { throw Error("must not fetch"); },
+  });
+  assert.equal(item.articleExcerpt, "");
+  assert.deepEqual(item.articleExtraction.holds, ["ARTICLE_NOT_CAPTURED_UNDER_ALLOCATION"]);
 });

@@ -74,3 +74,30 @@ Independent review also reproduced an unmatched closing-div case that could
 hide a later caveat. Strict mode now rejects both unmatched opening and closing
 divs. The reviewer verified the regression and cleared one additional bounded
 experiment. All 1,036 automated tests pass; this is not editorial approval.
+
+## Second live result: no drafts; diagnosis remains open
+
+Run `35241159841` at `ed22a6c` again read 47/48 feeds, held four candidates,
+and made zero model calls and zero email requests. It did not establish
+autonomous summary quality. The original encrypted download SHA256 is
+`599663e67576c0abff74309458e739aaf84bd0b803b8434e026c256370e131f6`.
+The separately preserved decrypted packet is not committed to this repository.
+
+Google's generic exception cannot distinguish fetch from processing failure;
+it must not be described as another proven layout failure. The follow-up adds
+fixed, allowlisted failure codes and separates fetch/extract/enrich stages.
+Unallocated items now have an explicit hold instead of looking like a failed
+article capture. No arbitrary exception messages are retained.
+
+Direct inspection of CISA's `icsa-26-258-06` page confirmed its main title and
+alert identifier are correct. Its `<article>` elements are related-advisory
+cards; the old region preference selected the first card, not the actual
+advisory in `<main>`. Strict extraction now explicitly holds this observed
+`c-teaser` layout. This is containment, not completed CISA extraction support.
+Transport/canonical/primary-heading identity binding and full advisory layout
+support remain work to do before those pages can safely be used.
+
+All 1,039 tests pass after these diagnostic/containment changes. Neither live
+trial produced a summary for independent editorial approval. No thresholds,
+paid services, recipients or daily writer settings were changed. Do not rerun
+the writer merely to obtain a green result; diagnose the source boundary first.
