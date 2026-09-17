@@ -157,3 +157,50 @@ pipeline can produce a useful human-reviewed preview for free, but unattended
 editorial quality and daily delivery are NOT fixed or enabled by this result.
 The Tavily dashboard session expired; its remaining allowance was not verified
 in the UI. Existing API-based free-budget guards stayed enabled throughout.
+
+## Independent review corrections (run 35176112523)
+
+The independent reviewer rejected the raw output despite its green structural
+checks. Google claimed connection guarantees absent from the supplied evidence;
+its deck also mapped the ultrasound condition to the wrong passage. CISA's
+headline mapped patch availability to passages without that fact, inferred
+worldwide impact from a deployment-geography label, and weakened the vendor's
+installation condition. The CISA packet also ended mid-sentence and flattened
+advisory fields. The previous description of that reserve as usable is therefore
+withdrawn. Its entire packet is now held, not trimmed into apparent completeness.
+
+`tests/fixtures/rejected-preview-run6.json` preserves the original drafts,
+evidence and mappings with the private original packet's SHA-256 and run ID.
+The corrected Google fixture is explicitly assistant-edited stored evidence,
+not a new autonomous model success or fresh research.
+
+Preview-only safeguards now hold the observed extraction failures before a
+model request. These alarms do not repair extraction or prove completeness.
+Every reader-facing field has its own mapped evidence in the review view.
+The `preview-editorial-review.mjs` module builds a six-field review packet with
+complete captured context and draft/dossier/map/render hashes. A separate
+independent AI reviewer must record support, preserved conditions, absence of
+unsupported inference and a rationale for each field. Missing or negative
+decisions, evidence holds and changed content prevent reviewed-preview rendering.
+Hash binding prevents stale reviews; it neither authenticates a reviewer nor
+establishes factual entailment. Review records are trusted manual inputs, not
+model-produced permission to send mail.
+
+The reviewed renderer is private-preview-only, explicitly not human-approved,
+and has no delivery capability. It does not change the daily paper, credentials,
+provider budgets or the unresolved automatic reviewer qualification (6/8).
+A reviewed single-story handoff is not a complete multi-desk edition. Further
+unattended qualification requires all preserved failures, unseen variants,
+supported controls and a fixed representative live evaluation—not repeated
+sampling until a favorable result appears.
+
+Two independent review rounds completed on September 17. The reviewer required
+one further fix: full captured source text must remain visible when it contains
+context outside the mapped passages. That fix and its regression test passed;
+the full suite passed 1,025 tests. The reviewer then approved all six fields of
+the assistant-edited Google sample and inspected the exact gated HTML output
+(SHA-256 `3cafe6087c01e3e7006040c7aff4239e605c9e4fcac26c243decdbb2174678b0`).
+The record says ready for a private independently AI-reviewed preview, not human
+approval or unattended delivery. No new live research/model/email test was made
+during this repair; the captured-source provenance and withheld CISA story are
+explicit in the handoff. This does not supersede the 6/8 automatic-review failure.

@@ -7,6 +7,8 @@ import { reviewerResearchScopeCases } from "../../tests/fixtures/reviewer-resear
 import { FREE_PROJECT_CONFIRMATION } from "./check-gemini-writer.mjs";
 import { requestGeminiEditorial, geminiFailureDiagnostic, GEMINI_LITE_MODEL } from "./free/gemini-ai.mjs";
 import { WRITER_PROMPT, GROUNDED_DRAFT_SCHEMA, localPromptDossier, validateGroundedStory } from "./free/grounded-draft.mjs";
+import { buildPreviewReviewPacket } from "./free/preview-editorial-review.mjs";
+import { previewSourceIntegrityHolds } from "./free/preview-evidence-gate.mjs";
 
 const escape = value => String(value).replace(/[&<>"']/gu, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const REVIEW_FIELDS = ["headline", "deck", "whyItMatters", "whatToDoOrWatch"];
@@ -27,16 +29,17 @@ export function validPreviewEvidenceMap(map, dossier) {
     REVIEW_FIELDS.every(field => Array.isArray(map[field]) && map[field].length >= 1 && map[field].length <= 4 &&
       new Set(map[field]).size === map[field].length && map[field].every(id => ids.has(id)));
 }
-export function renderHumanReview(draft, dossier, { fresh = false } = {}) {
-  const section = (title, text) => `<h2>${escape(title)}</h2><p>${escape(text)}</p>`;
+export function renderHumanReview(draft, dossier, { fresh = false, evidenceForFields = {} } = {}) {
+  const citations = field => `<small>[${escape((evidenceForFields[field] ?? []).join(", ") || "No field map — review required")}]</small>`;
+  const section = (title, text, field) => `<h2>${escape(title)}</h2><p>${escape(text)} ${citations(field)}</p>`;
   return `<!doctype html><html lang="en"><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>First Fold — unapproved writing sample</title>
 <style>body{max-width:850px;margin:40px auto;padding:0 24px;background:#f5f0e6;color:#171512;font:18px/1.6 Georgia,serif}header,aside{border:2px solid #712b27;padding:18px}h1{line-height:1.2}h2{font-size:21px}small{font:14px/1.5 sans-serif}article{margin:30px 0}li{margin:15px 0}</style>
 <header><strong>UNAPPROVED — HUMAN REVIEW REQUIRED</strong><br>${fresh ? "Fresh-source diagnostic draft, not an approved edition." : "Offline writing sample from stored September 14, 2026 MIT evidence. Not today's paper or fresh research."} Flash-Lite failed automatic reviewer qualification; no email has been sent.</header>
-<article><h1>${escape(draft.headline)}</h1><p><em>${escape(draft.deck)}</em></p>
+<article><h1>${escape(draft.headline)}</h1>${citations("headline")}<p><em>${escape(draft.deck)}</em> ${citations("deck")}</p>
 <h2>What happened</h2>${draft.claims.map(c => `<p>${escape(c.text)} <small>[${escape(c.supports.map(s => s.evidenceId).join(", "))}]</small></p>`).join("")}
-${section("Why it matters", draft.whyItMatters)}${section("What to watch", draft.whatToDoOrWatch)}</article>
+${section("Why it matters", draft.whyItMatters, "whyItMatters")}${section("What to watch", draft.whatToDoOrWatch, "whatToDoOrWatch")}</article>
 <aside><strong>Review checklist</strong><ul><li>Does every assertion, including the headline, follow from the evidence?</li><li>Does the text distinguish research from a product release, and possibilities from measured results?</li><li>Is the analysis specific and useful without inventing safety, performance or deployment benefits?</li></ul>Passing structural checks is not factual approval.</aside>
 <h2>Evidence provided to the writer</h2><p>${fresh ? "Evidence captured by the research collector for this run. Source links and retrieval time are in the accompanying review packet." : 'These are stored excerpts, not a new check of the full article. <a href="https://news.mit.edu/2026/new-method-enables-ai-safety-critical-situations-0914" rel="noreferrer">Original MIT News article</a>'}</p>
 ${dossier.sources.map(s => `<h3>${escape(s.publisher)}</h3><ul>${s.passages.map(p => `<li><strong>${escape(p.evidenceId)}</strong> ${escape(p.text)}</li>`).join("")}</ul>`).join("")}</html>`;
@@ -48,6 +51,9 @@ export async function previewGeminiLite({ apiKey, freeProjectConfirmation, fetch
   let rejectedPayload = null;
   const rejectionDetails = [];
   try {
+    const evidenceHolds = fresh ? previewSourceIntegrityHolds(dossier) : [];
+    if (evidenceHolds.length) return { report: { status: "evidence-held", qualified: false, approved: false,
+      productionEnabled: false, emailRequests: 0, modelRequests: 0, holds: evidenceHolds }, html: null };
     if (repair && (!fresh || repair.unapproved !== true ||
         repair.payload?.stories?.length !== 1 || repair.payload.stories[0]?.candidateId !== dossier.candidateId ||
         !Array.isArray(repair.rejectionDetails) || !repair.rejectionDetails.length ||
@@ -76,11 +82,15 @@ For whatToDoOrWatch, suggest checking a supported setting, eligibility requireme
             if (fresh && rejectionDetails.length < 8) rejectionDetails.push({ reason, feedback });
           } }, fresh ? { previewFieldEvidence: p.evidenceForFields } : undefined);
       } });
+    // Store compact bindings only: the encrypted fresh packet already retains
+    // the full draft, map and dossier. Rebuild the full review view offline.
+    const reviewPacket = fresh ? buildPreviewReviewPacket(result.editorialPayload.stories[0], dossier, result.editorialPayload.evidenceForFields) : null;
     return { report: { status: "human-review-required", qualified: false, approved: false,
       productionEnabled: false, emailRequests: 0, liveResearchRequests: 0, model: result.model,
       modelRequests: 1, requestSha256: result.requestSha256, responseSha256: result.responseSha256 },
-    ...(fresh ? { evidenceForFields: result.editorialPayload.evidenceForFields } : {}),
-    draft: result.editorialPayload.stories[0], html: renderHumanReview(result.editorialPayload.stories[0], dossier, { fresh }) };
+    ...(fresh ? { evidenceForFields: result.editorialPayload.evidenceForFields,
+      reviewBinding: reviewPacket.binding, reviewHolds: reviewPacket.holds } : {}),
+    draft: result.editorialPayload.stories[0], html: renderHumanReview(result.editorialPayload.stories[0], dossier, { fresh, evidenceForFields: result.editorialPayload.evidenceForFields }) };
   } catch (error) {
     return { report: { status: "failed", qualified: false, approved: false, productionEnabled: false,
       emailRequests: 0, liveResearchRequests: 0, model: GEMINI_LITE_MODEL,

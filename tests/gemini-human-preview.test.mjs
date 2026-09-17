@@ -105,7 +105,12 @@ test("fresh preview selects valid evidence for every non-claim field without gra
     assert.equal(calls, 1);
     assert.equal(result.report.approved, false);
     assert.equal(result.report.status, includeMap ? "human-review-required" : "failed");
-    if (includeMap) assert.deepEqual(result.evidenceForFields, map);
+    if (includeMap) {
+      assert.deepEqual(result.evidenceForFields, map);
+      assert.match(result.reviewBinding.renderedStorySha256, /^[a-f0-9]{64}$/);
+      assert.ok(Array.isArray(result.reviewHolds));
+      assert.equal(result.reviewPacket, undefined); // no duplicated private context
+    }
     else {
       assert.equal(result.rejectedDiagnostic.unapproved, true);
       assert.deepEqual(result.rejectedDiagnostic.payload.stories, [draft]);
@@ -113,6 +118,15 @@ test("fresh preview selects valid evidence for every non-claim field without gra
       assert.ok(!JSON.stringify(result.report).includes(draft.headline));
     }
   }
+});
+test("damaged fresh advisory is held before any model request", async () => {
+  const { dossier } = structuredClone(reviewerResearchScopeCases()[0]);
+  dossier.sources[0].passages.push({ evidenceId: "S1P99", text: "To obtain and install the latest" });
+  const result = await previewGeminiLite({ ...settings, fresh: true, dossier,
+    fetchImpl: () => assert.fail("damaged evidence must not be drafted") });
+  assert.equal(result.report.status, "evidence-held");
+  assert.equal(result.report.modelRequests, 0);
+  assert.equal(result.html, null);
 });
 test("targeted repair is fresh-only, candidate-bound and keeps rejected prose out of logs", async () => {
   const { draft, dossier } = reviewerResearchScopeCases()[0];

@@ -1,0 +1,237 @@
+{
+  "provenance": {
+    "run": "35176112523",
+    "packetSha256": "8a848418697a9ceb66aef5286bc6bd389d272ecf0f9b574e9dd4720f37ecd05d",
+    "status": "rejected-regression-not-approved"
+  },
+  "reportingWindow": {
+    "startInclusive": "2026-09-14T02:53:52.860Z",
+    "endExclusive": "2026-09-17T02:53:52.860Z",
+    "displayLabel": "Manual rolling 72-hour research preview"
+  },
+  "records": [
+    {
+      "candidateId": "candidate-c35bd066f8f6f4ff",
+      "desk": "work-and-tools",
+      "score": 77,
+      "sources": [
+        {
+          "publisher": "Google Workspace Updates",
+          "url": "https://workspaceupdates.googleblog.com/2026/09/connect-to-google-meet-hardware-with-room-codes-now-generally-available.html"
+        },
+        {
+          "publisher": "Google Workspace Updates",
+          "url": "https://feeds.feedburner.com/GoogleAppsUpdates"
+        }
+      ],
+      "dossier": {
+        "candidateId": "candidate-c35bd066f8f6f4ff",
+        "desk": "work-and-tools",
+        "evidenceTier": "authoritative-single",
+        "sources": [
+          {
+            "sourceId": "source-1-google-workspace-updates",
+            "publisher": "Google Workspace Updates",
+            "publisherKey": "google",
+            "relationship": "originating",
+            "publishedAt": "2026-09-15T19:53:45.433Z",
+            "text": "Connect to Google Meet hardware with room codes now generally available\nGoogle Meet users can now connect to nearby conference room hardware by entering a 5-character room code on their personal device.\nBuilding on the recent Connect Room launch that uses proximity-based detection to identify nearby hardware, this update provides a reliable manual fallback when ultrasound is unavailable or disabled.\nUsers will see a \"Connect with room code\" button on their device’s pre-call screen, which allows them to enter the alphanumeric code displayed directly on the hardware’s screen.\nSee our Early Preview announcement for full details .\nWe have updated our admin settings for Connect room and related features, visit the Help Center to learn more .\nEnd users: This feature will be ON by default.\nRapid Release and Scheduled Release domains: Gradual rollout (up to 15 days for feature visibility) starting on September 15, 2026\nAvailable to all Google Workspace customers with Google Meet hardware devices\nGoogle Meet Help: Use Connect room feature in Google Meet\nWorkspace Updates Blog: Seamlessly join meetings on Google Meet hardware with “Connect room”\nAdmins: This feature will be ON by default and can be disabled/enabled at the device level.\nYour admin can turn this feature off for devices in your organization.",
+            "passages": [
+              {
+                "evidenceId": "S1P1",
+                "text": "Connect to Google Meet hardware with room codes now generally available"
+              },
+              {
+                "evidenceId": "S1P2",
+                "text": "Google Meet users can now connect to nearby conference room hardware by entering a 5-character room code on their personal device."
+              },
+              {
+                "evidenceId": "S1P3",
+                "text": "Building on the recent Connect Room launch that uses proximity-based detection to identify nearby hardware, this update provides a reliable manual fallback when ultrasound is unavailable or disabled."
+              },
+              {
+                "evidenceId": "S1P4",
+                "text": "Users will see a \"Connect with room code\" button on their device’s pre-call screen, which allows them to enter the alphanumeric code displayed directly on the hardware’s screen."
+              },
+              {
+                "evidenceId": "S1P5",
+                "text": "See our Early Preview announcement for full details ."
+              },
+              {
+                "evidenceId": "S1P6",
+                "text": "We have updated our admin settings for Connect room and related features, visit the Help Center to learn more ."
+              },
+              {
+                "evidenceId": "S1P7",
+                "text": "End users: This feature will be ON by default."
+              },
+              {
+                "evidenceId": "S1P8",
+                "text": "Rapid Release and Scheduled Release domains: Gradual rollout (up to 15 days for feature visibility) starting on September 15, 2026"
+              },
+              {
+                "evidenceId": "S1P9",
+                "text": "Available to all Google Workspace customers with Google Meet hardware devices"
+              },
+              {
+                "evidenceId": "S1P10",
+                "text": "Google Meet Help: Use Connect room feature in Google Meet"
+              },
+              {
+                "evidenceId": "S1P11",
+                "text": "Workspace Updates Blog: Seamlessly join meetings on Google Meet hardware with “Connect room”"
+              },
+              {
+                "evidenceId": "S1P12",
+                "text": "Admins: This feature will be ON by default and can be disabled/enabled at the device level."
+              },
+              {
+                "evidenceId": "S1P13",
+                "text": "Your admin can turn this feature off for devices in your organization."
+              }
+            ]
+          }
+        ]
+      },
+      "draft": {
+        "candidateId": "candidate-c35bd066f8f6f4ff",
+        "headline": "Google Meet Introduces Room Code Connection for Hardware",
+        "deck": "Users can now connect to nearby conference room hardware via a 5-character code when ultrasonic proximity detection is unavailable.",
+        "claims": [
+          {
+            "text": "Google Workspace Updates announced that Google Meet users can now connect directly to nearby conference room hardware by typing a 5-character room code on a personal device.",
+            "supports": [
+              {
+                "evidenceId": "S1P2"
+              }
+            ]
+          },
+          {
+            "text": "Google Workspace Updates noted that this manual capability acts as a dependable backup option whenever ultrasound proximity detection is disabled or unavailable.",
+            "supports": [
+              {
+                "evidenceId": "S1P3"
+              }
+            ]
+          }
+        ],
+        "whyItMatters": "Providing a manual room code option ensures participants can still link personal devices to conference room hardware when ultrasonic detection fails or is disabled in their environment. This backup prevents connection hurdles in meeting spaces where automated proximity features cannot operate.",
+        "whatToDoOrWatch": "Watch for feature visibility to appear across Rapid Release and Scheduled Release domains during the gradual rollout starting September 15, 2026. Administrators can check device-level controls since the feature is active by default but can be modified."
+      },
+      "evidenceForFields": {
+        "headline": [
+          "S1P1"
+        ],
+        "deck": [
+          "S1P2"
+        ],
+        "whyItMatters": [
+          "S1P3"
+        ],
+        "whatToDoOrWatch": [
+          "S1P8",
+          "S1P12"
+        ]
+      }
+    },
+    {
+      "candidateId": "candidate-ffda4e65c03b7fdf",
+      "desk": "security-and-privacy",
+      "score": 78,
+      "sources": [
+        {
+          "publisher": "CISA",
+          "url": "https://www.cisa.gov/news-events/ics-advisories/icsa-26-258-02"
+        },
+        {
+          "publisher": "CISA",
+          "url": "https://www.cisa.gov/cybersecurity-advisories/all.xml"
+        }
+      ],
+      "dossier": {
+        "candidateId": "candidate-ffda4e65c03b7fdf",
+        "desk": "security-and-privacy",
+        "evidenceTier": "authoritative-single",
+        "sources": [
+          {
+            "sourceId": "source-1-cisa-advisories",
+            "publisher": "CISA",
+            "publisherKey": "cisa",
+            "relationship": "originating",
+            "publishedAt": "2026-09-15T12:00:00.000Z",
+            "text": "Wärtsilä FOS-Onboard\nView CSAF Summary Successful exploitation of these vulnerabilities could allow an attacker to deliver an unauthorized update, execute code, or extract credentials to allow the attacker to impersonate a privileged client.\nThe following versions of Wärtsilä FOS-Onboard are affected: FOS-Onboard 5.07.0923.01 (CVE-2026-78225, CVE-2026-81855) CVSS Vendor Equipment Vulnerabilities v3 9.1 Wärtsilä Wärtsilä FOS-Onboard Use of Hard-coded Cryptographic Key Background Critical Infrastructure Sectors: Transportation Systems Countries/Areas Deployed: Worldwide Company Headquarters Location: Finland Vulnerabilities Expand All + CVE-2026-78225 A hardcoded cryptographic server key vulnerability exists in the deployer-ng Update Controller component of Wärtsilä FOS-Onboard.\nView CVE Details Affected Products Wärtsilä FOS-Onboard Vendor: Wärtsilä Product Version: Wärtsilä FOS-Onboard: 5.07.0923.01 Product Status: known_affected Remediations Mitigation Wärtsilä states that the vulnerabilities are not exploitable when the product is installed as recommended, and has developed a security patch.\nUsers are also directed to contact Wärtsilä to obtain and install the patch.\nTo obtain and install the latest",
+            "passages": [
+              {
+                "evidenceId": "S1P1",
+                "text": "Wärtsilä FOS-Onboard"
+              },
+              {
+                "evidenceId": "S1P2",
+                "text": "View CSAF Summary Successful exploitation of these vulnerabilities could allow an attacker to deliver an unauthorized update, execute code, or extract credentials to allow the attacker to impersonate a privileged client."
+              },
+              {
+                "evidenceId": "S1P3",
+                "text": "The following versions of Wärtsilä FOS-Onboard are affected: FOS-Onboard 5.07.0923.01 (CVE-2026-78225, CVE-2026-81855) CVSS Vendor Equipment Vulnerabilities v3 9.1 Wärtsilä Wärtsilä FOS-Onboard Use of Hard-coded Cryptographic Key Background Critical Infrastructure Sectors: Transportation Systems Countries/Areas Deployed: Worldwide Company Headquarters Location: Finland Vulnerabilities Expand All + CVE-2026-78225 A hardcoded cryptographic server key vulnerability exists in the deployer-ng Update Controller component of Wärtsilä FOS-Onboard."
+              },
+              {
+                "evidenceId": "S1P4",
+                "text": "View CVE Details Affected Products Wärtsilä FOS-Onboard Vendor: Wärtsilä Product Version: Wärtsilä FOS-Onboard: 5.07.0923.01 Product Status: known_affected Remediations Mitigation Wärtsilä states that the vulnerabilities are not exploitable when the product is installed as recommended, and has developed a security patch."
+              },
+              {
+                "evidenceId": "S1P5",
+                "text": "Users are also directed to contact Wärtsilä to obtain and install the patch."
+              },
+              {
+                "evidenceId": "S1P6",
+                "text": "To obtain and install the latest"
+              }
+            ]
+          }
+        ]
+      },
+      "draft": {
+        "candidateId": "candidate-ffda4e65c03b7fdf",
+        "headline": "Wärtsilä FOS-Onboard Vulnerabilities Addressed with Security Patch",
+        "deck": "CISA warns of critical flaws in Wärtsilä FOS-Onboard version 5.07.0923.01 that could permit code execution or unauthorized updates.",
+        "claims": [
+          {
+            "text": "CISA reported that version 5.07.0923.01 of Wärtsilä FOS-Onboard contains critical vulnerabilities identified as CVE-2026-78225 and CVE-2026-81855, with a CVSS score of 9.1.",
+            "supports": [
+              {
+                "evidenceId": "S1P3"
+              }
+            ]
+          },
+          {
+            "text": "CISA noted that the deployer-ng Update Controller component features a hardcoded cryptographic server key flaw that affects deployments worldwide.",
+            "supports": [
+              {
+                "evidenceId": "S1P3"
+              }
+            ]
+          }
+        ],
+        "whyItMatters": "Successful exploitation of these security flaws could enable an attacker to execute arbitrary code, deliver unauthorized updates, or extract credentials that allow them to impersonate a privileged client. Because these vulnerabilities affect the Wärtsilä FOS-Onboard transportation system software, attackers could potentially leverage these access vectors to compromise critical infrastructure deployments globally if proper configurations or patches are missing.",
+        "whatToDoOrWatch": "Wärtsilä states that the product is not exploitable when installed as recommended, and the vendor has developed a security patch. Users should contact Wärtsilä directly to obtain and install this update to secure affected systems."
+      },
+      "evidenceForFields": {
+        "headline": [
+          "S1P1",
+          "S1P3"
+        ],
+        "deck": [
+          "S1P3",
+          "S1P4"
+        ],
+        "whyItMatters": [
+          "S1P2",
+          "S1P3"
+        ],
+        "whatToDoOrWatch": [
+          "S1P4",
+          "S1P5"
+        ]
+      }
+    }
+  ]
+}

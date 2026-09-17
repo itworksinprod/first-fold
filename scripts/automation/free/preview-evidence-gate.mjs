@@ -1,5 +1,21 @@
 // Conservative preview-only holds, not proof that a source is inaccurate.
 // Do not infer original publication dates from URL paths alone.
+export function previewSourceIntegrityHolds(dossier) {
+  const holds = new Set();
+  for (const source of dossier?.sources ?? []) {
+    const texts = [source.text, ...(source.passages ?? []).map(p => p.text)].filter(t => typeof t === "string");
+    // Narrow, conservative alarms for observed feed/extraction failures. These
+    // are NOT an extraction repair or a general test of factual completeness.
+    if (texts.some(t => /vers:intdot\/|\bUpdate to V\d*\s*$|\b(?:obtain|install|download|update)[^.?!]*\b(?:the latest|the|to|and|version|release)\s*$/iu.test(t))) {
+      holds.add("EVIDENCE_EXTRACTION_INCOMPLETE");
+    }
+    if (texts.some(t => /Countries\/Areas Deployed:|CVSS\s+Vendor\s+Equipment\s+Vulnerabilities/iu.test(t))) {
+      holds.add("ADVISORY_STRUCTURE_REVIEW");
+    }
+  }
+  return [...holds];
+}
+
 export function previewEvidenceHolds(candidate, dossier, reportingWindow) {
   const holds = new Set();
   if (!candidate || candidate.ranking?.score < 70 || !Number.isFinite(candidate.ranking?.score) ||
@@ -13,8 +29,8 @@ export function previewEvidenceHolds(candidate, dossier, reportingWindow) {
     if (!Array.isArray(source.passages) || source.passages.length < 2 || typeof source.text !== "string") {
       holds.add("EVIDENCE_INCOMPLETE"); continue;
     }
-    if (/vers:intdot\/|\bUpdate to V\d*\s*$/iu.test(source.text)) holds.add("EVIDENCE_EXTRACTION_INCOMPLETE");
   }
+  for (const hold of previewSourceIntegrityHolds(dossier)) holds.add(hold);
   for (const source of candidate.sources ?? []) {
     let url;
     try { url = new URL(source.url); } catch { holds.add("SOURCE_URL_INVALID"); continue; }
