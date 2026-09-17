@@ -1,0 +1,55 @@
+name: Research and draft free paper for human review (no email)
+on:
+  workflow_dispatch:
+    inputs:
+      public_key:
+        description: Ephemeral RSA-3072 public key as base64 DER; never paste a private key
+        required: true
+        type: string
+      free_project_confirmation:
+        description: Confirm AI Studio shows Free; enter FREE PROJECT BILLING DISABLED
+        required: true
+        type: string
+permissions: {}
+concurrency:
+  group: gemini-writer-qualification
+  cancel-in-progress: false
+jobs:
+  preview:
+    if: >-
+      github.repository == 'itworksinprod/first-fold' &&
+      github.ref == 'refs/heads/main' && github.actor == 'itworksinprod' &&
+      github.run_attempt == 1 && inputs.free_project_confirmation == 'FREE PROJECT BILLING DISABLED'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: '24'
+      - name: Test preview boundaries
+        run: npm test
+      - name: Validate public key before credentials
+        env:
+          DIAGNOSTIC_PUBLIC_KEY: ${{ inputs.public_key }}
+        run: node --input-type=module -e 'import {diagnosticPublicKey} from "./scripts/automation/private-writer-diagnostic.mjs"; diagnosticPublicKey(process.env.DIAGNOSTIC_PUBLIC_KEY);'
+      - name: Research and draft without approval or delivery
+        env:
+          DIAGNOSTIC_PUBLIC_KEY: ${{ inputs.public_key }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_FREE_PROJECT_CONFIRMATION: ${{ inputs.free_project_confirmation }}
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+          TAVILY_PAYGO_DISABLED_VERIFIED: ${{ vars.TAVILY_PAYGO_DISABLED_VERIFIED }}
+        run: node scripts/automation/preview-fresh-gemini.mjs --human-review-only "$RUNNER_TEMP/fresh-preview.encrypted.json"
+      - name: Retain only encrypted source packets and drafts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fresh-human-preview-encrypted
+          path: ${{ runner.temp }}/fresh-preview.encrypted.json
+          retention-days: 1
+          if-no-files-found: ignore
