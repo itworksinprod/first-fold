@@ -80,6 +80,49 @@ test('bad quote, passage or source holds only that candidate; original acceptanc
     assert.equal(receipt.audit.find(a=>a.candidateId==='a').disposition,'source-bound-score-proposal');
   }
 });
+test('quote and rationale length violations reject only their candidate and preserve the untouched private response',async()=>{
+  for(const change of [{quote:'x'.repeat(24)},{quote:'x'.repeat(501)},{quote:'x'.repeat(1053)},
+    {rationale:'x'.repeat(19)},{rationale:'x'.repeat(501)},{quote:''},{rationale:''}]){
+    const prior=entry('b');prior.decision='accepted';prior.rejectionReasons=[];
+    prior.candidate.ranking.editorialValidation.decision='accepted';
+    const original=structuredClone(prior),payload={assessments:[verdict('a'),{...verdict('b'),...change}]};
+    let receipt,calls=0;
+    const review=createPreviewNewsworthiness({reportingWindow:window,onResult:r=>{receipt=r},requestImpl:async options=>{
+      calls++;assert.equal(options.schema.properties.assessments.items.properties.quote.maxLength,500);
+      assert.match(options.messages[0].content,/25–500 character EXACT quote/);
+      assert.equal(options.validatePayload(payload),true);return{editorialPayload:payload};
+    }});
+    const [good,bad]=await review([entry(),prior]);
+    assert.equal(good.decision,'accepted');assert.equal(bad.decision,'rejected');
+    assert.equal(bad.candidate.ranking.editorialValidation.decision,'rejected');
+    assert.equal(bad.candidate.ranking.score,prior.candidate.ranking.score);
+    assert.ok(bad.rejectionReasons.some(r=>r.code==='EDITORIAL_PROSE_BOUNDS'));
+    assert.deepEqual(receipt.rawParsedResponse,payload);assert.deepEqual(receipt.audit[1].verdict,payload.assessments[1]);
+    assert.deepEqual(prior,original);assert.equal(receipt.stopModels,false);assert.equal(calls,1);
+  }
+});
+test('exact prose bounds remain eligible only with an unchanged exact own-passage quote',async()=>{
+  for(const quoteLength of [25,500])for(const rationaleLength of [20,500]){
+    const e=entry(),q='a'.repeat(quoteLength);e.candidate.feedEvidence[0].articleBlocks[1]=q;
+    e.candidate.feedEvidence[0].articleExcerpt=[title,q].join('\n');
+    const review=createPreviewNewsworthiness({reportingWindow:window,requestImpl:async()=>({editorialPayload:{assessments:[{...verdict('a'),quote:q,rationale:'x'.repeat(rationaleLength)}]}})});
+    const [after]=await review([e]);assert.equal(after.decision,'accepted');
+  }
+});
+test('12,000-byte bound is global including multibyte text at either validation entry point',async()=>{
+  for(const callbackFirst of [false,true]){
+    const payload={assessments:[verdict('a'),{...verdict('b'),quote:'€'.repeat(4100)}]};
+    assert.ok(JSON.stringify(payload).length<12_000);assert.ok(Buffer.byteLength(JSON.stringify(payload))>12_000);
+    let receipt;
+    const review=createPreviewNewsworthiness({reportingWindow:window,onResult:r=>{receipt=r},requestImpl:async options=>{
+      if(callbackFirst){assert.equal(options.validatePayload(payload),false);throw Object.assign(Error('invalid'),{code:'GEMINI_EDITORIAL_VALIDATION_FAILED'});}
+      return{editorialPayload:payload};
+    }});
+    const values=[entry(),entry('b')];assert.deepEqual(await review(values),values);
+    assert.equal(receipt.stopModels,true);assert.equal(receipt.status,'failed');assert.deepEqual(receipt.audit,[]);
+    assert.equal(receipt.rawParsedResponse,null);
+  }
+});
 test('omitted submitted candidate is rejected while unsubmitted candidates remain distinguishable and unchanged',async()=>{
   let receipt;const values=['a','b','c'].map(id=>entry(id));
   values[1].decision='accepted';values[1].rejectionReasons=[];
@@ -98,7 +141,9 @@ test('unknown or duplicate IDs, empty response, malformed shape and extra proper
     {assessments:[good,good]}, {assessments:[good],unexpected:true},
     {assessments:[{...good,extra:'not in schema'}]},
     {assessments:[{...good,sourceId:7}]},{assessments:[{...good,evidenceId:'x'.repeat(41)}]},
-    {assessments:[{...good,importance:31}]},
+    {assessments:[{...good,sourceId:'x'.repeat(201)}]},
+    {assessments:[{...good,quote:7}]},{assessments:[{...good,rationale:[]}]},
+    {assessments:[{...good,importance:31}]},{assessments:[{...good,usefulness:-1}]},
   ]){
     let receipt;const values=[entry(),entry('b')];
     const review=createPreviewNewsworthiness({reportingWindow:window,onResult:r=>{receipt=r},requestImpl:async()=>({editorialPayload:payload})});
@@ -124,16 +169,17 @@ test('editor plus drafts and repairs share four actual calls; budget omission is
 });
 test('fresh orchestration writes only surviving source-bound candidates; entirely invalid slate makes zero writer calls',async()=>{
   const {publicKey,privateKey}=generateKeyPairSync('rsa',{modulusLength:3072});const key=publicKey.export({type:'spki',format:'der'}).toString('base64');
-  for(const allInvalid of [false,true]){
+  for(const allInvalid of [false,true])for(const proseBounds of [false,true]){
     const entries=[entry('a','ai'),entry('b','work-and-tools')];let writers=0;
-    const payload={assessments:[{...verdict('a'),...(allInvalid?{quote:'Unsupported claims not in this named passage.'}:{})},{...verdict('b'),evidenceId:'S1P1'}]};
+    const bad=proseBounds?{quote:'x'.repeat(1053)}:{quote:'Unsupported claims not in this named passage.'};
+    const payload={assessments:[{...verdict('a'),...(allInvalid?bad:{})},{...verdict('b'),...bad}]};
     const result=await previewFreshGemini({publicKey:key,apiKey:'synthetic-key-never-real',freeProjectConfirmation:'FREE PROJECT BILLING DISABLED',now:new Date(window.endExclusive),
       coverageImpl:()=>{},researchImpl:async options=>({candidates:(await options.reviewNewsworthiness(entries)).filter(e=>e.decision==='accepted').map(e=>e.candidate),diagnostics:{sourceResults:[]}}),
       editorialRequestImpl:async()=>({editorialPayload:payload}),
       draftImpl:async options=>{writers++;assert.equal(options.dossier.candidateId,'a');return{report:{status:'failed',code:'GEMINI_EDITORIAL_VALIDATION_FAILED'},html:null,rejectedDiagnostic:{unapproved:true,rejectionDetails:[]}};}});
     assert.equal(writers,allInvalid?0:1);assert.equal(result.report.modelRequests,1+writers);assert.equal(result.report.emailRequests,0);
     const packet=openDiagnostic(result.sealed,privateKey);assert.deepEqual(packet.editorial.rawParsedResponse,payload);
-    assert.equal(packet.editorial.stopModels,allInvalid);assert.equal(packet.editorial.audit.find(a=>a.candidateId==='b').reason,'EDITORIAL_QUOTE_NOT_BOUND');
+    assert.equal(packet.editorial.stopModels,allInvalid);assert.equal(packet.editorial.audit.find(a=>a.candidateId==='b').reason,proseBounds?'EDITORIAL_PROSE_BOUNDS':'EDITORIAL_QUOTE_NOT_BOUND');
   }
 });
 test('research, coverage and selection failures after editorial preserve a sealed failure receipt',async()=>{

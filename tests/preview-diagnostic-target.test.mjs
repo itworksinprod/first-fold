@@ -29,14 +29,14 @@ test('diagnostic target requires exact known identity; absent, arbitrary, redire
 test('targeted fresh trial retains normal editor and source gates; one writer and shared correction stay under three calls',async()=>{
   const {publicKey,privateKey}=generateKeyPairSync('rsa',{modulusLength:3072});
   const key=publicKey.export({type:'spki',format:'der'}).toString('base64');
-  for(const reject of [false,true]){
+  for(const reject of [false,'score','prose']){
     let editors=0,writers=0,repairs=0;
     const result=await previewFreshGemini({publicKey:key,apiKey:'synthetic-test-key-not-real',freeProjectConfirmation:'FREE PROJECT BILLING DISABLED',
       diagnosticTarget:'gitlab-rate-limits-2026',now:new Date('2026-09-18T00:00:00Z'),coverageImpl:()=>{},
       researchImpl:async options=>{const c=candidate(),assessed=await options.reviewNewsworthiness([{candidate:c,decision:'accepted',rejectionReasons:[]}]);
         return{candidates:assessed.filter(e=>e.decision==='accepted').map(e=>e.candidate),diagnostics:{sourceResults:[]}};},
-      editorialRequestImpl:async()=>{editors++;return{editorialPayload:{assessments:[{candidateId:raw.dossier.candidateId,importance:reject?0:21,usefulness:10,
-        rationale:'The source announces changes to subscription-tier rate limits.',sourceId:s.sourceId,evidenceId:'S1P4',quote:s.passages[3].text.slice(-220)}]}};},
+      editorialRequestImpl:async()=>{editors++;return{editorialPayload:{assessments:[{candidateId:raw.dossier.candidateId,importance:reject==='score'?0:21,usefulness:10,
+        rationale:'The source announces changes to subscription-tier rate limits.',sourceId:s.sourceId,evidenceId:'S1P4',quote:reject==='prose'?'x'.repeat(501):s.passages[3].text.slice(-220)}]}};},
       draftImpl:async({repair})=>{writers++;if(repair)repairs++;return{report:{status:'failed',code:'GEMINI_EDITORIAL_VALIDATION_FAILED'},html:null,
         rejectedDiagnostic:{unapproved:true,rejectionDetails:[{reason:'ORIGINALITY',feedback:{field:'claims[0].text'}}]}};}});
     assert.equal(editors,1);assert.equal(writers,reject?0:2);assert.equal(repairs,reject?0:1);

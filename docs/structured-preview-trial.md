@@ -474,3 +474,19 @@ Selection now uses the collector's existing factual-source definition, excluding
 only explicitly context-marked entries. Exact originating article identity and
 the one-factual-source requirement remain unchanged. The integration regression
 now includes the real article-plus-feed layout; extra factual sources still fail.
+
+Run `35290436548` at `e8ef9f9` stopped before writing because SageMaker returned
+a 1,053-character quote, exceeding the unchanged 500-character bound. Artifact
+SHA256: `f0660a3af801ce83aa8319acfe3589b65d5bbbaf147b3711b61684f5895ebd6a`.
+This is an editorial-format failure, not a writer or delivery qualification.
+The isolated editor now rejects only the candidate whose quote/rationale length
+is invalid, without truncating it, accepting it, or retaining prior admission.
+All field types, source/evidence ID bounds, exact keys, score ranges and known
+unique candidate IDs remain global requirements. A new explicit 12,000-byte
+parsed-response admission cap fails the whole sequence, including multibyte
+overflow. Previously that cap applied only to private response retention.
+Rejected bounded values remain untouched in the private audit; all-invalid
+slates and a rejected diagnostic target cannot cause a writer call or substitute.
+The prompt restates the existing prose bounds. No threshold or model budget
+changes. GitLab's latest editorial rationale still goes beyond its own quoted
+passage; exact citation binding does not establish semantic support for ranking.
