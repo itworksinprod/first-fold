@@ -9,7 +9,10 @@ import { assertFreeResearchCoverage } from "./draft-free-edition.mjs";
 import { groundedDossiers, GROUNDED_DRAFT_SCHEMA, validateGroundedStory } from "./free/grounded-draft.mjs";
 import { createTavilyDiscovery } from "./free/web-search.mjs";
 import { previewEvidenceHolds } from "./free/preview-evidence-gate.mjs";
-import { previewGeminiLite, validPreviewEvidenceMap } from "./preview-gemini-lite.mjs";
+import { previewGeminiLite, validPreviewEvidenceMap, renderHumanReview } from "./preview-gemini-lite.mjs";
+import { buildPreviewReviewPacket } from './free/preview-editorial-review.mjs';
+import { previewCitationCorrectionAllowed, proposePreviewCitationCorrection, applyPreviewCitationAdditions } from './free/preview-citation-correction.mjs';
+import { GEMINI_LITE_MODEL, geminiFailureDiagnostic } from './free/gemini-ai.mjs';
 import { FRESH_PREVIEW_WRITER_PROFILE } from './free/fresh-preview-writer-prompt.mjs';
 import { previewReaderAlarms, previewReaderObligations } from './free/preview-reader-alarms.mjs';
 import { advisoryDraftAlarms } from './free/preview-advisory-contract.mjs';
@@ -23,6 +26,42 @@ const diagnosticTargets=Object.freeze({'gitlab-rate-limits-2026':Object.freeze({
 export function validatePreviewDiagnosticTarget(value='standard') {
   if(value!=='standard'&&!Object.hasOwn(diagnosticTargets,value))throw Error('PREVIEW_DIAGNOSTIC_TARGET_INVALID');
   return value;
+}
+export function validatePreviewCitationCorrectionMode(value='off') {
+  if(!['off','additions-only'].includes(value))throw Error('PREVIEW_CITATION_CORRECTION_MODE_INVALID');
+  return value;
+}
+const citationFailureCodes=new Set(['CITATION_CORRECTION_NOT_ELIGIBLE','CITATION_CORRECTION_INPUT_TOO_LARGE',
+  'CITATION_ADDITIONS_INVALID','CITATION_CORRECTION_FAILED','CITATION_CORRECTION_DECLINED','GEMINI_CONFIGURATION_INVALID',
+  'GEMINI_FREE_TIER_NOT_CONFIRMED','GEMINI_HTTP_ERROR','GEMINI_FREE_QUOTA_EXHAUSTED','GEMINI_TIMEOUT',
+  'GEMINI_TRANSPORT_FAILED','GEMINI_RESPONSE_INVALID','GEMINI_INCOMPLETE_OR_BLOCKED','GEMINI_EDITORIAL_FORMAT_INVALID',
+  'GEMINI_EDITORIAL_VALIDATION_FAILED']);
+function citationProposalReport(report) {
+  const success=report?.status==='human-review-required';
+  return {status:success?'human-review-required':'failed',approved:false,qualified:false,productionEnabled:false,
+    emailRequests:0,modelRequests:1,model:GEMINI_LITE_MODEL,
+    ...(!success?{code:citationFailureCodes.has(report?.code)?report.code:'CITATION_CORRECTION_FAILED',
+      ...geminiFailureDiagnostic(report)}:{}),
+    ...Object.fromEntries(['requestSha256','responseSha256'].filter(k=>typeof report?.[k]==='string'&&/^[a-f0-9]{64}$/u.test(report[k])).map(k=>[k,report[k]]))};
+}
+function citationAdditionsReceipt(additions) {
+  if(!Array.isArray(additions)||additions.length>4||additions.some(a=>!a||typeof a!=='object'||
+    Object.keys(a).sort().join()!=='evidenceIds,field'||!['headline','deck','whyItMatters','whatToDoOrWatch'].includes(a.field)||
+    !Array.isArray(a.evidenceIds)||a.evidenceIds.length>3||a.evidenceIds.some(id=>typeof id!=='string'||!/^S[1-9]\d?P[1-9]\d{0,2}$/u.test(id))))return undefined;
+  return additions.map(a=>({field:a.field,evidenceIds:[...a.evidenceIds]}));
+}
+export function citationCorrectedPreview(original,dossier,proposal) {
+  const report=citationProposalReport(proposal?.report);
+  if(report.status!=='human-review-required')return {report,html:null};
+  // Reconstruct from the original and strict additions, not from a provider's
+  // proposed replacement story. Even an injected caller cannot rewrite prose.
+  const payload=applyPreviewCitationAdditions(original,dossier,proposal.additions);
+  if(JSON.stringify(payload)!==JSON.stringify(proposal.correctedPayload))throw Error('PREVIEW_CITATION_PROPOSAL_CHANGED');
+  const packet=buildPreviewReviewPacket(payload.stories[0],dossier,payload.evidenceForFields);
+  if(packet.holds.length)throw Error('PREVIEW_CITATION_CORRECTION_HELD');
+  return {report,
+    draft:payload.stories[0],evidenceForFields:payload.evidenceForFields,reviewBinding:packet.binding,reviewHolds:packet.holds,
+    html:renderHumanReview(payload.stories[0],dossier,{fresh:true,evidenceForFields:payload.evidenceForFields})};
 }
 export function selectDiagnosticTarget(eligible,value) {
   validatePreviewDiagnosticTarget(value);
@@ -103,11 +142,12 @@ export function selectPreviewReadyCandidates(snapshot, reportingWindow, { requir
 
 export async function previewFreshGemini({ publicKey, apiKey, freeProjectConfirmation,
   tavilyApiKey, tavilyPaygoDisabledVerified = false, now = new Date(),
-  diagnosticTarget='standard',
+  diagnosticTarget='standard',citationCorrection='off',
   researchImpl = collectFreeResearchSnapshot, draftImpl = previewGeminiLite,
-  coverageImpl = assertFreeResearchCoverage, editorialRequestImpl } = {}) {
+  coverageImpl = assertFreeResearchCoverage, editorialRequestImpl, citationCorrectionImpl=proposePreviewCitationCorrection } = {}) {
   diagnosticPublicKey(publicKey);
   validatePreviewDiagnosticTarget(diagnosticTarget);
+  validatePreviewCitationCorrectionMode(citationCorrection);
   const maxModelRequests=diagnosticTarget==='standard'?4:3;
   let diagnosticSampling={mode:diagnosticTarget,baselineRanking:[]};
   if (freeProjectConfirmation !== FREE_PROJECT_CONFIRMATION || !/^[A-Za-z0-9_.-]{20,256}$/u.test(apiKey ?? "")) {
@@ -121,7 +161,7 @@ export async function previewFreshGemini({ publicKey, apiKey, freeProjectConfirm
     reportingWindow,requestImpl:editorialRequestImpl,onResult:result=>{editorial=result;}});
   const heldResult=code=>{
     const report={status:'no-reviewable-drafts',code,approved:false,qualified:false,productionEnabled:false,emailRequests:0,
-      retrievedAt,modelRequests:editorial.modelRequests,maxModelRequests,diagnosticTarget,draftCount:0,selectedCount:0,
+      retrievedAt,modelRequests:editorial.modelRequests,maxModelRequests,diagnosticTarget,citationCorrection,draftCount:0,selectedCount:0,
       editorialStatus:editorial.status,editorialModelRequests:editorial.modelRequests,budgetOmissions:[]};
     return {report,sealed:sealDiagnostic({purpose:'fresh-news-unapproved-human-review-not-an-edition',report,reportingWindow,
       editorial,diagnosticSampling,preDraftHolds:[{reasons:[code]}],records:[]},publicKey)};
@@ -175,12 +215,32 @@ export async function previewFreshGemini({ publicKey, apiKey, freeProjectConfirm
     // One correction across the ENTIRE experiment. Missing preview-audience
     // qualification is the sole allowed source-scope correction; every other
     // semantic/advisory and all provider/quota failures remain nonretryable.
-    const repairKind=previewMechanicalRepairAllowed(result)?'mechanical':previewSourceQualificationRepairAllowed(result,dossier)?'source-qualification':null;
+    const repairKind=previewMechanicalRepairAllowed(result)?'mechanical':previewSourceQualificationRepairAllowed(result,dossier)?'source-qualification':
+      citationCorrection==='additions-only'&&previewCitationCorrectionAllowed(result,dossier)?'citation-additions-only':null;
     if (repairRequests===0 && repairKind && requests + (candidates.length - i - 1) < maxModelRequests) {
-      record.initialRejection = result;
+      record.initialRejection = structuredClone(result);
       record.repairKind=repairKind;
       requests++;repairRequests++;
-      result = await draftImpl({ apiKey, freeProjectConfirmation, dossier, fresh: true, writerProfile: FRESH_PREVIEW_WRITER_PROFILE, repair: result.rejectedDiagnostic });
+      if(repairKind==='citation-additions-only'){
+        const original=structuredClone(result),originalDossier=structuredClone(dossier);
+        const baseline=buildPreviewReviewPacket(original.rejectedDiagnostic.payload.stories[0],originalDossier,
+          original.rejectedDiagnostic.payload.evidenceForFields);
+        try{
+          const proposal=await citationCorrectionImpl({apiKey,freeProjectConfirmation,
+            dossier:structuredClone(originalDossier),result:structuredClone(original)});
+          const additions=citationAdditionsReceipt(proposal?.additions);
+          const rejected=citationAdditionsReceipt(proposal?.rejectedProposal?.additions);
+          record.citationCorrection={report:citationProposalReport(proposal?.report),
+            ...(additions?{additions}:{}),originalBinding:baseline.binding,
+            ...(proposal?.rejectedProposal!==undefined?{rejectedProposal:rejected?
+              {additions:rejected}:{code:'UNSAFE_PROPOSAL_OMITTED'}}:{})};
+          result=citationCorrectedPreview(original,originalDossier,proposal);
+          if(result.draft)record.citationCorrection.correctedBinding=buildPreviewReviewPacket(result.draft,originalDossier,result.evidenceForFields).binding;
+        }catch{
+          result={report:{status:'failed',code:'PREVIEW_CITATION_CORRECTION_HELD',approved:false,qualified:false,
+            productionEnabled:false,emailRequests:0,modelRequests:1},html:null};
+        }
+      }else result = await draftImpl({ apiKey, freeProjectConfirmation, dossier, fresh: true, writerProfile: FRESH_PREVIEW_WRITER_PROFILE, repair: result.rejectedDiagnostic });
     }
     record.result = result;
     if (result.report?.status === "failed" && result.report.code !== "GEMINI_EDITORIAL_VALIDATION_FAILED") stopped = true;
@@ -188,7 +248,7 @@ export async function previewFreshGemini({ publicKey, apiKey, freeProjectConfirm
   const draftCount = records.filter(r => r.result?.html).length;
   const report = { status: draftCount ? "human-review-required" : "no-reviewable-drafts",
     approved: false, qualified: false, productionEnabled: false, emailRequests: 0,
-    retrievedAt, modelRequests: requests, maxModelRequests, diagnosticTarget, repairRequests, draftCount,
+    retrievedAt, modelRequests: requests, maxModelRequests, diagnosticTarget, citationCorrection, repairRequests, draftCount,
     editorialStatus:editorial.status,editorialModelRequests:editorial.modelRequests,budgetOmissions,
     evidenceMode: "structured-preview-v1", manualProseEdits: 0,
     selectedCount: candidates.length, heldCount: selection.held.length + records.filter(r => r.holds.length).length,
@@ -214,6 +274,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     const result = await previewFreshGemini({ publicKey: process.env.DIAGNOSTIC_PUBLIC_KEY,
       apiKey: process.env.GEMINI_API_KEY, freeProjectConfirmation: process.env.GEMINI_FREE_PROJECT_CONFIRMATION,
       diagnosticTarget:process.env.PREVIEW_DIAGNOSTIC_TARGET||'standard',
+      citationCorrection:process.env.PREVIEW_CITATION_CORRECTION||'off',
       tavilyApiKey: process.env.TAVILY_API_KEY, tavilyPaygoDisabledVerified: process.env.TAVILY_PAYGO_DISABLED_VERIFIED === "true" });
     await writeFile(process.argv[3], JSON.stringify(result.sealed), { flag: "wx", mode: 0o600 });
     console.info(JSON.stringify(result.report));

@@ -18,6 +18,14 @@ on:
         options:
           - standard
           - gitlab-rate-limits-2026
+      citation_correction:
+        description: Optional citation additions only; unchanged prose, shared existing call cap, no approval
+        required: true
+        default: 'off'
+        type: choice
+        options:
+          - 'off'
+          - additions-only
 permissions: {}
 concurrency:
   group: gemini-writer-qualification
@@ -45,13 +53,15 @@ jobs:
         env:
           DIAGNOSTIC_PUBLIC_KEY: ${{ inputs.public_key }}
           PREVIEW_DIAGNOSTIC_TARGET: ${{ inputs.diagnostic_target }}
-        run: node --input-type=module -e 'import {diagnosticPublicKey} from "./scripts/automation/private-writer-diagnostic.mjs"; import {validatePreviewDiagnosticTarget} from "./scripts/automation/preview-fresh-gemini.mjs"; diagnosticPublicKey(process.env.DIAGNOSTIC_PUBLIC_KEY); validatePreviewDiagnosticTarget(process.env.PREVIEW_DIAGNOSTIC_TARGET);'
+          PREVIEW_CITATION_CORRECTION: ${{ inputs.citation_correction }}
+        run: node --input-type=module -e 'import {diagnosticPublicKey} from "./scripts/automation/private-writer-diagnostic.mjs"; import {validatePreviewDiagnosticTarget,validatePreviewCitationCorrectionMode} from "./scripts/automation/preview-fresh-gemini.mjs"; diagnosticPublicKey(process.env.DIAGNOSTIC_PUBLIC_KEY); validatePreviewDiagnosticTarget(process.env.PREVIEW_DIAGNOSTIC_TARGET); validatePreviewCitationCorrectionMode(process.env.PREVIEW_CITATION_CORRECTION);'
       - name: Research and draft without approval or delivery
         env:
           DIAGNOSTIC_PUBLIC_KEY: ${{ inputs.public_key }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_FREE_PROJECT_CONFIRMATION: ${{ inputs.free_project_confirmation }}
           PREVIEW_DIAGNOSTIC_TARGET: ${{ inputs.diagnostic_target }}
+          PREVIEW_CITATION_CORRECTION: ${{ inputs.citation_correction }}
           TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
           TAVILY_PAYGO_DISABLED_VERIFIED: ${{ vars.TAVILY_PAYGO_DISABLED_VERIFIED }}
         run: node scripts/automation/preview-fresh-gemini.mjs --human-review-only "$RUNNER_TEMP/fresh-preview.encrypted.json"

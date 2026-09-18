@@ -534,3 +534,32 @@ An editor stop now surfaces `PREVIEW_EDITORIAL_FAILED` before target selection,
 with its original cause in the encrypted audit. Acceptance predicates, prompts,
 token limits, call counts, repairs and production behavior are unchanged. The
 next isolated no-email trial must be read as diagnosis, not quality approval.
+
+Run `35300057783` at `297c1d8` completed the editor and one fresh writer call,
+with 48/48 feeds and 12 usable captures. Web search reported quota exhaustion;
+no web searches were issued. Artifact SHA256:
+`976994914cf4584571a5c8324f1c6b9c0e8b84bd5b45ab3f1cef9aa95b53dbfb`.
+The preceding editor error did not recur, so its original cause remains unknown.
+The new writer contract was exercised; the draft was held for the deck's own
+audience citation. Independent review found that P6 did not establish the named
+unauthenticated audience, whereas P4 did. The other five fields had no additional
+clear substantive defect. This is not a positive approval of the held draft.
+GitLab's editorial rationale was supported; S3 Express's rationale still scored
+existing characteristics rather than the new regional change, so general ranking
+is not qualified.
+
+## Opt-in citation additions experiment
+
+The manual preview offers an `off`-by-default citation-additions operation,
+separate from prose repair. It may use the same single reserved correction call,
+not an extra call budget. It is eligible only for a reproducible isolated
+`MAPPED_AUDIENCE_SUPPORT_REQUIRED` hold with no other detected failures. The
+model can propose new passage IDs only for the flagged fields, within the existing
+four-citation cap; it cannot rewrite text, remove old citations or alter another
+field. Added passages must address a missing named audience. This is a narrow
+relevance check, not proof of full semantic support. The original rejection and
+both bindings are retained, the original prose is copied unchanged, and every
+structural/source/reader/advisory gate is rebuilt. Independent review remains
+required for every field, even after a zero-hold correction. Standard runs, paid
+paths, daily delivery, recipients and billing remain unchanged. The new operation
+has not yet passed a live trial or been qualified for unattended use.
