@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { citationCorrectionFixture } from './fixtures/citation-correction.mjs';
 import { REVIEWED_REVISION_PURPOSE, assertReviewedRevisionAuthority, sealReviewedRevisionPackage,
   openReviewedRevisionPackage, validateReviewedRevisionManifest, validateReviewedRevisionCipher,
-  validateReviewedRevisionInput, reviseReviewedPreview } from '../scripts/automation/revise-reviewed-preview.mjs';
+  validateReviewedRevisionInput, reviseReviewedPreview, safeReviewedRevisionFailure } from '../scripts/automation/revise-reviewed-preview.mjs';
 import { previewGeminiLite } from '../scripts/automation/preview-gemini-lite.mjs';
 import { openDiagnostic } from '../scripts/automation/private-writer-diagnostic.mjs';
 import { GEMINI_FREE_MODEL, GEMINI_LITE_MODEL } from '../scripts/automation/free/gemini-ai.mjs';
@@ -238,4 +238,27 @@ test('manual workflow exposes only revision secrets after tests and ciphertext c
   assert.ok(workflow.indexOf('npm test') < workflow.indexOf('--validate-only'));
   assert.ok(workflow.indexOf('--validate-only') < workflow.indexOf('secrets.'));
   assert.equal((workflow.match(/--human-review-only/gu) ?? []).length, 1);
+});
+
+test('CLI failure diagnostics allow only fixed revision codes and omit keys, provider text and crypto internals', () => {
+  const sensitive = 'synthetic-private-key-and-provider-body';
+  for (const code of ['REVIEWED_REVISION_CIPHER_INVALID', 'REVIEWED_REVISION_DECRYPTION_FAILED',
+    'REVIEWED_REVISION_CONFIGURATION_INVALID', 'REVIEWED_REVISION_INPUT_BINDING', 'REVIEWED_REVISION_EXPIRED']) {
+    const error = Object.assign(new Error(sensitive), { code, stack: sensitive, key: sensitive, body: sensitive });
+    assert.equal(safeReviewedRevisionFailure(error), code);
+    assert.doesNotMatch(safeReviewedRevisionFailure(error), /synthetic-private|provider-body/);
+  }
+  for (const error of [null, undefined, sensitive, new Error(sensitive), { code: sensitive },
+    { code: 'REVIEWED_REVISION_' + sensitive }, { code: 'ERR_OSSL_BAD_DECRYPT', message: sensitive },
+    { code: 'GEMINI_HTTP_ERROR', body: sensitive }, { code: { toString: () => sensitive } },
+    { code: 'REVIEWED_REVISION_DECRYPTION_FAILED\n' + sensitive }]) {
+    assert.equal(safeReviewedRevisionFailure(error), 'REVIEWED_REVISION_FAILED');
+  }
+  let getterCalled = false;
+  const accessor = Object.defineProperty({}, 'code', { get() { getterCalled = true; throw Error(sensitive); } });
+  assert.equal(safeReviewedRevisionFailure(accessor), 'REVIEWED_REVISION_FAILED');
+  assert.equal(getterCalled, false);
+  const script = readFileSync(new URL('../scripts/automation/revise-reviewed-preview.mjs', import.meta.url), 'utf8');
+  assert.match(script, /console\.error\(`\$\{safeReviewedRevisionFailure\(error\)\}/);
+  assert.doesNotMatch(script, /console\.error\([^\n]*(?:error\.message|error\.stack|JSON\.stringify\(error)/);
 });

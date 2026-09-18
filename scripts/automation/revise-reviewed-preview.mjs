@@ -22,6 +22,25 @@ const MAX_INPUT_BYTES = 200_000;
 const MAX_ENVELOPE_BYTES = 270_000;
 const MAX_AGE_MS = 6 * 60 * 60 * 1000;
 const INPUT_FILE = new URL('./reviewed-revision-input.encrypted.json', import.meta.url);
+const safeFailureCodes = new Set([
+  'REVIEWED_REVISION_CIPHER_INVALID', 'REVIEWED_REVISION_INPUT_INVALID',
+  'REVIEWED_REVISION_AUTHORITY_REJECTED', 'REVIEWED_REVISION_MANIFEST_CLOSED',
+  'REVIEWED_REVISION_EXPIRED', 'REVIEWED_REVISION_CIPHER_BINDING',
+  'REVIEWED_REVISION_INPUT_BINDING', 'REVIEWED_REVISION_DECRYPTION_FAILED',
+  'REVIEWED_REVISION_ORIGINAL_INVALID', 'REVIEWED_REVISION_FEEDBACK_INVALID',
+  'REVIEWED_REVISION_SOURCE_INVALID', 'REVIEWED_REVISION_CONFIGURATION_INVALID',
+  'REVIEWED_REVISION_NETWORK_REJECTED', 'REVIEWED_REVISION_REVALIDATION_HELD',
+  'REVIEWED_REVISION_HELD', 'REVIEWED_REVISION_ARGUMENTS_INVALID',
+]);
+export function safeReviewedRevisionFailure(error) {
+  // Never print messages, stacks, provider bodies, crypto details or keys.
+  // Read only a data property: an untrusted accessor is not a diagnostic.
+  try {
+    const code = error && (typeof error === 'object' || typeof error === 'function')
+      ? Object.getOwnPropertyDescriptor(error, 'code')?.value : undefined;
+    return typeof code === 'string' && safeFailureCodes.has(code) ? code : 'REVIEWED_REVISION_FAILED';
+  } catch { return 'REVIEWED_REVISION_FAILED'; }
+}
 const fields = ['headline', 'deck', 'claims.0', 'claims.1', 'whyItMatters', 'whatToDoOrWatch', 'story'];
 const hash = value => createHash('sha256').update(value).digest('hex');
 const hashJson = value => hash(JSON.stringify(value));
@@ -256,5 +275,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
       console.info(JSON.stringify(result.report));
       if (result.report.status !== 'human-review-required') process.exitCode = 1;
     } else fail('REVIEWED_REVISION_ARGUMENTS_INVALID');
-  } catch { console.error('Reviewed revision held; no email was sent.'); process.exitCode = 1; }
+  } catch (error) {
+    console.error(`${safeReviewedRevisionFailure(error)}: Reviewed revision held; no email was sent.`);
+    process.exitCode = 1;
+  }
 }
