@@ -9,7 +9,7 @@ import { TextDecoder } from 'node:util';
 import { REVIEWED_REVISION_MANIFEST } from './reviewed-revision-manifest.mjs';
 import { previewGeminiLite, validPreviewEvidenceMap, renderHumanReview } from './preview-gemini-lite.mjs';
 import { FREE_PROJECT_CONFIRMATION } from './check-gemini-writer.mjs';
-import { GEMINI_FREE_MODEL, geminiFailureDiagnostic } from './free/gemini-ai.mjs';
+import { GEMINI_LITE_MODEL, geminiFailureDiagnostic } from './free/gemini-ai.mjs';
 import { FRESH_PREVIEW_WRITER_PROFILE } from './free/fresh-preview-writer-prompt.mjs';
 import { buildPreviewReviewPacket } from './free/preview-editorial-review.mjs';
 import { previewSourceIntegrityHolds } from './free/preview-evidence-gate.mjs';
@@ -217,13 +217,15 @@ export async function reviseReviewedPreview({ bytes, keyBase64, manifest = REVIE
   if (freeProjectConfirmation !== FREE_PROJECT_CONFIRMATION || !/^[A-Za-z0-9_.-]{20,256}$/u.test(apiKey ?? '')) fail('REVIEWED_REVISION_CONFIGURATION_INVALID');
   const records = [];
   let requests = 0, stoppedCode = null;
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_FREE_MODEL}:generateContent`;
+  // Manually selected availability trial. No runtime model input or automatic
+  // fallback: a failed request ends this bounded experiment unchanged.
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_LITE_MODEL}:generateContent`;
   for (const record of input.records) {
     if (!unexpired()) { stoppedCode = 'REVIEWED_REVISION_EXPIRED'; break; }
     const dossier = structuredClone(record.dossier), payload = originalPayload(record.result);
     const original = buildPreviewReviewPacket(payload.stories[0], dossier, payload.evidenceForFields);
     let perStory = 0, expiredAtNetwork = false;
-    const result = await previewGeminiLite({ apiKey, freeProjectConfirmation, model: GEMINI_FREE_MODEL,
+    const result = await previewGeminiLite({ apiKey, freeProjectConfirmation, model: GEMINI_LITE_MODEL,
       dossier: structuredClone(dossier), fresh: true, writerProfile: FRESH_PREVIEW_WRITER_PROFILE,
       repair: { unapproved: true, payload: structuredClone(payload), rejectionDetails: record.feedback.map(f => ({
         reason: 'INDEPENDENT_EDITORIAL_REJECTION', feedback: { field: f.field, issue: f.issue },
@@ -259,7 +261,7 @@ export async function reviseReviewedPreview({ bytes, keyBase64, manifest = REVIE
   const report = { purpose: REVIEWED_REVISION_PURPOSE, testId: input.testId,
     status: complete ? 'human-review-required' : 'failed', freshResearch: false, sourceRunId: input.sourceRunId,
     sourceGitSha: input.sourceGitSha, evidenceRetrievedAt: input.retrievedAt, expiresAt: input.expiresAt,
-    model: GEMINI_FREE_MODEL, modelRequests: requests, maxModelRequests: input.records.length,
+    model: GEMINI_LITE_MODEL, modelRequests: requests, maxModelRequests: input.records.length,
     draftCount: records.filter(r => r.result.hasDraftPreview).length, searchRequests: 0, articleRequests: 0,
     emailRequests: 0, approved: false, qualified: false, productionEnabled: false, manualProseEdits: 0,
     ...(complete ? {} : { code: stoppedCode ?? records.at(-1)?.result.report.code ?? 'REVIEWED_REVISION_HELD',

@@ -43,7 +43,7 @@ function fixedPayload(record) {
   payload.evidenceForFields.deck.push('S1P4');
   return payload;
 }
-const response = (payload, model = GEMINI_FREE_MODEL) => new Response(JSON.stringify({ modelVersion: model,
+const response = (payload, model = GEMINI_LITE_MODEL) => new Response(JSON.stringify({ modelVersion: model,
   candidates: [{ finishReason: 'STOP', content: { role: 'model', parts: [{ text: JSON.stringify(payload) }] } }] }),
   { headers: { 'content-type': 'application/json' } });
 
@@ -157,7 +157,7 @@ test('two immutable source-bound revisions make at most one request each and rem
   let calls = 0;
   const output = await reviseReviewedPreview({ ...settings, ...item, fetchImpl: async (url, options) => {
     const record = before.records[calls++];
-    assert.equal(url, `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_FREE_MODEL}:generateContent`);
+    assert.equal(url, `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_LITE_MODEL}:generateContent`);
     const body = JSON.parse(options.body), prompt = JSON.parse(body.contents[0].parts[0].text);
     assert.equal(body.generationConfig.maxOutputTokens, 8000);
     assert.equal(body.generationConfig.thinkingConfig.thinkingLevel, 'medium');
@@ -170,6 +170,7 @@ test('two immutable source-bound revisions make at most one request each and rem
   } });
   assert.equal(calls, 2); assert.equal(output.report.status, 'human-review-required');
   assert.equal(output.report.modelRequests, 2); assert.equal(output.report.maxModelRequests, 2);
+  assert.equal(output.report.model, GEMINI_LITE_MODEL);
   assert.equal(output.report.freshResearch, false); assert.equal(output.report.emailRequests, 0);
   assert.equal(output.report.approved, false); assert.equal(output.report.qualified, false); assert.equal(output.report.productionEnabled, false);
   assert.equal(output.report.manualProseEdits, 0); assert.equal(output.report.articleRequests, 0); assert.equal(output.report.searchRequests, 0);
@@ -222,6 +223,31 @@ test('configuration and input rejection happen before any provider request', asy
   for (const patch of [{ freeProjectConfirmation: 'yes' }, { apiKey: '' }, { testId: 'other' },
     { now: new Date('2028-10-03T10:00:00.000Z') }, { manifest: null }]) {
     await assert.rejects(reviseReviewedPreview({ ...settings, ...item, ...patch, fetchImpl: () => assert.fail('must not call') }));
+  }
+});
+
+test('isolated revision uses only its fixed Lite model and never retries or switches on service failure', async () => {
+  const input = fixture(), item = sealed(input);
+  for (const succeeds of [true, false]) {
+    let calls = 0;
+    const output = await reviseReviewedPreview({ ...settings, ...item,
+      model: 'arbitrary-model-must-not-be-selected', fetchImpl: async (url, options) => {
+        calls++;
+        assert.equal(url, `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_LITE_MODEL}:generateContent`);
+        assert.equal(options.method, 'POST'); assert.equal(options.redirect, 'error');
+        const body = JSON.parse(options.body);
+        assert.equal(body.generationConfig.candidateCount, 1);
+        assert.equal(body.generationConfig.maxOutputTokens, 8000);
+        assert.equal(body.tools, undefined);
+        return succeeds ? response(fixedPayload(input.records[0])) : new Response(JSON.stringify({ error: { status: 'UNAVAILABLE' } }), { status: 503 });
+      } });
+    assert.equal(calls, 1); assert.equal(output.report.modelRequests, 1); assert.equal(output.report.maxModelRequests, 1);
+    assert.equal(output.report.model, GEMINI_LITE_MODEL);
+    assert.equal(output.report.status, succeeds ? 'human-review-required' : 'failed');
+    assert.equal(output.report.emailRequests, 0); assert.equal(output.report.productionEnabled, false);
+    assert.equal(output.report.approved, false); assert.equal(output.report.qualified, false);
+    const packet = openDiagnostic(output.sealed, pair.privateKey);
+    assert.equal(packet.records[0].result.report.model, GEMINI_LITE_MODEL);
   }
 });
 
