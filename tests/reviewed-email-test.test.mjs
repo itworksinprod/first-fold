@@ -21,7 +21,7 @@ const env = () => ({ GITHUB_REPOSITORY: 'itworksinprod/first-fold', GITHUB_REF: 
   GITHUB_RUN_ATTEMPT: '1', GITHUB_RUN_ID: '23456789', GITHUB_SHA: headSha, GITHUB_WORKFLOW_SHA: headSha,
   GITHUB_WORKFLOW_REF: 'itworksinprod/first-fold/.github/workflows/reviewed-email-test.yml@refs/heads/main' });
 
-async function fixture() {
+async function fixture(researchMode = 'fresh-research') {
   const x = correctedGooglePreview(), source = x.dossier.sources[0];
   const title = source.passages[0].text;
   const page = { finalUrl: url, redirects: [], retrievedAt: '2026-09-18T03:01:00.000Z',
@@ -40,7 +40,7 @@ async function fixture() {
     limitations: ['Synthetic test fixture; not factual approval.'],
     fields: packet.units.map(u => ({ field: u.field, supportedByMappedPassages: true, conditionsPreserved: true,
       noUnsupportedInference: true, rationale: 'Synthetic test control only.' })) };
-  const input = { editionDate: '2026-09-17', researchMode: 'fresh-research', stories: [{ packet, review,
+  const input = { editionDate: '2026-09-17', researchMode, stories: [{ packet, review,
     sources: [{ sourceId: source.sourceId, publisher: source.publisher, url }] }] };
   const full = { version: REVIEWED_TEST_PACKAGE_VERSION, input, metadata: { sourceRunId, sourceGitSha,
     retrievedAt: '2026-09-18T03:00:00.000Z', reportingWindow: { startInclusive: '2026-09-15T03:00:00.000Z',
@@ -96,6 +96,27 @@ test('AES-GCM round trip binds ciphertext, full input, test identity and canonic
   assert.throws(() => openReviewedEmailTestPackage(bytes, key, { ...x.manifest, cipherSha256: hash(bytes) }), /DECRYPTION_FAILED/);
 });
 
+test('email transport accepts only equivalent canonical 32-byte base64 or lowercase-hex keys', async () => {
+  const x = await fixture(), hex = Buffer.from(key, 'base64').toString('hex');
+  assert.deepEqual(openReviewedEmailTestPackage(x.artifact, hex, x.manifest), x.full);
+  const viaHex = sealReviewedEmailTestPackage(x.full, hex, x.manifest.authorization.testId);
+  const manifest = { ...x.manifest, inputSha256: viaHex.inputSha256, cipherSha256: viaHex.cipherSha256 };
+  assert.equal(viaHex.inputSha256, x.manifest.inputSha256);
+  assert.deepEqual(openReviewedEmailTestPackage(viaHex.bytes, key, manifest), x.full);
+  assert.deepEqual(openReviewedEmailTestPackage(viaHex.bytes, hex, manifest), x.full);
+  const malformed = [null, {}, hex + '\n', ' ' + hex, '0x' + hex, hex.slice(1), hex + '0', 'g'.repeat(64),
+    'AB'.repeat(32), 'a'.repeat(1_000_000), key + '\n', key.slice(0, -1), key + '=',
+    '-'.repeat(43) + '=', Buffer.alloc(31).toString('base64'), Buffer.alloc(33).toString('base64')];
+  for (const candidate of malformed) {
+    assert.throws(() => sealReviewedEmailTestPackage(x.full, candidate, x.manifest.authorization.testId), /ENCODING_INVALID/);
+    assert.throws(() => openReviewedEmailTestPackage(x.artifact, candidate, x.manifest), /ENCODING_INVALID/);
+  }
+  assert.throws(() => openReviewedEmailTestPackage(x.artifact, '00'.repeat(32), x.manifest), /DECRYPTION_FAILED/);
+  const envelope = { ...JSON.parse(x.artifact), iv: '00'.repeat(12) };
+  const bytes = Buffer.from(JSON.stringify(envelope));
+  assert.throws(() => openReviewedEmailTestPackage(bytes, hex, { ...x.manifest, cipherSha256: hash(bytes) }), /ENCODING_INVALID/);
+});
+
 test('bounds artifacts and rejects hooks and unknown envelope keys', async () => {
   const x = await fixture();
   assert.throws(() => openReviewedEmailTestPackage(Buffer.alloc(2 * 1024 * 1024 + 1), key, x.manifest), /ARTIFACT_INVALID/);
@@ -116,6 +137,43 @@ test('validates full unchanged review and freshly re-captured text with no email
   }));
   assert.deepEqual(result, { status: 'validated', storyCount: 1, emailRequests: 0 });
   assert.equal(fetches, 1); assert.equal(sends, 0);
+});
+
+test('recent stored-evidence revisions retain their honest label and every source/review/send gate', async () => {
+  const x = await fixture('stored-evidence'); let fetches = 0, sends = 0;
+  assert.equal(x.prepared.researchMode, 'stored-evidence');
+  const result = await runReviewedEmailTest(options(x, { mode: '--send',
+    env: { ...env(), PERSONAL_PAPER_EMAIL: 'owner@example.com', RESEND_API_KEY: 're_test_only_key' },
+    pageFetcher: async () => { fetches++; return structuredClone(x.page); },
+    sender: async (prepared, opts) => {
+      sends++; assert.equal(fetches, 1); assert.deepEqual(prepared, x.prepared);
+      assert.equal(prepared.researchMode, 'stored-evidence');
+      assert.equal(opts.authorization.researchMode, 'stored-evidence');
+      assert.equal(opts.recipient, 'owner@example.com');
+      return { status: 'accepted', emailRequests: 1 };
+    },
+  }));
+  assert.equal(sends, 1); assert.equal(result.status, 'accepted');
+  x.manifest.authorization.researchMode = 'fresh-research';
+  await assert.rejects(runReviewedEmailTest(options(x)), /AUTHORIZATION_INVALID/);
+});
+
+test('stored-evidence label cannot relax research age, capture age, provenance or independent review', async () => {
+  for (const mutate of [
+    x => { x.full.metadata.retrievedAt = '2026-09-17T21:19:59.999Z';
+      x.full.metadata.reportingWindow.endExclusive = x.full.metadata.retrievedAt;
+      x.full.metadata.reportingWindow.startInclusive = '2026-09-14T21:19:59.999Z'; },
+    x => { x.full.metadata.captures[0].identity.retrievedAt = '2026-09-17T21:19:59.999Z'; },
+    x => { x.full.metadata.sourceRunId = '99999999'; },
+    x => { x.full.metadata.reportingWindow.startInclusive = '2026-09-14T03:00:00.000Z'; },
+    x => { x.full.input.stories[0].review.fields[0].conditionsPreserved = false; },
+  ]) {
+    const x = await fixture('stored-evidence'); mutate(x); repack(x);
+    let fetches = 0, sends = 0;
+    await assert.rejects(runReviewedEmailTest(options(x, { mode: '--send',
+      pageFetcher: async () => { fetches++; return x.page; }, sender: async () => { sends++; } })), /REVIEWED_/);
+    assert.equal(fetches, 0); assert.equal(sends, 0);
+  }
 });
 
 test('sends only the exact prepared message to the encrypted-pinned existing recipient after source checks', async () => {

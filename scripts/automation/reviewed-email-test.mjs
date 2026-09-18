@@ -59,6 +59,14 @@ function strictBase64(value, length, max = MAX_BYTES) {
   if (bytes.toString('base64') !== value || bytes.length > max || (length !== undefined && bytes.length !== length)) fail('REVIEWED_TRANSPORT_ENCODING_INVALID');
   return bytes;
 }
+function transportKey(value) {
+  // Existing secrets may encode the same 32 bytes as canonical lowercase hex
+  // or canonical base64. No trimming, truncated decode or envelope changes.
+  if (typeof value !== 'string') fail('REVIEWED_TRANSPORT_ENCODING_INVALID');
+  if (value.length === 64 && /^[a-f0-9]{64}$/u.test(value)) return Buffer.from(value, 'hex');
+  if (value.length === 44) return strictBase64(value, 32, 32);
+  fail('REVIEWED_TRANSPORT_ENCODING_INVALID');
+}
 const aad = (testId, inputSha256) => Buffer.from(JSON.stringify({ purpose: 'first-fold-private-reviewed-email-test', testId, inputSha256 }));
 function testIdentity(testId, inputSha256) {
   if (typeof testId !== 'string' || !/^[a-z0-9][a-z0-9-]{7,79}$/u.test(testId) ||
@@ -80,7 +88,7 @@ export function sealReviewedEmailTestPackage(input, keyBase64, testId) {
   const plaintext = Buffer.from(JSON.stringify(snapshot(input)));
   const inputSha256 = hash(plaintext);
   testIdentity(testId, inputSha256);
-  const key = strictBase64(keyBase64, 32, 32), iv = randomBytes(12);
+  const key = transportKey(keyBase64), iv = randomBytes(12);
   try {
     const cipher = createCipheriv('aes-256-gcm', key, iv);
     cipher.setAAD(aad(testId, inputSha256));
@@ -100,7 +108,7 @@ export function openReviewedEmailTestPackage(artifact, keyBase64, manifestInput)
   try { envelope = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(artifact)); }
   catch { fail('REVIEWED_TRANSPORT_ENVELOPE_INVALID'); }
   if (!exact(envelope, ['version', 'iv', 'tag', 'ciphertext']) || envelope.version !== ENVELOPE_VERSION) fail('REVIEWED_TRANSPORT_ENVELOPE_INVALID');
-  const key = strictBase64(keyBase64, 32, 32), iv = strictBase64(envelope.iv, 12, 12), tag = strictBase64(envelope.tag, 16, 16);
+  const key = transportKey(keyBase64), iv = strictBase64(envelope.iv, 12, 12), tag = strictBase64(envelope.tag, 16, 16);
   const ciphertext = strictBase64(envelope.ciphertext);
   let plaintext;
   try {
@@ -141,7 +149,11 @@ function validateFreshPackage(fullInput, manifest, now) {
   if (!exact(data, ['version', 'input', 'metadata']) || data.version !== REVIEWED_TEST_PACKAGE_VERSION ||
     !exact(data.metadata, ['sourceRunId', 'sourceGitSha', 'retrievedAt', 'reportingWindow', 'recipientSha256', 'captures']) ||
     data.metadata.sourceRunId !== manifest.sourceRunId || data.metadata.sourceGitSha !== manifest.sourceGitSha ||
-    !SHA.test(data.metadata.recipientSha256 ?? '') || data.input?.researchMode !== 'fresh-research') fail('REVIEWED_TRANSPORT_PROVENANCE_INVALID');
+    !SHA.test(data.metadata.recipientSha256 ?? '') ||
+    !['fresh-research', 'stored-evidence'].includes(data.input?.researchMode)) fail('REVIEWED_TRANSPORT_PROVENANCE_INVALID');
+  // A revision of an earlier capture is labeled stored-evidence. That label
+  // does not relax the six-hour research/capture limits or any source/review
+  // binding below; old saved articles cannot become a fresh delivery by relabeling.
   const prepared = prepareReviewedPreviewEmail(data.input);
   assertReviewedTestAuthorization(prepared, manifest.authorization, now);
   const retrieved = timestamp(data.metadata.retrievedAt), window = data.metadata.reportingWindow;
