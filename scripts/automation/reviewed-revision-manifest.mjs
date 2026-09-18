@@ -3,12 +3,12 @@
 export const REVIEWED_REVISION_MANIFEST = Object.freeze({
   version: 'reviewed-prose-revision-manifest-v1',
   purpose: 'private-reviewed-prose-revision-not-delivery',
-  testId: 'run24-reviewed-revision-20260918-c',
+  testId: 'run24-reviewed-revision-20260918-d',
   sourceRunId: '35302533558',
   sourceGitSha: '4e8701af2ced6e65d6f9d0b28b024be555a07763',
   retrievedAt: '2026-09-18T03:16:01.038Z',
   expiresAt: '2026-09-18T06:00:00.000Z',
   recordCount: 1,
-  inputSha256: '85abfb3afbaed63c43eafab3886032c75d28c26fea0afc5a30c934df3aa25945',
-  cipherSha256: '63e48ee791a10cb2288a1ff1276e5c19d42c8c46277d3fe1d5a289715c437cbb',
+  inputSha256: '0443f3aa572a2fdfdc95faa899b1caf3b9b804f748d7e3a97c4733fd8c98ed56',
+  cipherSha256: '613bf65781a382baa53bd7fce4df330d0ffad4ee791ec43bcfca026280012976',
 });
