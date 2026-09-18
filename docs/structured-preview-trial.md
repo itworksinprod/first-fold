@@ -465,3 +465,12 @@ one first writer and at most one already-permitted correction. Standard sampling
 and its four-call cap are unchanged. Targeting is not evidence of ranking quality
 or an edition; independent review is still required, and a first-pass success or
 an unrelated failure must not be forced into a correction.
+
+The first targeted run, `35289944945` at `60eaeeb`, exposed a selector bug before
+any writer call: it counted the collector's context-only feed index as a second
+factual source. The accepted GitLab candidate scored 79, but the target stopped.
+Artifact SHA256: `ec58d8e6782f1b79767707d78c202664bf5344559a4e6a0eb11a6a0f9dc14505`.
+Selection now uses the collector's existing factual-source definition, excluding
+only explicitly context-marked entries. Exact originating article identity and
+the one-factual-source requirement remain unchanged. The integration regression
+now includes the real article-plus-feed layout; extra factual sources still fail.

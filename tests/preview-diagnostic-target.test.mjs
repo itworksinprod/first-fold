@@ -10,7 +10,8 @@ const s=raw.dossier.sources[0];
 const candidate=()=>({candidateId:raw.dossier.candidateId,primaryEntity:'GitLab',canonicalEventKey:'gitlab-limits-2026',suggestedDesk:'work-and-tools',
   title:s.articleIdentity.title,firstPublishedAt:s.publishedAt,
   ranking:{score:79,evidenceTier:'authoritative-single',components:{materialityNewsworthiness:21,deskRelevance:19,sourceStrength:16,readerUsefulnessActionability:10,freshness:13},editorialValidation:{requiredScore:70,decision:'accepted',rejectionReasons:[]}},
-  sources:[{id:s.sourceId,publisher:s.publisher,title:s.articleIdentity.title,url,relationship:'originating',publishedAt:s.publishedAt}],
+  sources:[{id:s.sourceId,publisher:s.publisher,title:s.articleIdentity.title,url,relationship:'originating',publishedAt:s.publishedAt},
+    {id:s.sourceId+'-feed',publisher:s.publisher,title:'GitLab feed index',url:'https://about.gitlab.com/atom.xml',relationship:'context',publishedAt:null}],
   feedEvidence:[{sourceId:s.sourceId,publisher:s.publisher,title:s.articleIdentity.title,publishedAt:s.publishedAt,
     articleExcerpt:s.passages.map(p=>p.text).join('\n'),articleBlocks:s.passages.map(p=>p.text),
     articleExtraction:{version:'structured-complete-preview-v1',status:'usable',holds:[],identity:s.articleIdentity}}]});
@@ -18,9 +19,12 @@ test('diagnostic target requires exact known identity; absent, arbitrary, redire
   const c=candidate();assert.strictEqual(selectDiagnosticTarget([c],'gitlab-rate-limits-2026')[0],c);
   assert.throws(()=>validatePreviewDiagnosticTarget('https://untrusted.example'));
   for(const values of [[],[c,c],[{...c,candidateId:'other'}],[{...c,sources:[{...c.sources[0],url:url+'?changed'}]}],
-    [{...c,sources:[{...c.sources[0],publisher:'Other'}]}],[{...c,sources:[{...c.sources[0],relationship:'independent'}]}]]){
+    [{...c,sources:[{...c.sources[0],publisher:'Other'}]}],[{...c,sources:[{...c.sources[0],relationship:'independent'}]}],
+    [{...c,sources:[...c.sources,{...c.sources[0],url:'https://example.com/second',relationship:'independent'}]}]]){
     assert.throws(()=>selectDiagnosticTarget(values,'gitlab-rate-limits-2026'));
   }
+  assert.equal(selectDiagnosticTarget([{...c,sources:[...c.sources].reverse()}],'gitlab-rate-limits-2026').length,1);
+  assert.equal(selectDiagnosticTarget([{...c,sources:[c.sources[0]]}],'gitlab-rate-limits-2026').length,1);
 });
 test('targeted fresh trial retains normal editor and source gates; one writer and shared correction stay under three calls',async()=>{
   const {publicKey,privateKey}=generateKeyPairSync('rsa',{modulusLength:3072});

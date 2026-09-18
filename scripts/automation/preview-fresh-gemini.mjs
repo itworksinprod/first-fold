@@ -27,8 +27,13 @@ export function selectDiagnosticTarget(eligible,value) {
   validatePreviewDiagnosticTarget(value);
   if(value==='standard')return eligible;
   const target=diagnosticTargets[value];
-  const matches=eligible.filter(c=>c.candidateId===target.candidateId&&c.sources?.length===1&&
-    c.sources[0].url===target.url&&c.sources[0].publisher===target.publisher&&c.sources[0].relationship==='originating');
+  const matches=eligible.filter(c=>{
+    // The collector adds a context-only feed index alongside an originating
+    // article. It is not an additional factual source or corroboration.
+    const factual=(c.sources??[]).filter(s=>s.relationship!=='context');
+    return c.candidateId===target.candidateId&&factual.length===1&&
+      factual[0].url===target.url&&factual[0].publisher===target.publisher&&factual[0].relationship==='originating';
+  });
   if(matches.length!==1)throw Error('PREVIEW_DIAGNOSTIC_TARGET_NOT_ELIGIBLE');
   return matches;
 }
