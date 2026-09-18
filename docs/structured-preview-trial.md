@@ -443,3 +443,25 @@ field citations, including unflagged fields; flags are not exhaustive semantic
 review. Original and correction remain separate, the repair kind is recorded,
 and the unchanged validator and independent review still gate private preview.
 No raw fixture, alarm, quality threshold, daily workflow or billing was bypassed.
+
+## Sixth trial: ranking drift requires a named diagnostic target
+
+Run `35289154556` at `c80a499` used three calls and produced no reviewable drafts.
+All 48 feeds completed; 10 captures were usable, and web search remained quota-
+exhausted. Artifact SHA256:
+`fadb1a83f30b3d09d7618ffeb61ca5dff02d249564593af7c655bd99c2e70963`.
+Ranking selected Bransys and AWS rather than GitLab, so the new audience
+correction was not exercised. Bransys still omitted affected-broker scope and
+strengthened a conditional impact; AWS again inferred a Savings-Plan/Spot
+relationship and cited the wrong passage for a T3 reference. These are genuine
+holds, not reasons to broaden retries or loosen validation.
+
+The manual preview now offers one fixed diagnostic target, the exact GitLab
+rate-limit source and candidate identity. It is selected only after normal
+editorial acceptance, evidence, freshness and source gates. An absent, rejected
+or ambiguous target stops with no substitute. Baseline ranking and displaced
+candidates remain recorded. This mode has a smaller three-call cap: one editor,
+one first writer and at most one already-permitted correction. Standard sampling
+and its four-call cap are unchanged. Targeting is not evidence of ranking quality
+or an edition; independent review is still required, and a first-pass success or
+an unrelated failure must not be forced into a correction.

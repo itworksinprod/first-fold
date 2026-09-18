@@ -16,6 +16,23 @@ import { FREE_PROJECT_CONFIRMATION } from "./check-gemini-writer.mjs";
 import { diagnosticPublicKey, sealDiagnostic } from "./private-writer-diagnostic.mjs";
 import { createPreviewNewsworthiness } from './free/preview-newsworthiness.mjs';
 
+const diagnosticTargets=Object.freeze({'gitlab-rate-limits-2026':Object.freeze({
+  candidateId:'candidate-cb9de104648a6a26',url:'https://about.gitlab.com/blog/rate-limit-change-2026/',publisher:'GitLab',
+})});
+export function validatePreviewDiagnosticTarget(value='standard') {
+  if(value!=='standard'&&!Object.hasOwn(diagnosticTargets,value))throw Error('PREVIEW_DIAGNOSTIC_TARGET_INVALID');
+  return value;
+}
+export function selectDiagnosticTarget(eligible,value) {
+  validatePreviewDiagnosticTarget(value);
+  if(value==='standard')return eligible;
+  const target=diagnosticTargets[value];
+  const matches=eligible.filter(c=>c.candidateId===target.candidateId&&c.sources?.length===1&&
+    c.sources[0].url===target.url&&c.sources[0].publisher===target.publisher&&c.sources[0].relationship==='originating');
+  if(matches.length!==1)throw Error('PREVIEW_DIAGNOSTIC_TARGET_NOT_ELIGIBLE');
+  return matches;
+}
+
 export function previewMechanicalRepairAllowed(result) {
   if(result?.report?.code!=='GEMINI_EDITORIAL_VALIDATION_FAILED')return false;
   const details=result.rejectedDiagnostic?.rejectionDetails;
@@ -80,9 +97,13 @@ export function selectPreviewReadyCandidates(snapshot, reportingWindow, { requir
 
 export async function previewFreshGemini({ publicKey, apiKey, freeProjectConfirmation,
   tavilyApiKey, tavilyPaygoDisabledVerified = false, now = new Date(),
+  diagnosticTarget='standard',
   researchImpl = collectFreeResearchSnapshot, draftImpl = previewGeminiLite,
   coverageImpl = assertFreeResearchCoverage, editorialRequestImpl } = {}) {
   diagnosticPublicKey(publicKey);
+  validatePreviewDiagnosticTarget(diagnosticTarget);
+  const maxModelRequests=diagnosticTarget==='standard'?4:3;
+  let diagnosticSampling={mode:diagnosticTarget,baselineRanking:[]};
   if (freeProjectConfirmation !== FREE_PROJECT_CONFIRMATION || !/^[A-Za-z0-9_.-]{20,256}$/u.test(apiKey ?? "")) {
     throw Error("PREVIEW_CONFIGURATION_INVALID");
   }
@@ -94,10 +115,10 @@ export async function previewFreshGemini({ publicKey, apiKey, freeProjectConfirm
     reportingWindow,requestImpl:editorialRequestImpl,onResult:result=>{editorial=result;}});
   const heldResult=code=>{
     const report={status:'no-reviewable-drafts',code,approved:false,qualified:false,productionEnabled:false,emailRequests:0,
-      retrievedAt,modelRequests:editorial.modelRequests,maxModelRequests:4,draftCount:0,selectedCount:0,
+      retrievedAt,modelRequests:editorial.modelRequests,maxModelRequests,diagnosticTarget,draftCount:0,selectedCount:0,
       editorialStatus:editorial.status,editorialModelRequests:editorial.modelRequests,budgetOmissions:[]};
     return {report,sealed:sealDiagnostic({purpose:'fresh-news-unapproved-human-review-not-an-edition',report,reportingWindow,
-      editorial,preDraftHolds:[{reasons:[code]}],records:[]},publicKey)};
+      editorial,diagnosticSampling,preDraftHolds:[{reasons:[code]}],records:[]},publicKey)};
   };
   let snapshot;
   try { snapshot = await researchImpl({ reportingWindow, retrievedAt, enrichArticles: true, articleEvidenceMode: "structured-preview",
@@ -112,10 +133,15 @@ export async function previewFreshGemini({ publicKey, apiKey, freeProjectConfirm
   try {selection = selectPreviewReadyCandidates(snapshot, reportingWindow, { requireStructured: true });}
   catch {return heldResult('PREVIEW_SELECTION_HELD');}
   const availableCandidates = selection.selectedCandidates;
+  diagnosticSampling={mode:diagnosticTarget,baselineRanking:availableCandidates.map(c=>({candidateId:c.candidateId,desk:c.suggestedDesk,ranking:c.ranking}))};
+  let diagnosticCandidates;
+  try{diagnosticCandidates=selectDiagnosticTarget(availableCandidates,diagnosticTarget);}
+  catch{return heldResult('PREVIEW_DIAGNOSTIC_TARGET_NOT_ELIGIBLE');}
   // Reserve ONE correction call rather than spending every slot on first drafts.
   // This trades diagnostic breadth for correction capacity, not lower standards.
-  const candidates = [...availableCandidates].sort((a,b)=>b.ranking.score-a.ranking.score||a.candidateId.localeCompare(b.candidateId)).slice(0,3-editorial.modelRequests);
-  const budgetOmissions=availableCandidates.filter(c=>!candidates.includes(c)).map(c=>({candidateId:c.candidateId,desk:c.suggestedDesk,reason:'PREVIEW_MODEL_BUDGET_RESERVED_FOR_CORRECTION'}));
+  const candidates = [...diagnosticCandidates].sort((a,b)=>b.ranking.score-a.ranking.score||a.candidateId.localeCompare(b.candidateId)).slice(0,diagnosticTarget==='standard'?3-editorial.modelRequests:1);
+  const budgetOmissions=availableCandidates.filter(c=>!candidates.includes(c)).map(c=>({candidateId:c.candidateId,desk:c.suggestedDesk,
+    reason:diagnosticTarget==='standard'?'PREVIEW_MODEL_BUDGET_RESERVED_FOR_CORRECTION':'TARGETED_DIAGNOSTIC_NOT_EDITION_SELECTION'}));
   if (!Array.isArray(candidates) || candidates.length > 4 || new Set(candidates.map(c => c.suggestedDesk)).size !== candidates.length) {
     throw Error("PREVIEW_SELECTION_INVALID");
   }
@@ -124,7 +150,7 @@ export async function previewFreshGemini({ publicKey, apiKey, freeProjectConfirm
   // Reserve bounded raw results before spending writer requests. The encrypted
   // diagnostic envelope permits 350KB; duplicate rendered HTML is regenerated
   // from the retained draft/map/dossier offline, never stored three times.
-  const diagnosticReservation=Buffer.byteLength(JSON.stringify({editorial,dossiers,preDraftHolds:selection.held}))+148_000;
+  const diagnosticReservation=Buffer.byteLength(JSON.stringify({editorial,dossiers,diagnosticSampling,preDraftHolds:selection.held}))+148_000;
   const diagnosticBudgetHeld=diagnosticReservation>340_000;
   if(diagnosticBudgetHeld) stopped=true;
   for (let i = 0; i < candidates.length; i++) {
@@ -141,7 +167,7 @@ export async function previewFreshGemini({ publicKey, apiKey, freeProjectConfirm
     // qualification is the sole allowed source-scope correction; every other
     // semantic/advisory and all provider/quota failures remain nonretryable.
     const repairKind=previewMechanicalRepairAllowed(result)?'mechanical':previewSourceQualificationRepairAllowed(result,dossier)?'source-qualification':null;
-    if (repairRequests===0 && repairKind && requests + (candidates.length - i - 1) < 4) {
+    if (repairRequests===0 && repairKind && requests + (candidates.length - i - 1) < maxModelRequests) {
       record.initialRejection = result;
       record.repairKind=repairKind;
       requests++;repairRequests++;
@@ -153,7 +179,7 @@ export async function previewFreshGemini({ publicKey, apiKey, freeProjectConfirm
   const draftCount = records.filter(r => r.result?.html).length;
   const report = { status: draftCount ? "human-review-required" : "no-reviewable-drafts",
     approved: false, qualified: false, productionEnabled: false, emailRequests: 0,
-    retrievedAt, modelRequests: requests, maxModelRequests: 4, repairRequests, draftCount,
+    retrievedAt, modelRequests: requests, maxModelRequests, diagnosticTarget, repairRequests, draftCount,
     editorialStatus:editorial.status,editorialModelRequests:editorial.modelRequests,budgetOmissions,
     evidenceMode: "structured-preview-v1", manualProseEdits: 0,
     selectedCount: candidates.length, heldCount: selection.held.length + records.filter(r => r.holds.length).length,
@@ -165,7 +191,7 @@ export async function previewFreshGemini({ publicKey, apiKey, freeProjectConfirm
     failures: records.filter(r => r.result?.report.status === "failed").map(r => ({ code: r.result.report.code,
       structuralErrors: r.result.report.structuralErrors ?? [] })) };
   const packet = { purpose: "fresh-news-unapproved-human-review-not-an-edition", report, reportingWindow,
-    editorial, preDraftHolds: selection.held, records:records.map(record=>{
+    editorial, diagnosticSampling, preDraftHolds: selection.held, records:records.map(record=>{
       const compact=result=>{if(!result)return result;const{html,...rest}=result;return {...rest,hasDraftPreview:Boolean(html)};};
       return {...record,result:compact(record.result),...(record.initialRejection?{initialRejection:compact(record.initialRejection)}:{})};
     }) };
@@ -178,6 +204,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     if (process.argv.length !== 4 || process.argv[2] !== "--human-review-only") throw Error("PREVIEW_ARGUMENTS_INVALID");
     const result = await previewFreshGemini({ publicKey: process.env.DIAGNOSTIC_PUBLIC_KEY,
       apiKey: process.env.GEMINI_API_KEY, freeProjectConfirmation: process.env.GEMINI_FREE_PROJECT_CONFIRMATION,
+      diagnosticTarget:process.env.PREVIEW_DIAGNOSTIC_TARGET||'standard',
       tavilyApiKey: process.env.TAVILY_API_KEY, tavilyPaygoDisabledVerified: process.env.TAVILY_PAYGO_DISABLED_VERIFIED === "true" });
     await writeFile(process.argv[3], JSON.stringify(result.sealed), { flag: "wx", mode: 0o600 });
     console.info(JSON.stringify(result.report));

@@ -10,6 +10,14 @@ on:
         description: Confirm AI Studio shows Free; enter FREE PROJECT BILLING DISABLED
         required: true
         type: string
+      diagnostic_target:
+        description: Standard selection or one already-qualified diagnostic source (not an edition)
+        required: true
+        default: standard
+        type: choice
+        options:
+          - standard
+          - gitlab-rate-limits-2026
 permissions: {}
 concurrency:
   group: gemini-writer-qualification
@@ -36,12 +44,14 @@ jobs:
       - name: Validate public key before credentials
         env:
           DIAGNOSTIC_PUBLIC_KEY: ${{ inputs.public_key }}
-        run: node --input-type=module -e 'import {diagnosticPublicKey} from "./scripts/automation/private-writer-diagnostic.mjs"; diagnosticPublicKey(process.env.DIAGNOSTIC_PUBLIC_KEY);'
+          PREVIEW_DIAGNOSTIC_TARGET: ${{ inputs.diagnostic_target }}
+        run: node --input-type=module -e 'import {diagnosticPublicKey} from "./scripts/automation/private-writer-diagnostic.mjs"; import {validatePreviewDiagnosticTarget} from "./scripts/automation/preview-fresh-gemini.mjs"; diagnosticPublicKey(process.env.DIAGNOSTIC_PUBLIC_KEY); validatePreviewDiagnosticTarget(process.env.PREVIEW_DIAGNOSTIC_TARGET);'
       - name: Research and draft without approval or delivery
         env:
           DIAGNOSTIC_PUBLIC_KEY: ${{ inputs.public_key }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_FREE_PROJECT_CONFIRMATION: ${{ inputs.free_project_confirmation }}
+          PREVIEW_DIAGNOSTIC_TARGET: ${{ inputs.diagnostic_target }}
           TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
           TAVILY_PAYGO_DISABLED_VERIFIED: ${{ vars.TAVILY_PAYGO_DISABLED_VERIFIED }}
         run: node scripts/automation/preview-fresh-gemini.mjs --human-review-only "$RUNNER_TEMP/fresh-preview.encrypted.json"
