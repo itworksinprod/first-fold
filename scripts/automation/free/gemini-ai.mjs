@@ -21,6 +21,22 @@ const safeStatuses = new Set(["INVALID_ARGUMENT", "UNAUTHENTICATED", "PERMISSION
   "RESOURCE_EXHAUSTED", "FAILED_PRECONDITION", "INTERNAL", "UNAVAILABLE", "DEADLINE_EXCEEDED"]);
 const safeReasons = new Set(["API_KEY_INVALID", "API_KEY_SERVICE_BLOCKED", "API_KEY_IP_ADDRESS_BLOCKED",
   "API_KEY_HTTP_REFERRER_BLOCKED", "SERVICE_DISABLED", "CONSUMER_INVALID", "BILLING_DISABLED"]);
+// Provider enums only: never retain finishMessage, source text or thought parts.
+const safeFinishReasons = new Set(["FINISH_REASON_UNSPECIFIED", "STOP", "MAX_TOKENS", "SAFETY", "RECITATION",
+  "LANGUAGE", "OTHER", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII", "MALFORMED_FUNCTION_CALL", "IMAGE_SAFETY",
+  "IMAGE_PROHIBITED_CONTENT", "IMAGE_OTHER", "NO_IMAGE", "IMAGE_RECITATION", "UNEXPECTED_TOOL_CALL",
+  "TOO_MANY_TOOL_CALLS", "MISSING_THOUGHT_SIGNATURE", "MALFORMED_RESPONSE", "ESCALATION"]);
+const rejectionFlags = ["FINISH_NOT_STOP", "ROLE_NOT_MODEL", "SAFETY_BLOCKED", "GROUNDING_PRESENT", "PARTS_MISSING_OR_EMPTY"];
+const safeUsage = value => Object.fromEntries(["promptTokenCount", "candidatesTokenCount", "thoughtsTokenCount", "totalTokenCount"]
+  .filter(key => Number.isInteger(value?.[key]) && value[key] >= 0 && value[key] <= 100000).map(key => [key, value[key]]));
+function incompleteDiagnostic(candidate, usage) {
+  return { finishReason: candidate.finishReason === undefined ? "MISSING" :
+    safeFinishReasons.has(candidate.finishReason) ? candidate.finishReason : "UNKNOWN",
+  rejectionFlags: rejectionFlags.filter((_, i) => [candidate.finishReason !== "STOP", candidate.content?.role !== "model",
+    Array.isArray(candidate.safetyRatings) && candidate.safetyRatings.some(rating => rating?.blocked === true),
+    Boolean(candidate.groundingMetadata), !Array.isArray(candidate.content?.parts) || !candidate.content.parts.length][i]),
+  usage: safeUsage(usage) };
+}
 // Error prose may echo credentials or source input. Retain only known enums and
 // exact request-field names, never messages, metadata or arbitrary field paths.
 function safeFailureDetails(envelope) {
@@ -41,6 +57,12 @@ function safeFailureDetails(envelope) {
   return result;
 }
 export function geminiFailureDiagnostic(failure) {
+  if (failure?.code === "GEMINI_INCOMPLETE_OR_BLOCKED") return {
+    finishReason: safeFinishReasons.has(failure.finishReason) || failure.finishReason === "MISSING"
+      ? failure.finishReason : "UNKNOWN",
+    rejectionFlags: rejectionFlags.filter(flag => Array.isArray(failure.rejectionFlags) && failure.rejectionFlags.includes(flag)),
+    usage: safeUsage(failure.usage),
+  };
   if (!["GEMINI_HTTP_ERROR", "GEMINI_FREE_QUOTA_EXHAUSTED"].includes(failure?.code)) return {};
   return {
     ...(Number.isInteger(failure.httpStatus) && failure.httpStatus >= 400 && failure.httpStatus <= 599
@@ -139,7 +161,7 @@ export async function requestGeminiEditorial({ apiKey, freeTierConfirmed, valida
     if (candidate.finishReason !== "STOP" || candidate.content?.role !== "model" ||
         candidate.safetyRatings?.some(rating => rating.blocked === true) ||
         candidate.groundingMetadata || !Array.isArray(candidate.content.parts) || !candidate.content.parts.length) {
-      throw error("GEMINI_INCOMPLETE_OR_BLOCKED");
+      throw Object.assign(error("GEMINI_INCOMPLETE_OR_BLOCKED"), incompleteDiagnostic(candidate, envelope.usageMetadata));
     }
     const parts = candidate.content.parts;
     if (parts.some(part => !object(part) || Object.keys(part).some(key => !["text", "thought", "thoughtSignature"].includes(key)) ||
@@ -154,12 +176,9 @@ export async function requestGeminiEditorial({ apiKey, freeTierConfirmed, valida
     try { valid = await validatePayload(clone(editorialPayload)); } catch { /* do not expose callback text */ }
     if (valid !== true) throw error("GEMINI_EDITORIAL_VALIDATION_FAILED");
     const responseSha256 = hash(text);
-    const usage = envelope.usageMetadata ?? {};
-    const safeUsage = Object.fromEntries(["promptTokenCount", "candidatesTokenCount", "thoughtsTokenCount", "totalTokenCount"]
-      .filter(key => Number.isInteger(usage[key]) && usage[key] >= 0 && usage[key] <= 100000).map(key => [key, usage[key]]));
     return { provider: GEMINI_PROVIDER, model, modelVersion: envelope.modelVersion,
       editorialPayload, requestSha256: request.requestSha256, responseSha256,
-      responseId: `gemini-${responseSha256}`, usage: safeUsage, attemptCount: 1 };
+      responseId: `gemini-${responseSha256}`, usage: safeUsage(envelope.usageMetadata), attemptCount: 1 };
   };
   try { return await Promise.race([operation(), timeout]); }
   catch (failure) {

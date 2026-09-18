@@ -133,6 +133,9 @@ export async function previewFreshGemini({ publicKey, apiKey, freeProjectConfirm
     ...(tavilyApiKey ? { discoverWebArticles: createTavilyDiscovery({ apiKey: tavilyApiKey,
       paygoDisabledVerified: tavilyPaygoDisabledVerified }) } : {}) }); }
   catch {return heldResult('PREVIEW_RESEARCH_FAILED');}
+  // An upstream editor failure is not evidence that the diagnostic target is
+  // ineligible. Preserve its sealed receipt and stop before downstream selection.
+  if(editorial.stopModels)return heldResult('PREVIEW_EDITORIAL_FAILED');
   try {coverageImpl(snapshot, { feedSources: FREE_FEED_SOURCES, reportingWindow, retrievedAt });}
   catch {return heldResult('PREVIEW_COVERAGE_HELD');}
   let selection;

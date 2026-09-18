@@ -197,3 +197,24 @@ test('research, coverage and selection failures after editorial preserve a seale
     assert.doesNotMatch(JSON.stringify(result),/sensitive provider|private arbitrary/);
   }
 });
+
+test('editor failure keeps only safe provider diagnostics and stops before misleading target selection',async()=>{
+  const {publicKey,privateKey}=generateKeyPairSync('rsa',{modulusLength:3072});
+  const key=publicKey.export({type:'spki',format:'der'}).toString('base64');
+  let calls=0;
+  const result=await previewFreshGemini({publicKey:key,apiKey:'synthetic-key-never-real',freeProjectConfirmation:'FREE PROJECT BILLING DISABLED',
+    diagnosticTarget:'gitlab-rate-limits-2026',now:new Date(window.endExclusive),
+    researchImpl:async options=>{await options.reviewNewsworthiness([entry()]);return {candidates:[],diagnostics:{sourceResults:[]}};},
+    editorialRequestImpl:async()=>{calls++;throw Object.assign(Error('sensitive provider prose'),{code:'GEMINI_INCOMPLETE_OR_BLOCKED',
+      finishReason:'MAX_TOKENS',rejectionFlags:['FINISH_NOT_STOP','sensitive provider prose'],
+      usage:{promptTokenCount:100,totalTokenCount:4000,secret:'sensitive provider prose'},content:'sensitive provider prose'});},
+    coverageImpl:()=>assert.fail('editor failure stops before downstream checks'),draftImpl:()=>assert.fail('must not write'),
+  });
+  assert.equal(calls,1);assert.equal(result.report.modelRequests,1);assert.equal(result.report.emailRequests,0);
+  assert.equal(result.report.code,'PREVIEW_EDITORIAL_FAILED');assert.equal(result.report.draftCount,0);
+  const packet=openDiagnostic(result.sealed,privateKey);
+  assert.equal(packet.editorial.code,'GEMINI_INCOMPLETE_OR_BLOCKED');assert.equal(packet.editorial.rawParsedResponse,null);
+  assert.deepEqual(packet.records,[]);assert.deepEqual(packet.editorial.providerDiagnostic,{finishReason:'MAX_TOKENS',
+    rejectionFlags:['FINISH_NOT_STOP'],usage:{promptTokenCount:100,totalTokenCount:4000}});
+  assert.doesNotMatch(JSON.stringify(packet),/sensitive provider prose/);
+});

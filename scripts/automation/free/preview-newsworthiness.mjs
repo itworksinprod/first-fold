@@ -1,7 +1,7 @@
 // Isolated no-email preview: the existing editorial rubric, not new thresholds.
 // A model judgment is a proposed score, never factual or delivery approval.
 import { createHash } from 'node:crypto';
-import { requestGeminiEditorial, GEMINI_LITE_MODEL } from './gemini-ai.mjs';
+import { requestGeminiEditorial, geminiFailureDiagnostic, GEMINI_LITE_MODEL } from './gemini-ai.mjs';
 import { buildEvidencePacketSources } from './evidence-packets.mjs';
 import { previewEvidenceHolds } from './preview-evidence-gate.mjs';
 const soft = new Set(['BELOW_EDITORIAL_THRESHOLD','AUTHORITATIVE_SINGLE_COMPONENT_FLOOR']);
@@ -78,6 +78,7 @@ export function createPreviewNewsworthiness({apiKey, freeTierConfirmed, reportin
       // Stop the entire model sequence on failure, including uncertain outcomes.
       const allowed=new Set(['GEMINI_FREE_QUOTA_EXHAUSTED','GEMINI_HTTP_ERROR','GEMINI_TIMEOUT','GEMINI_TRANSPORT_FAILED','GEMINI_EDITORIAL_VALIDATION_FAILED','GEMINI_EDITORIAL_FORMAT_INVALID','GEMINI_CONFIGURATION_INVALID','GEMINI_FREE_TIER_NOT_CONFIRMED','GEMINI_RESPONSE_INVALID','GEMINI_INCOMPLETE_OR_BLOCKED']);
       onResult({status:'failed',code:allowed.has(error?.code)?error.code:'EDITORIAL_PROVIDER_OR_FORMAT_FAILURE',modelRequests:1,stopModels:true,
+        providerDiagnostic:geminiFailureDiagnostic(error),
         submitted,rawParsedResponse,audit:[],omittedCandidateIds:slate.map(v=>v.dossier.candidateId)}); return assessments;
     }
     const audit=[];

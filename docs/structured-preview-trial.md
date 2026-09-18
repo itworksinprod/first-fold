@@ -516,3 +516,21 @@ support, and all new holds are nonretryable under the unchanged repair policy.
 Run16's previously recorded deck citation defect is now detected as an additional
 hold, so that unchanged mixed-failure draft no longer qualifies for the narrow
 preview-audience correction. No rejected live draft or citation was edited.
+
+## Eighth trial: diagnose the editor before changing its budget
+
+Run `35292706365` at `a5c0ccf` stopped after one editor call, with no writer,
+correction or email. Artifact SHA256:
+`1642412de4d0e448f3fa56001d14ed6ed630a9ad87243a42cf6c6d85c7ef5d63`.
+The nested error was `GEMINI_INCOMPLETE_OR_BLOCKED`; its exact rejection branch
+was not retained. This is not proof of token exhaustion, safety rejection or a
+quota block, and the new fresh writer prompt was never exercised.
+
+The diagnostic-only repair records all applicable fixed rejection flags, an
+allowlisted finish reason (separate missing/unknown labels), and existing bounded
+integer usage counts. Provider messages, thought text, content and grounding
+payloads are never retained in this receipt; the callback sanitizes it again.
+An editor stop now surfaces `PREVIEW_EDITORIAL_FAILED` before target selection,
+with its original cause in the encrypted audit. Acceptance predicates, prompts,
+token limits, call counts, repairs and production behavior are unchanged. The
+next isolated no-email trial must be read as diagnosis, not quality approval.

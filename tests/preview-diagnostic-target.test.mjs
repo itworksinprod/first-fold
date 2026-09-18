@@ -42,7 +42,7 @@ test('targeted fresh trial retains normal editor and source gates; one writer an
     assert.equal(editors,1);assert.equal(writers,reject?0:2);assert.equal(repairs,reject?0:1);
     assert.equal(result.report.maxModelRequests,3);assert.equal(result.report.modelRequests,editors+writers);assert.equal(result.report.emailRequests,0);
     const packet=openDiagnostic(result.sealed,privateKey);assert.equal(packet.diagnosticSampling.mode,'gitlab-rate-limits-2026');
-    if(reject)assert.equal(result.report.code,'PREVIEW_DIAGNOSTIC_TARGET_NOT_ELIGIBLE');
+    if(reject)assert.equal(result.report.code,reject==='prose'?'PREVIEW_EDITORIAL_FAILED':'PREVIEW_DIAGNOSTIC_TARGET_NOT_ELIGIBLE');
     else{assert.equal(packet.diagnosticSampling.baselineRanking.length,1);assert.ok(packet.records[0].initialRejection);}
   }
 });

@@ -127,3 +127,49 @@ test("deadline covers fetch, stream, validation and non-cooperative cleanup", as
   await assert.rejects(requestGeminiEditorial({ ...options(), timeoutMs: 20,
     fetchImpl: async () => ({ status: 429, ok: false, body: { cancel: never } }) }), { code: "GEMINI_FREE_QUOTA_EXHAUSTED" });
 });
+
+test("incomplete diagnostics identify every rejecting predicate without retaining provider prose", async () => {
+  const cases = [
+    [c => { c.finishReason = "MAX_TOKENS"; }, "MAX_TOKENS", ["FINISH_NOT_STOP"]],
+    [c => { c.content.role = secret; }, "STOP", ["ROLE_NOT_MODEL"]],
+    [c => { c.safetyRatings = [{ blocked: true, category: secret }]; }, "STOP", ["SAFETY_BLOCKED"]],
+    [c => { c.groundingMetadata = { text: secret }; }, "STOP", ["GROUNDING_PRESENT"]],
+    [c => { c.content.parts = []; }, "STOP", ["PARTS_MISSING_OR_EMPTY"]],
+    [c => { c.content.parts = secret; }, "STOP", ["PARTS_MISSING_OR_EMPTY"]],
+    [c => { delete c.finishReason; }, "MISSING", ["FINISH_NOT_STOP"]],
+    [c => { c.finishReason = secret; }, "UNKNOWN", ["FINISH_NOT_STOP"]],
+    [c => { c.finishReason = null; }, "UNKNOWN", ["FINISH_NOT_STOP"]],
+    [c => { c.content = null; }, "STOP", ["ROLE_NOT_MODEL", "PARTS_MISSING_OR_EMPTY"]],
+    [c => { c.finishReason = "SAFETY"; c.content = {}; c.safetyRatings = [{ blocked: true }]; c.groundingMetadata = {}; },
+      "SAFETY", ["FINISH_NOT_STOP", "ROLE_NOT_MODEL", "SAFETY_BLOCKED", "GROUNDING_PRESENT", "PARTS_MISSING_OR_EMPTY"]],
+  ];
+  for (const [mutate, finishReason, flags] of cases) {
+    const body = envelope(); mutate(body.candidates[0]); body.candidates[0].finishMessage = secret;
+    let calls = 0, validations = 0;
+    await assert.rejects(requestGeminiEditorial({ ...options(), validatePayload: () => { validations++; return true; },
+      fetchImpl: async () => { calls++; return response(body); } }), failure => {
+      assert.equal(failure.code, "GEMINI_INCOMPLETE_OR_BLOCKED");
+      assert.deepEqual(geminiFailureDiagnostic(failure), { finishReason, rejectionFlags: flags,
+        usage: { promptTokenCount: 100, candidatesTokenCount: 50, totalTokenCount: 150 } });
+      assert.doesNotMatch(JSON.stringify(failure), /never-log|HIDDEN_REASONING/);
+      return true;
+    });
+    assert.equal(calls, 1); assert.equal(validations, 0);
+  }
+  const safe = envelope(); safe.candidates[0].safetyRatings = [{ blocked: false }]; safe.candidates[0].groundingMetadata = null;
+  assert.deepEqual((await requestGeminiEditorial({ ...options(), fetchImpl: async () => response(safe) })).editorialPayload, { ok: true });
+});
+
+test("incomplete diagnostic resanitization rejects arbitrary strings and invalid usage values", () => {
+  for (const invalidUsage of [null, secret, { promptTokenCount: -1, candidatesTokenCount: 100001,
+    thoughtsTokenCount: 1.5, totalTokenCount: secret }, { totalTokenCount: Infinity }]) {
+    const diagnostic = geminiFailureDiagnostic({ code: "GEMINI_INCOMPLETE_OR_BLOCKED", finishReason: secret,
+      rejectionFlags: [secret, "FINISH_NOT_STOP", "FINISH_NOT_STOP", { text: secret }], usage: invalidUsage,
+      content: secret, finishMessage: secret, groundingMetadata: secret });
+    assert.deepEqual(diagnostic, { finishReason: "UNKNOWN", rejectionFlags: ["FINISH_NOT_STOP"], usage: {} });
+  }
+  assert.deepEqual(geminiFailureDiagnostic({ code: "GEMINI_INCOMPLETE_OR_BLOCKED", finishReason: "STOP",
+    rejectionFlags: secret, usage: { promptTokenCount: 0, totalTokenCount: 100000, extra: secret } }),
+  { finishReason: "STOP", rejectionFlags: [], usage: { promptTokenCount: 0, totalTokenCount: 100000 } });
+  assert.deepEqual(geminiFailureDiagnostic({ code: "OTHER", finishReason: "MAX_TOKENS", usage: { totalTokenCount: 1 } }), {});
+});
