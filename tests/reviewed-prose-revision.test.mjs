@@ -75,6 +75,27 @@ test('cipher changes, wrong secrets, purpose swaps and noncanonical encodings ca
   }
 });
 
+test('revision transport accepts only equivalent canonical 32-byte base64 or lowercase-hex keys', () => {
+  const input = fixture(), item = sealed(input), hex = Buffer.from(secret, 'base64').toString('hex');
+  assert.deepEqual(openReviewedRevisionPackage(item.bytes, hex, item.manifest, { now }), input);
+  const viaHex = sealReviewedRevisionPackage(input, hex);
+  const manifest = { ...item.manifest, inputSha256: viaHex.inputSha256, cipherSha256: viaHex.cipherSha256 };
+  assert.equal(viaHex.inputSha256, item.manifest.inputSha256);
+  assert.deepEqual(openReviewedRevisionPackage(viaHex.bytes, secret, manifest, { now }), input);
+  assert.deepEqual(openReviewedRevisionPackage(viaHex.bytes, hex, manifest, { now }), input);
+  const malformed = [null, {}, hex + '\n', ' ' + hex, '0x' + hex, hex.slice(1), hex + '0', 'g'.repeat(64),
+    'AB'.repeat(32), 'a'.repeat(1_000_000), secret + '\n', secret.slice(0, -1), secret + '=',
+    '-'.repeat(43) + '=', Buffer.alloc(31).toString('base64'), Buffer.alloc(33).toString('base64')];
+  for (const key of malformed) {
+    assert.throws(() => sealReviewedRevisionPackage(input, key), /CIPHER_INVALID/);
+    assert.throws(() => openReviewedRevisionPackage(item.bytes, key, item.manifest, { now }), /CIPHER_INVALID/);
+  }
+  assert.throws(() => openReviewedRevisionPackage(item.bytes, '00'.repeat(32), item.manifest, { now }), /DECRYPTION_FAILED/);
+  const envelope = { ...JSON.parse(item.bytes), iv: '00'.repeat(12) };
+  const bytes = Buffer.from(JSON.stringify(envelope));
+  assert.throws(() => openReviewedRevisionPackage(bytes, hex, { ...item.manifest, cipherSha256: digest(bytes) }, { now }), /CIPHER_INVALID/);
+});
+
 test('only current main owner manual attempt one can run a revision', () => {
   const env = { GITHUB_REPOSITORY: 'itworksinprod/first-fold', GITHUB_REF: 'refs/heads/main',
     GITHUB_WORKFLOW_REF: 'itworksinprod/first-fold/.github/workflows/gemini-reviewed-revision.yml@refs/heads/main',

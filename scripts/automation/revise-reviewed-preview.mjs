@@ -62,6 +62,15 @@ const base64 = (value, length) => {
   if (bytes.toString('base64') !== value || (length !== undefined && bytes.length !== length)) fail('REVIEWED_REVISION_CIPHER_INVALID');
   return bytes;
 };
+function transportKey(value) {
+  // Two exact representations of the same 32 bytes, not two credentials.
+  // This accepts existing lowercase-hex secrets without weakening envelope
+  // encodings, permitting whitespace, or relying on Node's permissive decode.
+  if (typeof value !== 'string') fail('REVIEWED_REVISION_CIPHER_INVALID');
+  if (value.length === 64 && /^[a-f0-9]{64}$/u.test(value)) return Buffer.from(value, 'hex');
+  if (value.length === 44) return base64(value, 32);
+  fail('REVIEWED_REVISION_CIPHER_INVALID');
+}
 const aad = (testId, inputSha256) => Buffer.from(JSON.stringify({ purpose: REVIEWED_REVISION_PURPOSE, testId, inputSha256 }));
 const snapshot = value => {
   // No user-provided getter, custom serializer or prototype can run while
@@ -120,7 +129,7 @@ export function sealReviewedRevisionPackage(input, keyBase64) {
   const plain = snapshot(input), bytes = Buffer.from(JSON.stringify(plain));
   if (plain.version !== INPUT_VERSION || plain.purpose !== REVIEWED_REVISION_PURPOSE ||
       !/^[a-z0-9][a-z0-9-]{7,79}$/u.test(plain.testId)) fail('REVIEWED_REVISION_INPUT_INVALID');
-  const inputSha256 = hash(bytes), key = base64(keyBase64, 32), iv = randomBytes(12);
+  const inputSha256 = hash(bytes), key = transportKey(keyBase64), iv = randomBytes(12);
   try {
     const cipher = createCipheriv('aes-256-gcm', key, iv);
     cipher.setAAD(aad(plain.testId, inputSha256));
@@ -133,7 +142,7 @@ export function sealReviewedRevisionPackage(input, keyBase64) {
 }
 
 export function openReviewedRevisionPackage(bytes, keyBase64, manifest, options) {
-  const envelope = validateReviewedRevisionCipher(bytes, manifest, options), key = base64(keyBase64, 32);
+  const envelope = validateReviewedRevisionCipher(bytes, manifest, options), key = transportKey(keyBase64);
   let plain;
   try {
     const decipher = createDecipheriv('aes-256-gcm', key, base64(envelope.iv, 12));
