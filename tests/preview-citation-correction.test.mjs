@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { citationCorrectionFixture } from './fixtures/citation-correction.mjs';
 import { FREE_PROJECT_CONFIRMATION } from '../scripts/automation/check-gemini-writer.mjs';
-import { GEMINI_LITE_MODEL } from '../scripts/automation/free/gemini-ai.mjs';
+import { buildGeminiRequest, GEMINI_LITE_MODEL } from '../scripts/automation/free/gemini-ai.mjs';
 import { previewCitationCorrectionAllowed as allowed, applyPreviewCitationAdditions as apply,
   proposePreviewCitationCorrection as propose } from '../scripts/automation/free/preview-citation-correction.mjs';
 import { buildPreviewReviewPacket } from '../scripts/automation/free/preview-editorial-review.mjs';
@@ -146,6 +146,98 @@ test('one fixed free provider request returns bound unapproved proposal and no r
   assert.equal(output.originalBinding.payloadSha256, hash(output.originalPayload));
   assert.equal(output.correctedBinding.payloadSha256, hash(output.correctedPayload));
   assert.deepEqual(fixture, original);
+});
+
+test('run23 duplicate-existing-ID failure is excluded from the narrowed schema and still rejected locally', async () => {
+  // Reproduce the observed ID/map mistake using synthetic text, not a copied
+  // live draft. The response incorrectly repeated S1P2 instead of adding S1P4.
+  const fixture = citationCorrectionFixture();
+  fixture.result.rejectedDiagnostic.payload.evidenceForFields.deck = ['S1P2'];
+  fixture.result.rejectedDiagnostic.payload.stories[0].deck = 'Free accounts and unauthenticated requests are part of Acme’s initial transition phase.';
+  const duplicate = [{ field: 'deck', evidenceIds: ['S1P2'] }];
+  let calls = 0;
+  const output = await propose({ ...argumentsFor(fixture), requestImpl: async options => {
+    calls++;
+    const item = options.schema.properties.additions.items;
+    assert.equal(item.anyOf, undefined);
+    assert.deepEqual(item.properties.field.enum, ['deck']);
+    assert.deepEqual(item.properties.evidenceIds.items.enum, ['S1P4']);
+    assert.equal(item.properties.evidenceIds.maxItems, 1);
+    const prompt = JSON.parse(options.messages[1].content);
+    assert.deepEqual(prompt.additionOptions, [{ field: 'deck', existingEvidenceIds: ['S1P2'],
+      missingAudiences: ['Free', 'unauthenticated'], allowedNewEvidenceIds: ['S1P4'], maximumAdditions: 1 }]);
+    assert.match(options.messages[0].content, /PATCH, not the complete evidence map/u);
+    assert.equal(options.validatePayload({ additions: duplicate }), false);
+    assert.equal(options.validatePayload({ additions: [{ field: 'deck', evidenceIds: ['S1P4'] }] }), true);
+    assert.equal(options.validatePayload({ additions: [] }), true);
+    return response(duplicate); // A provider ignoring its schema remains held.
+  } });
+  assert.equal(calls, 1); assert.equal(output.report.code, 'CITATION_ADDITIONS_INVALID');
+  assert.equal(output.correctedPayload, undefined);
+  assert.deepEqual(output.rejectedProposal, { additions: duplicate });
+});
+
+test('multi-field schema binds every field to its own eligible new IDs with a bounded anyOf', async () => {
+  const fixture = citationCorrectionFixture(), payload = fixture.result.rejectedDiagnostic.payload;
+  payload.stories[0].headline = 'Premium accounts follow a later stage in Acme’s workspace transition';
+  fixture.result.rejectedDiagnostic.rejectionDetails.unshift({ reason: 'MAPPED_AUDIENCE_SUPPORT_REQUIRED', feedback: { field: 'headline' } });
+  const additions = [{ field: 'headline', evidenceIds: ['S1P5'] }, ...fixture.additions];
+  const output = await propose({ ...argumentsFor(fixture), requestImpl: async options => {
+    const branches = options.schema.properties.additions.items.anyOf;
+    assert.equal(branches.length, 2);
+    const headline = branches.find(branch => branch.properties.field.enum[0] === 'headline');
+    const deck = branches.find(branch => branch.properties.field.enum[0] === 'deck');
+    assert.deepEqual(headline.properties.field.enum, ['headline']);
+    assert.deepEqual(headline.properties.evidenceIds.items.enum, ['S1P4', 'S1P5']);
+    assert.deepEqual(deck.properties.field.enum, ['deck']);
+    assert.deepEqual(deck.properties.evidenceIds.items.enum, ['S1P4']);
+    assert.equal(headline.properties.evidenceIds.maxItems, 2);
+    assert.equal(deck.properties.evidenceIds.maxItems, 1);
+    assert.equal(options.schema.properties.additions.minItems, 0);
+    assert.equal(options.schema.properties.additions.maxItems, 2);
+    const request = buildGeminiRequest(options);
+    assert.deepEqual(request.body.generationConfig.responseJsonSchema, options.schema);
+    assert.equal(options.validatePayload({ additions }), true);
+    assert.equal(options.validatePayload({ additions: [additions[0], { field: 'deck', evidenceIds: ['S1P5'] }] }), false);
+    assert.equal(options.validatePayload({ additions: [additions[0]] }), false);
+    return response(additions);
+  } });
+  assert.equal(output.report.status, 'human-review-required');
+  assert.deepEqual(output.correctedPayload.stories, payload.stories);
+});
+
+test('schema respects remaining map capacity even when several new audience passages are available', async () => {
+  const fixture = citationCorrectionFixture(), payload = fixture.result.rejectedDiagnostic.payload;
+  payload.evidenceForFields.deck = ['S1P1', 'S1P2', 'S1P3'];
+  fixture.dossier.sources[0].passages.push({ evidenceId: 'S1P7', text: 'The initial transition includes Free accounts.' },
+    { evidenceId: 'S1P8', text: 'Free account administrators can review the scheduled transition in their dashboard.' });
+  fixture.dossier.sources[0].text = fixture.dossier.sources[0].passages.map(p => p.text).join('\n');
+  const output = await propose({ ...argumentsFor(fixture), requestImpl: async options => {
+    const ids = options.schema.properties.additions.items.properties.evidenceIds;
+    assert.deepEqual(ids.items.enum, ['S1P4', 'S1P7', 'S1P8']);
+    assert.equal(ids.maxItems, 1);
+    assert.equal(options.validatePayload({ additions: [{ field: 'deck', evidenceIds: ['S1P4', 'S1P7'] }] }), false);
+    assert.equal(options.validatePayload({ additions: fixture.additions }), true);
+    return response(fixture.additions);
+  } });
+  assert.equal(output.report.status, 'human-review-required');
+  assert.equal(output.correctedPayload.evidenceForFields.deck.length, 4);
+});
+
+test('already-supported audiences do not make unrelated new passages schema-eligible', async () => {
+  const fixture = citationCorrectionFixture(), payload = fixture.result.rejectedDiagnostic.payload;
+  payload.stories[0].deck = 'Free and Premium accounts have different stages in Acme’s workspace transition.';
+  payload.evidenceForFields.deck = ['S1P3', 'S1P5'];
+  fixture.dossier.sources[0].passages.push({ evidenceId: 'S1P7', text: 'Premium account administrators can inspect the later transition in their dashboard.' });
+  fixture.dossier.sources[0].text = fixture.dossier.sources[0].passages.map(p => p.text).join('\n');
+  const output = await propose({ ...argumentsFor(fixture), requestImpl: async options => {
+    assert.deepEqual(options.schema.properties.additions.items.properties.evidenceIds.items.enum, ['S1P4']);
+    const prompt = JSON.parse(options.messages[1].content);
+    assert.deepEqual(prompt.additionOptions[0].missingAudiences, ['Free']);
+    assert.equal(options.validatePayload({ additions: [{ field: 'deck', evidenceIds: ['S1P7'] }] }), false);
+    return response(fixture.additions);
+  } });
+  assert.equal(output.report.status, 'human-review-required');
 });
 
 test('ineligible, unconfirmed, invalid-key and oversized requests never call a provider', async () => {
