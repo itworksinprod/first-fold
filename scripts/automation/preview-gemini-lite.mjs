@@ -11,6 +11,7 @@ import { buildPreviewReviewPacket } from "./free/preview-editorial-review.mjs";
 import { previewSourceIntegrityHolds } from "./free/preview-evidence-gate.mjs";
 import { advisoryWritingContract, advisoryDraftAlarms } from "./free/preview-advisory-contract.mjs";
 import { previewReaderAlarms, previewReaderObligations } from './free/preview-reader-alarms.mjs';
+import { FRESH_PREVIEW_WRITER_PROFILE, FRESH_PREVIEW_WRITER_PROMPT } from './free/fresh-preview-writer-prompt.mjs';
 
 const escape = value => String(value).replace(/[&<>"']/gu, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const REVIEW_FIELDS = ["headline", "deck", "whyItMatters", "whatToDoOrWatch"];
@@ -52,11 +53,13 @@ ${dossier.sources.map(s => `<h3>${escape(s.publisher)}</h3><ul>${s.passages.map(
 }
 
 export async function previewGeminiLite({ apiKey, freeProjectConfirmation, fetchImpl = globalThis.fetch,
-  dossier = reviewerResearchScopeCases()[0].dossier, fresh = false, repair = null } = {}) {
+  dossier = reviewerResearchScopeCases()[0].dossier, fresh = false, repair = null, writerProfile = 'legacy' } = {}) {
   const structuralErrors = new Set();
   let rejectedPayload = null;
   const rejectionDetails = [];
   try {
+    if(!['legacy',FRESH_PREVIEW_WRITER_PROFILE].includes(writerProfile)||
+      (writerProfile===FRESH_PREVIEW_WRITER_PROFILE&&!fresh))throw Error('INVALID_PREVIEW_PROFILE');
     const evidenceHolds = fresh ? previewSourceIntegrityHolds(dossier) : [];
     if (evidenceHolds.length) return { report: { status: "evidence-held", qualified: false, approved: false,
       productionEnabled: false, emailRequests: 0, modelRequests: 0, holds: evidenceHolds }, html: null };
@@ -67,7 +70,7 @@ export async function previewGeminiLite({ apiKey, freeProjectConfirmation, fetch
     const result = await requestGeminiEditorial({ apiKey, model: GEMINI_LITE_MODEL,
       freeTierConfirmed: freeProjectConfirmation === FREE_PROJECT_CONFIRMATION, fetchImpl,
       maxTokens: 8000, thinking: "medium", timeoutMs: 180000,
-      messages: [{ role: "system", content: `${WRITER_PROMPT}\nInclude each factual source's exact supplied publisher name in the claims.text sentences. Do not shorten those names or claim independent confirmation for a single-source account. Research is not a product release; a possible use is not an observed result. Do not promise safety, productivity, reliability or performance benefits absent supporting measurements. In whatToDoOrWatch, suggest a check the reader can make; never invent scheduled tests, updates or releases.${fresh ? `
+      messages: [{ role: "system", content: writerProfile===FRESH_PREVIEW_WRITER_PROFILE?FRESH_PREVIEW_WRITER_PROMPT:`${WRITER_PROMPT}\nInclude each factual source's exact supplied publisher name in the claims.text sentences. Do not shorten those names or claim independent confirmation for a single-source account. Research is not a product release; a possible use is not an observed result. Do not promise safety, productivity, reliability or performance benefits absent supporting measurements. In whatToDoOrWatch, suggest a check the reader can make; never invent scheduled tests, updates or releases.${fresh ? `
 EVIDENCE-FIRST PREVIEW CONTRACT: Select evidenceForFields BEFORE writing stories. It maps headline, deck, whyItMatters and whatToDoOrWatch to exact passage IDs. These are support obligations, not decorative citations. Every factual clause in each field must follow from its selected passages, preserving conditions. Do not insert IDs into reader prose.
 Aim for 120–160 body words using short original sentences. Before returning JSON, compare each sentence with the source: break up borrowed structures instead of replacing only a few words. The twelve-contiguous-source-word limit applies to EVERY field. Keep proper names but rebuild their surrounding sentences.
 Authentication advice can say 'authenticate your integration requests' without naming credential types. Never request, print or describe secret values; avoid the literal phrases 'access token' and 'API key', which this preview's conservative prose guard rejects even in otherwise legitimate source-based advice.

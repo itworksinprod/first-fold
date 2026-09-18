@@ -37,7 +37,7 @@ test('targeted fresh trial retains normal editor and source gates; one writer an
         return{candidates:assessed.filter(e=>e.decision==='accepted').map(e=>e.candidate),diagnostics:{sourceResults:[]}};},
       editorialRequestImpl:async()=>{editors++;return{editorialPayload:{assessments:[{candidateId:raw.dossier.candidateId,importance:reject==='score'?0:21,usefulness:10,
         rationale:'The source announces changes to subscription-tier rate limits.',sourceId:s.sourceId,evidenceId:'S1P4',quote:reject==='prose'?'x'.repeat(501):s.passages[3].text.slice(-220)}]}};},
-      draftImpl:async({repair})=>{writers++;if(repair)repairs++;return{report:{status:'failed',code:'GEMINI_EDITORIAL_VALIDATION_FAILED'},html:null,
+      draftImpl:async({repair,writerProfile})=>{assert.equal(writerProfile,'fresh-evidence-first-v1');writers++;if(repair)repairs++;return{report:{status:'failed',code:'GEMINI_EDITORIAL_VALIDATION_FAILED'},html:null,
         rejectedDiagnostic:{unapproved:true,rejectionDetails:[{reason:'ORIGINALITY',feedback:{field:'claims[0].text'}}]}};}});
     assert.equal(editors,1);assert.equal(writers,reject?0:2);assert.equal(repairs,reject?0:1);
     assert.equal(result.report.maxModelRequests,3);assert.equal(result.report.modelRequests,editors+writers);assert.equal(result.report.emailRequests,0);

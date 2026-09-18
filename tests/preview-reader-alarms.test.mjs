@@ -1,11 +1,44 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {previewReaderAlarms as alarms} from '../scripts/automation/free/preview-reader-alarms.mjs';
+import {previewReaderAlarms as alarms,previewReaderObligations} from '../scripts/automation/free/preview-reader-alarms.mjs';
 const dossier={sources:[{passages:[{evidenceId:'S1P1',text:'The vendor claims up to 30% price improvement and up to 70% compute improvement.'},
   {evidenceId:'S1P2',text:'There will be preview windows for Free and unauthenticated traffic. Signed-in paid accounts are not affected.'}]}]};
 const raw=JSON.parse(readFileSync(new URL('./fixtures/rejected-preview-run12.json',import.meta.url))).records;
 const run13=JSON.parse(readFileSync(new URL('./fixtures/rejected-preview-run13.json',import.meta.url))).records;
+const run20=JSON.parse(readFileSync(new URL('./fixtures/rejected-preview-run20.json',import.meta.url))).records[0];
+test('untouched run20 catches all four independently identified defects, not the supported watch or headline',()=>{
+  const copy=structuredClone(run20),found=alarms(run20.draft,run20.dossier,run20.evidenceForFields);
+  assert.deepEqual(found,[{code:'CERTAINTY_REVIEW_REQUIRED',field:'whyItMatters'},
+    {code:'MAPPED_AUDIENCE_SUPPORT_REQUIRED',field:'deck'},
+    {code:'PHASED_ROLLOUT_SCOPE_REQUIRED',field:'claims.0'},
+    {code:'ABSENT_CREDENTIALS_SCOPE_REQUIRED',field:'claims.1'}]);
+  assert.deepEqual(run20,copy);
+});
+test('own audience citation and complete phased conditions are required, not a universal date',()=>{
+  const ds=run20.dossier,map={deck:['S1P2']};
+  const deck='Free accounts and unauthenticated requests are the initial audience.';
+  assert.ok(alarms({deck},ds,map).some(a=>a.code==='MAPPED_AUDIENCE_SUPPORT_REQUIRED'));
+  assert.deepEqual(alarms({deck},ds,{deck:['S1P4']}),[]);
+  assert.deepEqual(alarms({headline:'GitLab rollout begins in October'},ds,{headline:['S1P4']}),[]);
+  assert.deepEqual(alarms({claims:[{text:'Each user moves by tier: Free and unauthenticated requests on October 19, Premium and Ultimate in January 2027.',supports:[{evidenceId:'S1P4'}]}]},ds,{}),[]);
+  const changed=structuredClone(ds);changed.sources[0].passages[3].text=changed.sources[0].passages[3].text.replaceAll('October 19','November 20').replaceAll('January 2027','March 2027');
+  const obligations=previewReaderObligations(changed).filter(o=>o.kind==='phased-rollout-scope');
+  assert.equal(obligations.length,1);assert.match(obligations[0].text,/November 20/);assert.match(obligations[0].text,/March 2027/);
+  assert.doesNotMatch(obligations[0].instruction,/October|January|2026|2027/);
+  assert.ok(alarms({claims:[{text:'Each user gets new limits on November 20.',supports:[{evidenceId:'S1P4'}]}]},changed,{}).some(a=>a.code==='PHASED_ROLLOUT_SCOPE_REQUIRED'));
+  changed.sources[0].passages[3].text='All plans change together; no phased rollout is documented.';
+  assert.equal(previewReaderObligations(changed).filter(o=>o.kind==='phased-rollout-scope').length,0);
+});
+test('missing credentials cannot become invalid credentials; ordinary verification advice is not a guarantee',()=>{
+  const ds=run20.dossier,c=text=>({claims:[{text,supports:[{evidenceId:'S1P7'}]}]});
+  assert.deepEqual(alarms(c('Requests with no credentials receive a limited allowance.'),ds,{}),[]);
+  assert.ok(alarms(c('Requests with invalid credentials receive a limited allowance.'),ds,{}).some(a=>a.code==='ABSENT_CREDENTIALS_SCOPE_REQUIRED'));
+  const explicit=structuredClone(ds);explicit.sources[0].passages[6].text+=' Requests with invalid credentials receive the same allowance.';
+  assert.deepEqual(alarms(c('Requests with invalid credentials receive the same allowance.'),explicit,{}),[]);
+  assert.deepEqual(alarms({whatToDoOrWatch:'Consider ensuring that your settings match the documented configuration.'},ds,{}),[]);
+  assert.ok(alarms({whyItMatters:'The limits protect speed, ensuring that heavy workloads do not slow other users.'},ds,{}).some(a=>a.code==='CERTAINTY_REVIEW_REQUIRED'));
+});
 test('untouched live AWS deck and analysis need their own performance attribution',()=>{
   const ds={sources:[{publisher:'AWS',passages:[]}]};
   const held=alarms(run13[1].draft,ds,run13[1].evidenceForFields);

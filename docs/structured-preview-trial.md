@@ -490,3 +490,29 @@ slates and a rejected diagnostic target cannot cause a writer call or substitute
 The prompt restates the existing prose bounds. No threshold or model budget
 changes. GitLab's latest editorial rationale still goes beyond its own quoted
 passage; exact citation binding does not establish semantic support for ranking.
+
+## Seventh trial: coherent fresh writing contract, with independent holds
+
+Run `35291335835` at `d732b10` completed 48/48 feeds and one first-pass GitLab
+draft using two calls, no corrections and no email. Artifact SHA256:
+`f44b1649321105c9ac1cdeb68c785af70d190891049490638a13de7c7eb8a30c`.
+Independent review still held four fields: the deck's own citation omitted its
+named audiences; a claim collapsed the paid January phase into the October
+start; another changed absent credentials into invalid credentials; and analysis
+turned a qualified vendor rationale into a guarantee. The watch section was
+supported, including its planned usage view. GitLab's ranking rationale was
+supported this time; wider calibration remains unqualified. The untouched draft
+and its context are retained as a negative fixture, not a positive sample.
+
+An explicit fresh-research-only writer profile replaces contradictory mechanism/
+consequence versus applicability instructions with one coherent evidence-first
+contract. Default, stored-correction and production prompts remain unchanged.
+This is a testable hypothesis for better drafts, not an established causal fix.
+Known reader alarms now hold these exact audience, phased-rollout, credential-
+condition and declarative-guarantee defects. Obligations carry intact source
+passages, never invented dates or exemptions; a headline may still say a rollout
+begins without listing every phase. These narrow recognizers do not prove semantic
+support, and all new holds are nonretryable under the unchanged repair policy.
+Run16's previously recorded deck citation defect is now detected as an additional
+hold, so that unchanged mixed-failure draft no longer qualifies for the narrow
+preview-audience correction. No rejected live draft or citation was edited.

@@ -6,20 +6,24 @@ import {previewReaderObligations} from '../scripts/automation/free/preview-reade
 import {buildPreviewReviewPacket} from '../scripts/automation/free/preview-editorial-review.mjs';
 import {previewGeminiLite} from '../scripts/automation/preview-gemini-lite.mjs';
 const raw=JSON.parse(readFileSync(new URL('./fixtures/rejected-preview-run16.json',import.meta.url))).records;
-test('exact untouched GitLab draft qualifies for one source correction, never acceptance or a mechanical label',()=>{
+test('untouched run16 now exposes its additional mapping defect and cannot use the narrow correction slot',()=>{
   const {result,dossier}=raw[0],copy=structuredClone(raw[0]);
-  assert.equal(previewMechanicalRepairAllowed(result),false);assert.equal(allowed(result,dossier),true);
+  assert.equal(previewMechanicalRepairAllowed(result),false);assert.equal(allowed(result,dossier),false);
   const payload=result.rejectedDiagnostic.payload;
   assert.ok(buildPreviewReviewPacket(payload.stories[0],dossier,payload.evidenceForFields).holds.includes('PREVIEW_AUDIENCE_SCOPE_REQUIRED'));
   assert.deepEqual(raw[0],copy);
   assert.equal(allowed(raw[1].result,raw[1].dossier),false,'broader advisory defects stay held');
+  // Synthetic map-only variation, NOT a repaired live draft or positive sample.
+  const synthetic=structuredClone(raw[0]);synthetic.result.rejectedDiagnostic.payload.evidenceForFields.deck=['S1P4'];
+  assert.equal(allowed(synthetic.result,synthetic.dossier),true,'an isolated preview-audience omission remains eligible');
 });
 test('reader obligations are verbatim complete bound passages, not editor summaries',()=>{
-  const obligations=previewReaderObligations(raw[0].dossier);assert.equal(obligations.length,1);
+  const obligations=previewReaderObligations(raw[0].dossier);assert.equal(obligations.length,3);
   const source=raw[0].dossier.sources[0],passage=source.passages.find(p=>p.evidenceId==='S1P10');
   assert.equal(obligations[0].text,passage.text);assert.equal(obligations[0].sourceId,source.sourceId);
   assert.match(obligations[0].text,/Free and unauthenticated traffic/);assert.match(obligations[0].text,/Signed-in Premium and Ultimate requests are not affected/);
   assert.deepEqual(previewReaderObligations(raw[1].dossier),[]);
+  for(const o of obligations)assert.equal(o.text,source.passages.find(p=>p.evidenceId===o.evidenceId).text);
 });
 test('obligations never invent a paid-account exemption when missing or contradicted',()=>{
   for(const ending of ['', ' Signed-in Premium and Ultimate requests are also affected.']){

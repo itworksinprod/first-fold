@@ -10,6 +10,7 @@ import { groundedDossiers, GROUNDED_DRAFT_SCHEMA, validateGroundedStory } from "
 import { createTavilyDiscovery } from "./free/web-search.mjs";
 import { previewEvidenceHolds } from "./free/preview-evidence-gate.mjs";
 import { previewGeminiLite, validPreviewEvidenceMap } from "./preview-gemini-lite.mjs";
+import { FRESH_PREVIEW_WRITER_PROFILE } from './free/fresh-preview-writer-prompt.mjs';
 import { previewReaderAlarms, previewReaderObligations } from './free/preview-reader-alarms.mjs';
 import { advisoryDraftAlarms } from './free/preview-advisory-contract.mjs';
 import { FREE_PROJECT_CONFIRMATION } from "./check-gemini-writer.mjs";
@@ -167,7 +168,7 @@ export async function previewFreshGemini({ publicKey, apiKey, freeProjectConfirm
     records.push(record);
     if (holds.length) continue;
     requests++;
-    let result = await draftImpl({ apiKey, freeProjectConfirmation, dossier, fresh: true });
+    let result = await draftImpl({ apiKey, freeProjectConfirmation, dossier, fresh: true, writerProfile: FRESH_PREVIEW_WRITER_PROFILE });
     // One correction across the ENTIRE experiment. Missing preview-audience
     // qualification is the sole allowed source-scope correction; every other
     // semantic/advisory and all provider/quota failures remain nonretryable.
@@ -176,7 +177,7 @@ export async function previewFreshGemini({ publicKey, apiKey, freeProjectConfirm
       record.initialRejection = result;
       record.repairKind=repairKind;
       requests++;repairRequests++;
-      result = await draftImpl({ apiKey, freeProjectConfirmation, dossier, fresh: true, repair: result.rejectedDiagnostic });
+      result = await draftImpl({ apiKey, freeProjectConfirmation, dossier, fresh: true, writerProfile: FRESH_PREVIEW_WRITER_PROFILE, repair: result.rejectedDiagnostic });
     }
     record.result = result;
     if (result.report?.status === "failed" && result.report.code !== "GEMINI_EDITORIAL_VALIDATION_FAILED") stopped = true;
