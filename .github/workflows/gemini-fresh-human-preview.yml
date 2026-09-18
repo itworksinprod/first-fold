@@ -26,6 +26,14 @@ on:
         options:
           - 'off'
           - additions-only
+      evidence_revision:
+        description: One evidence-led prose revision within the existing call cap; still requires independent review
+        required: true
+        default: 'off'
+        type: choice
+        options:
+          - 'off'
+          - once
 permissions: {}
 concurrency:
   group: gemini-writer-qualification
@@ -54,7 +62,8 @@ jobs:
           DIAGNOSTIC_PUBLIC_KEY: ${{ inputs.public_key }}
           PREVIEW_DIAGNOSTIC_TARGET: ${{ inputs.diagnostic_target }}
           PREVIEW_CITATION_CORRECTION: ${{ inputs.citation_correction }}
-        run: node --input-type=module -e 'import {diagnosticPublicKey} from "./scripts/automation/private-writer-diagnostic.mjs"; import {validatePreviewDiagnosticTarget,validatePreviewCitationCorrectionMode} from "./scripts/automation/preview-fresh-gemini.mjs"; diagnosticPublicKey(process.env.DIAGNOSTIC_PUBLIC_KEY); validatePreviewDiagnosticTarget(process.env.PREVIEW_DIAGNOSTIC_TARGET); validatePreviewCitationCorrectionMode(process.env.PREVIEW_CITATION_CORRECTION);'
+          PREVIEW_EVIDENCE_REVISION: ${{ inputs.evidence_revision }}
+        run: node --input-type=module -e 'import {diagnosticPublicKey} from "./scripts/automation/private-writer-diagnostic.mjs"; import {validatePreviewDiagnosticTarget,validatePreviewCitationCorrectionMode,validatePreviewEvidenceRevisionMode} from "./scripts/automation/preview-fresh-gemini.mjs"; diagnosticPublicKey(process.env.DIAGNOSTIC_PUBLIC_KEY); validatePreviewDiagnosticTarget(process.env.PREVIEW_DIAGNOSTIC_TARGET); validatePreviewCitationCorrectionMode(process.env.PREVIEW_CITATION_CORRECTION); validatePreviewEvidenceRevisionMode(process.env.PREVIEW_EVIDENCE_REVISION);'
       - name: Research and draft without approval or delivery
         env:
           DIAGNOSTIC_PUBLIC_KEY: ${{ inputs.public_key }}
@@ -62,6 +71,7 @@ jobs:
           GEMINI_FREE_PROJECT_CONFIRMATION: ${{ inputs.free_project_confirmation }}
           PREVIEW_DIAGNOSTIC_TARGET: ${{ inputs.diagnostic_target }}
           PREVIEW_CITATION_CORRECTION: ${{ inputs.citation_correction }}
+          PREVIEW_EVIDENCE_REVISION: ${{ inputs.evidence_revision }}
           TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
           TAVILY_PAYGO_DISABLED_VERIFIED: ${{ vars.TAVILY_PAYGO_DISABLED_VERIFIED }}
         run: node scripts/automation/preview-fresh-gemini.mjs --human-review-only "$RUNNER_TEMP/fresh-preview.encrypted.json"

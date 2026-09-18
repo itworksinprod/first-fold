@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { reviewerResearchScopeCases } from "../../tests/fixtures/reviewer-research-scope.mjs";
 import { FREE_PROJECT_CONFIRMATION } from "./check-gemini-writer.mjs";
-import { requestGeminiEditorial, geminiFailureDiagnostic, GEMINI_LITE_MODEL } from "./free/gemini-ai.mjs";
+import { requestGeminiEditorial, geminiFailureDiagnostic, GEMINI_LITE_MODEL, GEMINI_FREE_MODEL } from "./free/gemini-ai.mjs";
 import { WRITER_PROMPT, GROUNDED_DRAFT_SCHEMA, localPromptDossier, validateGroundedStory } from "./free/grounded-draft.mjs";
 import { buildPreviewReviewPacket } from "./free/preview-editorial-review.mjs";
 import { previewSourceIntegrityHolds } from "./free/preview-evidence-gate.mjs";
@@ -53,11 +53,13 @@ ${dossier.sources.map(s => `<h3>${escape(s.publisher)}</h3><ul>${s.passages.map(
 }
 
 export async function previewGeminiLite({ apiKey, freeProjectConfirmation, fetchImpl = globalThis.fetch,
-  dossier = reviewerResearchScopeCases()[0].dossier, fresh = false, repair = null, writerProfile = 'legacy' } = {}) {
+  dossier = reviewerResearchScopeCases()[0].dossier, fresh = false, repair = null, writerProfile = 'legacy',
+  model = GEMINI_LITE_MODEL } = {}) {
   const structuralErrors = new Set();
   let rejectedPayload = null;
   const rejectionDetails = [];
   try {
+    if (![GEMINI_LITE_MODEL, GEMINI_FREE_MODEL].includes(model)) throw Error('INVALID_PREVIEW_MODEL');
     if(!['legacy',FRESH_PREVIEW_WRITER_PROFILE].includes(writerProfile)||
       (writerProfile===FRESH_PREVIEW_WRITER_PROFILE&&!fresh))throw Error('INVALID_PREVIEW_PROFILE');
     const evidenceHolds = fresh ? previewSourceIntegrityHolds(dossier) : [];
@@ -67,7 +69,7 @@ export async function previewGeminiLite({ apiKey, freeProjectConfirmation, fetch
         repair.payload?.stories?.length !== 1 || repair.payload.stories[0]?.candidateId !== dossier.candidateId ||
         !Array.isArray(repair.rejectionDetails) || !repair.rejectionDetails.length ||
         Buffer.byteLength(JSON.stringify(repair)) > 28000)) throw Error("INVALID_PREVIEW_REPAIR");
-    const result = await requestGeminiEditorial({ apiKey, model: GEMINI_LITE_MODEL,
+    const result = await requestGeminiEditorial({ apiKey, model,
       freeTierConfirmed: freeProjectConfirmation === FREE_PROJECT_CONFIRMATION, fetchImpl,
       maxTokens: 8000, thinking: "medium", timeoutMs: 180000,
       messages: [{ role: "system", content: writerProfile===FRESH_PREVIEW_WRITER_PROFILE?FRESH_PREVIEW_WRITER_PROMPT:`${WRITER_PROMPT}\nInclude each factual source's exact supplied publisher name in the claims.text sentences. Do not shorten those names or claim independent confirmation for a single-source account. Research is not a product release; a possible use is not an observed result. Do not promise safety, productivity, reliability or performance benefits absent supporting measurements. In whatToDoOrWatch, suggest a check the reader can make; never invent scheduled tests, updates or releases.${fresh ? `
@@ -131,7 +133,7 @@ For whatToDoOrWatch, suggest checking a supported setting, eligibility requireme
     draft: result.editorialPayload.stories[0], html: renderHumanReview(result.editorialPayload.stories[0], dossier, { fresh, evidenceForFields: result.editorialPayload.evidenceForFields }) };
   } catch (error) {
     return { report: { status: "failed", qualified: false, approved: false, productionEnabled: false,
-      emailRequests: 0, liveResearchRequests: 0, model: GEMINI_LITE_MODEL,
+      emailRequests: 0, liveResearchRequests: 0, model: [GEMINI_LITE_MODEL, GEMINI_FREE_MODEL].includes(model) ? model : null,
       code: /^GEMINI_[A-Z_]+$/u.test(error?.code ?? "") ? error.code : "GEMINI_PREVIEW_FAILED",
       ...geminiFailureDiagnostic(error), structuralErrors: [...structuralErrors] }, html: null,
       ...(fresh && rejectedPayload ? { rejectedDiagnostic: { unapproved: true, payload: rejectedPayload, rejectionDetails } } : {}) };
