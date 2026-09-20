@@ -33,6 +33,11 @@ const copiedClaim = `CERT/CC says: ${groundedEvidence.summary.split(". ").slice(
 function dailyFoundations(drafts) {
   return { foundations: drafts.map(({ candidateId, claims }) => ({ candidateId, claims: structuredClone(claims) })) };
 }
+function claimPacketView(dossiers) {
+  return dossiers.map(({ candidateId, desk, evidenceTier, sources }) => ({ candidateId, desk, evidenceTier,
+    sources: sources.map(source => Object.fromEntries(
+      ["sourceId", "publisher", "publisherKey", "relationship", "passages"].map(key => [key, source[key]]))) }));
+}
 function dailyCopies(drafts, claimRepairs = []) {
   return { copies: drafts.map(draft => Object.fromEntries(
     ["candidateId", "headline", "deck", "whyItMatters", "whatToDoOrWatch"].map(field => [field, draft[field]]))),
@@ -209,7 +214,7 @@ test("one originality revision is revalidated, hash-bound and separately checked
         assert.equal(options.maxAttempts, 1);
         assert.ok(options.schema.properties.claimRepairs);
         assert.deepEqual(data.dossiers[0].requestedClaimRepairs, [{ claimIndex: 0,
-          reasons: ["ORIGINALITY"], preserveSupports: true, originalText: copiedClaim,
+          reasons: ["ORIGINALITY"], preserveSupports: true,
           originalSupports: copied.claims[0].supports }]);
         assert.deepEqual(data.dossiers[0].fixedClaims, [{ claimIndex: 1, ...groundedDraft.claims[1] }]);
         return response(dailyCopies([groundedDraft], [{ candidateId: candidate.candidateId,
@@ -224,6 +229,39 @@ test("one originality revision is revalidated, hash-bound and separately checked
   assert.ok(diagnostics.some((event) => event.stage === "daily-foundation-check" &&
     event.accepted === 0 && event.rejectionCodes.includes("ORIGINALITY")));
   assert.ok(diagnostics.some((event) => event.stage === "daily-copy-composition" && event.accepted === 1));
+});
+
+test("daily numeric repair withholds rejected numbers and prose while retaining exact evidence and review", async () => {
+  for (const stillInvalid of [false, true]) {
+    const bad = structuredClone(groundedDraft);
+    bad.claims[0].text = "CERT/CC describes a driver problem affecting exactly 9999 installations in an unsupported count.";
+    const calls = [];
+    const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate], aiRequestImpl: async options => {
+      calls.push(options);
+      const data = JSON.parse(options.messages[1].content);
+      if (calls.length === 1) {
+        assert.equal(Object.hasOwn(data.dossiers[0], "supportedNumericTokens"), false);
+        for (const source of data.dossiers[0].sources) {
+          assert.deepEqual(Object.keys(source), ["sourceId", "publisher", "publisherKey", "relationship", "passages"]);
+          assert.ok(source.passages.every(passage => Array.isArray(passage.supportedNumericTokens)));
+        }
+        return response(dailyFoundations([bad]));
+      }
+      if (calls.length === 2) {
+        assert.doesNotMatch(options.messages[1].content, /9999|unsupported count|originalText/);
+        assert.deepEqual(data.dossiers[0].requestedClaimRepairs[0].reasons, ["NUMERIC_CITATION"]);
+        assert.deepEqual(data.dossiers[0].fixedClaims, [{ claimIndex: 1, ...groundedDraft.claims[1] }]);
+        assert.deepEqual(data.dossiers[0].sources[0].passages, JSON.parse(calls[0].messages[1].content).dossiers[0].sources[0].passages);
+        return response(dailyCopies([groundedDraft], [dailyClaimRepair(stillInvalid ? bad : groundedDraft, 0)]));
+      }
+      assert.equal(stillInvalid, false, "An unsupported repaired number must never reach review.");
+      assert.equal(data.drafts[0].draftSha256, hash(groundedDraft));
+      assert.ok(Object.hasOwn(data.dossiers[0].sources[0], "publishedAt"));
+      return response({ reviews: [review] });
+    } });
+    assert.equal(Boolean(result), !stillInvalid);
+    assert.deepEqual(calls.map(call => call.maxTokens), stillInvalid ? [2_000, 4_000] : [2_000, 4_000, 1_800]);
+  }
 });
 
 test("Qwen repairs all measured field defects without regenerating clean story fields", async () => {
@@ -397,7 +435,9 @@ test("harmless JSON paragraph breaks normalize before validation and the final r
   const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
     aiRequestImpl: async (options) => {
       if (++calls === 1) {
-        assert.ok(Array.isArray(JSON.parse(options.messages[1].content).dossiers[0].supportedNumericTokens));
+        const packet = JSON.parse(options.messages[1].content).dossiers[0];
+        assert.equal(Object.hasOwn(packet, "supportedNumericTokens"), false);
+        assert.ok(packet.sources.every(source => source.passages.every(passage => Array.isArray(passage.supportedNumericTokens))));
         return response(dailyFoundations([lineBreaks]));
       }
       if (calls === 2) return response(dailyCopies([groundedDraft]));
@@ -2160,7 +2200,8 @@ test("daily review pairs exact claim passages within each candidate despite coll
   assert.match(calls[2].messages[0].content, /design intent is not proof of an observed productivity gain/);
   const written = JSON.parse(calls[0].messages[1].content);
   const checked = JSON.parse(calls[2].messages[1].content);
-  assert.deepEqual(checked.dossiers, written.dossiers, "The paired view retains every original source passage and caveat");
+  assert.deepEqual(claimPacketView(checked.dossiers), written.dossiers, "The paired view retains every original source passage and caveat");
+  assert.ok(checked.dossiers.every(item => item.sources.every(source => Object.hasOwn(source, "publishedAt"))));
   assert.deepEqual(checked.drafts.map(entry => entry.draft.candidateId), fixture.drafts.map(draft => draft.candidateId).reverse(),
     "The test reverses draft order to catch accidental index-based candidate pairing");
   for (const entry of checked.drafts) {
@@ -2284,7 +2325,8 @@ test("an oversized optional pairing retains the entire original review dossier w
   assert.equal(nativeBodies.length, 3, "All three bounded requests fit the unchanged real adapter");
   const written = JSON.parse(calls[0].messages[1].content);
   const checked = JSON.parse(calls[2].messages[1].content);
-  assert.deepEqual(checked.dossiers, written.dossiers, "No source text or qualification is dropped to fit paired duplication");
+  assert.deepEqual(claimPacketView(checked.dossiers), written.dossiers, "No source text or qualification is dropped to fit paired duplication");
+  assert.ok(checked.dossiers.every(item => item.sources.every(source => Object.hasOwn(source, "publishedAt"))));
   assert.deepEqual(checked.drafts, drafts.map(draft => ({ draftSha256: hash(draft), draft })));
   for (const sourceDossier of checked.dossiers) {
     assert.equal(sourceDossier.sources.length, 2);

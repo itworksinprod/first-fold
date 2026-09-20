@@ -95,8 +95,10 @@ test("one real-source diagnostic pins the daily Llama writer and reviewer, with 
       assert.equal(requests[2].dossiers.length, 1);
       assert.equal(requests[2].drafts.length, 1);
       assert.deepEqual(requests[2].drafts[0].draft, groundedDraft);
-      assert.deepEqual(requests[2].dossiers[0].sources, requests[0].dossiers[0].sources,
+      assert.deepEqual(requests[2].dossiers[0].sources.map(source => Object.fromEntries(
+        ["sourceId", "publisher", "publisherKey", "relationship", "passages"].map(key => [key, source[key]]))), requests[0].dossiers[0].sources,
         "Final review retains full source context, not only the narrower copy packet");
+      assert.ok(requests[2].dossiers[0].sources.every(source => Object.hasOwn(source, "publishedAt")));
       assert.deepEqual(requests[2].drafts[0].claimEvidence.map(({ claimIndex, claimText, citations }) => ({
         claimIndex, claimText, ids: citations.map(citation => citation.evidenceId),
       })), groundedDraft.claims.map((claim, claimIndex) => ({
