@@ -472,6 +472,12 @@ function completeEvidenceExcerpt(sourceText, {
     if (endsWithTerminalPunctuation && !/[.!]\s*$/u.test(sourceSafetyShadow(segment))) continue;
     const words = sourceWords(segment);
     if (words.length === 0 || words.length > MAX_TRUSTED_EVIDENCE_EXCERPT_WORDS) continue;
+    // The final originality gate separates punctuation-delimited words after
+    // NFKC normalization. Compound words must not make a ten-token excerpt
+    // exceed that gate's twelve-word limit. Reject the complete segment rather
+    // than truncating a quotation or weakening the downstream check.
+    const originalityWords = segment.normalize("NFKC").match(/[\p{L}\p{N}]+/gu) ?? [];
+    if (originalityWords.length > MAX_TRUSTED_EVIDENCE_EXCERPT_WORDS) continue;
     if (requireMeaningfulSignal && !hasMeaningfulEventSignal(segment, candidate, evidence)) continue;
     const excerpt = originalExcerptText(segment);
     if (

@@ -884,6 +884,23 @@ test("trusted-evidence-digest-only selected-slate drafting makes zero model call
   assert.equal(validateCanonicalEdition(repeatedCandidate).valid, true);
 });
 
+test("trusted digest failures report only a bounded diagnostic and still block generation", async () => {
+  const scenario = selectedSlateScenario(["security-and-privacy"]);
+  const selected = scenario.research.selectedCandidates[0];
+  const digest = buildTrustedEvidenceDigestPayload({ candidates: [selected] });
+  selected.verifiedFacts.push(`PRIVATE_DIAGNOSTIC_CANARY ${digest.desks["security-and-privacy"].story.whyItMatters}`);
+  const diagnostics = [];
+  await assert.rejects(() => draftFreeEdition(draftOptions({
+    evidencePolicy: "authoritative-or-corroborated", draftSelectedSlate: true,
+    trustedEvidenceDigestOnly: true, researchImpl: async () => scenario.research,
+    onFreeDiagnostic: diagnostic => diagnostics.push(diagnostic),
+    aiRequestImpl: async () => { throw new Error("No model should run."); },
+  })), error => error.diagnosticCode === "FREE_TRUSTED_DIGEST_FAILED");
+  assert.deepEqual(diagnostics, [{ stage: "trusted-digest", phase: "normalization",
+    code: "EDITORIAL_ORIGINALITY_RETRY_EXHAUSTED" }]);
+  assert.doesNotMatch(JSON.stringify(diagnostics), /PRIVATE_DIAGNOSTIC_CANARY|https?:|candidate-/);
+});
+
 test("trusted-evidence-digest-only mode requires selected-slate drafting and excludes model summaries", async () => {
   await assert.rejects(
     () => draftFreeEdition(draftOptions({ trustedEvidenceDigestOnly: true })),

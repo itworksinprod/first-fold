@@ -2899,19 +2899,28 @@ async function draftFreeEditionCore({
         candidateIds: candidates.map((candidate) => candidate.candidateId),
         quietReasons,
       };
+      let digestStage = "construction";
       try {
         const digestPayload = buildTrustedEvidenceDigestPayload({
           candidates,
           quietReasons,
           concise: groundedSummaries,
         });
+        digestStage = "normalization";
         editorial = normalizeFreeEditorialAgainstCandidates(
           digestPayload,
           candidates,
           generatedAt,
           { evidencePolicy: normalizedEvidencePolicy, requiredEventKeys, privateSourceBriefs: groundedSummaries },
         );
-      } catch {
+      } catch (error) {
+        // Only trusted class codes and fixed stage labels enter public logs.
+        // Never disclose arbitrary messages, source text, URLs or candidate IDs.
+        onFreeDiagnostic({ stage: "trusted-digest", phase: digestStage,
+          code: error instanceof FreeEditorialRepairError
+            ? error.diagnosticCode : "CONSTRUCTION_OR_SCHEMA",
+          ...(error instanceof FreeAuthoritativeStructureError
+            ? { subcode: error.diagnosticSubcode } : {}) });
         throw freeEditorialDiagnosticError(
           "Trusted evidence digest construction failed.",
           "FREE_TRUSTED_DIGEST_FAILED",

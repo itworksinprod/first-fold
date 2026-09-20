@@ -225,7 +225,7 @@ function normalizedWords(value) {
   return String(value)
     .normalize("NFKC")
     .toLocaleLowerCase("en-US")
-    .match(/[\p{L}\p{N}]+(?:[’'-][\p{L}\p{N}]+)*/gu) ?? [];
+    .match(/[\p{L}\p{N}]+/gu) ?? [];
 }
 
 function schemaIssues(value, schema, path = "$") {
@@ -337,6 +337,29 @@ function quotedExcerpts(story) {
     ...story.evidence.map((claim) => claim.statement),
   ].flatMap((value) => [...value.matchAll(/“([^”]+)”/gu)].map((match) => match[1]));
 }
+
+test("digest excerpts obey the originality tokenizer for hyphenated and slash-separated words", () => {
+  for (const excerpt of [
+    "GitHub adds production-ready, no-cost, cross-platform tools for repository administrators.",
+    "GitHub adds CI/CD tools for large-scale multi-team cross-platform repository automation.",
+  ]) {
+    const candidate = authoritativeCandidate();
+    candidate.title = excerpt;
+    candidate.sources[0].title = excerpt;
+    candidate.feedEvidence[0].title = excerpt;
+    candidate.feedEvidence[0].summary = "";
+    candidate.verifiedFacts = [`GitHub's feed reports: ${excerpt}`];
+    assert.ok(normalizedWords(excerpt).length >= 12);
+    for (const concise of [false, true]) {
+      const payload = buildTrustedEvidenceDigestPayload({ candidates: [candidate], concise });
+      const story = payload.desks["work-and-tools"].story;
+      assert.equal(quotedExcerpts(story).length, 0, "Reject the whole overlong quote; never truncate its meaning.");
+      assertNoLongSourceOverlap(story, candidate);
+      assert.doesNotThrow(() => normalizeFreeEditorialAgainstCandidates(payload, [candidate], generatedAt,
+        { evidencePolicy: "authoritative-or-corroborated", privateSourceBriefs: concise }));
+    }
+  }
+});
 
 test("concise personal digests use specific questions without word-count padding", () => {
   const candidates = [corroboratedCandidate(), authoritativeCandidate()];
@@ -636,7 +659,7 @@ test("straight and curly n't contractions remain inside negated excerpts", () =>
   for (const contraction of ["isn't", "wasn’t"]) {
     const candidate = negatedExploitCandidate();
     candidate.feedEvidence[0].summary =
-      `The Actions runner issue ${contraction} actively exploited in the wild.`;
+      `Actions runner issue ${contraction} actively exploited in the wild.`;
     const payload = buildTrustedEvidenceDigestPayload({
       candidates: [candidate],
       quietReasons: quietReasons(),
