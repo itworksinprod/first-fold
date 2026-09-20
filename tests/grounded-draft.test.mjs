@@ -1663,6 +1663,8 @@ test("daily writing selects minimal evidence before prose without changing share
             assert.match(options.messages[0].content, /Use one evidenceId when one passage establishes the complete fact/);
             assert.match(options.messages[0].content, /Do not add a spare citation merely because its topic is related/);
             assert.match(options.messages[0].content, /retain the required coverage of both publishers/);
+            assert.match(options.messages[0].content, /Every numeric\/version token must match supportedNumericTokens in THAT claim's selected passages/);
+            assert.match(options.messages[0].content, /Do not rewrite a date into a different numeric format/);
             assert.equal(options.maxTokens, 2_000);
             assert.equal(options.responseFormat, "json_schema");
           } else {
@@ -1673,7 +1675,12 @@ test("daily writing selects minimal evidence before prose without changing share
           assert.equal(story.properties.claims.items.properties.supports.maxItems, 2);
           return wrap(model === DEFAULT_CLOUDFLARE_AI_MODEL ? dailyFoundations([groundedDraft]) : { stories: [groundedDraft] });
         }
-        if (model === DEFAULT_CLOUDFLARE_AI_MODEL && calls === 2) return wrap(dailyCopies([groundedDraft]));
+        if (model === DEFAULT_CLOUDFLARE_AI_MODEL && calls === 2) {
+          assert.match(options.messages[0].content, /For NUMERIC_CITATION repairs/);
+          assert.match(options.messages[0].content, /A version list or catalogue of features is not an explanation of impact/);
+          assert.match(options.messages[0].content, /do not imply measured\s+benefits/);
+          return wrap(dailyCopies([groundedDraft]));
+        }
         assert.match(options.messages[0].content, /Evaluate the submitted cited passages TOGETHER/);
         assert.match(options.messages[0].content, /Each passage need not prove the entire claim by itself/);
         assert.match(options.messages[0].content, /If any clause is unsupported or any submitted passage is irrelevant, return an empty array/);

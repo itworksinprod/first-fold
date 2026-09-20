@@ -107,6 +107,9 @@ export const FREE_FEED_SOURCES = Object.freeze([
     url: "https://github.blog/changelog/feed/",
     feedHosts: ["github.blog"],
     itemHosts: ["github.blog"],
+    // RSS omits the slash; the publisher's article endpoint adds it via 301.
+    // Normalize before identity/evidence binding, not by relaxing final QA.
+    itemPathPolicy: "append-trailing-slash",
     coverageDesks: ["work-and-tools"],
     deskPriors: { "work-and-tools": 24, "security-and-privacy": 4 },
   },

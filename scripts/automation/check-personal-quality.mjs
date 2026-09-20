@@ -15,6 +15,7 @@ import { qualityCheckWindow } from "./quality-check-window.mjs";
 import { EXPLICIT_CLAIM_REVIEW_PROFILE, LEGACY_CLAIM_REVIEW_PROFILE } from "./free/explicit-claim-review.mjs";
 import { EXPERIMENTAL_MIXED_REVIEW_PROFILE, EXPERIMENTAL_REASONING_PIPELINE_PROFILE } from "./free/grounded-draft.mjs";
 import { createPrivateEditorialDiagnosticCollector } from "./private-editorial-diagnostic.mjs";
+import { assertDailyProductionCheckAuthority, assertDailySummaryCoverage } from "./daily-production-check.mjs";
 
 const now = new Date();
 let snapshot;
@@ -23,7 +24,12 @@ let privateDiagnosticPath;
 try {
   const args = process.argv.slice(2);
   assert.ok(args.length <= 3 && new Set(args).size === args.length &&
-    args.every(arg => ["--require-web-search", "--explicit-claim-review", "--mixed-claim-review", "--reasoning-pipeline", "--private-diagnostic"].includes(arg)));
+    args.every(arg => ["--require-web-search", "--explicit-claim-review", "--mixed-claim-review", "--reasoning-pipeline", "--private-diagnostic", "--daily-production"].includes(arg)));
+  const dailyProduction = args.includes("--daily-production");
+  if (dailyProduction) {
+    assert.equal(args.length, 1, "Daily qualification cannot select an experimental writer or require unavailable search credits.");
+    assertDailyProductionCheckAuthority(process.env);
+  }
   const requireWebSearch = args.includes("--require-web-search");
   const explicitReview = args.includes("--explicit-claim-review");
   const mixedReview = args.includes("--mixed-claim-review");
@@ -88,6 +94,7 @@ try {
       code: "QUALITY_GROUNDED_SUMMARIES_INCOMPLETE",
     });
   }
+  if (dailyProduction) assertDailySummaryCoverage(stories, checkedStories);
   const semanticReview = candidate.provenance.personalFreeResearch.semanticReview;
   if (experimentalReview && semanticReview?.profile !== reviewProfile) {
     throw Object.assign(new Error("The experimental reviewer receipt is absent."), { code: "QUALITY_REVIEW_RECEIPT_REQUIRED" });
@@ -95,6 +102,7 @@ try {
   console.info(`::notice title=Quality result::${JSON.stringify({ status: "validated-and-rendered", stories, checkedStories, mode,
     writerModel: candidate.provenance.personalFreeResearch.model,
     reviewProfile,
+    ...(dailyProduction ? { dailyProductionProfile: true, minimumCheckedSummaries: 3 } : {}),
     ...(experimentalReview ? { reviewerModel: semanticReview.model, experimental: true,
       productionQualified: false, knownReviewerRegression: "supported-control-false-rejection" } : {}),
     ...(isValidWebSearchReceipt(webSearch) ? { webSearch } : {}),

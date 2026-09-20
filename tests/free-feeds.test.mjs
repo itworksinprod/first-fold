@@ -513,6 +513,20 @@ test("a reviewed feed may canonicalize its own article paths before strict link 
   );
 });
 
+test("GitHub changelog RSS binds canonical slash URLs before IDs and QA, without admitting other hosts", () => {
+  const github = FREE_FEED_SOURCES.find(item => item.id === "github-changelog");
+  assert.equal(github.itemPathPolicy, "append-trailing-slash");
+  const body = `<rss><channel>
+    <item><title>Copilot code review update</title><link>https://github.blog/changelog/2026-08-21-review-update?utm_source=rss#details</link><pubDate>Fri, 21 Aug 2026 12:00:00 GMT</pubDate></item>
+    <item><title>Foreign redirect</title><link>https://unreviewed.example/changelog/update</link><pubDate>Fri, 21 Aug 2026 12:00:00 GMT</pubDate></item>
+  </channel></rss>`;
+  const items = parseFeedPayload({ source: github, body, retrievedAt });
+  assert.deepEqual(items.map(item => item.url), ["https://github.blog/changelog/2026-08-21-review-update/"]);
+  const canonical = parseFeedPayload({ source: github,
+    body: body.replace("review-update?utm_source=rss#details", "review-update/"), retrievedAt });
+  assert.equal(canonical[0].url, items[0].url);
+});
+
 test("the production feed user agent is browser-compatible and identifies the pilot", () => {
   assert.match(FREE_FEED_USER_AGENT, /^Mozilla\/5\.0 \(compatible;/);
   assert.match(FREE_FEED_USER_AGENT, /First-Fold-Free-Pilot\/1\.0/);
