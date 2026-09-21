@@ -136,7 +136,7 @@ export async function diagnoseOneWriter({ publicKey, accountId, apiToken, now = 
     aiRequestImpl, fetchImpl, endpoint });
   if (mode === "review-controls") {
     const { diagnoseReviewerTransports } = await import("./reviewer-transport-diagnostic.mjs");
-    return diagnoseReviewerTransports({ publicKey, accountId, apiToken, now, aiRequestImpl, fetchImpl, endpoint });
+    return diagnoseReviewerTransports({ publicKey, accountId, apiToken, now, aiRequestImpl, fetchImpl, endpoint, sealDiagnostic });
   }
   const capture = { purpose: mode === "source-recheck" ? "one-source-foundation-recheck-not-an-edition"
     : "one-real-source-writer-probe-not-an-edition", capturedAt: now.toISOString(),

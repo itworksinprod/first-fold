@@ -1,8 +1,7 @@
 // Synthetic-only comparison. It cannot generate an edition or approve a draft.
 import { createHash } from "node:crypto";
-import { freeReviewerSyntheticCases } from "./check-free-reviewer.mjs";
+import { freeReviewerSyntheticCases } from "../../tests/fixtures/reviewer-controls.mjs";
 import { dailyReviewerControlBundle } from "./free/grounded-draft.mjs";
-import { sealDiagnostic } from "./private-writer-diagnostic.mjs";
 import { DEFAULT_CLOUDFLARE_AI_MODEL, buildWorkersAiRequest, workersAiFailureDiagnostic,
   WORKERS_AI_EDITORIAL_FORMAT_INVALID } from "./free/workers-ai.mjs";
 
@@ -36,7 +35,7 @@ export function scoreReviewerControls(payload, cases) {
 }
 
 export async function diagnoseReviewerTransports({ publicKey, accountId, apiToken, now,
-  aiRequestImpl, fetchImpl, endpoint }) {
+  aiRequestImpl, fetchImpl, endpoint, sealDiagnostic }) {
   const cases = freeReviewerSyntheticCases();
   const bundle = dailyReviewerControlBundle(cases.map(item => item.draft), cases.map(item => item.dossier));
   const capture = { purpose: "synthetic-reviewer-transport-controls-not-an-edition", capturedAt: now.toISOString(), calls: [], emailSent: false };

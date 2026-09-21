@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createHash, generateKeyPairSync } from "node:crypto";
+import { spawnSync } from "node:child_process";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { freeReviewerSyntheticCases } from "../scripts/automation/check-free-reviewer.mjs";
 import { scoreReviewerControls } from "../scripts/automation/reviewer-transport-diagnostic.mjs";
 import { diagnoseOneWriter, openDiagnostic } from "../scripts/automation/private-writer-diagnostic.mjs";
@@ -81,4 +85,28 @@ test("provider quota or missing credentials stops controls without a second-form
   assert.equal(report.modelRequests, 1);
   assert.equal(report.outputBudget, 1800);
   await assert.rejects(diagnoseOneWriter({ ...base, apiToken: "", aiRequestImpl: () => assert.fail("No inference") }));
+});
+
+test("real CLI entry point completes dynamic control import and encrypts a mocked quota failure", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "first-fold-control-startup-"));
+  try {
+    const artifact = join(directory, "result.json");
+    const preload = `globalThis.fetch = async () => new Response(JSON.stringify({errors:[{code:123,message:"fixture quota"}]}), {status:429,headers:{"content-type":"application/json"}});`;
+    const child = spawnSync(process.execPath, ["--import", `data:text/javascript,${encodeURIComponent(preload)}`,
+      "scripts/automation/private-writer-diagnostic.mjs", "run", artifact], { encoding: "utf8", timeout: 5000,
+      env: { GITHUB_REPOSITORY: "itworksinprod/first-fold", GITHUB_REF: "refs/heads/main",
+        GITHUB_WORKFLOW_REF: "itworksinprod/first-fold/.github/workflows/private-writer-diagnostic.yml@refs/heads/main",
+        GITHUB_ACTOR: "itworksinprod", GITHUB_EVENT_NAME: "workflow_dispatch", GITHUB_RUN_ATTEMPT: "1",
+        PRIVATE_WRITER_DIAGNOSTIC_MODE: "review-controls", DIAGNOSTIC_PUBLIC_KEY: base.publicKey,
+        CLOUDFLARE_ACCOUNT_ID: base.accountId, CLOUDFLARE_AI_API_TOKEN: base.apiToken } });
+    assert.equal(child.error, undefined);
+    assert.equal(child.status, 1, child.stderr);
+    assert.doesNotMatch(child.stderr, /unsettled top-level await/);
+    assert.match(child.stdout, /One-story diagnostic/);
+    const capture = openDiagnostic(JSON.parse(await readFile(artifact, "utf8")), pair.privateKey);
+    assert.equal(capture.report.modelRequests, 1);
+    assert.equal(capture.report.networkRequests, 1);
+    assert.equal(capture.report.emailSent, false);
+    assert.equal(capture.calls[0].failure.httpStatus, "429");
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });
