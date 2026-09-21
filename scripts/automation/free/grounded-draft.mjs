@@ -1067,6 +1067,21 @@ function pairedClaimEvidence(draft, dossier) {
     }) }));
 }
 
+// Pure request construction for isolated synthetic reviewer controls. Reuses
+// production criteria/schema without interpreting a model verdict as approval.
+export function dailyReviewerControlBundle(drafts, dossiers) {
+  if (!Array.isArray(drafts) || drafts.length < 1 || drafts.length > 4 || !Array.isArray(dossiers) ||
+      dossiers.length !== drafts.length || new Set(drafts.map(draft => draft.candidateId)).size !== drafts.length) {
+    throw new Error("Invalid reviewer control bundle.");
+  }
+  return { prompt: `${REVIEW_PROMPT}\n${DAILY_REVIEW_GUIDANCE}`, schema: reviewerProviderSchema(drafts), data: {
+    dossiers: dossiers.map(dossier => ({ candidateId: dossier.candidateId, desk: dossier.desk,
+      evidenceTier: dossier.evidenceTier, sources: dossier.sources.map(source => localPromptSource(source)) })),
+    drafts: drafts.map(draft => ({ draftSha256: hash(draft), draft: structuredClone(draft),
+      claimEvidence: pairedClaimEvidence(draft, dossiers.find(dossier => dossier.candidateId === draft.candidateId)) })),
+  } };
+}
+
 const DAILY_FOUNDATION_PROMPT = `Select two distinct, useful reported facts for EVERY supplied news dossier.
 Return only foundations, each with candidateId and exactly two claims. Each claim contains supports
 FIRST, then text. No headline, deck, analysis, advice, stories, notes or other fields at this stage.
