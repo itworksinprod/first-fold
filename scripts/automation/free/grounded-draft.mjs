@@ -1101,6 +1101,12 @@ in the dossier is not evidence; remove an unsupported clause rather than inventi
 Every factual clause requires its own cited support. Preserve conditions, attribution and uncertainty;
 do not invent benefits, availability, versions, patches or advice. Do not add facts to justify analysis.
 Write original, complete sentences, not copied publisher wording, serialized fields, URLs or filler.
+For EACH analysis paragraph, write two or three complete sentences and at least 40 words.
+whyItMatters: identify the affected reader, explain the specific supported change, then distinguish
+its demonstrated scope from a benefit the source has not established. Avoid generic productivity claims.
+whatToDoOrWatch: give a proportionate check tied to that change, explain what the reader should
+verify, then name the next concrete development that would change the assessment. Do not invent advice.
+These paragraph minima are writing constraints, not permission to pad or fabricate facts.
 Claim text is 60–480 characters. Headline is 1–180; deck 1–280; whyItMatters 120–650;
 whatToDoOrWatch 100–550. Each story's body must have 100–225 words: its TWO factual claims plus
 whyItMatters and whatToDoOrWatch, excluding headline and deck. Aim for 140–170 body words PER STORY.
@@ -1109,6 +1115,7 @@ remaining min/aim/max words for whyItMatters PLUS whatToDoOrWatch, not the entir
 When subtractRepairedClaimWords is false, copyParagraphWordAims gives this candidate's ready-to-use
 word target for EACH copy paragraph. Aim for its whyItMatters count and its whatToDoOrWatch count;
 do not subtract fixed-claim words again. These are word targets, not character counts.
+Never reduce either paragraph below 40 words; the complete body must still stay within 100–225 words.
 When subtractRepairedClaimWords is true, paragraph targets are not supplied because the remaining
 numbers are provisional: FIRST count the words in the FINAL repaired claims, subtract that count
 from each copyBodyTarget number (never below zero), THEN compute the paragraph targets from the
@@ -1182,12 +1189,16 @@ function dailyCompositionContract(foundations, dossiers) {
   const fields = GROUNDED_DRAFT_SCHEMA.properties.stories.items.properties;
   const exactArray = (items, count) => ({ type: "array", minItems: count, maxItems: count, items });
   const candidateId = { type: "string", enum: foundations.map(item => item.candidateId) };
+  // Native schema guidance must reflect the requested paragraph depth. The
+  // canonical reader counter and all factual/semantic checks remain authoritative;
+  // schema compliance alone is never acceptance (including for compound words).
+  const analysisSchema = field => ({ ...fields[field], pattern: "^(?:\\S+\\s+){39,89}\\S+$" });
   const schema = objectSchema({
     ...(claimRepairs.length ? { claimRepairs: exactArray(objectSchema({ candidateId,
       claimIndex: { type: "integer", enum: [0, 1] }, supports: CLAIM_SCHEMA.properties.supports,
       text: CLAIM_SCHEMA.properties.text }), claimRepairs.length) } : {}),
     copies: exactArray(objectSchema({ candidateId, headline: fields.headline, deck: fields.deck,
-      whyItMatters: fields.whyItMatters, whatToDoOrWatch: fields.whatToDoOrWatch }), foundations.length),
+      whyItMatters: analysisSchema("whyItMatters"), whatToDoOrWatch: analysisSchema("whatToDoOrWatch") }), foundations.length),
   });
   const data = { dossiers: foundations.map(foundation => {
     const dossier = dossiers.find(item => item.candidateId === foundation.candidateId);
@@ -1197,7 +1208,7 @@ function dailyCompositionContract(foundations, dossiers) {
     const citedIds = new Set(fixedClaims.flatMap(claim => claim.supports.map(support => support.evidenceId)));
     const fixedClaimWords = countReaderFacingStoryWords({ whatHappened: fixedClaims.map(claim => claim.text).join(" ") });
     const copyAimWords = Math.max(0, 145 - fixedClaimWords);
-    const whyAimWords = Math.round(copyAimWords * 0.55);
+    const whyAimWords = Math.max(40, Math.round(copyAimWords * 0.55));
     return { candidateId: dossier.candidateId, desk: dossier.desk, evidenceTier: dossier.evidenceTier,
       fixedClaims, requestedClaimRepairs: requested.map(task => {
         const claim = foundation.claims[task.claimIndex];
@@ -1216,7 +1227,7 @@ function dailyCompositionContract(foundations, dossiers) {
         aim: copyAimWords, max: Math.max(0, 225 - fixedClaimWords),
         subtractRepairedClaimWords: requested.length > 0 },
       ...(requested.length === 0 ? { copyParagraphWordAims: {
-        whyItMatters: whyAimWords, whatToDoOrWatch: copyAimWords - whyAimWords,
+        whyItMatters: whyAimWords, whatToDoOrWatch: Math.max(40, copyAimWords - whyAimWords),
       } } : {}) };
   }) };
   return { schema, data, claimRepairs };
