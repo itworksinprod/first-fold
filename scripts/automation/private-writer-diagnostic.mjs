@@ -64,7 +64,7 @@ export function assertDiagnosticAuthority(env) {
 }
 
 export function resolvePrivateWriterDiagnosticMode(value = "source") {
-  if (!["source", "source-recheck", "review-controls", "provider-only"].includes(value)) throw failure("DIAGNOSTIC_MODE_INVALID");
+  if (!["source", "source-recheck", "review-controls", "explicit-review-controls", "provider-only"].includes(value)) throw failure("DIAGNOSTIC_MODE_INVALID");
   return value;
 }
 
@@ -134,9 +134,10 @@ export async function diagnoseOneWriter({ publicKey, accountId, apiToken, now = 
   if (typeof apiToken !== "string" || !apiToken.trim()) throw failure("DIAGNOSTIC_CONFIGURATION_INVALID");
   if (mode === "provider-only") return diagnoseProvider({ publicKey, accountId, apiToken, now,
     aiRequestImpl, fetchImpl, endpoint });
-  if (mode === "review-controls") {
+  if (["review-controls", "explicit-review-controls"].includes(mode)) {
     const { diagnoseReviewerTransports } = await import("./reviewer-transport-diagnostic.mjs");
-    return diagnoseReviewerTransports({ publicKey, accountId, apiToken, now, aiRequestImpl, fetchImpl, endpoint, sealDiagnostic });
+    return diagnoseReviewerTransports({ publicKey, accountId, apiToken, now, aiRequestImpl, fetchImpl, endpoint, sealDiagnostic,
+      explicit: mode === "explicit-review-controls" });
   }
   const capture = { purpose: mode === "source-recheck" ? "one-source-foundation-recheck-not-an-edition"
     : "one-real-source-writer-probe-not-an-edition", capturedAt: now.toISOString(),

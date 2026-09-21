@@ -11,6 +11,7 @@ on:
           - source
           - source-recheck
           - review-controls
+          - explicit-review-controls
           - provider-only
       public_key:
         description: Ephemeral RSA-3072 public key in base64 DER format (never a private key)

@@ -87,6 +87,29 @@ test("provider quota or missing credentials stops controls without a second-form
   await assert.rejects(diagnoseOneWriter({ ...base, apiToken: "", aiRequestImpl: () => assert.fail("No inference") }));
 });
 
+test("explicit controls retain per-claim hashes and reject stale bindings without inferring approval", async () => {
+  for (const corrupt of [false, true]) {
+    const { report } = await diagnoseOneWriter({ ...base, mode: "explicit-review-controls", aiRequestImpl: requestWorkersAiEditorial,
+      fetchImpl: async (_url, init) => {
+        const data = JSON.parse(JSON.parse(init.body).messages[1].content);
+        const payload = { reviews: data.drafts.map(entry => {
+          const original = expected().reviews.find(review => review.candidateId === entry.draft.candidateId);
+          const { claimSupport, ...other } = original;
+          return { ...other, claimVerdicts: entry.claimEvidence.map((claim, index) => ({
+            claimIndex: claim.claimIndex, claimSha256: corrupt ? "0".repeat(64) : claim.claimSha256,
+            allCitedPassagesSupport: claimSupport[index].length > 0,
+          })) };
+        }) };
+        return new Response(JSON.stringify({ success: true, result: { response: JSON.stringify(payload) }, errors: [] }),
+          { headers: { "content-type": "application/json" } });
+      } });
+    assert.equal(report.status, corrupt ? "failed" : "reviewer-controls-passed");
+    assert.equal(report.outputBudget, 3600);
+    assert.equal(report.mode, "synthetic-explicit-reviewer-controls-not-an-edition");
+    assert.ok(report.comparisons.every(result => result.protocolValid === !corrupt));
+  }
+});
+
 test("real CLI entry point completes dynamic control import and encrypts a mocked quota failure", async () => {
   const directory = await mkdtemp(join(tmpdir(), "first-fold-control-startup-"));
   try {

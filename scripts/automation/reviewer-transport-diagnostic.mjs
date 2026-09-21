@@ -2,6 +2,7 @@
 import { createHash } from "node:crypto";
 import { freeReviewerSyntheticCases } from "../../tests/fixtures/reviewer-controls.mjs";
 import { dailyReviewerControlBundle } from "./free/grounded-draft.mjs";
+import { buildExplicitClaimReview, validateExplicitClaimReview } from "./free/explicit-claim-review.mjs";
 import { DEFAULT_CLOUDFLARE_AI_MODEL, buildWorkersAiRequest, workersAiFailureDiagnostic,
   WORKERS_AI_EDITORIAL_FORMAT_INVALID } from "./free/workers-ai.mjs";
 
@@ -35,10 +36,12 @@ export function scoreReviewerControls(payload, cases) {
 }
 
 export async function diagnoseReviewerTransports({ publicKey, accountId, apiToken, now,
-  aiRequestImpl, fetchImpl, endpoint, sealDiagnostic }) {
+  aiRequestImpl, fetchImpl, endpoint, sealDiagnostic, explicit = false }) {
   const cases = freeReviewerSyntheticCases();
-  const bundle = dailyReviewerControlBundle(cases.map(item => item.draft), cases.map(item => item.dossier));
-  const capture = { purpose: "synthetic-reviewer-transport-controls-not-an-edition", capturedAt: now.toISOString(), calls: [], emailSent: false };
+  const bundle = explicit ? buildExplicitClaimReview({ drafts: cases.map(item => item.draft), dossiers: cases.map(item => item.dossier) })
+    : dailyReviewerControlBundle(cases.map(item => item.draft), cases.map(item => item.dossier));
+  const capture = { purpose: explicit ? "synthetic-explicit-reviewer-controls-not-an-edition"
+    : "synthetic-reviewer-transport-controls-not-an-edition", capturedAt: now.toISOString(), calls: [], emailSent: false };
   let modelRequests = 0, networkRequests = 0;
   for (const responseFormat of ["json_schema", "json_object"]) {
     const call = { responseFormat, request: bundle.data };
@@ -67,7 +70,11 @@ export async function diagnoseReviewerTransports({ publicKey, accountId, apiToke
         throw failure("DIAGNOSTIC_PROVENANCE_INVALID");
       }
       call.editorialPayload = structuredClone(result.editorialPayload);
-      call.score = scoreReviewerControls(call.editorialPayload, cases);
+      if (explicit) {
+        const validated = validateExplicitClaimReview(call.editorialPayload, bundle);
+        call.score = validated.errors.length ? { protocolValid: false, passed: false, cases: [], errors: validated.errors }
+          : scoreReviewerControls({ reviews: validated.reviews }, cases);
+      } else call.score = scoreReviewerControls(call.editorialPayload, cases);
     } catch (error) {
       call.failure = { code: /^[A-Z_]{1,64}$/u.test(error?.code ?? "") ? error.code : "DIAGNOSTIC_FAILED",
         ...workersAiFailureDiagnostic(error) };
