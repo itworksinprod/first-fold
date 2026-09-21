@@ -1086,7 +1086,9 @@ Return every supplied candidate exactly once. Do not return the schema itself or
 
 const DAILY_COMPOSITION_PROMPT = `Complete EVERY supplied news foundation in a single bounded composition.
 Return copies, one per candidate, containing only candidateId, headline, deck, whyItMatters and
-whatToDoOrWatch. Return claimRepairs ONLY if that array is required by the schema, with exactly the
+whatToDoOrWatch. Each of those last TWO fields is an array of exactly TWO prose strings, which
+will be joined in order with a space into one paragraph. Do not return a string or nested fields.
+Return claimRepairs ONLY if that array is required by the schema, with exactly the
 requested candidateId/claimIndex pairs, supports FIRST then text. Do not return or rewrite fixedClaims.
 First repair only requested claims from their source evidence; preserveSupports means retain those
 exact originalSupports. Then write copy from the fixed claims plus your repaired claims, not from
@@ -1101,11 +1103,13 @@ in the dossier is not evidence; remove an unsupported clause rather than inventi
 Every factual clause requires its own cited support. Preserve conditions, attribution and uncertainty;
 do not invent benefits, availability, versions, patches or advice. Do not add facts to justify analysis.
 Write original, complete sentences, not copied publisher wording, serialized fields, URLs or filler.
-For EACH analysis paragraph, write two or three complete sentences and at least 40 words.
-whyItMatters: identify the affected reader, explain the specific supported change, then distinguish
-its demonstrated scope from a benefit the source has not established. Avoid generic productivity claims.
-whatToDoOrWatch: give a proportionate check tied to that change, explain what the reader should
-verify, then name the next concrete development that would change the assessment. Do not invent advice.
+For EACH analysis paragraph, write two complete parts totaling at least 40 words. Aim for 20–35
+words per part; the per-paragraph word aim below covers BOTH parts together.
+whyItMatters[0]: identify the affected reader and explain the specific supported change.
+whyItMatters[1]: distinguish its demonstrated scope from a benefit the source has not established.
+Avoid generic productivity claims. whatToDoOrWatch[0]: give a proportionate check tied to that
+change and explain what to verify. whatToDoOrWatch[1]: name the next concrete development
+that would change the assessment. Do not invent advice, limitations or a promised future update.
 These paragraph minima are writing constraints, not permission to pad or fabricate facts.
 Claim text is 60–480 characters. Headline is 1–180; deck 1–280; whyItMatters 120–650;
 whatToDoOrWatch 100–550. Each story's body must have 100–225 words: its TWO factual claims plus
@@ -1189,10 +1193,11 @@ function dailyCompositionContract(foundations, dossiers) {
   const fields = GROUNDED_DRAFT_SCHEMA.properties.stories.items.properties;
   const exactArray = (items, count) => ({ type: "array", minItems: count, maxItems: count, items });
   const candidateId = { type: "string", enum: foundations.map(item => item.candidateId) };
-  // Native schema guidance must reflect the requested paragraph depth. The
-  // canonical reader counter and all factual/semantic checks remain authoritative;
-  // schema compliance alone is never acceptance (including for compound words).
-  const analysisSchema = field => ({ ...fields[field], pattern: "^(?:\\S+\\s+){39,89}\\S+$" });
+  // Ask for two distinct editorial jobs per paragraph using simple JSON arrays,
+  // not a word-count regex in the provider grammar. Only exact two-part output
+  // is assembled; the canonical paragraph bounds and reviewer remain unchanged.
+  const analysisSchema = field => exactArray({ type: "string", minLength: 1,
+    maxLength: fields[field].maxLength }, 2);
   const schema = objectSchema({
     ...(claimRepairs.length ? { claimRepairs: exactArray(objectSchema({ candidateId,
       claimIndex: { type: "integer", enum: [0, 1] }, supports: CLAIM_SCHEMA.properties.supports,
@@ -1253,9 +1258,15 @@ function applyDailyComposition(payload, foundations, contract) {
     if (!keys(copy, ["candidateId", "headline", "deck", "whyItMatters", "whatToDoOrWatch"])) return null;
     const foundation = foundations.find(item => item.candidateId === copy.candidateId);
     if (!foundation) return null;
+    const paragraphs = {};
+    for (const field of ["whyItMatters", "whatToDoOrWatch"]) {
+      if (!Array.isArray(copy[field]) || copy[field].length !== 2 ||
+          !copy[field].every(part => safeProse(part, GROUNDED_DRAFT_SCHEMA.properties.stories.items.properties[field].maxLength))) return null;
+      paragraphs[field] = copy[field].join(" ");
+    }
     const claims = foundation.claims.map((claim, index) => repaired.get(`${foundation.candidateId}:${index}`) ?? structuredClone(claim));
     return { candidateId: copy.candidateId, headline: copy.headline, deck: copy.deck, claims,
-      whyItMatters: copy.whyItMatters, whatToDoOrWatch: copy.whatToDoOrWatch };
+      ...paragraphs };
   });
 }
 

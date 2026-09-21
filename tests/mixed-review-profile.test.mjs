@@ -12,7 +12,7 @@ import { DEFAULT_CLOUDFLARE_AI_MODEL, FREE_REASONING_WRITER_MODEL, EXPERIMENTAL_
   WORKERS_AI_PROVIDER, WORKERS_AI_EDITORIAL_FORMAT_INVALID, buildWorkersAiRequest, workersAiRunUrl } from
   "../scripts/automation/free/workers-ai.mjs";
 import { LOCAL_AI_MODEL } from "../scripts/automation/free/local-ai.mjs";
-import { groundedDraft, groundedEvidence } from "./fixtures/grounded-summary.mjs";
+import { groundedDraft, groundedEvidence, dailyCopyParts } from "./fixtures/grounded-summary.mjs";
 
 const hash = value => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const accountId = "0".repeat(32);
@@ -30,7 +30,7 @@ function payloadFor(options, index, mutateVerdict = () => {}) {
   if (index === 0) return { foundations: [{ candidateId: groundedDraft.candidateId, claims: groundedDraft.claims }] };
   if (index === 1) return { copies: [{ candidateId: groundedDraft.candidateId,
     headline: groundedDraft.headline, deck: groundedDraft.deck,
-    whyItMatters: groundedDraft.whyItMatters, whatToDoOrWatch: groundedDraft.whatToDoOrWatch }] };
+    whyItMatters: dailyCopyParts(groundedDraft.whyItMatters), whatToDoOrWatch: dailyCopyParts(groundedDraft.whatToDoOrWatch) }] };
   const data = JSON.parse(options.messages[1].content);
   return { reviews: data.drafts.map(({ draft, draftSha256, claimEvidence }) => {
     if (!options.schema.properties.reviews.items.properties.claimVerdicts) return { candidateId: draft.candidateId, draftSha256,
@@ -303,7 +303,7 @@ test("the all-reasoning profile still rejects every claim and whole-story veto w
 
 test("all-reasoning drafts still fail originality and reader word-count checks before reaching review", async () => {
   const copied = await run({ profile: EXPERIMENTAL_REASONING_PIPELINE_PROFILE, mutateResponse: (response, index) => {
-    if (index === 1) response.editorialPayload.copies[0].whyItMatters = groundedEvidence.summary;
+    if (index === 1) response.editorialPayload.copies[0].whyItMatters = dailyCopyParts(groundedEvidence.summary);
   } });
   assert.equal(copied.result, null);
   assert.equal(copied.calls.length, 2);
@@ -316,8 +316,8 @@ test("all-reasoning drafts still fail originality and reader word-count checks b
         supports: groundedDraft.claims[1].supports },
     ];
     if (index === 1) Object.assign(response.editorialPayload.copies[0], {
-      whyItMatters: "An unauthorized disk change could damage the information an affected machine stores. This possibility matters to administrators responsible for keeping backup data recoverable.",
-      whatToDoOrWatch: "Check the installed driver against the advisory, and watch the vendor for a documented correction before assuming that an ordinary backup test proves protection.",
+      whyItMatters: dailyCopyParts("An unauthorized disk change could damage the information an affected machine stores. This possibility matters to administrators responsible for keeping backup data recoverable."),
+      whatToDoOrWatch: dailyCopyParts("Check the installed driver against the advisory, and watch the vendor for a documented correction before assuming that an ordinary backup test proves protection."),
     });
   } });
   assert.equal(short.result, null);

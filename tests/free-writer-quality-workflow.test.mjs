@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { dailyCopyParts } from "./fixtures/grounded-summary.mjs";
 import { assertFreeWriterSmokeAuthority, checkFreeWriter } from "../scripts/automation/check-free-writer.mjs";
 import { buildFreeEditorialBaselines } from "./fixtures/free-editorial-evals.mjs";
 import { DEFAULT_CLOUDFLARE_AI_MODEL, EXPERIMENTAL_FREE_WRITER_MODEL, workersAiRunUrl } from "../scripts/automation/free/workers-ai.mjs";
@@ -24,7 +25,7 @@ const reviews = options => JSON.parse(options.messages[1].content).drafts.map(({
 }));
 const foundations = drafts => ({ foundations: drafts.map(({ candidateId, claims }) => ({ candidateId, claims })) });
 const copies = (drafts, claimRepairs = []) => ({ copies: drafts.map(({ candidateId, headline, deck, whyItMatters, whatToDoOrWatch }) => ({
-  candidateId, headline, deck, whyItMatters, whatToDoOrWatch,
+  candidateId, headline, deck, whyItMatters: dailyCopyParts(whyItMatters), whatToDoOrWatch: dailyCopyParts(whatToDoOrWatch),
 })), ...(claimRepairs.length ? { claimRepairs } : {}) });
 
 test("Qwen isolates each story and stays inside its shared output-token ceiling", async () => {

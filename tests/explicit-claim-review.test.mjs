@@ -5,7 +5,7 @@ import { buildExplicitClaimReview, validateExplicitClaimReview, EXPLICIT_CLAIM_R
   LEGACY_CLAIM_REVIEW_PROFILE } from "../scripts/automation/free/explicit-claim-review.mjs";
 import { groundedDossiers, synthesizeGroundedEditorial } from "../scripts/automation/free/grounded-draft.mjs";
 import { DEFAULT_CLOUDFLARE_AI_MODEL, EXPERIMENTAL_FREE_WRITER_MODEL } from "../scripts/automation/free/workers-ai.mjs";
-import { groundedDraft, groundedEvidence } from "./fixtures/grounded-summary.mjs";
+import { groundedDraft, groundedEvidence, dailyCopyParts } from "./fixtures/grounded-summary.mjs";
 
 const hash = value => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const candidate = { candidateId: groundedDraft.candidateId, suggestedDesk: "security-and-privacy",
@@ -187,7 +187,7 @@ async function synthesisRun({ profile, reviewMode = "explicit", mutateReview = (
       if (calls.length === 1) payload = { foundations: [{ candidateId: groundedDraft.candidateId, claims: groundedDraft.claims }] };
       else if (calls.length === 2) payload = { copies: [{ candidateId: groundedDraft.candidateId,
         headline: groundedDraft.headline, deck: groundedDraft.deck,
-        whyItMatters: groundedDraft.whyItMatters, whatToDoOrWatch: groundedDraft.whatToDoOrWatch }] };
+        whyItMatters: dailyCopyParts(groundedDraft.whyItMatters), whatToDoOrWatch: dailyCopyParts(groundedDraft.whatToDoOrWatch) }] };
       else {
         payload = reviewMode === "explicit" ? explicitPayload(data) : legacyPayload(data);
         mutateReview(payload);

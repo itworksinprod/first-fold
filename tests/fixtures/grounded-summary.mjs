@@ -1,3 +1,10 @@
+// Reassemble to byte-identical paragraphs so existing semantic/hash assertions
+// continue checking the canonical draft after the two-part provider transport.
+export const dailyCopyParts = text => {
+  const words = text.split(" ");
+  const middle = Math.ceil(words.length / 2);
+  return [words.slice(0, middle).join(" "), words.slice(middle).join(" ")];
+};
 export const groundedEvidence = {
   sourceId: "cert-advisory", publisher: "CERT/CC",
   title: "AOMEI Backupper driver permits arbitrary disk writes",

@@ -6,7 +6,7 @@ import { EXPERIMENTAL_MIXED_REVIEW_PROFILE, EXPERIMENTAL_REASONING_PIPELINE_PROF
   validatePrivateEditorialDiagnostic } from "../scripts/automation/free/grounded-draft.mjs";
 import { DEFAULT_CLOUDFLARE_AI_MODEL, WORKERS_AI_PROVIDER, buildWorkersAiRequest } from
   "../scripts/automation/free/workers-ai.mjs";
-import { groundedDraft, groundedEvidence } from "./fixtures/grounded-summary.mjs";
+import { groundedDraft, groundedEvidence, dailyCopyParts } from "./fixtures/grounded-summary.mjs";
 
 const hash = value => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const accountId = "0".repeat(32);
@@ -21,7 +21,7 @@ function payloadFor(options, index) {
   if (index === 0) return { foundations: [{ candidateId: groundedDraft.candidateId, claims: structuredClone(groundedDraft.claims) }] };
   if (index === 1) return { copies: [{ candidateId: groundedDraft.candidateId,
     headline: groundedDraft.headline, deck: groundedDraft.deck,
-    whyItMatters: groundedDraft.whyItMatters, whatToDoOrWatch: groundedDraft.whatToDoOrWatch }] };
+    whyItMatters: dailyCopyParts(groundedDraft.whyItMatters), whatToDoOrWatch: dailyCopyParts(groundedDraft.whatToDoOrWatch) }] };
   return { reviews: JSON.parse(options.messages[1].content).drafts.map(({ draft, draftSha256, claimEvidence }) => ({
     candidateId: draft.candidateId, draftSha256,
     claimVerdicts: claimEvidence.map(({ claimIndex, claimSha256 }) => ({ claimIndex, claimSha256, allCitedPassagesSupport: true })),

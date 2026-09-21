@@ -15,7 +15,7 @@ import { generatePersonalFreeEdition } from "../scripts/automation/personal-free
 import { createEmptyPersonalStoryLedger } from "../scripts/automation/personal-story-ledger.mjs";
 import { assertPersonalEmailCandidate, renderPersonalEditionEmail } from "../scripts/automation/personal-email.mjs";
 import { validateCanonicalEdition } from "../scripts/edition-content.mjs";
-import { groundedDraft, groundedEvidence } from "./fixtures/grounded-summary.mjs";
+import { groundedDraft, groundedEvidence, dailyCopyParts } from "./fixtures/grounded-summary.mjs";
 
 const hash = value => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const automation = { runId: "24681012", repository: "itworksinprod/first-fold",
@@ -306,7 +306,7 @@ test(`real personal selected-slate concise generation preserves ${profile} throu
         claims: groundedDraft.claims }] };
       else if (index === 1) payload = { copies: [{ candidateId: groundedDraft.candidateId,
         headline: groundedDraft.headline, deck: groundedDraft.deck,
-        whyItMatters: groundedDraft.whyItMatters, whatToDoOrWatch: groundedDraft.whatToDoOrWatch }] };
+        whyItMatters: dailyCopyParts(groundedDraft.whyItMatters), whatToDoOrWatch: dailyCopyParts(groundedDraft.whatToDoOrWatch) }] };
       else payload = { reviews: JSON.parse(body.messages[1].content).drafts.map(({ draft, draftSha256, claimEvidence }) => ({
         candidateId: draft.candidateId, draftSha256,
         claimVerdicts: claimEvidence.map(({ claimIndex, claimSha256 }) => ({ claimIndex, claimSha256,

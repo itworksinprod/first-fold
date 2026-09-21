@@ -24,9 +24,11 @@ const response = editorialPayload => ({ editorialPayload, provider: "cloudflare-
   model: DEFAULT_CLOUDFLARE_AI_MODEL, requestSha256: "a".repeat(64), responseSha256: "b".repeat(64),
   reasoning: "NEVER CAPTURE REASONING", headers: { authorization: "NEVER CAPTURE HEADERS" } });
 const foundations = draft => ({ foundations: [{ candidateId: draft.candidateId, claims: draft.claims }] });
+const parts = text => { const words = text.split(" "); const middle = Math.ceil(words.length / 2);
+  return [words.slice(0, middle).join(" "), words.slice(middle).join(" ")]; };
 const copies = (draft, claimRepairs = []) => ({ copies: [{ candidateId: draft.candidateId,
-  headline: draft.headline, deck: draft.deck, whyItMatters: draft.whyItMatters,
-  whatToDoOrWatch: draft.whatToDoOrWatch }], ...(claimRepairs.length ? { claimRepairs } : {}) });
+  headline: draft.headline, deck: draft.deck, whyItMatters: parts(draft.whyItMatters),
+  whatToDoOrWatch: parts(draft.whatToDoOrWatch) }], ...(claimRepairs.length ? { claimRepairs } : {}) });
 const reviewPayload = (request, overrides = {}) => ({ reviews: request.drafts.map(({ draft, draftSha256 }) => {
   assert.equal(draftSha256, createHash("sha256").update(JSON.stringify(draft)).digest("hex"));
   return { candidateId: draft.candidateId, draftSha256,

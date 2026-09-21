@@ -40,7 +40,12 @@ function claimPacketView(dossiers) {
 }
 function dailyCopies(drafts, claimRepairs = []) {
   return { copies: drafts.map(draft => Object.fromEntries(
-    ["candidateId", "headline", "deck", "whyItMatters", "whatToDoOrWatch"].map(field => [field, draft[field]]))),
+    ["candidateId", "headline", "deck", "whyItMatters", "whatToDoOrWatch"].map(field => {
+      if (!["whyItMatters", "whatToDoOrWatch"].includes(field)) return [field, draft[field]];
+      const tokens = draft[field].split(" ");
+      const middle = Math.ceil(tokens.length / 2);
+      return [field, [tokens.slice(0, middle).join(" "), tokens.slice(middle).join(" ")]];
+    }))),
     ...(claimRepairs.length ? { claimRepairs: structuredClone(claimRepairs) } : {}) };
 }
 function dailyRepairPayload(options, revised) {
@@ -692,8 +697,8 @@ test("daily copy receives bounded field requirements and bad copy cannot request
         if (calls.length === 2) {
           const data = JSON.parse(options.messages[1].content);
           const fields = options.schema.properties.copies.items.properties;
-          assert.equal(fields.whyItMatters.minLength, 120);
-          assert.equal(fields.whyItMatters.maxLength, 650);
+          assert.equal(fields.whyItMatters.minItems, 2);
+          assert.equal(fields.whyItMatters.items.maxLength, 650);
           assert.equal(options.schema.properties.claimRepairs, undefined);
           assert.deepEqual(data.dossiers[0].fixedClaims,
             groundedDraft.claims.map((claim, claimIndex) => ({ claimIndex, ...claim })));
@@ -731,9 +736,10 @@ test("provider grammar retains canonical character bounds while drafting depth a
       }
       if (calls.length === 2) {
         const fields = options.schema.properties.copies.items.properties;
-        assert.equal(fields.whyItMatters.minLength, 120);
-        assert.equal(fields.whyItMatters.maxLength, 650);
-        assert.equal(fields.whyItMatters.pattern, "^(?:\\S+\\s+){39,89}\\S+$");
+        assert.equal(fields.whyItMatters.minItems, 2);
+        assert.equal(fields.whyItMatters.maxItems, 2);
+        assert.equal(fields.whyItMatters.items.maxLength, 650);
+        assert.equal(fields.whyItMatters.items.pattern, undefined);
         assert.deepEqual(fields.candidateId.enum, [candidate.candidateId]);
         return response(dailyCopies([groundedDraft]));
       }
@@ -1853,8 +1859,8 @@ test("daily foundations, exact copy plus rejected-claim edits, and full review u
         assert.deepEqual(Object.keys(fields.claims.items.properties), ["supports", "text"]);
       } else if (index === 2) {
         assert.deepEqual(Object.keys(options.schema.properties), ["claimRepairs", "copies"]);
-        assert.equal(options.schema.properties.copies.items.properties.whyItMatters.minLength, 120);
-        assert.equal(options.schema.properties.copies.items.properties.whyItMatters.maxLength, 650);
+        assert.equal(options.schema.properties.copies.items.properties.whyItMatters.minItems, 2);
+        assert.equal(options.schema.properties.copies.items.properties.whyItMatters.items.maxLength, 650);
       }
       assert.equal(options.responseFormat, "json_schema");
       const payload = index === 1 ? dailyFoundations([copied])
@@ -2493,7 +2499,7 @@ test("daily copy targets subtract fixed-claim words with a paragraph-depth floor
   assert.match(calls[1].messages[0].content, /Do not pad, repeat facts or/);
 });
 
-test("daily provider schema constrains paragraph depth without accepting short or unsupported copy", async () => {
+test("daily provider schema separates two editorial jobs without accepting short or unsupported copy", async () => {
   const calls = [];
   const canonicalBefore = structuredClone(GROUNDED_DRAFT_SCHEMA);
   const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate], aiRequestImpl: async options => {
@@ -2504,12 +2510,11 @@ test("daily provider schema constrains paragraph depth without accepting short o
   assert.ok(result);
   for (const field of ["whyItMatters", "whatToDoOrWatch"]) {
     const schema = calls[1].schema.properties.copies.items.properties[field];
-    const pattern = new RegExp(schema.pattern, "u");
-    assert.equal(pattern.test("brief ".repeat(39).trim()), false);
-    assert.equal(pattern.test("brief ".repeat(40).trim()), true);
-    assert.equal(pattern.test("brief ".repeat(91).trim()), false);
-    assert.equal(pattern.test(groundedDraft[field]), true);
-    assert.equal(schema.maxLength, canonicalBefore.properties.stories.items.properties[field].maxLength);
+    assert.equal(schema.type, "array");
+    assert.equal(schema.minItems, 2);
+    assert.equal(schema.maxItems, 2);
+    assert.equal(schema.items.pattern, undefined);
+    assert.equal(schema.items.maxLength, canonicalBefore.properties.stories.items.properties[field].maxLength);
   }
   assert.deepEqual(GROUNDED_DRAFT_SCHEMA, canonicalBefore, "Do not mutate canonical acceptance or other provider schemas");
   assert.deepEqual(calls.map(call => call.maxTokens), [2_000, 4_000, 1_800]);
@@ -2520,6 +2525,26 @@ test("daily provider schema constrains paragraph depth without accepting short o
   invented.whyItMatters += " The vendor has released version 9999 as a permanent fix.";
   assert.equal(validateGroundedStory(invented, dossier), false,
     "A long enough paragraph cannot bypass factual and caveat checks");
+});
+
+test("daily two-part copy fails closed for malformed parts and validates the joined paragraph", async () => {
+  for (const parts of [groundedDraft.whyItMatters, [], [groundedDraft.whyItMatters],
+    ["One.", "Two.", "Three."], ["", groundedDraft.whyItMatters],
+    [{ text: "Not prose" }, groundedDraft.whyItMatters],
+    ["<script>bad</script>", groundedDraft.whyItMatters],
+    [groundedDraft.whyItMatters + " This extra complete sentence exceeds the combined layout bound.", groundedDraft.whyItMatters]]) {
+    let calls = 0;
+    const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate], aiRequestImpl: async () => {
+      calls++;
+      assert.ok(calls <= 2, "Malformed or overlong joined copy must not reach approval");
+      if (calls === 1) return response(dailyFoundations([groundedDraft]));
+      const payload = dailyCopies([groundedDraft]);
+      payload.copies[0].whyItMatters = parts;
+      return response(payload);
+    } });
+    assert.equal(result, null);
+    assert.equal(calls, 2);
+  }
 });
 
 test("84- and 87-word copy results still fail after explicit remaining-copy targets without requesting another stage", async () => {

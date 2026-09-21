@@ -7,7 +7,7 @@ import { EXPERIMENTAL_MIXED_REVIEW_PROFILE, EXPERIMENTAL_REASONING_PIPELINE_PROF
   "../scripts/automation/free/grounded-draft.mjs";
 import { FREE_FEED_SOURCES } from "../scripts/automation/free/feed-sources.mjs";
 import { DEFAULT_CLOUDFLARE_AI_MODEL, requestWorkersAiEditorial } from "../scripts/automation/free/workers-ai.mjs";
-import { groundedDraft, groundedEvidence } from "./fixtures/grounded-summary.mjs";
+import { groundedDraft, groundedEvidence, dailyCopyParts } from "./fixtures/grounded-summary.mjs";
 
 const now = "2026-08-20T09:10:00.000Z";
 const priorEdition = JSON.parse(await readFile(new URL("../content/editions/2026-08-19.json", import.meta.url), "utf8"));
@@ -71,8 +71,8 @@ async function run(profile, hook) {
       let payload;
       if (index === 0) payload = { foundations: [{ candidateId: groundedDraft.candidateId, claims: groundedDraft.claims }] };
       else if (index === 1) payload = { copies: [{ candidateId: groundedDraft.candidateId,
-        headline: groundedDraft.headline, deck: groundedDraft.deck, whyItMatters: groundedDraft.whyItMatters,
-        whatToDoOrWatch: groundedDraft.whatToDoOrWatch }] };
+        headline: groundedDraft.headline, deck: groundedDraft.deck, whyItMatters: dailyCopyParts(groundedDraft.whyItMatters),
+        whatToDoOrWatch: dailyCopyParts(groundedDraft.whatToDoOrWatch) }] };
       else {
         assert.equal(index, 2);
         payload = { reviews: JSON.parse(body.messages[1].content).drafts.map(({ draft, draftSha256, claimEvidence }) => ({

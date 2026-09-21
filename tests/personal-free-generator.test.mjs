@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { groundedDraft, groundedEvidence } from "./fixtures/grounded-summary.mjs";
+import { groundedDraft, groundedEvidence, dailyCopyParts } from "./fixtures/grounded-summary.mjs";
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -658,8 +658,8 @@ test("source-grounded personal summaries pass final canonical, source and email 
       responseId: "grounded-fixture", requestSha256: "c".repeat(64), responseSha256: "d".repeat(64),
       editorialPayload: ++calls === 1 ? { foundations: [{ candidateId: groundedDraft.candidateId,
         claims: groundedDraft.claims }] } : calls === 2 ? { copies: [{ candidateId: groundedDraft.candidateId,
-        headline: groundedDraft.headline, deck: groundedDraft.deck, whyItMatters: groundedDraft.whyItMatters,
-        whatToDoOrWatch: groundedDraft.whatToDoOrWatch }] } : { reviews: [{
+        headline: groundedDraft.headline, deck: groundedDraft.deck, whyItMatters: dailyCopyParts(groundedDraft.whyItMatters),
+        whatToDoOrWatch: dailyCopyParts(groundedDraft.whatToDoOrWatch) }] } : { reviews: [{
         candidateId: groundedDraft.candidateId,
         draftSha256: JSON.parse(options.messages[1].content).drafts[0].draftSha256,
         factsSupported: true, attributionAccurate: true, analysisSupported: true, usefulAndSpecific: true,
