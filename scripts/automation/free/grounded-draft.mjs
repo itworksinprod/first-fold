@@ -1531,10 +1531,17 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
     // well below its output cap. Request an object and teach the exact schema
     // in system text for this shape only. Strict parsing, every local field
     // gate, the single repair slot and the hash-bound review stay unchanged.
-    // Compact field repairs (including mixed repair objects) and final review
-    // retain native json_schema; other providers keep their own profiles.
-    const dailyJsonObject = model === DEFAULT_CLOUDFLARE_AI_MODEL && keys(schema.properties, ["stories"]);
-    if (dailyJsonObject) system = `${system}\nReturn story data, not the JSON Schema. The only top-level key is stories, containing the story array.`;
+    // Compact production repairs and final review retain native json_schema.
+    // The isolated recheck experiment also probes json_object composition after
+    // a native-schema response embedded serialized fields in a prose string.
+    // This is a compatibility hypothesis, not proof of a provider grammar bug.
+    const recheckComposition = compositionProfile === EXPERIMENTAL_FOUNDATION_RECHECK &&
+      keys(schema.properties, ["claimRepairs", "copies"]);
+    const dailyJsonObject = model === DEFAULT_CLOUDFLARE_AI_MODEL &&
+      (keys(schema.properties, ["stories"]) || recheckComposition);
+    if (dailyJsonObject) system = `${system}\n${recheckComposition
+      ? "Return data, not the JSON Schema. The only top-level keys are claimRepairs, copies."
+      : "Return story data, not the JSON Schema. The only top-level key is stories, containing the story array."}`;
     if (local || dailyJsonObject) system = `${system}\nReturn only the final JSON object matching this schema:\n${JSON.stringify(schema)}`;
     const requestOptions = { ...(local ? {} : { accountId, apiToken }),
     model: stageModel, messages: [{ role: "system", content: model === EXPERIMENTAL_FREE_WRITER_MODEL

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createHash } from "node:crypto";
 import { synthesizeGroundedEditorial, EXPERIMENTAL_FOUNDATION_RECHECK } from "../scripts/automation/free/grounded-draft.mjs";
-import { DEFAULT_CLOUDFLARE_AI_MODEL, EXPERIMENTAL_FREE_WRITER_MODEL } from "../scripts/automation/free/workers-ai.mjs";
+import { DEFAULT_CLOUDFLARE_AI_MODEL, EXPERIMENTAL_FREE_WRITER_MODEL, buildWorkersAiRequest } from "../scripts/automation/free/workers-ai.mjs";
 import { EXPLICIT_CLAIM_REVIEW_PROFILE } from "../scripts/automation/free/explicit-claim-review.mjs";
 import { groundedDraft, groundedEvidence, dailyCopyParts } from "./fixtures/grounded-summary.mjs";
 
@@ -46,6 +46,10 @@ test("isolated recheck can complete missing citation coverage before unchanged e
   const { result, calls } = await run({ initial });
   assert.ok(result);
   assert.deepEqual(calls.map(call => call.maxTokens), [2000, 4000, 1800]);
+  assert.deepEqual(calls.map(call => buildWorkersAiRequest(call).body.response_format.type),
+    ["json_schema", "json_object", "json_schema"], "Only isolated composition changes its provider grammar");
+  assert.match(calls[1].messages[0].content, /only top-level keys are claimRepairs, copies/);
+  assert.ok(calls[1].messages[0].content.includes(JSON.stringify(calls[1].schema)));
   assert.ok(calls.every(call => call.model === DEFAULT_CLOUDFLARE_AI_MODEL && call.maxAttempts === 1));
   const packet = calls[1].data.dossiers[0];
   assert.deepEqual(packet.fixedClaims, []);
@@ -77,6 +81,8 @@ test("recheck rejects missing, duplicate, unknown or unsupported final claims be
     p => { p.claimRepairs[0].supports = [{ evidenceId: "S9P9" }]; },
     p => { p.claimRepairs[0].text += " Install version 99.9."; },
     p => { p.claimRepairs[0].text = `CERT/CC says ${groundedEvidence.summary}`; },
+    p => { p.copies[0].whatToDoOrWatch[1] += '.”], “whyItMatters”: [“Developers using the tool can'; },
+    p => { p.copies[0].whyItMatters = ["Short text.", "Still short."]; },
   ];
   for (const mutateCopy of mutations) {
     const { result, calls } = await run({ mutateCopy });
