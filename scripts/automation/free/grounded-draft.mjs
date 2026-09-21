@@ -19,6 +19,8 @@ import { DEFAULT_CLOUDFLARE_AI_MODEL, EXPERIMENTAL_FREE_WRITER_MODEL, FREE_REASO
 
 export const GROUNDED_DIGEST_MODE = "source-grounded-summary";
 export const GROUNDED_MAX_REQUESTS = 3;
+// Internal one-story experiment only; no production caller/environment selects it.
+export const EXPERIMENTAL_FOUNDATION_RECHECK = "no-email-foundation-recheck-v1";
 // Internal opt-in only. No production caller or environment variable selects it.
 export const EXPERIMENTAL_MIXED_REVIEW_PROFILE = "no-email-sentence-bound-gptoss-review-v1";
 export const EXPERIMENTAL_REASONING_PIPELINE_PROFILE = "no-email-gptoss-draft-review-v1";
@@ -1141,6 +1143,23 @@ everyday wording over promotional adjectives; attribute claimed gains and do not
 benefits. If the evidence cannot support an impact, state the specific limit without inventing one.
 Every assembled story still faces full checks and independent review.`;
 
+const FOUNDATION_RECHECK_GUIDANCE = `This is the isolated foundation-recheck experiment.
+The proposedClaims are UNREVIEWED suggestions, not established facts. No claim is frozen in this
+experiment. Recheck BOTH proposed claims against the full supplied passages before composing copy.
+Return both final claims in claimRepairs, even when unchanged. For EVERY factual clause, identify
+the passage actually establishing it. If a second clause comes from another passage, cite that
+passage too; if the complete claim cannot fit two materially relevant citations, narrow the claim.
+Never infer support from an evidence ID, topical similarity, a matched number, or the first writer.
+Remove unsupported clauses rather than completing them from memory. Preserve source caveats.
+Prefer two complementary facts about ONE useful change over unrelated features from a roundup.
+Use the same final claims for the copy and its word targets. The final independent reviewer can reject.
+Write a headline naming the concrete change and a descriptive deck, never the desk's slug.
+For analysis, explain a decision the affected reader can now make, the supported mechanism behind
+that decision, and its relevant limit. A conditional inference must follow from cited facts without
+inventing a result. Do not substitute optimize workflows, improved productivity, or cost savings
+for a specific explanation. Watch advice should identify an observable check and what its result
+would clarify, not unspecified future updates or speculative additional features.`;
+
 function dailyFoundationSchema(dossiers) {
   const writer = evidenceFirstWriterProviderSchema(writerProviderSchema(dossiers.map(item => item.candidateId)), dossiers);
   const fields = writer.properties.stories.items.properties;
@@ -1191,9 +1210,14 @@ function dailyFoundationTasks(foundation, dossier) {
   return reasons.map((items, claimIndex) => ({ claimIndex, reasons: items })).filter(task => task.reasons.length);
 }
 
-function dailyCompositionContract(foundations, dossiers) {
+function dailyCompositionContract(foundations, dossiers, { recheckFoundations = false } = {}) {
   const tasks = new Map(foundations.map(foundation => [foundation.candidateId,
     dailyFoundationTasks(foundation, dossiers.find(dossier => dossier.candidateId === foundation.candidateId))]));
+  if (recheckFoundations) for (const foundation of foundations) {
+    const existing = tasks.get(foundation.candidateId);
+    tasks.set(foundation.candidateId, foundation.claims.map((_claim, claimIndex) => ({ claimIndex,
+      reasons: [...(existing.find(task => task.claimIndex === claimIndex)?.reasons ?? []), "SEMANTIC_RECHECK"] })));
+  }
   const claimRepairs = foundations.flatMap(foundation => tasks.get(foundation.candidateId)
     .map(task => ({ candidateId: foundation.candidateId, ...task })));
   const fields = GROUNDED_DRAFT_SCHEMA.properties.stories.items.properties;
@@ -1221,7 +1245,10 @@ function dailyCompositionContract(foundations, dossiers) {
     const copyAimWords = Math.max(0, 145 - fixedClaimWords);
     const whyAimWords = Math.max(40, Math.round(copyAimWords * 0.55));
     return { candidateId: dossier.candidateId, desk: dossier.desk, evidenceTier: dossier.evidenceTier,
-      fixedClaims, requestedClaimRepairs: requested.map(task => {
+      fixedClaims,
+      ...(recheckFoundations ? { proposedClaims: foundation.claims.flatMap((claim, claimIndex) =>
+        requested.find(task => task.claimIndex === claimIndex).reasons.every(reason => reason === "SEMANTIC_RECHECK")
+          ? [{ claimIndex, ...structuredClone(claim) }] : []) } : {}), requestedClaimRepairs: requested.map(task => {
         const claim = foundation.claims[task.claimIndex];
         return { ...task, preserveSupports: task.reasons.every(reason => reason === "ORIGINALITY"),
           // Do not anchor the one repair attempt to copied or unsupported prose.
@@ -1277,7 +1304,7 @@ function applyDailyComposition(payload, foundations, contract) {
 }
 
 async function prepareDailyDrafts({ ask, dossiers, budgets, inferenceTrail, onDiagnostic,
-  writerModel = DEFAULT_CLOUDFLARE_AI_MODEL, onPrivateAssembled }) {
+  writerModel = DEFAULT_CLOUDFLARE_AI_MODEL, onPrivateAssembled, recheckFoundations = false }) {
   // Dates/figures in metadata or a dossier-wide token pool are not claim
   // evidence. Give the writer passage-local anchors only, while retaining
   // complete internal dossiers for unchanged caveat and semantic review.
@@ -1327,11 +1354,12 @@ async function prepareDailyDrafts({ ask, dossiers, budgets, inferenceTrail, onDi
   } else {
     const foundations = structuredClone(initial.editorialPayload.foundations);
     for (const foundation of foundations) bindAttribution(foundation, dossiers.find(item => item.candidateId === foundation.candidateId));
-    contract = dailyCompositionContract(foundations, dossiers);
+    contract = dailyCompositionContract(foundations, dossiers, { recheckFoundations });
     onDiagnostic({ stage: "daily-foundation-check", submitted: foundations.length,
       accepted: foundations.filter(item => !contract.claimRepairs.some(task => task.candidateId === item.candidateId)).length,
       rejectionCodes: [...new Set(contract.claimRepairs.flatMap(task => task.reasons))] });
-    written = await compose(DAILY_COMPOSITION_PROMPT, contract.data, contract.schema);
+    written = await compose(`${DAILY_COMPOSITION_PROMPT}${recheckFoundations ? `\n${FOUNDATION_RECHECK_GUIDANCE}` : ""}`,
+      contract.data, contract.schema);
     inferenceTrail.push(written);
     drafts = applyDailyComposition(written.editorialPayload, foundations, contract);
   }
@@ -1392,6 +1420,7 @@ async function prepareDailyDrafts({ ask, dossiers, budgets, inferenceTrail, onDi
 export async function synthesizeGroundedEditorial({ editorial, candidates, accountId, apiToken,
   model = DEFAULT_CLOUDFLARE_AI_MODEL,
   reviewProfile = LEGACY_CLAIM_REVIEW_PROFILE,
+  compositionProfile = null,
   aiRequestImpl, fetchImpl = globalThis.fetch,
   onDiagnostic = () => {}, onPrivateEditorialDiagnostic } = {}) {
   const local = model === LOCAL_AI_MODEL;
@@ -1401,6 +1430,11 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
   // A Cloudflare failure never opts a run into local inference. The exact local
   // model must be selected explicitly, outside the Cloudflare model allowlist.
   if (!local) model = resolveCloudflareAiModel(model);
+  if (compositionProfile !== null && (compositionProfile !== EXPERIMENTAL_FOUNDATION_RECHECK ||
+      model !== DEFAULT_CLOUDFLARE_AI_MODEL || reviewProfile !== LEGACY_CLAIM_REVIEW_PROFILE || candidates?.length !== 1)) {
+    onDiagnostic({ stage: "free-writer-unavailable", code: "COMPOSITION_PROFILE_INVALID" });
+    return null;
+  }
   // Explicit review is an internal opt-in for the no-email evaluation path.
   // Merely deploying this code does not activate it for the daily paper.
   if (![LEGACY_CLAIM_REVIEW_PROFILE, EXPLICIT_CLAIM_REVIEW_PROFILE,
@@ -1582,7 +1616,8 @@ add Markdown fences or serialize another object inside any reader-facing string.
     };
     if (model === DEFAULT_CLOUDFLARE_AI_MODEL) {
       const prepared = await prepareDailyDrafts({ ask, dossiers, budgets, inferenceTrail, onDiagnostic,
-        writerModel: stageWriterModel, onPrivateAssembled: emitPrivate });
+        writerModel: stageWriterModel, onPrivateAssembled: emitPrivate,
+        recheckFoundations: compositionProfile === EXPERIMENTAL_FOUNDATION_RECHECK });
       if (!prepared) return null;
       ({ written, valid } = prepared);
     } else {

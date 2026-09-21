@@ -57,6 +57,34 @@ test("manual diagnostic authority rejects other actors, repos, refs, events, att
   }
 });
 
+test("explicit source-recheck diagnostic remains one story, three calls, unchanged review and encrypted-only", async () => {
+  let count = 0;
+  const { report, sealed } = await diagnoseOneWriter({ ...base, mode: "source-recheck", aiRequestImpl: async options => {
+    const data = JSON.parse(options.messages[1].content);
+    assert.equal(options.model, DEFAULT_CLOUDFLARE_AI_MODEL);
+    assert.equal(options.maxAttempts, 1);
+    if (++count === 1) return response(foundations(groundedDraft));
+    if (count === 2) {
+      assert.deepEqual(data.dossiers[0].fixedClaims, []);
+      assert.equal(data.dossiers[0].proposedClaims.length, 2);
+      return response(copies(groundedDraft, groundedDraft.claims.map((claim, claimIndex) => ({
+        candidateId: groundedDraft.candidateId, claimIndex, ...claim,
+      }))));
+    }
+    assert.equal(count, 3);
+    return response(reviewPayload(data, { usefulAndSpecific: false }));
+  } });
+  assert.equal(report.status, "failed", "The experiment cannot override reviewer rejection");
+  assert.equal(report.mode, "one-source-foundation-recheck-not-an-edition");
+  assert.equal(report.outputBudget, 7800);
+  assert.equal(report.emailSent, false);
+  assert.equal(report.searchQueries, 0);
+  const capture = openDiagnostic(sealed, pair.privateKey);
+  assert.equal(capture.calls.length, 3);
+  assert.equal(capture.result, null);
+  assert.ok(!JSON.stringify(sealed).includes(groundedDraft.headline));
+});
+
 test("one real-source diagnostic pins the daily Llama writer and reviewer, with requests and payloads encrypted only", async () => {
   let count = 0;
   const requests = [];
@@ -343,7 +371,7 @@ test("diagnostic workflow is manual/read-only and cannot send, bill, publish or 
   assert.match(workflow, /path: \$\{\{ runner.temp \}\}\/writer-diagnostic.encrypted.json/);
   assert.match(workflow, /persist-credentials: false/);
   assert.ok(workflow.indexOf("Test diagnostic boundaries") < workflow.indexOf("secrets.CLOUDFLARE_AI_API_TOKEN"));
-  assert.match(workflow, /default: source[\s\S]*- source\n\s+- provider-only/);
+  assert.match(workflow, /default: source[\s\S]*- source\n\s+- source-recheck\n\s+- provider-only/);
   assert.ok(workflow.indexOf("Validate diagnostic mode and encryption") < workflow.indexOf("secrets.CLOUDFLARE_AI_API_TOKEN"));
   assert.match(workflow, /private-writer-diagnostic\.mjs validate/);
   assert.match(workflow, /PRIVATE_WRITER_DIAGNOSTIC_MODE: \$\{\{ inputs\.mode \|\| 'source' \}\}/);
