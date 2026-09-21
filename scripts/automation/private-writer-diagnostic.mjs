@@ -8,6 +8,7 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { collectFreeResearchSnapshot } from "./free/feed-engine.mjs";
 import { synthesizeGroundedEditorial, EXPERIMENTAL_FOUNDATION_RECHECK } from "./free/grounded-draft.mjs";
+import { EXPLICIT_CLAIM_REVIEW_PROFILE } from "./free/explicit-claim-review.mjs";
 import { DEFAULT_CLOUDFLARE_AI_MODEL, buildWorkersAiRequest, requestWorkersAiEditorial, workersAiFailureDiagnostic,
   workersAiRunUrl } from "./free/workers-ai.mjs";
 
@@ -64,7 +65,7 @@ export function assertDiagnosticAuthority(env) {
 }
 
 export function resolvePrivateWriterDiagnosticMode(value = "source") {
-  if (!["source", "source-recheck", "review-controls", "explicit-review-controls", "provider-only"].includes(value)) throw failure("DIAGNOSTIC_MODE_INVALID");
+  if (!["source", "source-recheck", "source-recheck-explicit", "review-controls", "explicit-review-controls", "provider-only"].includes(value)) throw failure("DIAGNOSTIC_MODE_INVALID");
   return value;
 }
 
@@ -139,7 +140,8 @@ export async function diagnoseOneWriter({ publicKey, accountId, apiToken, now = 
     return diagnoseReviewerTransports({ publicKey, accountId, apiToken, now, aiRequestImpl, fetchImpl, endpoint, sealDiagnostic,
       explicit: mode === "explicit-review-controls" });
   }
-  const capture = { purpose: mode === "source-recheck" ? "one-source-foundation-recheck-not-an-edition"
+  const capture = { purpose: mode === "source-recheck-explicit" ? "one-source-explicit-recheck-not-an-edition"
+    : mode === "source-recheck" ? "one-source-foundation-recheck-not-an-edition"
     : "one-real-source-writer-probe-not-an-edition", capturedAt: now.toISOString(),
     calls: [], diagnostics: [], emailSent: false };
   let modelRequests = 0;
@@ -164,7 +166,8 @@ export async function diagnoseOneWriter({ publicKey, accountId, apiToken, now = 
     } };
     result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
       accountId, apiToken, model: DEFAULT_CLOUDFLARE_AI_MODEL,
-      ...(mode === "source-recheck" ? { compositionProfile: EXPERIMENTAL_FOUNDATION_RECHECK } : {}),
+      ...(["source-recheck", "source-recheck-explicit"].includes(mode) ? { compositionProfile: EXPERIMENTAL_FOUNDATION_RECHECK } : {}),
+      ...(mode === "source-recheck-explicit" ? { reviewProfile: EXPLICIT_CLAIM_REVIEW_PROFILE } : {}),
       fetchImpl: async (url, options) => {
         if (url !== endpoint || options.method !== "POST" || options.redirect !== "error" || networkRequests >= 3) {
           throw failure("DIAGNOSTIC_NETWORK_CONTRACT");

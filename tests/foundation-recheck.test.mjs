@@ -106,7 +106,7 @@ test("recheck never overrides final factual, usefulness, citation or stale-hash 
 
 test("experimental recheck rejects unknown profiles, multiple candidates, other providers and review overrides", async () => {
   for (const overrides of [{ compositionProfile: "unknown" }, { candidates: [candidate, candidate] },
-    { model: EXPERIMENTAL_FREE_WRITER_MODEL }, { reviewProfile: EXPLICIT_CLAIM_REVIEW_PROFILE }]) {
+    { model: EXPERIMENTAL_FREE_WRITER_MODEL }, { reviewProfile: "no-email-sentence-bound-gptoss-review-v1" }]) {
     const { result, calls, events } = await run(overrides);
     assert.equal(result, null);
     assert.equal(calls.length, 0);

@@ -1446,7 +1446,7 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
   // model must be selected explicitly, outside the Cloudflare model allowlist.
   if (!local) model = resolveCloudflareAiModel(model);
   if (compositionProfile !== null && (compositionProfile !== EXPERIMENTAL_FOUNDATION_RECHECK ||
-      model !== DEFAULT_CLOUDFLARE_AI_MODEL || reviewProfile !== LEGACY_CLAIM_REVIEW_PROFILE || candidates?.length !== 1)) {
+      model !== DEFAULT_CLOUDFLARE_AI_MODEL || ![LEGACY_CLAIM_REVIEW_PROFILE, EXPLICIT_CLAIM_REVIEW_PROFILE].includes(reviewProfile) || candidates?.length !== 1)) {
     onDiagnostic({ stage: "free-writer-unavailable", code: "COMPOSITION_PROFILE_INVALID" });
     return null;
   }
@@ -1552,9 +1552,13 @@ export async function synthesizeGroundedEditorial({ editorial, candidates, accou
     // This is a compatibility hypothesis, not proof of a provider grammar bug.
     const recheckComposition = compositionProfile === EXPERIMENTAL_FOUNDATION_RECHECK &&
       keys(schema.properties, ["claimRepairs", "copies"]);
+    const recheckExplicitReview = compositionProfile === EXPERIMENTAL_FOUNDATION_RECHECK &&
+      reviewProfile === EXPLICIT_CLAIM_REVIEW_PROFILE && keys(schema.properties, ["reviews"]);
     const dailyJsonObject = model === DEFAULT_CLOUDFLARE_AI_MODEL &&
-      (keys(schema.properties, ["stories"]) || recheckComposition);
-    if (dailyJsonObject) system = `${system}\n${recheckComposition
+      (keys(schema.properties, ["stories"]) || recheckComposition || recheckExplicitReview);
+    if (dailyJsonObject) system = `${system}\n${recheckExplicitReview
+      ? "Return review data, not the JSON Schema. The only top-level key is reviews."
+      : recheckComposition
       ? "Return data, not the JSON Schema. The only top-level keys are claimRepairs, copies."
       : "Return story data, not the JSON Schema. The only top-level key is stories, containing the story array."}`;
     if (local || dailyJsonObject) system = `${system}\nReturn only the final JSON object matching this schema:\n${JSON.stringify(schema)}`;

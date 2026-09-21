@@ -85,6 +85,35 @@ test("explicit source-recheck diagnostic remains one story, three calls, unchang
   assert.ok(!JSON.stringify(sealed).includes(groundedDraft.headline));
 });
 
+test("explicit real-source experiment uses bound claim verdicts in plain JSON without enabling email or retries", async () => {
+  for (const outcome of ["pass", "unsupported", "stale"]) {
+    const formats = [];
+    const { report, sealed } = await diagnoseOneWriter({ ...base, mode: "source-recheck-explicit", aiRequestImpl: async options => {
+      formats.push(options.responseFormat);
+      const data = JSON.parse(options.messages[1].content);
+      if (formats.length === 1) return response(foundations(groundedDraft));
+      if (formats.length === 2) return response(copies(groundedDraft, groundedDraft.claims.map((claim, claimIndex) => ({
+        candidateId: groundedDraft.candidateId, claimIndex, ...claim,
+      }))));
+      assert.equal(formats.length, 3);
+      return response({ reviews: data.drafts.map(entry => ({ candidateId: entry.draft.candidateId,
+        draftSha256: entry.draftSha256, factsSupported: true, attributionAccurate: true,
+        analysisSupported: true, usefulAndSpecific: true,
+        claimVerdicts: entry.claimEvidence.map(claim => ({ claimIndex: claim.claimIndex,
+          claimSha256: outcome === "stale" ? "0".repeat(64) : claim.claimSha256,
+          allCitedPassagesSupport: outcome !== "unsupported",
+        })),
+      })) });
+    } });
+    assert.deepEqual(formats, ["json_schema", "json_object", "json_object"]);
+    assert.equal(report.status, outcome === "pass" ? "writer-and-review-passed" : "failed");
+    assert.equal(report.outputBudget, 7800);
+    assert.equal(report.emailSent, false);
+    assert.equal(report.mode, "one-source-explicit-recheck-not-an-edition");
+    assert.equal(openDiagnostic(sealed, pair.privateKey).calls.length, 3);
+  }
+});
+
 test("one real-source diagnostic pins the daily Llama writer and reviewer, with requests and payloads encrypted only", async () => {
   let count = 0;
   const requests = [];
@@ -371,7 +400,7 @@ test("diagnostic workflow is manual/read-only and cannot send, bill, publish or 
   assert.match(workflow, /path: \$\{\{ runner.temp \}\}\/writer-diagnostic.encrypted.json/);
   assert.match(workflow, /persist-credentials: false/);
   assert.ok(workflow.indexOf("Test diagnostic boundaries") < workflow.indexOf("secrets.CLOUDFLARE_AI_API_TOKEN"));
-  assert.match(workflow, /default: source[\s\S]*- source\n\s+- source-recheck\n\s+- review-controls\n\s+- explicit-review-controls\n\s+- provider-only/);
+  assert.match(workflow, /default: source[\s\S]*- source\n\s+- source-recheck\n\s+- source-recheck-explicit\n\s+- review-controls\n\s+- explicit-review-controls\n\s+- provider-only/);
   assert.ok(workflow.indexOf("Validate diagnostic mode and encryption") < workflow.indexOf("secrets.CLOUDFLARE_AI_API_TOKEN"));
   assert.match(workflow, /private-writer-diagnostic\.mjs validate/);
   assert.match(workflow, /PRIVATE_WRITER_DIAGNOSTIC_MODE: \$\{\{ inputs\.mode \|\| 'source' \}\}/);

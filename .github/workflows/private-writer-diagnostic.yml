@@ -10,6 +10,7 @@ on:
         options:
           - source
           - source-recheck
+          - source-recheck-explicit
           - review-controls
           - explicit-review-controls
           - provider-only
