@@ -1073,11 +1073,14 @@ before writing each fact; those passages must support its entire meaning, number
 Every numeric/version token must match supportedNumericTokens in THAT claim's selected passages
 exactly, including punctuation and units. Do not rewrite a date into a different numeric format,
 borrow a number from another passage, or treat a token match as proof of the claim's meaning.
-Each claim is original complete prose, 60–480 characters, ending in punctuation. Reconstruct the
+Each claim is original complete prose, 120–480 characters, ending in punctuation. Reconstruct the
 meaning in a different sentence structure; never reuse twelve consecutive publisher words.
 Aim for 20–35 words per claim. Work out the actor, change, scope and condition, then express
 that relationship in your own sentence order. Copying a passage and replacing one adjective
 is not a rewrite. Keep exact product names and necessary numbers, not the publisher's sentence.
+Prefer a substantive passage explaining a mechanism, eligibility, limit or operational change
+over a headline or introductory list of features. Choose two complementary facts, not the same
+announcement twice. For a release roundup, focus on a coherent change and its meaningful detail.
 State observed reported facts, not promised benefits, productivity gains or expanded availability.
 Keep prerequisites, exclusions and uncertainty. Name the originating publisher for a single-source
 account. Across a corroborated pair, cite both publishers without inventing wider factual agreement.
@@ -1105,6 +1108,8 @@ do not invent benefits, availability, versions, patches or advice. Do not add fa
 Write original, complete sentences, not copied publisher wording, serialized fields, URLs or filler.
 For EACH analysis paragraph, write two complete parts totaling at least 40 words. Aim for 20–35
 words per part; the per-paragraph word aim below covers BOTH parts together.
+Each part is 150 characters or more; maximum 324 for each whyItMatters part and 274 for each
+whatToDoOrWatch part. The joined paragraphs retain their normal character and word limits.
 whyItMatters[0]: identify the affected reader and explain the specific supported change.
 whyItMatters[1]: distinguish its demonstrated scope from a benefit the source has not established.
 Avoid generic productivity claims. whatToDoOrWatch[0]: give a proportionate check tied to that
@@ -1139,6 +1144,7 @@ Every assembled story still faces full checks and independent review.`;
 function dailyFoundationSchema(dossiers) {
   const writer = evidenceFirstWriterProviderSchema(writerProviderSchema(dossiers.map(item => item.candidateId)), dossiers);
   const fields = writer.properties.stories.items.properties;
+  fields.claims.items.properties.text.minLength = 120;
   return objectSchema({ foundations: { type: "array", minItems: dossiers.length, maxItems: dossiers.length,
     items: objectSchema({ candidateId: fields.candidateId, claims: fields.claims }) } });
 }
@@ -1196,8 +1202,8 @@ function dailyCompositionContract(foundations, dossiers) {
   // Ask for two distinct editorial jobs per paragraph using simple JSON arrays,
   // not a word-count regex in the provider grammar. Only exact two-part output
   // is assembled; the canonical paragraph bounds and reviewer remain unchanged.
-  const analysisSchema = field => exactArray({ type: "string", minLength: 1,
-    maxLength: fields[field].maxLength }, 2);
+  const analysisSchema = field => exactArray({ type: "string", minLength: 150,
+    maxLength: Math.floor((fields[field].maxLength - 1) / 2) }, 2);
   const schema = objectSchema({
     ...(claimRepairs.length ? { claimRepairs: exactArray(objectSchema({ candidateId,
       claimIndex: { type: "integer", enum: [0, 1] }, supports: CLAIM_SCHEMA.properties.supports,

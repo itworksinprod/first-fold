@@ -698,7 +698,7 @@ test("daily copy receives bounded field requirements and bad copy cannot request
           const data = JSON.parse(options.messages[1].content);
           const fields = options.schema.properties.copies.items.properties;
           assert.equal(fields.whyItMatters.minItems, 2);
-          assert.equal(fields.whyItMatters.items.maxLength, 650);
+          assert.equal(fields.whyItMatters.items.maxLength, 324);
           assert.equal(options.schema.properties.claimRepairs, undefined);
           assert.deepEqual(data.dossiers[0].fixedClaims,
             groundedDraft.claims.map((claim, claimIndex) => ({ claimIndex, ...claim })));
@@ -727,7 +727,7 @@ test("provider grammar retains canonical character bounds while drafting depth a
       calls.push(options);
       if (calls.length === 1) {
         const fields = options.schema.properties.foundations.items.properties;
-        assert.equal(fields.claims.items.properties.text.minLength, 60);
+        assert.equal(fields.claims.items.properties.text.minLength, 120);
         assert.equal(fields.claims.items.properties.text.pattern, undefined);
         assert.equal(fields.whyItMatters, undefined);
         assert.deepEqual(fields.candidateId.enum, [candidate.candidateId]);
@@ -738,7 +738,7 @@ test("provider grammar retains canonical character bounds while drafting depth a
         const fields = options.schema.properties.copies.items.properties;
         assert.equal(fields.whyItMatters.minItems, 2);
         assert.equal(fields.whyItMatters.maxItems, 2);
-        assert.equal(fields.whyItMatters.items.maxLength, 650);
+        assert.equal(fields.whyItMatters.items.maxLength, 324);
         assert.equal(fields.whyItMatters.items.pattern, undefined);
         assert.deepEqual(fields.candidateId.enum, [candidate.candidateId]);
         return response(dailyCopies([groundedDraft]));
@@ -1854,13 +1854,13 @@ test("daily foundations, exact copy plus rejected-claim edits, and full review u
         assert.equal(options.responseFormat, "json_schema");
         const fields = options.schema.properties.foundations.items.properties;
         assert.deepEqual(Object.keys(fields), ["candidateId", "claims"]);
-        assert.equal(fields.claims.items.properties.text.minLength, 60);
+        assert.equal(fields.claims.items.properties.text.minLength, 120);
         assert.equal(fields.claims.items.properties.text.maxLength, 480);
         assert.deepEqual(Object.keys(fields.claims.items.properties), ["supports", "text"]);
       } else if (index === 2) {
         assert.deepEqual(Object.keys(options.schema.properties), ["claimRepairs", "copies"]);
         assert.equal(options.schema.properties.copies.items.properties.whyItMatters.minItems, 2);
-        assert.equal(options.schema.properties.copies.items.properties.whyItMatters.items.maxLength, 650);
+        assert.equal(options.schema.properties.copies.items.properties.whyItMatters.items.maxLength, 324);
       }
       assert.equal(options.responseFormat, "json_schema");
       const payload = index === 1 ? dailyFoundations([copied])
@@ -2514,7 +2514,9 @@ test("daily provider schema separates two editorial jobs without accepting short
     assert.equal(schema.minItems, 2);
     assert.equal(schema.maxItems, 2);
     assert.equal(schema.items.pattern, undefined);
-    assert.equal(schema.items.maxLength, canonicalBefore.properties.stories.items.properties[field].maxLength);
+    assert.equal(schema.items.minLength, 150);
+    assert.equal(schema.items.maxLength, Math.floor((canonicalBefore.properties.stories.items.properties[field].maxLength - 1) / 2));
+    assert.ok(schema.items.maxLength * 2 + 1 <= canonicalBefore.properties.stories.items.properties[field].maxLength);
   }
   assert.deepEqual(GROUNDED_DRAFT_SCHEMA, canonicalBefore, "Do not mutate canonical acceptance or other provider schemas");
   assert.deepEqual(calls.map(call => call.maxTokens), [2_000, 4_000, 1_800]);
