@@ -11,6 +11,7 @@ on:
           - source
           - source-recheck
           - source-recheck-explicit
+          - source-field-review
           - review-controls
           - explicit-review-controls
           - split-review-controls

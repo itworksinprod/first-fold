@@ -36,6 +36,48 @@ const reviewPayload = (request, overrides = {}) => ({ reviews: request.drafts.ma
     factsSupported: true, attributionAccurate: true, analysisSupported: true, usefulAndSpecific: true, ...overrides };
 }) });
 
+test("real-source field audit adds only vetoes and retains the original citation/editorial rejection", async () => {
+  for (const outcome of ["pass", "field-reject", "editorial-reject", "bad-binding", "quota"]) {
+    let writerCalls = 0, fieldCalls = 0;
+    const { report, sealed } = await diagnoseOneWriter({ ...base, mode: "source-field-review",
+      aiRequestImpl: async options => {
+        const data = JSON.parse(options.messages[1].content);
+        if (data.statement) return requestWorkersAiEditorial(options);
+        writerCalls++;
+        if (writerCalls === 1) return response(foundations(groundedDraft));
+        if (writerCalls === 2) return response(copies(groundedDraft, groundedDraft.claims.map((claim, claimIndex) => ({
+          candidateId: groundedDraft.candidateId, claimIndex, ...claim,
+        }))));
+        return response({ reviews: data.drafts.map(entry => ({ candidateId: entry.draft.candidateId,
+          draftSha256: entry.draftSha256, factsSupported: true, attributionAccurate: true,
+          analysisSupported: true, usefulAndSpecific: outcome !== "editorial-reject",
+          claimVerdicts: entry.claimEvidence.map(claim => ({ claimIndex: claim.claimIndex,
+            claimSha256: claim.claimSha256, allCitedPassagesSupport: true })) })) });
+      },
+      fetchImpl: async (_url, init) => {
+        fieldCalls++;
+        const body = JSON.parse(init.body), data = JSON.parse(body.messages[1].content);
+        assert.equal(body.max_tokens, 400);
+        assert.equal(init.redirect, "error");
+        if (outcome === "quota") return new Response(JSON.stringify({ errors: [{ message: "quota" }] }), { status: 429 });
+        return new Response(JSON.stringify({ success: true, result: { response: JSON.stringify({
+          reviewSha256: outcome === "bad-binding" ? "0".repeat(64) : data.reviewSha256,
+          comparison: "Mock fixture response, not semantic review.", evidenceIds: [data.passages[0].evidenceId],
+          supported: outcome !== "field-reject",
+        }) }, errors: [] }), { headers: { "content-type": "application/json" } });
+      } });
+    assert.equal(writerCalls, 3);
+    assert.equal(fieldCalls, ["quota", "bad-binding"].includes(outcome) ? 1 : 6);
+    assert.equal(report.status, outcome === "pass" ? "writer-and-review-passed" : "failed");
+    assert.equal(report.outputBudget, 7800 + fieldCalls * 400);
+    assert.equal(report.modelRequests, 3 + fieldCalls);
+    assert.equal(report.emailSent, false);
+    const capture = openDiagnostic(sealed, pair.privateKey);
+    assert.equal(Boolean(capture.result), outcome === "pass");
+    assert.equal(capture.fieldAudit.calls[0].request.statement, groundedDraft.headline);
+  }
+});
+
 test("encrypted diagnostic round-trips but rejects tampering, wrong keys and oversized plaintext", () => {
   const value = { exactDraft: groundedDraft };
   const sealed = sealDiagnostic(value, publicKey);
@@ -400,7 +442,7 @@ test("diagnostic workflow is manual/read-only and cannot send, bill, publish or 
   assert.match(workflow, /path: \$\{\{ runner.temp \}\}\/writer-diagnostic.encrypted.json/);
   assert.match(workflow, /persist-credentials: false/);
   assert.ok(workflow.indexOf("Test diagnostic boundaries") < workflow.indexOf("secrets.CLOUDFLARE_AI_API_TOKEN"));
-  assert.match(workflow, /default: source[\s\S]*- source\n\s+- source-recheck\n\s+- source-recheck-explicit\n\s+- review-controls\n\s+- explicit-review-controls\n\s+- split-review-controls\n\s+- isolated-review-controls\n\s+- field-review-controls\n\s+- provider-only/);
+  assert.match(workflow, /default: source[\s\S]*- source\n\s+- source-recheck\n\s+- source-recheck-explicit\n\s+- source-field-review\n\s+- review-controls\n\s+- explicit-review-controls\n\s+- split-review-controls\n\s+- isolated-review-controls\n\s+- field-review-controls\n\s+- provider-only/);
   assert.ok(workflow.indexOf("Validate diagnostic mode and encryption") < workflow.indexOf("secrets.CLOUDFLARE_AI_API_TOKEN"));
   assert.match(workflow, /private-writer-diagnostic\.mjs validate/);
   assert.match(workflow, /PRIVATE_WRITER_DIAGNOSTIC_MODE: \$\{\{ inputs\.mode \|\| 'source' \}\}/);

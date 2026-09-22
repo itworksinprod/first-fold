@@ -65,7 +65,7 @@ export function assertDiagnosticAuthority(env) {
 }
 
 export function resolvePrivateWriterDiagnosticMode(value = "source") {
-  if (!["source", "source-recheck", "source-recheck-explicit", "review-controls", "explicit-review-controls", "split-review-controls", "isolated-review-controls", "field-review-controls", "provider-only"].includes(value)) throw failure("DIAGNOSTIC_MODE_INVALID");
+  if (!["source", "source-recheck", "source-recheck-explicit", "source-field-review", "review-controls", "explicit-review-controls", "split-review-controls", "isolated-review-controls", "field-review-controls", "provider-only"].includes(value)) throw failure("DIAGNOSTIC_MODE_INVALID");
   return value;
 }
 
@@ -149,7 +149,8 @@ export async function diagnoseOneWriter({ publicKey, accountId, apiToken, now = 
     return diagnoseReviewerTransports({ publicKey, accountId, apiToken, now, aiRequestImpl, fetchImpl, endpoint, sealDiagnostic,
       explicit: mode === "explicit-review-controls" });
   }
-  const capture = { purpose: mode === "source-recheck-explicit" ? "one-source-explicit-recheck-not-an-edition"
+  const capture = { purpose: mode === "source-field-review" ? "one-source-additional-field-veto-not-an-edition"
+    : mode === "source-recheck-explicit" ? "one-source-explicit-recheck-not-an-edition"
     : mode === "source-recheck" ? "one-source-foundation-recheck-not-an-edition"
     : "one-real-source-writer-probe-not-an-edition", capturedAt: now.toISOString(),
     calls: [], diagnostics: [], emailSent: false };
@@ -175,8 +176,8 @@ export async function diagnoseOneWriter({ publicKey, accountId, apiToken, now = 
     } };
     result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
       accountId, apiToken, model: DEFAULT_CLOUDFLARE_AI_MODEL,
-      ...(["source-recheck", "source-recheck-explicit"].includes(mode) ? { compositionProfile: EXPERIMENTAL_FOUNDATION_RECHECK } : {}),
-      ...(mode === "source-recheck-explicit" ? { reviewProfile: EXPLICIT_CLAIM_REVIEW_PROFILE } : {}),
+      ...(["source-recheck", "source-recheck-explicit", "source-field-review"].includes(mode) ? { compositionProfile: EXPERIMENTAL_FOUNDATION_RECHECK } : {}),
+      ...(["source-recheck-explicit", "source-field-review"].includes(mode) ? { reviewProfile: EXPLICIT_CLAIM_REVIEW_PROFILE } : {}),
       fetchImpl: async (url, options) => {
         if (url !== endpoint || options.method !== "POST" || options.redirect !== "error" || networkRequests >= 3) {
           throw failure("DIAGNOSTIC_NETWORK_CONTRACT");
@@ -207,10 +208,25 @@ export async function diagnoseOneWriter({ publicKey, accountId, apiToken, now = 
       onDiagnostic: event => capture.diagnostics.push(structuredClone(event)),
     });
     if (!result) code = "DIAGNOSTIC_SUMMARY_NOT_ACCEPTED";
-  } catch (error) { code = safeCode(error?.code); }
+    if (mode === "source-field-review") {
+      // Audit only the exact review-stage draft. No regeneration or repair and
+      // no replacing a failed writer/citation/editorial result with an audit pass.
+      const reviewData = capture.calls.find(call => call.request?.drafts?.length === 1 && call.request?.dossiers)?.request;
+      if (!reviewData) throw failure("DIAGNOSTIC_NO_REVIEWABLE_DRAFT");
+      const { auditSourceFields } = await import("./source-field-audit.mjs");
+      capture.fieldAudit = await auditSourceFields({ reviewData, accountId, apiToken, endpoint, aiRequestImpl, fetchImpl });
+      modelRequests += capture.fieldAudit.modelRequests;
+      networkRequests += capture.fieldAudit.networkRequests;
+      outputBudget += capture.fieldAudit.outputBudget;
+      if (!capture.fieldAudit.passed) { result = null; code = "DIAGNOSTIC_FIELD_AUDIT_REJECTED"; }
+    }
+  } catch (error) { result = null; code = safeCode(error?.code); }
   capture.result = result?.editorial ?? null;
   const report = { mode: capture.purpose, status: result ? "writer-and-review-passed" : "failed", code,
     modelRequests, networkRequests, outputBudget, searchQueries: 0, emailSent: false,
+    ...(mode === "source-field-review" ? { fieldAuditPassed: capture.fieldAudit?.passed === true,
+      fieldChecks: capture.fieldAudit?.calls.map(call => ({ field: call.field, valid: call.verdict?.valid === true,
+        supported: call.verdict?.supported === true })) ?? [] } : {}),
     failures: capture.calls.flatMap(call => call.failure ? [call.failure] : []) };
   return { report, sealed: sealDiagnostic({ ...capture, report }, publicKey) };
 }

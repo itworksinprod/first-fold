@@ -21,7 +21,13 @@ export function buildFieldFactReview({ text, sources }) {
   });
   if (passages.length > 80 || new Set(passages.map(p => p.evidenceId)).size !== passages.length ||
       JSON.stringify(passages).length > 50000) throw new Error("FIELD_REVIEW_CONTEXT");
-  const data = { passages, statement: text };
+  const contexts = sources.flatMap(source => [...new Set([source.text, source.sourceContext]
+    .filter(value => value !== undefined))].filter(value => value !== source.passages.map(p => p.text).join("\n"))
+    .map(value => {
+      if (typeof value !== "string" || !value.trim() || value.length > 5800) throw new Error("FIELD_REVIEW_CONTEXT");
+      return { publisher: source.publisher, text: value };
+    }));
+  const data = { passages, ...(contexts.length ? { contexts } : {}), statement: text };
   const reviewSha256 = createHash("sha256").update(JSON.stringify(data)).digest("hex");
   data.reviewSha256 = reviewSha256;
   const schema = { type: "object", additionalProperties: false,

@@ -5,6 +5,9 @@ import { buildFieldFactReview, validateFieldFactReview } from "../scripts/automa
 import { fieldReviewControls } from "./fixtures/field-review-controls.mjs";
 import { diagnoseOneWriter, openDiagnostic } from "../scripts/automation/private-writer-diagnostic.mjs";
 import { requestWorkersAiEditorial } from "../scripts/automation/free/workers-ai.mjs";
+import { bindSourceFieldAudit } from "../scripts/automation/source-field-audit.mjs";
+import { buildExplicitClaimReview } from "../scripts/automation/free/explicit-claim-review.mjs";
+import { reviewerClauseControls } from "./fixtures/reviewer-clause-controls.mjs";
 
 const cases = fieldReviewControls();
 const response = (view, supported) => ({ reviewSha256: view.data.reviewSha256,
@@ -24,6 +27,27 @@ test("field review binds exact statement and full evidence without fixture label
     assert.throws(() => { view.data.statement = "changed"; }, TypeError);
     assert.deepEqual(validateFieldFactReview(response(view, control.expected), view), { valid: true, supported: control.expected });
   }
+});
+
+test("real-draft binding retains extra source caveats and cannot audit a changed draft", () => {
+  const control = reviewerClauseControls()[0];
+  control.dossier.sources[0].text += "\nThe rollout excludes personal accounts.";
+  const bundle = buildExplicitClaimReview({ drafts: [control.draft], dossiers: [control.dossier] });
+  const checks = bindSourceFieldAudit(bundle.data);
+  assert.equal(checks.length, 6);
+  assert.deepEqual(checks.map(c => c.field), ["headline", "deck", "claim0", "claim1", "whyItMatters", "whatToDoOrWatch"]);
+  for (const check of checks) {
+    assert.equal(check.draftSha256, bundle.data.drafts[0].draftSha256);
+    assert.match(check.view.data.contexts[0].text, /excludes personal accounts/);
+    assert.equal(check.view.data.passages.length, 4);
+  }
+  const changed = structuredClone(bundle.data);
+  changed.drafts[0].draft.headline += " changed";
+  assert.throws(() => bindSourceFieldAudit(changed));
+  assert.throws(() => bindSourceFieldAudit({ drafts: [] }));
+  const input = structuredClone(cases[0].input);
+  input.sources[0].text = "An additional limitation outside numbered passages.";
+  assert.equal(buildFieldFactReview(input).data.contexts[0].text, input.sources[0].text);
 });
 
 test("malformed or mismatched field verdicts fail closed, including copied review objects", () => {
