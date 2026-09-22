@@ -39,7 +39,14 @@ test("claim review excludes uncited source context and prose; whole-story review
   assert.ok(!Object.hasOwn(bundle.editorial.data.drafts[0], "claimEvidence"));
   for (const stage of ["claims", "editorial"]) assert.doesNotMatch(JSON.stringify(bundle[stage].data), /"caseId"|"expected"/);
   original.drafts[0].claims[0].text = "Changed after binding";
-  assert.notEqual(bundle.editorial.data.drafts[0].draft.claims[0].text, "Changed after binding");
+  assert.notEqual(bundle.editorial.data.drafts[0].draft.fields.claim0, "Changed after binding");
+  for (const [index, entry] of bundle.editorial.data.drafts.entries()) {
+    const originalDraft = cases[index].draft;
+    assert.deepEqual(entry.draft.fields, { headline: originalDraft.headline, deck: originalDraft.deck,
+      claim0: originalDraft.claims[0].text, claim1: originalDraft.claims[1].text,
+      whyItMatters: originalDraft.whyItMatters, whatToDoOrWatch: originalDraft.whatToDoOrWatch });
+    assert.deepEqual(Object.keys(entry.draft.fields).sort(), Object.keys(payloads(bundle)[1].reviews[index].fieldFacts).sort());
+  }
   assert.throws(() => { bundle.claims.data.claims[0].draftSha256 = "changed"; }, TypeError);
 });
 
