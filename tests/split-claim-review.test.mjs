@@ -86,6 +86,25 @@ test("split validation retains exact hashes and independent vetoes without rewri
 });
 
 const pair = generateKeyPairSync("rsa", { modulusLength: 3072 });
+test("evidence notes are bounded audit data and never override independent vetoes", () => {
+  const bundle = buildSplitClaimReview(input(), { evidenceNotes: true });
+  const [claims, editorial] = payloads(bundle);
+  const notes = () => Object.fromEntries(Object.keys(editorial.reviews[0].fieldFacts)
+    .map(field => [field, "Synthetic comparison only."]));
+  for (const review of editorial.reviews) review.evidenceNotes = notes();
+  const checked = validateSplitClaimReview(claims, editorial, bundle);
+  assert.deepEqual(checked.errors, []);
+  assert.equal(checked.reviews[3].factsSupported, false);
+  assert.deepEqual(checked.reviews[3].claimSupport[1], []);
+  assert.ok(!Object.hasOwn(checked.reviews[0], "evidenceNotes"));
+  for (const invalid of [undefined, {}, { ...notes(), extra: "unexpected" },
+    { ...notes(), claim1: " " }, { ...notes(), claim1: true }, { ...notes(), claim1: "x".repeat(181) }]) {
+    const modified = structuredClone(editorial);
+    modified.reviews[0].evidenceNotes = invalid;
+    assert.ok(validateSplitClaimReview(claims, modified, bundle).errors.length);
+  }
+});
+
 const base = { publicKey: pair.publicKey.export({ type: "spki", format: "der" }).toString("base64"),
   accountId: "0".repeat(32), apiToken: "synthetic-only-private-test-token", mode: "split-review-controls",
   now: new Date("2026-09-21T12:00:00Z"), researchImpl: () => assert.fail("No research in synthetic controls"),
@@ -139,6 +158,8 @@ test("isolated editorial checks share the same output ceiling and cannot substit
   for (const mode of ["valid", "wrong-scope", "quota"]) {
     let calls = 0;
     const expected = payloads(buildSplitClaimReview(input()));
+    for (const review of expected[1].reviews) review.evidenceNotes = Object.fromEntries(
+      Object.keys(review.fieldFacts).map(field => [field, "Synthetic test comparison; not a semantic assessment."]));
     const tokens = [];
     const { report } = await diagnoseOneWriter({ ...base, mode: "isolated-review-controls",
       fetchImpl: async (_url, init) => {
@@ -158,7 +179,7 @@ test("isolated editorial checks share the same output ceiling and cannot substit
         return new Response(JSON.stringify({ success: true, result: { response: JSON.stringify(response) }, errors: [] }),
           { headers: { "content-type": "application/json" } });
       } });
-    assert.deepEqual(tokens, mode === "valid" ? [1800, 450, 450, 450, 450] : [1800, 450]);
+    assert.deepEqual(tokens, mode === "valid" ? [1200, 600, 600, 600, 600] : [1200, 600]);
     assert.equal(report.status, mode === "valid" ? "reviewer-controls-passed" : "failed");
     assert.equal(report.outputBudget, tokens.reduce((a, b) => a + b, 0));
     assert.equal(report.networkRequests, calls);

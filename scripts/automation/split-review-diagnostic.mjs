@@ -10,16 +10,16 @@ const failure = code => Object.assign(new Error(code), { code });
 
 export async function diagnoseSplitReview({ publicKey, accountId, apiToken, now, aiRequestImpl, fetchImpl, endpoint, sealDiagnostic, isolated = false }) {
   const cases = reviewerClauseControls();
-  const bundle = buildSplitClaimReview({ drafts: cases.map(item => item.draft), dossiers: cases.map(item => item.dossier) });
+  const bundle = buildSplitClaimReview({ drafts: cases.map(item => item.draft), dossiers: cases.map(item => item.dossier) }, { evidenceNotes: isolated });
   const capture = { purpose: isolated ? "synthetic-isolated-review-controls-not-an-edition" : "synthetic-split-review-controls-not-an-edition", capturedAt: now.toISOString(), calls: [], emailSent: false };
-  const stages = [{ stage: "claims", view: bundle.claims, maxTokens: 1800 }];
+  const stages = [{ stage: "claims", view: bundle.claims, maxTokens: isolated ? 1200 : 1800 }];
   if (isolated) {
     for (const entry of bundle.editorial.data.drafts) {
       const schema = structuredClone(bundle.editorial.schema);
       schema.properties.reviews.minItems = schema.properties.reviews.maxItems = 1;
       schema.properties.reviews.items.properties.candidateId.enum = [entry.draft.candidateId];
       schema.properties.reviews.items.properties.draftSha256.enum = [entry.draftSha256];
-      stages.push({ stage: "editorial", maxTokens: 450, view: { prompt: bundle.editorial.prompt, schema,
+      stages.push({ stage: "editorial", maxTokens: 600, view: { prompt: bundle.editorial.prompt, schema,
         data: { drafts: [entry], dossiers: bundle.editorial.data.dossiers.filter(d => d.candidateId === entry.draft.candidateId) } } });
     }
   } else stages.push({ stage: "editorial", view: bundle.editorial, maxTokens: 1800 });
