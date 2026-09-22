@@ -13,6 +13,7 @@ on:
           - source-recheck-explicit
           - review-controls
           - explicit-review-controls
+          - split-review-controls
           - provider-only
       public_key:
         description: Ephemeral RSA-3072 public key in base64 DER format (never a private key)
@@ -37,7 +38,7 @@ jobs:
         with:
           node-version: '24'
       - name: Test diagnostic boundaries before using credentials
-        run: node --test tests/private-writer-diagnostic.test.mjs tests/reviewer-transport-diagnostic.test.mjs tests/foundation-recheck.test.mjs tests/grounded-draft.test.mjs tests/free-workers-ai.test.mjs
+        run: node --test tests/private-writer-diagnostic.test.mjs tests/reviewer-transport-diagnostic.test.mjs tests/split-claim-review.test.mjs tests/foundation-recheck.test.mjs tests/grounded-draft.test.mjs tests/free-workers-ai.test.mjs
       - name: Validate diagnostic mode and encryption before credentials
         env:
           DIAGNOSTIC_PUBLIC_KEY: ${{ inputs.public_key }}
