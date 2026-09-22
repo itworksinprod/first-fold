@@ -155,7 +155,65 @@ isolated real-story test, retain the independent citation and editorial gates,
 and check both the previously rejected actual story and newly researched prose.
 Do not enable daily delivery based on these eight cases alone.
 
-### Required before promotion (unchanged)
+### Real-draft additional-veto integration
+
+Commit `b4e5e6e` adds the isolated `source-field-review` mode. It researches one
+qualifying candidate through the existing collector and runs the provisional
+foundation/explicit-citation experiment unchanged, then checks all six exact
+reader-facing fields against the same full source packet. The canonical draft
+hash must match before any field request. Extra source context outside numbered
+passages is retained and hash-bound. No field result can repair text or override
+a failed citation/editorial result; any invalid or unsupported field vetoes the
+experimental result. Errors cannot leave a previously accepted result in place.
+
+The writer retains its three-call/7,800 requested-output-token ceiling. This
+manual experiment has a separate six-call/2,400-token factual-audit allowance
+(nine calls/10,200 tokens combined at most); the daily budget and production
+writer are unchanged. There is no paid fallback, retry, search API or email.
+All 1,233 automated tests pass, including failed-editorial non-override, quota
+stop, mismatched response, full-context preservation and altered-draft rejection.
+
+The adapter was also checked locally against saved real-story diagnostic
+`35557427716`: all six fields retain draft SHA
+`389f83ea2578dddd9735e2b20d8e3019ac562716d294486c985db4b1e11316d9`
+and all 31 supplied passages. This was a binding check, not a fresh semantic
+review of that previously rejected story.
+
+### Remaining end-to-end gates
+
+Real-source run `35678297553` at `b4e5e6e` failed before review: composition
+repeated source wording in `claims[1].text`, triggering `ORIGINALITY`. Two
+requests used a 6,000 output allowance; no field audit, email or search ran.
+The freshly collected candidate concerned GitHub Enterprise credential inventory
+exports. Its draft also contained promotional implications that had not yet
+received factual/editorial review. Do not treat this as an audit-provider failure.
+Verified encrypted archive digest:
+`33e8a3a8abff0f0d93d043671a3a37ac84ade01cd0668e54ed61076d0d5e9a81`.
+
+Commit `f8518ce` removes initial draft wording from proposed claims in the
+isolated foundation-recheck profile, leaving only claim indexes and unreviewed
+citation leads alongside the full evidence. Composition must reconstruct facts
+instead of lightly editing its first draft. Production is unaffected and no
+originality, support, length or review gate was relaxed. All 1,233 tests pass.
+
+### Outstanding qualification
+
+Run `35678659294` at `f8518ce` again stopped after two writer calls, before
+review or the additional factual audit. Decrypted diagnostics report
+`daily-copy-composition / ORIGINALITY`, now at story level (131 body words).
+Removing the initial prose anchor did not solve source copying. The draft also
+asserted future security/risk-assessment enhancements beyond mere availability;
+it was not independently reviewed and is not publishable.
+Verified encrypted archive digest:
+`aaea9b1411686314202915afa6a28bd75370a61a515cf3bfcc8836862698cbef`.
+
+The new field-veto integration is covered by transport and rejection tests but
+has not yet completed on a live real draft. Both fresh runs demonstrate a writer
+blocker, not a passing full-paper pipeline. No additional unchanged retry was
+launched. Next work should address bounded drafting repair while retaining the
+originality gate, full source evidence, exact-text review and free-only limits;
+simply adding more approval prompts or accepting source-link fallback is not
+completion. Daily production, recipient and billing remain unchanged.
 
 - Pass the fixed live controls with all required verdicts correct.
 - Test previously unseen controls and the actual manually rejected story.
