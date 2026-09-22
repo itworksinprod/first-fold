@@ -198,6 +198,50 @@ originality, support, length or review gate was relaxed. All 1,233 tests pass.
 
 ### Outstanding qualification
 
+### Bounded originality rewrite (September 21 late evening)
+
+Commit `4d60734` enables one originality-only rewrite in `source-field-review`.
+It is disabled by default and rejected outside the one-candidate explicit
+foundation-recheck experiment. The existing 7,800 writer output ceiling is
+reallocated: 2,000 foundation, 3,000 composition, at most 1,000 rewrite and 1,800
+review. The rewrite is attempted only after an assembled draft fails solely
+with ORIGINALITY; provider errors and other local failures do not trigger it.
+It preserves candidate ID and exact ordered citation assignments, then reruns
+the complete local validator and reviews the new exact text. One failed rewrite
+ends the attempt. No threshold is weakened and no daily setting changes.
+
+The manual experiment can now make four writer/review calls plus six factual
+checks (ten calls maximum), still with a combined requested-output ceiling of
+10,200. All 1,234 automated tests pass. New tests cover a successful rewrite,
+continued copying, changed citations, reviewer veto and provider failure, and
+assert no second rewrite and no output-budget increase.
+
+Run `35681123139` at `4d60734` performed the single rewrite, but the rewritten
+story still failed ORIGINALITY. Three requests used a 6,000 output allowance;
+neither review nor factual audit ran. The decrypted rewrite repeated source
+phrasing rather than changing its structure. Verified encrypted archive digest:
+`bd45d8a7c3e6f63a40ce3b83e890f4573cdfc9c9e85cd3b1c10ec606667d0a4b`.
+
+Commit `91aa570` supplies the first exact 12-word copied span per reader-facing
+field as untrusted diagnostic data to the same single rewrite. This is targeted
+feedback, not an exception to the copying rule. The rewrite must still pass the
+unchanged complete validator and downstream reviews. All 1,234 tests pass.
+
+Run `35681480380` at `91aa570` also failed ORIGINALITY after the one rewrite.
+The exact-span feedback reached the provider, but the response changed opening
+words while retaining other source runs and promotional implications. Both
+composition and rewrite were rejected; no citation/editorial or field review
+ran. Three requests used a 6,000 output allowance. No additional unchanged run
+was launched. Verified encrypted archive digest:
+`d368dadfcef0f5db641474a88fd8fe1c2f2fe5ae6e4c637ed3b49e21283eb0bd`.
+
+The bounded rewrite mechanism is implemented and tested, but the live whole-story
+rewrite is not qualified. Future work should isolate individual rejected fields
+and their factual relationships, rather than adding another broad rewrite prompt.
+Retain the same total output cap, finite repair count, source context and final
+exact-text checks. No test email, production promotion, recipient or billing
+change occurred during these experiments.
+
 Run `35678659294` at `f8518ce` again stopped after two writer calls, before
 review or the additional factual audit. Decrypted diagnostics report
 `daily-copy-composition / ORIGINALITY`, now at story level (131 body words).
