@@ -65,7 +65,7 @@ export function assertDiagnosticAuthority(env) {
 }
 
 export function resolvePrivateWriterDiagnosticMode(value = "source") {
-  if (!["source", "source-recheck", "source-recheck-explicit", "review-controls", "explicit-review-controls", "split-review-controls", "isolated-review-controls", "provider-only"].includes(value)) throw failure("DIAGNOSTIC_MODE_INVALID");
+  if (!["source", "source-recheck", "source-recheck-explicit", "review-controls", "explicit-review-controls", "split-review-controls", "isolated-review-controls", "field-review-controls", "provider-only"].includes(value)) throw failure("DIAGNOSTIC_MODE_INVALID");
   return value;
 }
 
@@ -139,6 +139,10 @@ export async function diagnoseOneWriter({ publicKey, accountId, apiToken, now = 
     const { diagnoseSplitReview } = await import("./split-review-diagnostic.mjs");
     return diagnoseSplitReview({ publicKey, accountId, apiToken, now, aiRequestImpl, fetchImpl, endpoint, sealDiagnostic,
       isolated: mode === "isolated-review-controls" });
+  }
+  if (mode === "field-review-controls") {
+    const { diagnoseFieldReview } = await import("./field-review-diagnostic.mjs");
+    return diagnoseFieldReview({ publicKey, accountId, apiToken, now, aiRequestImpl, fetchImpl, endpoint, sealDiagnostic });
   }
   if (["review-controls", "explicit-review-controls"].includes(mode)) {
     const { diagnoseReviewerTransports } = await import("./reviewer-transport-diagnostic.mjs");
