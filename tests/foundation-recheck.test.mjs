@@ -26,6 +26,42 @@ const checked = data => ({ reviews: data.drafts.map(({ draft, draftSha256 }) => 
     claimSupport: draft.claims.map(claim => claim.supports.map(support => support.evidenceId)),
     factsSupported: true, attributionAccurate: true, analysisSupported: true, usefulAndSpecific: true };
 }) });
+test("one experimental originality rewrite preserves citations and the 7800 ceiling", async () => {
+  for (const outcome of ["pass", "copied", "citation-change", "review-veto", "provider-error"]) {
+    const tokens = [], events = [];
+    const copied = groundedEvidence.summary.split(". ")[0];
+    const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
+      accountId: "0".repeat(32), apiToken: "fixture", compositionProfile: EXPERIMENTAL_FOUNDATION_RECHECK,
+      reviewProfile: EXPLICIT_CLAIM_REVIEW_PROFILE, originalityRepair: true,
+      onDiagnostic: event => events.push(event), aiRequestImpl: async options => {
+        tokens.push(options.maxTokens);
+        const data = JSON.parse(options.messages[1].content);
+        if (tokens.length === 1) return response({ foundations: [{ candidateId: groundedDraft.candidateId, claims: groundedDraft.claims }] });
+        if (tokens.length === 2) { const value = finalCopy(); value.copies[0].deck = copied; return response(value); }
+        if (tokens.length === 3) {
+          assert.equal(data.draftToRewrite.deck, copied);
+          assert.ok(data.dossiers[0].sources[0].passages.length);
+          if (outcome === "provider-error") throw new Error("fixture provider refusal");
+          const repaired = structuredClone(groundedDraft);
+          if (outcome === "copied") repaired.deck = copied;
+          if (outcome === "citation-change") repaired.claims[0].supports.pop();
+          return response({ stories: [repaired] });
+        }
+        assert.equal(tokens.length, 4, "No additional rewrite/review retry");
+        assert.equal(data.drafts[0].draftSha256, hash(groundedDraft));
+        return response({ reviews: data.drafts.map(entry => ({ candidateId: entry.draft.candidateId,
+          draftSha256: entry.draftSha256, factsSupported: true, attributionAccurate: true,
+          analysisSupported: true, usefulAndSpecific: outcome !== "review-veto",
+          claimVerdicts: entry.claimEvidence.map(claim => ({ claimIndex: claim.claimIndex,
+            claimSha256: claim.claimSha256, allCitedPassagesSupport: true })) })) });
+      } });
+    assert.equal(Boolean(result), outcome === "pass");
+    assert.deepEqual(tokens, ["pass", "review-veto"].includes(outcome) ? [2000, 3000, 1000, 1800] : [2000, 3000, 1000]);
+    assert.ok(tokens.reduce((a, b) => a + b, 0) <= 7800);
+    if (outcome !== "provider-error") assert.equal(events.filter(e => e.stage === "daily-originality-rewrite").length, 1);
+  }
+});
+
 async function run({ initial = groundedDraft, mutateCopy = () => {}, mutateReview = () => {}, ...overrides } = {}) {
   const calls = [], events = [];
   const result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],

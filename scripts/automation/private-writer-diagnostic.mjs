@@ -176,17 +176,18 @@ export async function diagnoseOneWriter({ publicKey, accountId, apiToken, now = 
     } };
     result = await synthesizeGroundedEditorial({ editorial: baseline, candidates: [candidate],
       accountId, apiToken, model: DEFAULT_CLOUDFLARE_AI_MODEL,
+      originalityRepair: mode === "source-field-review",
       ...(["source-recheck", "source-recheck-explicit", "source-field-review"].includes(mode) ? { compositionProfile: EXPERIMENTAL_FOUNDATION_RECHECK } : {}),
       ...(["source-recheck-explicit", "source-field-review"].includes(mode) ? { reviewProfile: EXPLICIT_CLAIM_REVIEW_PROFILE } : {}),
       fetchImpl: async (url, options) => {
-        if (url !== endpoint || options.method !== "POST" || options.redirect !== "error" || networkRequests >= 3) {
+        if (url !== endpoint || options.method !== "POST" || options.redirect !== "error" || networkRequests >= (mode === "source-field-review" ? 4 : 3)) {
           throw failure("DIAGNOSTIC_NETWORK_CONTRACT");
         }
         networkRequests++;
         return fetchImpl(url, options);
       },
       aiRequestImpl: async options => {
-        if (++modelRequests > 3 || (outputBudget += options.maxTokens) > 7_800 ||
+        if (++modelRequests > (mode === "source-field-review" ? 4 : 3) || (outputBudget += options.maxTokens) > 7_800 ||
             options.model !== DEFAULT_CLOUDFLARE_AI_MODEL || options.maxAttempts !== 1) {
           throw failure("DIAGNOSTIC_REQUEST_BUDGET");
         }

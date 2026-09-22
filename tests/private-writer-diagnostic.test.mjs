@@ -69,7 +69,7 @@ test("real-source field audit adds only vetoes and retains the original citation
     assert.equal(writerCalls, 3);
     assert.equal(fieldCalls, ["quota", "bad-binding"].includes(outcome) ? 1 : 6);
     assert.equal(report.status, outcome === "pass" ? "writer-and-review-passed" : "failed");
-    assert.equal(report.outputBudget, 7800 + fieldCalls * 400);
+    assert.equal(report.outputBudget, 6800 + fieldCalls * 400);
     assert.equal(report.modelRequests, 3 + fieldCalls);
     assert.equal(report.emailSent, false);
     const capture = openDiagnostic(sealed, pair.privateKey);
