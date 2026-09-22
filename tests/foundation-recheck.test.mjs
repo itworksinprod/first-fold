@@ -40,6 +40,7 @@ test("one experimental originality rewrite preserves citations and the 7800 ceil
         if (tokens.length === 2) { const value = finalCopy(); value.copies[0].deck = copied; return response(value); }
         if (tokens.length === 3) {
           assert.equal(data.draftToRewrite.deck, copied);
+          assert.ok(data.copiedSpans.some(span => span.field === "deck" && span.copiedText.split(" ").length === 12));
           assert.ok(data.dossiers[0].sources[0].passages.length);
           if (outcome === "provider-error") throw new Error("fixture provider refusal");
           const repaired = structuredClone(groundedDraft);
