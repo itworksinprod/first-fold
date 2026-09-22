@@ -1159,9 +1159,12 @@ benefits. If the evidence cannot support an impact, state the specific limit wit
 Every assembled story still faces full checks and independent review.`;
 
 const FOUNDATION_RECHECK_GUIDANCE = `This is the isolated foundation-recheck experiment.
-The proposedClaims are UNREVIEWED suggestions, not established facts. No claim is frozen in this
-experiment. Recheck BOTH proposed claims against the full supplied passages before composing copy.
-Return both final claims in claimRepairs, even when unchanged. For EVERY factual clause, identify
+The proposedClaims contain only UNREVIEWED citation leads, not established facts or draft wording.
+No claim is frozen. Reconstruct BOTH facts from the full supplied passages before composing copy.
+Write new sentence structure rather than copying a source sentence and changing its opening words.
+Keep exact product names, versions and factual conditions, but express their relationships in your
+own wording. Never repeat twelve consecutive source words or alter a fact to avoid copying.
+Return both final claims in claimRepairs. For EVERY factual clause, identify
 the passage actually establishing it. If a second clause comes from another passage, cite that
 passage too; if the complete claim cannot fit two materially relevant citations, narrow the claim.
 Never infer support from an evidence ID, topical similarity, a matched number, or the first writer.
@@ -1263,7 +1266,7 @@ function dailyCompositionContract(foundations, dossiers, { recheckFoundations = 
       fixedClaims,
       ...(recheckFoundations ? { proposedClaims: foundation.claims.flatMap((claim, claimIndex) =>
         requested.find(task => task.claimIndex === claimIndex).reasons.every(reason => reason === "SEMANTIC_RECHECK")
-          ? [{ claimIndex, ...structuredClone(claim) }] : []) } : {}), requestedClaimRepairs: requested.map(task => {
+          ? [{ claimIndex, supports: structuredClone(claim.supports) }] : []) } : {}), requestedClaimRepairs: requested.map(task => {
         const claim = foundation.claims[task.claimIndex];
         return { ...task, preserveSupports: task.reasons.every(reason => reason === "ORIGINALITY"),
           // Do not anchor the one repair attempt to copied or unsupported prose.

@@ -53,7 +53,8 @@ test("isolated recheck can complete missing citation coverage before unchanged e
   assert.ok(calls.every(call => call.model === DEFAULT_CLOUDFLARE_AI_MODEL && call.maxAttempts === 1));
   const packet = calls[1].data.dossiers[0];
   assert.deepEqual(packet.fixedClaims, []);
-  assert.deepEqual(packet.proposedClaims.map(({ claimIndex, ...claim }) => claim), initial.claims);
+  assert.deepEqual(packet.proposedClaims, initial.claims.map((claim, claimIndex) => ({ claimIndex, supports: claim.supports })));
+  assert.ok(packet.proposedClaims.every(claim => !Object.hasOwn(claim, "text")), "Unreviewed prose is not a rewrite anchor");
   assert.equal(packet.requestedClaimRepairs.length, 2);
   assert.ok(packet.requestedClaimRepairs.every(task => task.reasons.includes("SEMANTIC_RECHECK") && !task.preserveSupports));
   assert.deepEqual(packet.sources, calls[0].data.dossiers[0].sources, "Full evidence is available for missing citations");
