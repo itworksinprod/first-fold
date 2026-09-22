@@ -400,7 +400,7 @@ test("diagnostic workflow is manual/read-only and cannot send, bill, publish or 
   assert.match(workflow, /path: \$\{\{ runner.temp \}\}\/writer-diagnostic.encrypted.json/);
   assert.match(workflow, /persist-credentials: false/);
   assert.ok(workflow.indexOf("Test diagnostic boundaries") < workflow.indexOf("secrets.CLOUDFLARE_AI_API_TOKEN"));
-  assert.match(workflow, /default: source[\s\S]*- source\n\s+- source-recheck\n\s+- source-recheck-explicit\n\s+- review-controls\n\s+- explicit-review-controls\n\s+- split-review-controls\n\s+- provider-only/);
+  assert.match(workflow, /default: source[\s\S]*- source\n\s+- source-recheck\n\s+- source-recheck-explicit\n\s+- review-controls\n\s+- explicit-review-controls\n\s+- split-review-controls\n\s+- isolated-review-controls\n\s+- provider-only/);
   assert.ok(workflow.indexOf("Validate diagnostic mode and encryption") < workflow.indexOf("secrets.CLOUDFLARE_AI_API_TOKEN"));
   assert.match(workflow, /private-writer-diagnostic\.mjs validate/);
   assert.match(workflow, /PRIVATE_WRITER_DIAGNOSTIC_MODE: \$\{\{ inputs\.mode \|\| 'source' \}\}/);

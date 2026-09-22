@@ -135,6 +135,39 @@ test("split diagnostic stops on quota before the editorial call", async () => {
   assert.equal(report.failures[0].httpStatus, "429");
 });
 
+test("isolated editorial checks share the same output ceiling and cannot substitute another story", async () => {
+  for (const mode of ["valid", "wrong-scope", "quota"]) {
+    let calls = 0;
+    const expected = payloads(buildSplitClaimReview(input()));
+    const tokens = [];
+    const { report } = await diagnoseOneWriter({ ...base, mode: "isolated-review-controls",
+      fetchImpl: async (_url, init) => {
+        const body = JSON.parse(init.body);
+        const data = JSON.parse(body.messages[1].content);
+        const call = calls++;
+        tokens.push(body.max_tokens);
+        let response = expected[0];
+        if (call > 0) {
+          assert.equal(data.dossiers.length, 1);
+          assert.equal(data.drafts.length, 1);
+          assert.equal(data.drafts[0].draft.candidateId, data.dossiers[0].candidateId);
+          assert.deepEqual(data.dossiers[0], buildSplitClaimReview(input()).editorial.data.dossiers[call - 1]);
+          if (mode === "quota") return new Response(JSON.stringify({ errors: [{ message: "quota" }] }), { status: 429 });
+          response = { reviews: [expected[1].reviews[mode === "wrong-scope" ? 3 : call - 1]] };
+        }
+        return new Response(JSON.stringify({ success: true, result: { response: JSON.stringify(response) }, errors: [] }),
+          { headers: { "content-type": "application/json" } });
+      } });
+    assert.deepEqual(tokens, mode === "valid" ? [1800, 450, 450, 450, 450] : [1800, 450]);
+    assert.equal(report.status, mode === "valid" ? "reviewer-controls-passed" : "failed");
+    assert.equal(report.outputBudget, tokens.reduce((a, b) => a + b, 0));
+    assert.equal(report.networkRequests, calls);
+    assert.equal(report.emailSent, false);
+    assert.equal(report.searchQueries, 0);
+    if (mode === "wrong-scope") assert.equal(report.failures[0].code, "DIAGNOSTIC_REVIEW_SCOPE");
+  }
+});
+
 test("split control real CLI reaches mocked provider and writes only encrypted failure", async () => {
   const directory = await mkdtemp(join(tmpdir(), "first-fold-split-startup-"));
   try {
