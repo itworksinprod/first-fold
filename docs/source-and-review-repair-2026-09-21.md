@@ -117,7 +117,45 @@ uncited context, rather than trusting a broad story-level approval. Preserve
 the fixed labels and include unseen controls before real-paper qualification.
 No daily writer change, email, recipient change or billing change was made.
 
-### Required before promotion
+### Narrow statement experiment
+
+Commit `4c644dc` adds `field-review-controls`, an isolated factual-only probe.
+Each request contains one exact statement and its complete supplied publisher
+passages, not other sections or overall story-approval questions. A hash binds
+both text and evidence. Results must include a bounded comparison, known unique
+evidence IDs and a strict boolean; malformed or mismatched responses fail closed.
+This is not a citation check or complete publication approval.
+
+Eight offline-labeled cases include the existing unsupported metric bridge and
+swapped conditions, a corrected-condition counterpart, supported joint evidence,
+and four previously unrun rollout/research-result cases (two supported, two
+unsupported). Labels never enter model requests. Blanket acceptance/rejection
+both fail qualification. All 1,231 automated tests pass, including quota stop,
+encrypted output, response binding, context immutability and transport checks.
+The experiment is limited to eight calls, 400 requested output tokens each,
+with no retries, search, email, alternate model or production integration.
+
+Live run [35677721279](https://github.com/itworksinprod/first-fold/actions/runs/35677721279)
+at `4c644dc` passed all eight cases (four supported, four unsupported), with
+eight requests and a 3,200 requested-output-token ceiling. Decrypted evidence
+was manually inspected: the swapped-condition rejection explicitly identifies
+the 4.8 diagnostics requirement and the separate 4.7 enabled-or-disabled
+condition. The corrected version is accepted. The other negative explanations
+identify the unsupported metric link, overbroad rollout, and substitution of
+production operating costs for simulated processing time. The positive
+conditional implication is accepted without requiring verbatim source wording.
+
+Verified encrypted archive SHA-256:
+`0db2b971734586a1cebc8c180fba0d085e85a6ca9e3a7af7cc2f14d1c5be668b`.
+
+This is a successful small factual-component qualification, not a full-paper
+test, reliability estimate, citation approval or production promotion. The next
+step is to bind this additional veto to every exact reader-facing field in an
+isolated real-story test, retain the independent citation and editorial gates,
+and check both the previously rejected actual story and newly researched prose.
+Do not enable daily delivery based on these eight cases alone.
+
+### Required before promotion (unchanged)
 
 - Pass the fixed live controls with all required verdicts correct.
 - Test previously unseen controls and the actual manually rejected story.
