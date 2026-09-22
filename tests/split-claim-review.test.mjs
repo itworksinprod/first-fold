@@ -18,7 +18,10 @@ const payloads = bundle => [
     claimVerdicts: entry.claimEvidence.map(claim => ({ claimIndex: claim.claimIndex, claimSha256: claim.claimSha256,
       allCitedPassagesSupport: cases.find(item => item.draft.candidateId === entry.candidateId).expected.claims[claim.claimIndex] })) })) },
   { reviews: bundle.editorial.data.drafts.map(entry => ({ candidateId: entry.draft.candidateId, draftSha256: entry.draftSha256,
-    ...Object.fromEntries(flags.map(field => [field, cases.find(item => item.draft.candidateId === entry.draft.candidateId).expected[field] ?? true])) })) },
+    fieldFacts: { headline: true, deck: true, claim0: true,
+      claim1: entry.draft.candidateId !== "review-holdout-42", whyItMatters: true,
+      whatToDoOrWatch: entry.draft.candidateId !== "clause-control-38" },
+    ...Object.fromEntries(flags.slice(1).map(field => [field, cases.find(item => item.draft.candidateId === entry.draft.candidateId).expected[field] ?? true])) })) },
 ];
 
 test("claim review excludes uncited source context and prose; whole-story review retains all caveats", () => {
@@ -53,7 +56,9 @@ test("split validation retains exact hashes and independent vetoes without rewri
     (c, e) => { e.reviews[0].draftSha256 = "0".repeat(64); },
     c => { c.reviews[0].claimVerdicts[0].claimSha256 = "0".repeat(64); },
     c => { c.reviews[0].claimVerdicts[0].allCitedPassagesSupport = "true"; },
-    (c, e) => { e.reviews[0].factsSupported = "true"; },
+    (c, e) => { e.reviews[0].fieldFacts.claim0 = "true"; },
+    (c, e) => { delete e.reviews[0].fieldFacts.claim1; },
+    (c, e) => { e.reviews[0].fieldFacts.extra = true; },
     c => { c.reviews[1] = structuredClone(c.reviews[0]); },
     (c, e) => { e.reviews[0].claimVerdicts = c.reviews[0].claimVerdicts; },
     c => { c.reviews[0].claimVerdicts[1].claimIndex = 0; },
@@ -63,6 +68,14 @@ test("split validation retains exact hashes and independent vetoes without rewri
   }
   assert.ok(validateSplitClaimReview(claims, undefined, bundle).errors.length);
   assert.ok(validateSplitClaimReview(claims, editorial, structuredClone(bundle)).errors.length);
+  for (const field of Object.keys(editorial.reviews[0].fieldFacts)) {
+    const [c, e] = payloads(bundle);
+    e.reviews[0].fieldFacts[field] = false;
+    const result = validateSplitClaimReview(c, e, bundle);
+    assert.deepEqual(result.errors, []);
+    assert.equal(result.reviews[0].factsSupported, false, `${field} independently vetoes factual approval`);
+    assert.equal(result.reviews[0].analysisSupported, true, "Other flags are not silently rewritten");
+  }
 });
 
 const pair = generateKeyPairSync("rsa", { modulusLength: 3072 });
@@ -86,7 +99,10 @@ test("two bounded live-shaped calls qualify correct verdicts but not blanket app
       const value = structuredClone(expected[calls++]);
       if (blanket !== null) for (const review of value.reviews) {
         if (review.claimVerdicts) for (const claim of review.claimVerdicts) claim.allCitedPassagesSupport = blanket;
-        else for (const flag of flags) review[flag] = blanket;
+        else {
+          for (const flag of flags.slice(1)) review[flag] = blanket;
+          for (const field of Object.keys(review.fieldFacts)) review.fieldFacts[field] = blanket;
+        }
       }
       return new Response(JSON.stringify({ success: true, result: { response: JSON.stringify(value) }, errors: [] }),
         { headers: { "content-type": "application/json" } });
