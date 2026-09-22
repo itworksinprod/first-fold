@@ -79,6 +79,46 @@ Encrypted artifact digests (checked against downloaded archives):
 
 ## Remaining promotion gates
 
+### Further isolated checks (September 21 evening)
+
+- Run `35675534676` at `1adffbf` aligned exact draft fields with verdict keys.
+  The public summary remained 3/4; it did not qualify.
+- Run `35675821468` at `e55cfdd` isolated each whole-story review into its own
+  request. Decrypted evidence confirms the same factual false positive on the
+  swapped-condition claim, while the separate citation check rejected it.
+  All final accept/reject decisions were correct, but exact qualification failed.
+  Five requests shared a 3,600 requested-output-token ceiling; no email or search.
+  Downloaded encrypted archive SHA-256:
+  `a5b58690db4bf732f9a9ded5f9aa2f5fe1f0f407359e498923277b05dee5418e`.
+- Commit `05c52dc` adds short, bounded per-field evidence comparisons to the
+  isolated experiment only. Notes cannot override vetoes, change draft text,
+  supply missing citations or enter the production approval object. Malformed
+  notes fail closed. The fixed expected labels remain unchanged. The same
+  3,600 output ceiling is divided into 1,200 citation tokens and four 600-token
+  editorial checks. The supported `npm test` suite passes all 1,228 tests.
+
+These repeated fixtures are regression controls, not unseen holdouts. Success
+on them would not establish general reviewer accuracy or paper readiness.
+
+Run [35676356821](https://github.com/itworksinprod/first-fold/actions/runs/35676356821)
+at `05c52dc` completed all five requests within the unchanged 3,600 output cap,
+with valid response structure, but again failed the swapped-condition case.
+The decrypted claim1 evidence note merely says "Source details prerequisites";
+it does not compare the contradictory relationships and leaves claim1 true.
+This is a semantic review failure, not missing credentials, provider quota,
+JSON parsing or an email delivery problem. The separate citation veto still
+rejects that story; the broad review is not independently qualified.
+Verified encrypted archive SHA-256:
+`e29beb45fa78351b082c674a4cab385133e046aa2773f7080f1c5d9a81106efd`.
+
+Do not retry this unchanged experiment hoping for a pass. The next design
+should test narrow field-to-evidence entailment, including contradictory
+uncited context, rather than trusting a broad story-level approval. Preserve
+the fixed labels and include unseen controls before real-paper qualification.
+No daily writer change, email, recipient change or billing change was made.
+
+### Required before promotion
+
 - Pass the fixed live controls with all required verdicts correct.
 - Test previously unseen controls and the actual manually rejected story.
 - Integrate into a bounded no-email real-story experiment without increasing
