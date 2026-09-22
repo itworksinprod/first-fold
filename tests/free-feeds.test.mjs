@@ -65,6 +65,21 @@ function source(overrides = {}) {
 
 const publicLookup = async () => [{ address: "8.8.8.8", family: 4 }];
 
+test("Google AI discovery binds the direct feed address, not its redirecting legacy URL", () => {
+  const google = FREE_FEED_SOURCES.find(entry => entry.id === "google-ai");
+  const direct = "https://blog.google/innovation-and-ai/technology/ai/rss/";
+  assert.equal(google.url, direct);
+  const items = parseFeedPayload({ source: google, retrievedAt,
+    body: `<rss><channel><item><title>Google announces an AI model update</title>
+      <link>https://blog.google/innovation-and-ai/technology/ai/example-update/</link>
+      <description>Google releases a new model for developers.</description>
+      <pubDate>Fri, 21 Aug 2026 12:00:00 GMT</pubDate></item></channel></rss>` });
+  assert.equal(items.length, 1);
+  assert.equal(items[0].feedUrl, direct, "Context links must pass final zero-redirect QA too");
+  assert.deepEqual(google.feedHosts, ["blog.google"]);
+  assert.deepEqual(google.itemHosts, ["blog.google"]);
+});
+
 function editorialItem({
   suffix,
   title,

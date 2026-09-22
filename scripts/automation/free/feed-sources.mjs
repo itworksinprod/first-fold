@@ -26,7 +26,7 @@ export const FREE_FEED_SOURCES = Object.freeze([
     primaryEntity: "Google",
     relationship: "originating",
     format: "xml",
-    url: "https://blog.google/technology/ai/rss/",
+    url: "https://blog.google/innovation-and-ai/technology/ai/rss/",
     feedHosts: ["blog.google"],
     itemHosts: ["blog.google"],
     coverageDesks: ["ai"],
