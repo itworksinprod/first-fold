@@ -30,6 +30,10 @@ test('all claims required, exact binding and false veto cannot be bypassed', () 
   const view = buildClaimwiseFactReview(cases[0].input);
   const good = reply(view, [true, false]);
   assert.deepEqual(validateClaimwiseFactReview(good, view), { valid: true, supported: false, claims: [true, false] });
+  const absent = structuredClone(good); absent.judgments[1].evidenceIds = [];
+  assert.deepEqual(validateClaimwiseFactReview(absent, view), { valid: true, supported: false, claims: [true, false] });
+  absent.judgments[1].supported = true;
+  assert.equal(validateClaimwiseFactReview(absent, view).valid, false);
   assert.equal(validateClaimwiseFactReview({ ...good, judgments: [...good.judgments].reverse() }, view).supported, false);
   for (const mutate of [
     v => v.judgments.pop(), v => v.judgments.push(v.judgments[0]),

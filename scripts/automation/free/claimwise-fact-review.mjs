@@ -12,7 +12,7 @@ export function buildClaimwiseFactReview(input) {
       new Set(input.claims).size !== input.claims.length) throw new Error('CLAIMWISE_INPUT');
   const { reviewSha256: ignored, ...evidence } = base.data;
   const claims = input.claims.map((text, i) => ({ claimId: `C${i + 1}`, text }));
-  const data = { ...evidence, claims, policy: 'explicit-claimwise-evidence-v1' };
+  const data = { ...evidence, claims, policy: 'explicit-claimwise-evidence-v2' };
   data.reviewSha256 = createHash('sha256').update(JSON.stringify(data)).digest('hex');
   const ids = data.passages.map(p => p.evidenceId);
   const schema = { type: 'object', additionalProperties: false, required: ['reviewSha256', 'judgments'], properties: {
@@ -21,7 +21,7 @@ export function buildClaimwiseFactReview(input) {
       type: 'object', additionalProperties: false, required: ['claimId', 'comparison', 'evidenceIds', 'supported'], properties: {
         claimId: { type: 'string', enum: claims.map(c => c.claimId) },
         comparison: { type: 'string', minLength: 1, maxLength: 240 },
-        evidenceIds: { type: 'array', minItems: 1, maxItems: 3, uniqueItems: true, items: { type: 'string', enum: ids } },
+        evidenceIds: { type: 'array', minItems: 0, maxItems: 3, uniqueItems: true, items: { type: 'string', enum: ids } },
         supported: { type: 'boolean' },
       },
     } },
@@ -38,7 +38,9 @@ harm to the underlying activity. Do not transfer conditions between different ev
 Check actor, timing, quantity, supervision, scope, negation, and prerequisites.
 If the relationship or consequence is absent or contradicted, supported must be false.
 For each comparison explain the decisive support or missing link in one sentence
-under 160 characters. Cite 1–3 relevant passage IDs, including when support is absent.
+under 160 characters. Supported claims require 1–3 supporting passage IDs. For a
+rejected claim cite relevant counterevidence, or use an empty list if no passage
+establishes its asserted relationship. An empty list can NEVER support approval.
 Preserve the given claim IDs and review hash exactly. Output only the specified JSON.` };
   bindings.set(view, { hash: data.reviewSha256, ids, claims: claims.map(c => c.claimId) });
   const freeze = v => { if (v && typeof v === 'object') { Object.values(v).forEach(freeze); Object.freeze(v); } };
@@ -56,7 +58,7 @@ export function validateClaimwiseFactReview(value, view) {
     if (!exact(j, ['claimId', 'comparison', 'evidenceIds', 'supported']) || !bound.claims.includes(j.claimId) ||
         seen.has(j.claimId) || typeof j.supported !== 'boolean' || typeof j.comparison !== 'string' ||
         !j.comparison.trim() || j.comparison.length > 240 || !Array.isArray(j.evidenceIds) ||
-        !j.evidenceIds.length || j.evidenceIds.length > 3 || new Set(j.evidenceIds).size !== j.evidenceIds.length ||
+        (j.supported && !j.evidenceIds.length) || j.evidenceIds.length > 3 || new Set(j.evidenceIds).size !== j.evidenceIds.length ||
         j.evidenceIds.some(id => !bound.ids.includes(id))) return invalid;
     seen.add(j.claimId);
   }
