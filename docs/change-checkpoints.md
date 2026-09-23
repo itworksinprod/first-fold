@@ -135,3 +135,32 @@ with one attempt per case and no provider fallback. Existing free provider and
 account settings are unchanged. Quota/format errors stop the run. No draft,
 email, paid fallback, schedule change or production promotion is authorized by
 this experiment. Exact explanations must be manually inspected after a live pass.
+
+### Claimwise live qualification: limited checkpoint passed
+
+- Run 35815691265 (`a1914d3`) stopped at the fifth case because an unsupported
+  causal claim had no evidence IDs. Manual inspection found the first five cases'
+  substantive judgments correct, but the run did not qualify. Artifact SHA-256:
+  `a7c2205150d2d8c79de89a2b32c43df5f9a910a4c54955cc961bf76f98bed8e1`.
+- Revision `9cfa01a` explicitly represents absent evidence as an empty list ONLY
+  for rejected claims. Approved claims still require valid supporting references;
+  empty-citation approval fails closed. This is policy `explicit-claimwise-evidence-v2`.
+- Run 35815956988 on that revision passed all ten cases and all 17 individual
+  judgments (12 supported, five unsupported), with ten requests, no retries and
+  no email. Artifact SHA-256:
+  `47c82397c0ee97e8f2dfeea0826fcb67c74bd98d05a71a5c10c9eb5eb6bcb571`.
+
+Exact-response manual review checked all 17 judgments and the cited passages.
+The reviewer distinguishes rating accuracy from effects on AI development, rejects
+the denominator-based explanation, and separates observed display/sensor effects
+from unmeasured staffing/journey-time consequences. All six real-source contexts
+match the reviewed article fingerprint. Explanations remain terse; absent evidence
+means unsupported here, not proof that a consequence is impossible in reality.
+The full local suite passed 1,260 tests. No daily reviewer or writer was promoted.
+
+This closes ONLY the fixed-control claimwise evaluation, not general reviewer
+reliability or summary readiness. Decomposition was manually enumerated. Next:
+apply it to a new single-article draft with a complete, independently checked claim
+inventory, then inspect exact prose for usefulness, attribution, originality and
+factual accuracy. Do not carry over approval from these fixtures or silently omit
+claims during decomposition. Email and daily integration remain later checkpoints.
