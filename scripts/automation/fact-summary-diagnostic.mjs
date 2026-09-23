@@ -95,6 +95,8 @@ Headline: name the concrete supervised-automation finding rather than generic re
 whatHappened: give the dated findings and exact scopes; do not repeat them in later fields.
 whyItMatters: explain why compute does not directly measure safety attention, using the fact sheet's reason.
 Keep that reason separate from what the conservative estimates exclude. Do not conflate them with an as/because clause.
+Always call the percentages estimates of computing usage or compute allocation, NEVER estimates of safety attention.
+Say experiment design takes time not captured by computing usage; do not claim it changes the compute measurement.
 whatToWatch: explain the automation-rating limitation and proposed third-party or cross-developer verification.
 Describe human supervision as the reported state, not proof of a general need for oversight.
 Avoid filler such as 'is significant' and do not repeat the percentages in whyItMatters.`
