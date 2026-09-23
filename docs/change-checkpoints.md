@@ -202,3 +202,37 @@ coverage exclusions (P10). Those paraphrases were manually checked against the
 unchanged captured passages. No scope flag or source fingerprint was changed.
 The experimental writer instructions now request useful non-repetitive analysis,
 separate assertions and a concrete headline. Validation thresholds are unchanged.
+
+### Single-article result: exact sample passed, daily integration still held
+
+Run 35818064321 (`f75a5df`) passed automated review but remained on manual hold:
+one sentence called the compute-allocation figures estimates of safety attention.
+Its artifact SHA-256 is
+`34173510cfaa506ad544ed96151f4374572c65c39d51112555876d0a670a1a74`.
+The next writer-instruction revision explicitly preserves that distinction.
+
+Run 35818252323 (`bc758b5`) produced a new summary and passed all four field
+reviews. Five provider requests, maximum 3,600 requested output tokens, no retries
+or email. Artifact SHA-256:
+`dcc06a5639b5e66316bac54afbc4d24456d3476c532c0fc30f3255eb6ae3156e`.
+Exact draft SHA-256:
+`8b0d829ceb2c8eecb101eaf60a1df22ade5b2e6f3d4f8b504a74ca863ba406f1`.
+
+Manual review compared every assertion in its nine displayed units (including
+the headline) with the complete captured passages, including assertions combined
+within a sentence. The dated supervision finding agrees with P3; both compute
+denominators and the snapshot agree with P7/P9; the agent count and platform scope
+agree with P6; the explanation and separate exclusions agree with P8/P10; the
+ratings limitations and proposed verification agree with P4. The article provides
+a concrete finding, an explanation of the measurement limitation and a specific
+verification proposal rather than repeated numbers or generic advice. It is
+approved as this exact single-source example, with a clear sample label—not as
+today's news, independently corroborated reporting, or a daily production edition.
+
+The local sample preserves the exact reviewed text; any subsequent copyedit needs
+a new review. The full suite passed 1,267 tests. No production writer, delivery
+schedule, recipient, billing setting, or email adapter was changed. Manual review
+still caught faults the automated reviewer missed in earlier runs. Sentence-sized
+units do not prove automatic atomic-claim extraction. Next checkpoint: test a
+different article without article-specific prompt changes, and assess whether the
+writer/reviewer approach generalizes before daily integration or an email test.
