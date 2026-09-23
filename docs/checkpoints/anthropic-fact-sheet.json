@@ -14,7 +14,7 @@
     },
     {
       "id": "evaluation-limits",
-      "text": "For its AI R&D automation ratings, Anthropic identifies inconsistent cross-lab methods and potentially shared errors between its systems and evaluator models as limitations.",
+      "text": "For its AI R&D automation ratings, Anthropic identifies inconsistent cross-lab methods and potentially shared errors between its systems and evaluator models as limitations. It proposes checking developers' measurements through a third party or another developer's models, with safeguards for competitively sensitive information.",
       "passageIds": ["P4"]
     },
     {
@@ -29,7 +29,7 @@
     },
     {
       "id": "compute-limits",
-      "text": "Compute share is an imperfect measure of safety effort. The estimates exclude safeguard classifiers and work that advances capability and safety equally.",
+      "text": "Safety research typically uses less compute than frontier training; designing its experiments takes time without necessarily using much compute. This makes compute share an imperfect measure of attention to safety. Separately, the conservative estimates exclude safeguard classifiers and work that advances capability and safety equally.",
       "passageIds": ["P8", "P10"]
     }
   ],

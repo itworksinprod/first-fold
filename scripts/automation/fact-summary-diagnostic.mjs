@@ -90,7 +90,14 @@ Each array has 1–4 items. Each item must be one complete sentence expressing O
 Split separate facts, causal consequences and caveats into separate items. Preserve attribution within each sentence.
 The arrays joined with spaces ARE the article; there is no additional summary or hidden text.
 Use complete readable prose, not labels or fragments. Do not invent predictions or consequences, even with could/may.
-For whyItMatters explain the reported measurement distinctions. For whatToWatch explain concrete methodological caveats.`
+Use three or four short units per body field, with one assertion per unit.
+Headline: name the concrete supervised-automation finding rather than generic reporting.
+whatHappened: give the dated findings and exact scopes; do not repeat them in later fields.
+whyItMatters: explain why compute does not directly measure safety attention, using the fact sheet's reason.
+Keep that reason separate from what the conservative estimates exclude. Do not conflate them with an as/because clause.
+whatToWatch: explain the automation-rating limitation and proposed third-party or cross-developer verification.
+Describe human supervision as the reported state, not proof of a general need for oversight.
+Avoid filler such as 'is significant' and do not repeat the percentages in whyItMatters.`
   : 'Return exactly headline, whatHappened, whyItMatters, whatToWatch as plain text strings in JSON.'}
 Aim for 180–200 words across the three body fields (hard bounds 150–225, headline excluded).
 Plan roughly 75 words for whatHappened, 65 for whyItMatters and 45 for whatToWatch.

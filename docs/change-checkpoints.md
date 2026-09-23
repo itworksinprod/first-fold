@@ -186,3 +186,19 @@ control flow only. No partial pass is publication or email approval.
 Budget: one writer request (1,200 requested output tokens), then at most four
 unit-review requests (600 each), maximum five calls / 3,600 output tokens. No
 retry, alternate model, paid fallback, email, scheduling change, or daily promotion.
+
+First live run 35817719595 (`3a256fd`) passed automated checks but was held after
+manual review: repeated numbers replaced useful analysis, generated units merged
+several assertions, and the compute-proxy explanation blurred the source's stated
+mechanism with separate coverage exclusions. The draft hash is
+`c0e4a8158981859f87b8e68b0ee96de727221f3b846972de69e96c6a032f0b37`;
+artifact SHA-256 is
+`0983acb8a60829d64cc916cb4128d5cfc8e0a884dd748460ce495bce4f7f3035`.
+It is not an approved summary.
+
+For a narrow revision, fact-sheet entries 2 and 5 now include the source's actual
+verification proposal (P4) and compute-intensity explanation (P8), separating the
+coverage exclusions (P10). Those paraphrases were manually checked against the
+unchanged captured passages. No scope flag or source fingerprint was changed.
+The experimental writer instructions now request useful non-repetitive analysis,
+separate assertions and a concrete headline. Validation thresholds are unchanged.
