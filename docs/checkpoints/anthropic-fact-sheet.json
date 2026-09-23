@@ -14,7 +14,7 @@
     },
     {
       "id": "evaluation-limits",
-      "text": "Anthropic identifies inconsistent cross-lab methods and potentially shared errors between its systems and evaluator models as limitations.",
+      "text": "For its AI R&D automation ratings, Anthropic identifies inconsistent cross-lab methods and potentially shared errors between its systems and evaluator models as limitations.",
       "passageIds": ["P4"]
     },
     {

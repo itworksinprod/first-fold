@@ -39,6 +39,10 @@ for (const outcome of ['pass', 'changed-source', 'veto', 'bad-hash', 'quota', 'c
         const { body } = buildWorkersAiRequest(options);
         await options.fetchImpl('https://provider.example/fixed', { method: 'POST', redirect: 'error', body: JSON.stringify(body) });
         const data = JSON.parse(options.messages[1].content);
+        if (requests === 1) {
+          assert.ok(Array.isArray(data.facts));
+          assert.equal(Object.hasOwn(data, 'sourceExcerpt'), false);
+        } else assert.equal(data.passages[0].text, excerpt);
         const payload = requests === 1 ? (outcome === 'copy' ? { ...draft, whatHappened: excerpt.repeat(5) } : draft)
           : { reviewSha256: data.reviewSha256, comparison: 'Synthetic mock only, not a semantic assessment.',
             evidenceIds: ['S1P1'], supported: outcome !== 'veto' };
