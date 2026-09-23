@@ -88,3 +88,30 @@ output tokens each; no retry or provider fallback. Invalid responses stop the
 run. All expected verdicts plus exact-text inspection of their explanations are
 required to close this limited checkpoint. Local mocks verify plumbing, not
 semantic reliability; a live pass is not general publication approval.
+
+### Live result: checkpoint remains held
+
+- Run 35814761170, revision `ecc1c74`: first negative was rejected, but the
+  comparison exceeded the existing 240-character response limit. Stopped after
+  one request; no format bypass. Artifact SHA-256:
+  `901805083bd04dc3c1dfd32fb42d0b0b2f268a70fb28b9352bc4522270206e9d`.
+- Run 35814982994, revision `747ec0b`: after a shorter-explanation instruction,
+  all eight responses were structurally valid, but only five verdicts were
+  correct. All four supported controls passed. Three unsupported article claims
+  were wrongly approved: the observed development consequence, its rephrasing,
+  and the incorrect denominator-based causal explanation. The sensor negative
+  was correctly rejected. Artifact SHA-256:
+  `64d57e51acbdb508f59b7f43e35e18a15868ae08d83d200b0113b9b54752f7c8`.
+
+Exact-response inspection confirms the problem is semantic, not a provider or
+delivery error. The first false positive explains only the supported ratings
+clause and ignores the unsupported development consequence. The other two
+repeat keywords rather than establish the claimed causal relationship. A shorter
+answer requirement did not reliably fix reasoning. This profile is NOT qualified
+for summary approval; a green local suite (1,252 tests) does not change that.
+No new draft, email, paid provider, or daily promotion occurred.
+
+Next narrow experiment: explicit clause-level evidence judgments with an
+all-clauses-must-pass decision, evaluated against these unchanged controls plus
+unseen controls. Do not keep rerunning this prompt until a lucky pass, hand-edit
+expected labels to fit outputs, or approve the prior rejected summary.
