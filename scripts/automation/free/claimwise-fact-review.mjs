@@ -1,4 +1,4 @@
-// Experimental: claims are manually enumerated for fixed controls, not generated.
+// Experimental entailment. Claim inventory completeness requires separate review.
 import { createHash } from 'node:crypto';
 import { buildFieldFactReview } from './field-fact-review.mjs';
 const bindings = new WeakMap();

@@ -65,7 +65,7 @@ export function assertDiagnosticAuthority(env) {
 }
 
 export function resolvePrivateWriterDiagnosticMode(value = "source") {
-  if (!["source", "source-recheck", "source-recheck-explicit", "source-field-review", "review-controls", "explicit-review-controls", "split-review-controls", "isolated-review-controls", "field-review-controls", "provider-only", "reviewed-fact-summary", "causal-review-controls", "claimwise-review-controls"].includes(value)) throw failure("DIAGNOSTIC_MODE_INVALID");
+  if (!["source", "source-recheck", "source-recheck-explicit", "source-field-review", "review-controls", "explicit-review-controls", "split-review-controls", "isolated-review-controls", "field-review-controls", "provider-only", "reviewed-fact-summary", "causal-review-controls", "claimwise-review-controls", "claimwise-fact-summary"].includes(value)) throw failure("DIAGNOSTIC_MODE_INVALID");
   return value;
 }
 
@@ -135,9 +135,10 @@ export async function diagnoseOneWriter({ publicKey, accountId, apiToken, now = 
   if (typeof apiToken !== "string" || !apiToken.trim()) throw failure("DIAGNOSTIC_CONFIGURATION_INVALID");
   if (mode === "provider-only") return diagnoseProvider({ publicKey, accountId, apiToken, now,
     aiRequestImpl, fetchImpl, endpoint });
-  if (mode === "reviewed-fact-summary") {
+  if (["reviewed-fact-summary", "claimwise-fact-summary"].includes(mode)) {
     const { diagnoseFactSummary } = await import('./fact-summary-diagnostic.mjs');
-    return diagnoseFactSummary({ publicKey, accountId, apiToken, now, aiRequestImpl, fetchImpl, endpoint, sealDiagnostic });
+    return diagnoseFactSummary({ publicKey, accountId, apiToken, now, aiRequestImpl, fetchImpl, endpoint, sealDiagnostic,
+      claimwise: mode === 'claimwise-fact-summary' });
   }
   if (["split-review-controls", "isolated-review-controls"].includes(mode)) {
     const { diagnoseSplitReview } = await import("./split-review-diagnostic.mjs");

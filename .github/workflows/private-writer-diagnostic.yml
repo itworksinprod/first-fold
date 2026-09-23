@@ -21,6 +21,7 @@ on:
           - reviewed-fact-summary
           - causal-review-controls
           - claimwise-review-controls
+          - claimwise-fact-summary
       public_key:
         description: Ephemeral RSA-3072 public key in base64 DER format (never a private key)
         required: true

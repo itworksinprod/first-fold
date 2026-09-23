@@ -164,3 +164,25 @@ apply it to a new single-article draft with a complete, independently checked cl
 inventory, then inspect exact prose for usefulness, attribution, originality and
 factual accuracy. Do not carry over approval from these fixtures or silently omit
 claims during decomposition. Email and daily integration remain later checkpoints.
+
+## New single-article summary checkpoint
+
+The opt-in `claimwise-fact-summary` mode re-fetches the same reviewed Anthropic
+article and verifies its full excerpt fingerprint before a new writing request.
+It is a newly written summary of that article, not a fresh daily news search.
+The writer receives the reviewed fact sheet only. Each body field is an array of
+one to four sentence-sized units. Joining those exact units is the displayed
+prose; no separate text can bypass the inventory. The headline is reviewed too.
+Every review receives the complete captured source context and uses the qualified
+claimwise policy. Missing or rejected unit verdicts stop the run.
+
+This guarantees text coverage, not semantic decomposition: a generated unit
+could still contain several assertions. Manual inventory and prose review remain
+mandatory, and a compound unit with an unsupported assertion cannot be approved.
+Success also requires specific useful prose, correct attribution and qualifications,
+150–225 body words, and the existing 12-word originality check. Local mocks test
+control flow only. No partial pass is publication or email approval.
+
+Budget: one writer request (1,200 requested output tokens), then at most four
+unit-review requests (600 each), maximum five calls / 3,600 output tokens. No
+retry, alternate model, paid fallback, email, scheduling change, or daily promotion.
