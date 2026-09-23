@@ -72,6 +72,10 @@ Use the space to explain the supervision-versus-autonomy distinction and the dif
 Do not pad with repetition or generic advice. Original wording: do not copy 12 consecutive source words.
 Lead with the concrete news, attribute claims to Anthropic, preserve dates, denominators and human supervision.
 Explain implications conditionally; no claims of independently verified safety, capability or productivity.
+Keep the limitations attached to their actual subject: shared judge errors concern automation ratings,
+not safety evaluations. Compute is an imperfect safety-effort proxy because safety research can use
+less computing power, NOT because the two reported percentages have different denominators.
+Different denominators simply mean the percentages describe different pools of work.
 Give a specific evidence-backed limitation to watch, not generic advice. Do not imply this is today's news.
 The article is one company's account. No tables or appendix are available. No outside facts or fabricated quotes.`,
       { attribution: sheet.attribution, facts: sheet.facts, sourceExcerpt: excerpt }, schema, 1200);
@@ -81,7 +85,7 @@ The article is one company's account. No tables or appendix are available. No ou
     const source = { publisher: 'Anthropic', passages: excerpt.split('\n').map((text, i) => ({ evidenceId: `S1P${i + 1}`, text })) };
     for (const field of fields) {
       const view = buildFieldFactReview({ text: draft[field], sources: [source] });
-      const response = await request(view.prompt, view.data, view.schema, 400);
+      const response = await request(`${view.prompt}\nSelect only 1–3 decisive evidenceIds, never more than the schema maximum of 8. Do not list every passage.`, view.data, view.schema, 400);
       const verdict = validateFieldFactReview(response, view);
       capture.fieldReviews.push({ field, response, verdict });
       if (!verdict.valid || !verdict.supported) throw fail('FACT_SUMMARY_REVIEW_REJECTED');
