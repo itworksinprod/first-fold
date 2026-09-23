@@ -2,22 +2,26 @@
 import { createHash } from "node:crypto";
 import { fieldReviewControls } from "../../tests/fixtures/field-review-controls.mjs";
 import { buildFieldFactReview, validateFieldFactReview } from "./free/field-fact-review.mjs";
+import { buildClaimwiseFactReview, validateClaimwiseFactReview } from './free/claimwise-fact-review.mjs';
 import { DEFAULT_CLOUDFLARE_AI_MODEL, buildWorkersAiRequest, workersAiFailureDiagnostic } from "./free/workers-ai.mjs";
 
 export async function diagnoseFieldReview({ publicKey, accountId, apiToken, now, aiRequestImpl, fetchImpl, endpoint, sealDiagnostic,
-  strictCausality = false, controls = fieldReviewControls() }) {
-  if (typeof strictCausality !== 'boolean' || !Array.isArray(controls) || !controls.length || controls.length > 8) throw new Error('FIELD_DIAGNOSTIC_INPUT');
+  strictCausality = false, claimwise = false, controls = fieldReviewControls() }) {
+  const cap = claimwise ? 10 : 8, tokens = claimwise ? 600 : 400;
+  if (typeof strictCausality !== 'boolean' || typeof claimwise !== 'boolean' || !Array.isArray(controls) || !controls.length || controls.length > cap) throw new Error('FIELD_DIAGNOSTIC_INPUT');
+  if (claimwise && controls.some(c => !Array.isArray(c.expectedClaims) || c.expectedClaims.length !== c.input.claims?.length ||
+      c.expectedClaims.some(v => typeof v !== 'boolean') || c.expected !== c.expectedClaims.every(Boolean))) throw new Error('FIELD_DIAGNOSTIC_LABELS');
   const cases = controls;
   const calls = [], results = [];
   let modelRequests = 0, networkRequests = 0;
   for (const control of cases) {
-    const view = buildFieldFactReview(control.input, { strictCausality });
+    const view = claimwise ? buildClaimwiseFactReview(control.input) : buildFieldFactReview(control.input, { strictCausality });
     const call = { request: view.data };
     calls.push(call);
     const options = { model: DEFAULT_CLOUDFLARE_AI_MODEL,
       messages: [{ role: "system", content: `${view.prompt}\nJSON schema:\n${JSON.stringify(view.schema)}` },
         { role: "user", content: JSON.stringify(view.data) }],
-      schema: view.schema, responseFormat: "json_object", maxTokens: 400, maxAttempts: 1,
+      schema: view.schema, responseFormat: "json_object", maxTokens: tokens, maxAttempts: 1,
       temperature: 0.1, timeoutMs: 90000, maxRequestBytes: 70000, maxResponseBytes: 100000 };
     const { body } = buildWorkersAiRequest(options);
     const bodyText = JSON.stringify(body);
@@ -25,21 +29,22 @@ export async function diagnoseFieldReview({ publicKey, accountId, apiToken, now,
       model: DEFAULT_CLOUDFLARE_AI_MODEL, body })).digest("hex");
     let requests = 0;
     try {
-      if (++modelRequests > 8) throw new Error("FIELD_DIAGNOSTIC_BUDGET");
+      if (++modelRequests > cap) throw new Error("FIELD_DIAGNOSTIC_BUDGET");
       const result = await aiRequestImpl({ ...options, accountId, apiToken,
         validatePayload: value => Boolean(value && typeof value === "object" && !Array.isArray(value)),
         fetchImpl: async (url, init) => {
           if (url !== endpoint || init?.method !== "POST" || init?.redirect !== "error" ||
-              init.body !== bodyText || ++requests > 1 || ++networkRequests > 8) throw new Error("FIELD_DIAGNOSTIC_NETWORK");
+              init.body !== bodyText || ++requests > 1 || ++networkRequests > cap) throw new Error("FIELD_DIAGNOSTIC_NETWORK");
           return fetchImpl(url, init);
         } });
       if (result.provider !== "cloudflare-workers-ai" || result.model !== DEFAULT_CLOUDFLARE_AI_MODEL ||
           result.requestSha256 !== requestSha256 || !/^[a-f0-9]{64}$/u.test(result.responseSha256 ?? "") ||
           result.attemptCount !== 1) throw new Error("FIELD_DIAGNOSTIC_PROVENANCE");
       call.response = structuredClone(result.editorialPayload);
-      const checked = validateFieldFactReview(call.response, view);
+      const checked = claimwise ? validateClaimwiseFactReview(call.response, view) : validateFieldFactReview(call.response, view);
       results.push({ caseId: control.caseId, ...checked, expected: control.expected,
-        passed: checked.valid && checked.supported === control.expected });
+        passed: checked.valid && checked.supported === control.expected &&
+          (!claimwise || checked.claims.every((v, i) => v === control.expectedClaims[i])) });
       if (!checked.valid) break;
     } catch (error) {
       call.failure = workersAiFailureDiagnostic(error);
@@ -47,8 +52,8 @@ export async function diagnoseFieldReview({ publicKey, accountId, apiToken, now,
     }
   }
   const passed = results.length === cases.length && results.every(result => result.passed);
-  const report = { mode: strictCausality ? 'causal-review-controls-not-an-edition' : "synthetic-field-review-controls-not-an-edition", status: passed ? "reviewer-controls-passed" : "failed",
-    modelRequests, networkRequests, outputBudget: modelRequests * 400, searchQueries: 0, emailSent: false,
+  const report = { mode: claimwise ? 'claimwise-review-controls-not-an-edition' : strictCausality ? 'causal-review-controls-not-an-edition' : "synthetic-field-review-controls-not-an-edition", status: passed ? "reviewer-controls-passed" : "failed",
+    modelRequests, networkRequests, outputBudget: modelRequests * tokens, searchQueries: 0, emailSent: false,
     cases: results.map(({ caseId, valid, passed }) => ({ caseId, valid, passed })),
     failures: calls.filter(call => call.failure).map(call => call.failure) };
   return { report, sealed: sealDiagnostic({ purpose: report.mode, capturedAt: now.toISOString(), calls, results, report }, publicKey) };

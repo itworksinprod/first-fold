@@ -115,3 +115,23 @@ Next narrow experiment: explicit clause-level evidence judgments with an
 all-clauses-must-pass decision, evaluated against these unchanged controls plus
 unseen controls. Do not keep rerunning this prompt until a lucky pass, hand-edit
 expected labels to fit outputs, or approve the prior rejected summary.
+
+## Claimwise reviewer experiment
+
+`claimwise-review-controls` preserves the eight original statements, full source
+contexts and overall expected verdicts, but manually enumerates their substantive
+claims. Two new synthetic controls cover a supported display-delay consequence
+and an unsupported staffing consequence. Manual claim decomposition is a limitation
+of this isolated evaluation, not proof that arbitrary prose can be decomposed safely.
+
+Every claim must receive an exact-ID, source-bound verdict. Code derives approval
+only if all claims pass; missing/duplicate/unknown claims or malformed responses
+fail closed. Qualification additionally requires every individual verdict to match
+its offline label, so rejecting the wrong clause cannot earn a pass. Labels are
+not sent to the model. No source prose or decrypted model output is published.
+
+The single run is capped at ten requests of 600 requested output tokens each,
+with one attempt per case and no provider fallback. Existing free provider and
+account settings are unchanged. Quota/format errors stop the run. No draft,
+email, paid fallback, schedule change or production promotion is authorized by
+this experiment. Exact explanations must be manually inspected after a live pass.

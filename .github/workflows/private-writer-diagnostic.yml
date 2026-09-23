@@ -20,6 +20,7 @@ on:
           - provider-only
           - reviewed-fact-summary
           - causal-review-controls
+          - claimwise-review-controls
       public_key:
         description: Ephemeral RSA-3072 public key in base64 DER format (never a private key)
         required: true
@@ -43,7 +44,7 @@ jobs:
         with:
           node-version: '24'
       - name: Test diagnostic boundaries before using credentials
-        run: node --test tests/causal-review.test.mjs tests/fact-summary-diagnostic.test.mjs tests/private-writer-diagnostic.test.mjs tests/reviewer-transport-diagnostic.test.mjs tests/split-claim-review.test.mjs tests/foundation-recheck.test.mjs tests/grounded-draft.test.mjs tests/free-workers-ai.test.mjs
+        run: node --test tests/claimwise-review.test.mjs tests/causal-review.test.mjs tests/fact-summary-diagnostic.test.mjs tests/private-writer-diagnostic.test.mjs tests/reviewer-transport-diagnostic.test.mjs tests/split-claim-review.test.mjs tests/foundation-recheck.test.mjs tests/grounded-draft.test.mjs tests/free-workers-ai.test.mjs
       - name: Validate diagnostic mode and encryption before credentials
         env:
           DIAGNOSTIC_PUBLIC_KEY: ${{ inputs.public_key }}

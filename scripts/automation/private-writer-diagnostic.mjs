@@ -65,7 +65,7 @@ export function assertDiagnosticAuthority(env) {
 }
 
 export function resolvePrivateWriterDiagnosticMode(value = "source") {
-  if (!["source", "source-recheck", "source-recheck-explicit", "source-field-review", "review-controls", "explicit-review-controls", "split-review-controls", "isolated-review-controls", "field-review-controls", "provider-only", "reviewed-fact-summary", "causal-review-controls"].includes(value)) throw failure("DIAGNOSTIC_MODE_INVALID");
+  if (!["source", "source-recheck", "source-recheck-explicit", "source-field-review", "review-controls", "explicit-review-controls", "split-review-controls", "isolated-review-controls", "field-review-controls", "provider-only", "reviewed-fact-summary", "causal-review-controls", "claimwise-review-controls"].includes(value)) throw failure("DIAGNOSTIC_MODE_INVALID");
   return value;
 }
 
@@ -148,11 +148,14 @@ export async function diagnoseOneWriter({ publicKey, accountId, apiToken, now = 
     const { diagnoseFieldReview } = await import("./field-review-diagnostic.mjs");
     return diagnoseFieldReview({ publicKey, accountId, apiToken, now, aiRequestImpl, fetchImpl, endpoint, sealDiagnostic });
   }
-  if (mode === 'causal-review-controls') {
+  if (['causal-review-controls', 'claimwise-review-controls'].includes(mode)) {
     const { diagnoseFieldReview } = await import('./field-review-diagnostic.mjs');
     const { loadCausalReviewCases } = await import('./causal-review-cases.mjs');
+    const original = await loadCausalReviewCases();
+    const claimwise = mode === 'claimwise-review-controls';
+    const controls = claimwise ? (await import('./claimwise-review-cases.mjs')).claimwiseReviewCases(original) : original;
     return diagnoseFieldReview({ publicKey, accountId, apiToken, now, aiRequestImpl, fetchImpl, endpoint, sealDiagnostic,
-      strictCausality: true, controls: await loadCausalReviewCases() });
+      strictCausality: true, claimwise, controls });
   }
   if (["review-controls", "explicit-review-controls"].includes(mode)) {
     const { diagnoseReviewerTransports } = await import("./reviewer-transport-diagnostic.mjs");
