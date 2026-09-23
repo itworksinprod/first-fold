@@ -72,7 +72,8 @@ export function prepareArticleRegion(html, { structuredPreview = false } = {}) {
     // CERT/CC's legacy template uses a named overview/solution region, not main.
     body.match(/<h3\b[^>]*id=["']overview["'][^>]*>([\s\S]*?)(?=<div\b[^>]*id=["']vendorinfo["'])/i)?.[1] ?? "";
   if (!body) return ""; // No confident article region: retain the feed evidence.
-  const title = plain(body.match(/<h1\b[^>]*>([\s\S]*?)<\/h1\s*>/i)?.[1] ?? "");
+  const title = plain(body.match(/<h1\b[^>]*>([\s\S]*?)<\/h1\s*>/i)?.[1] ??
+    body.match(/<p\b[^>]*id=["']pacing-title["'][^>]*>([\s\S]*?)<\/p\s*>/i)?.[1] ?? "");
   body = cleanArticleContainers(body, structuredPreview);
   return { body, title };
 }
@@ -81,6 +82,12 @@ export function extractArticleEvidence(html) {
   const region = prepareArticleRegion(html);
   if (!region) return "";
   const { body, title } = region;
+  // This report layout separates dated findings into lists and puts a large
+  // methodological appendix after the main report. Preserve complete labelled
+  // findings with their definitions, dates and limitations, not isolated bullets.
+  if (/<p\b[^>]*id=["']pacing-title["']/i.test(body)) {
+    return extractLabelledResearchReport(body, title);
+  }
   // HTML permits omitted </p> and </li> tags. A new block closes the previous
   // block; otherwise an entire article can collapse into one giant paragraph.
   const blocks = [...body.matchAll(/<(p|h[1-4]|li)\b[^>]*>([\s\S]*?)(?=<(?:p|h[1-4]|li)\b|<\/(?:p|h[1-4]|li)\s*>|$)/gi)]
@@ -94,6 +101,31 @@ export function extractArticleEvidence(html) {
   const text = kept.join("\n");
   if (text.length < 120) return "";
   return text;
+}
+
+function extractLabelledResearchReport(body, title) {
+  const blocks = [...body.matchAll(/<(p|h2|ul)\b[^>]*>([\s\S]*?)<\/\1\s*>/gi)]
+    .map(m => ({ tag: m[1].toLowerCase(), text: plain(m[2]) }));
+  const selected = [];
+  let appendix = false;
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i];
+    if (block.tag === "h2" && /^Appendix$/i.test(block.text)) appendix = true;
+    if (appendix) break;
+    if (block.tag !== "p" || !/^(?:What we measured\.|What we found\.|Two obstacles\b|Safety research tends\b|These are deliberately conservative estimates\.)/.test(block.text)) continue;
+    let text = block.text;
+    // Keep the short date introduction and its entire list attached to the
+    // definition paragraph; the ordinary 30-character filter loses this date.
+    if (/^What we found\./.test(text) && /^As of\b/.test(blocks[i + 1]?.text ?? "")) {
+      if (blocks[i + 2]?.tag !== "ul") return "";
+      text += " " + blocks[++i].text + " " + blocks[++i].text;
+    }
+    selected.push(text);
+  }
+  // Fail closed on a changed/oversized template rather than silently dropping
+  // a selected finding's context. This is an excerpt, not the full appendix.
+  const text = [title, ...selected].filter(Boolean).join("\n");
+  return selected.length >= 3 && text.length >= 120 && text.length <= MAX_ARTICLE_EXCERPT_CHARS ? text : "";
 }
 
 export { plain as plainArticleText };

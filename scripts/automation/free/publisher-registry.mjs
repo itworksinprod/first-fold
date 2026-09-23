@@ -6,7 +6,14 @@ const TRACKING_PARAMETER = /^(?:utm_.+|fbclid|gclid|msclkid|mc_cid|mc_eid|at_cam
 // Keep query targeting and exact-host article admission on the same reviewed
 // source union. A separately reviewed search-only source can be added here
 // without pretending it is an RSS feed or broadening hosts from provider data.
-const REVIEWED_SEARCH_SOURCES = FREE_FEED_SOURCES;
+// Article-only publisher: do not invent an RSS endpoint or count it as a feed.
+const REVIEWED_SEARCH_SOURCES = [...FREE_FEED_SOURCES, {
+  id: "anthropic-articles", publisher: "Anthropic", publisherKey: "anthropic",
+  primaryEntity: "Anthropic", relationship: "originating", format: "xml",
+  url: "https://www.anthropic.com/institute/",
+  feedHosts: ["www.anthropic.com"], itemHosts: ["www.anthropic.com"],
+  coverageDesks: ["ai"], deskPriors: { ai: 26 },
+}];
 
 export function reviewedSearchPublisher(value, expectedPublisherKey) {
   if (typeof value !== "string" || value.length > 2_048 || /[\p{Cc}\p{Cf}]/u.test(value)) return null;
