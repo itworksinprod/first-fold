@@ -55,8 +55,10 @@ A claimed causal effect, benefit, harm, or future consequence needs source evide
 for that specific relationship, even when qualified by could or may. Do not supply
 missing intermediate links from general knowledge. Conditional language can express
 source-stated uncertainty, but cannot turn a novel consequence into a supported one.
-In comparison, name the weakest clause and explain its support or missing link.
-Use fewer than 160 characters and 1–3 decisive evidenceIds (never more than 8).`
+In comparison, state ONLY the decisive support or missing causal link in one short
+sentence of at most 20 words and fewer than 160 characters. Do not recap the
+passages, list their IDs in prose, or combine supported and unsupported clauses.
+Put 1–3 decisive passage IDs only in evidenceIds (never more than 8).`
     : 'A proportionate conditional implication may be supported without verbatim matching.'}
 Write a short concrete comparison, identify the decisive evidenceIds, then give supported.
 True requires EVERY substantive assertion to follow; return false for contradiction,
