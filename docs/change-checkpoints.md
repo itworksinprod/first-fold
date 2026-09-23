@@ -70,3 +70,21 @@ Next gate: demonstrate rejection of that unsupported causal inference and
 acceptance of a supported measurement-only counterpart before trusting this
 reviewer on another draft. Then repeat exact-text editorial review. Do not
 replace a rejected statement and carry over its old review approval.
+
+## Causal-review qualification checkpoint
+
+The opt-in `causal-review-controls` diagnostic evaluates four supported controls
+and four unsupported ones, including the observed false positive, a rephrased
+version, an incorrect compute explanation, and a separate synthetic sensor case.
+Expected outcomes and case labels are withheld from the model. The first six
+receive the same complete, fingerprint-checked article excerpt. The remaining
+pair receives identical synthetic evidence. No draft is generated or emailed.
+
+The experimental strict profile requires support for every clause and causal
+relationship, including consequences qualified by “could” or “may.” Its policy
+identifier is bound into the evidence/statement hash. Default reviewers and daily
+delivery remain unchanged. Maximum eight single-attempt requests, 400 requested
+output tokens each; no retry or provider fallback. Invalid responses stop the
+run. All expected verdicts plus exact-text inspection of their explanations are
+required to close this limited checkpoint. Local mocks verify plumbing, not
+semantic reliability; a live pass is not general publication approval.

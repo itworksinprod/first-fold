@@ -1,15 +1,17 @@
-// Synthetic-only, encrypted qualification; no research, email, or production approval.
+// Encrypted fixed-evidence qualification; no discovery, email, or production approval.
 import { createHash } from "node:crypto";
 import { fieldReviewControls } from "../../tests/fixtures/field-review-controls.mjs";
 import { buildFieldFactReview, validateFieldFactReview } from "./free/field-fact-review.mjs";
 import { DEFAULT_CLOUDFLARE_AI_MODEL, buildWorkersAiRequest, workersAiFailureDiagnostic } from "./free/workers-ai.mjs";
 
-export async function diagnoseFieldReview({ publicKey, accountId, apiToken, now, aiRequestImpl, fetchImpl, endpoint, sealDiagnostic }) {
-  const cases = fieldReviewControls();
+export async function diagnoseFieldReview({ publicKey, accountId, apiToken, now, aiRequestImpl, fetchImpl, endpoint, sealDiagnostic,
+  strictCausality = false, controls = fieldReviewControls() }) {
+  if (typeof strictCausality !== 'boolean' || !Array.isArray(controls) || !controls.length || controls.length > 8) throw new Error('FIELD_DIAGNOSTIC_INPUT');
+  const cases = controls;
   const calls = [], results = [];
   let modelRequests = 0, networkRequests = 0;
   for (const control of cases) {
-    const view = buildFieldFactReview(control.input);
+    const view = buildFieldFactReview(control.input, { strictCausality });
     const call = { request: view.data };
     calls.push(call);
     const options = { model: DEFAULT_CLOUDFLARE_AI_MODEL,
@@ -45,7 +47,7 @@ export async function diagnoseFieldReview({ publicKey, accountId, apiToken, now,
     }
   }
   const passed = results.length === cases.length && results.every(result => result.passed);
-  const report = { mode: "synthetic-field-review-controls-not-an-edition", status: passed ? "reviewer-controls-passed" : "failed",
+  const report = { mode: strictCausality ? 'causal-review-controls-not-an-edition' : "synthetic-field-review-controls-not-an-edition", status: passed ? "reviewer-controls-passed" : "failed",
     modelRequests, networkRequests, outputBudget: modelRequests * 400, searchQueries: 0, emailSent: false,
     cases: results.map(({ caseId, valid, passed }) => ({ caseId, valid, passed })),
     failures: calls.filter(call => call.failure).map(call => call.failure) };
