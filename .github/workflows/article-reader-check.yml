@@ -8,6 +8,8 @@ on:
       - 'scripts/automation/free/article-evidence.mjs'
       - 'scripts/automation/free/publisher-registry.mjs'
       - 'tests/anthropic-article.test.mjs'
+      - 'scripts/automation/check-anthropic-facts.mjs'
+      - 'docs/checkpoints/anthropic-fact-sheet.json'
 permissions:
   contents: read
 jobs:
@@ -22,3 +24,5 @@ jobs:
         run: node --test tests/anthropic-article.test.mjs tests/article-evidence.test.mjs tests/search-articles.test.mjs
       - name: Verify live publisher extraction
         run: node scripts/automation/check-anthropic-reader.mjs
+      - name: Verify reviewed fact sheet evidence binding
+        run: node scripts/automation/check-anthropic-facts.mjs

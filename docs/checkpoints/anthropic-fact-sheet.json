@@ -1,0 +1,43 @@
+{
+  "status": "manually-reviewed-source-backed-facts-not-an-edition",
+  "sourceUrl": "https://www.anthropic.com/institute/measuring-pace-of-ai-development",
+  "publisherKey": "anthropic",
+  "retrievedAt": "2026-09-23T02:39:08.408Z",
+  "readerRevision": "ae11cbf080f8b19a2cc7824ada0803ae8cd71031",
+  "excerptSha256": "e6e37b0a9fddcb52cd0754f74559a54c62125ff78885deb709b276a1ca6f3d48",
+  "attribution": "Anthropic reports these measurements; this checkpoint does not independently verify them.",
+  "facts": [
+    {
+      "id": "automation",
+      "text": "As of August 2026, Anthropic classifies 26% of its AI R&D as led by Claude with human supervision. No measured work category reaches full autonomy.",
+      "passageIds": ["P2", "P3"]
+    },
+    {
+      "id": "evaluation-limits",
+      "text": "Anthropic identifies inconsistent cross-lab methods and potentially shared errors between its systems and evaluator models as limitations.",
+      "passageIds": ["P4"]
+    },
+    {
+      "id": "agents",
+      "text": "Anthropic reports roughly 30,000 concurrent research and engineering agents in August 2026 on its most-used internal platform—not across every platform.",
+      "passageIds": ["P6"]
+    },
+    {
+      "id": "safety-compute",
+      "text": "For the July 13–20 snapshot, safety received about 6% of AI R&D compute and about 12% of AI-driven AI R&D compute. These denominators differ.",
+      "passageIds": ["P7", "P9"]
+    },
+    {
+      "id": "compute-limits",
+      "text": "Compute share is an imperfect measure of safety effort. The estimates exclude safeguard classifiers and work that advances capability and safety equally.",
+      "passageIds": ["P8", "P10"]
+    }
+  ],
+  "scope": {
+    "independentCorroboration": false,
+    "publicationFreshnessVerified": false,
+    "tablesAndAppendixIncluded": false,
+    "summaryApproved": false,
+    "emailAuthorizedByThisArtifact": false
+  }
+}

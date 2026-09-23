@@ -20,3 +20,17 @@ writing, review, and email delivery are separate later checkpoints.
 The no-secret, no-email article-reader-check workflow tests the published revision
 against the fixed public URL. It logs checks, not publisher prose. Its success
 does not approve a summary or promote any experimental writer.
+
+## Anthropic fact-sheet checkpoint
+
+`checkpoints/anthropic-fact-sheet.json` contains five manually reviewed facts,
+supporting passage IDs (one-based newline blocks from the existing extractor),
+retrieval time, source fingerprint, and explicit unresolved scope flags. No full
+publisher text is republished. Review compares each paraphrase against its cited
+passages; figures, denominators, dates, attribution and qualifications must agree.
+
+The hosted evidence-binding check re-fetches the approved URL and rejects any
+change to the reviewed excerpt. A passing fingerprint proves evidence stability,
+not semantic correctness or independent corroboration. Changed evidence requires
+manual re-review, not automatic fingerprint replacement. This is a worked example,
+not an automated fact-sheet generator and not a publication-ready daily candidate.
