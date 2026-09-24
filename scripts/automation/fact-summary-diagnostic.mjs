@@ -8,6 +8,7 @@ import { buildClaimwiseFactReview, validateClaimwiseFactReview } from './free/cl
 import { DEFAULT_CLOUDFLARE_AI_MODEL, buildWorkersAiRequest, workersAiFailureDiagnostic } from './free/workers-ai.mjs';
 import { GENERIC_FACT_SUMMARY_PROMPT } from './free/generic-fact-summary-prompt.mjs';
 import { PLAIN_LANGUAGE_COPYEDIT_PROMPT } from './free/plain-language-copyedit-prompt.mjs';
+import { assertCopyeditQualifications } from './free/copyedit-qualification-guard.mjs';
 
 const fields = ['headline', 'whatHappened', 'whyItMatters', 'whatToWatch'];
 const hash = text => createHash('sha256').update(text).digest('hex');
@@ -138,6 +139,7 @@ The article is one company's account. No tables or appendix are available. No ou
       // Count/placement is a structural guard only. Exact-text review must still
       // check that no claim was silently removed, broadened or replaced.
       if (fields.some(field => checked.units[field].length !== normalized.units[field].length)) throw fail('FACT_SUMMARY_COPYEDIT_COVERAGE');
+      assertCopyeditQualifications(normalized.units, checked.units);
       raw = edited;
       normalized = checked;
       capture.rawDraft = structuredClone(raw);

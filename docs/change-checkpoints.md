@@ -461,3 +461,45 @@ of the baseline's claims, and plain language before steps two and three begin.
 The workflow's existing eight-minute outer timeout remains intentional: very slow
 provider responses may end the run before encrypted capture is written. That is
 a failed experiment, never permission to bypass review or retry automatically.
+
+### Copyeditor result: clearer prose, factual-preservation veto
+
+Run [35950208529](https://github.com/itworksinprod/first-fold/actions/runs/35950208529)
+used `d8426c1609de9f7464c3286ee6c79a9fdc5d556d`. Six requests completed and all
+four automatic checks passed. The 154-word edited body was clearer, but exact
+before/after inspection caught two material changes: a possible obstacle to a
+better answer became an inability to find the best answer; absence of deployment
+evidence became a claim that the capability had not been demonstrated. Neither
+preserves the baseline's qualification. The automated reviewer approved both.
+This run is a factual-preservation failure, NOT a completed plain-language step.
+
+Artifact 10788217869 SHA-256:
+`581a3562edab5dedba8297e07b33aac17ad0e5e68f7dfbc9325aff49baa8c73b`.
+Baseline draft SHA-256:
+`f16bba0d8be5d6baa815d8cf2929bd7510e79c3661fcc10282d2887fd7806120`.
+Rejected edited draft SHA-256:
+`30df9f73fd82de94ff88df07ccd56d3495dbface5c5a8024ebff4c2caa8b6a52`.
+The full suite passed 1,304 tests before publication. No email or promotion was
+performed. Next repair stays within copyediting: regression coverage for altered
+certainty, comparisons and negative-evidence scope, with a conservative guard
+before model review. Such lexical checks do not replace exact-text semantic review.
+
+### Copyediting qualification guard (step one remains open)
+
+Independent review confirmed both material changes above and noted omitted model
+category/deployment conditions and added causal phrasing. The copyeditor prompt
+now explicitly preserves possibility, comparative degree, category, operating
+conditions and the subject of a limitation. New fixed prompt SHA-256:
+`c98b26af1c8eef3a40510964b3ab105851862ef0266137ce3aefde22f5d84e81`.
+
+A conservative lexical guard compares modality, degree and negative-evidence cue
+counts per aligned unit before any model review. It rejects both observed faulty
+sections in the saved capture without another provider call. This is a hold
+trigger, not a semantic verifier: benign paraphrases can fail, and category,
+condition or causal drift without those cues can still pass. Synthetic tests
+explicitly preserve that limitation. Manual before/after and source comparison
+remain required and cannot be overridden by a green run.
+
+One new six-request/4,800-token maximum no-email trial will evaluate the distinct
+guarded copyeditor. No retry or switch of model; step two and step three remain
+blocked until the exact edited result passes factual preservation and clarity.

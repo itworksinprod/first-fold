@@ -83,7 +83,7 @@ async function runCopyeditFixture({ options = {}, writerPayload = copyeditInput,
         editorialPayload = structuredClone(writerPayload);
       } else if (editing) {
         assert.deepEqual(request.schema, writerSchema);
-        assert.deepEqual(data, { draft: copyeditInput, attribution: copyeditSheet.attribution, facts: copyeditSheet.facts });
+        assert.deepEqual(data, { draft: writerPayload, attribution: copyeditSheet.attribution, facts: copyeditSheet.facts });
         copyeditPrompt = request.messages[0].content.split('\nJSON schema:')[0];
         assert.notEqual(copyeditPrompt, GENERIC_FACT_SUMMARY_PROMPT);
         editorialPayload = structuredClone(editedPayload);
@@ -130,7 +130,7 @@ test('opt-in copyediting plumbing captures both versions and reviews every final
   assert.deepEqual(result.sealed.beforeCopyedit, { ...before, draftSha256: hash(JSON.stringify(before.draft)) });
   assert.equal(result.sealed.promptSha256, hash(GENERIC_FACT_SUMMARY_PROMPT));
   assert.equal(result.copyeditPrompt, PLAIN_LANGUAGE_COPYEDIT_PROMPT);
-  assert.equal(hash(PLAIN_LANGUAGE_COPYEDIT_PROMPT), 'e72898a39a163fcc1a58023da19e2ff99e54ab65ef20eed445a6c6d2959155b3');
+  assert.equal(hash(PLAIN_LANGUAGE_COPYEDIT_PROMPT), 'c98b26af1c8eef3a40510964b3ab105851862ef0266137ce3aefde22f5d84e81');
   assert.doesNotMatch(PLAIN_LANGUAGE_COPYEDIT_PROMPT, /\b(?:Anthropic|MIT|HardFlow|Claude|robot)\b/i);
   assert.equal(result.sealed.copyeditPromptSha256, hash(result.copyeditPrompt));
   assert.deepEqual(result.sealed.rawCopyedit, copyeditOutput);
@@ -207,6 +207,37 @@ for (const field of ['whatHappened', 'whyItMatters', 'whatToWatch']) {
     assert.deepEqual(result.sealed.rawCopyedit, editedPayload);
   });
 }
+
+test('copyediting qualification changes are held after two requests without review or fallback', async () => {
+  // Neutral synthetic phrases exercise lexical holds, not semantic qualification.
+  for (const [before, after] of [
+    ['The synthetic marker can move between two labeled boxes during this local test.',
+      'The synthetic marker moves between two labeled boxes during this local test.'],
+    ['The synthetic marker gives a better score during this local comparison of labeled boxes.',
+      'The synthetic marker gives the best score during this local comparison of labeled boxes.'],
+    ['The synthetic marker moves between two labeled boxes during this local test.',
+      'The synthetic marker does not move between two labeled boxes during this local test.'],
+  ]) {
+    const writerPayload = structuredClone(copyeditInput);
+    const editedPayload = structuredClone(copyeditOutput);
+    writerPayload.whatHappened[1] = before;
+    editedPayload.whatHappened[1] = after;
+    const result = await runCopyeditFixture({ writerPayload, editedPayload });
+    assert.equal(result.report.status, 'failed');
+    assert.equal(result.report.code, 'FACT_SUMMARY_COPYEDIT_QUALIFICATION');
+    assert.equal(result.requests.length, 2);
+    assert.equal(result.networkCalls.length, 2);
+    assert.equal(result.report.outputBudget, 2400);
+    assert.deepEqual(result.reviewRequests, []);
+    assert.deepEqual(result.sealed.fieldReviews, []);
+    assert.deepEqual(result.report.fieldsPassed, []);
+    assert.deepEqual(result.sealed.rawCopyedit, editedPayload);
+    assert.equal(result.sealed.beforeCopyedit.units.whatHappened[1], before);
+    assert.equal(result.sealed.draft, undefined, 'A lexical hold cannot accept either version as a fallback');
+    assert.equal(result.sealed.draftSha256, undefined);
+    assert.equal(result.sealed.reviewUnits, undefined);
+  }
+});
 
 for (const rejection of ['unsupported', 'omitted', 'stale-review']) {
   test(`copyediting final ${rejection} review stops immediately without inheriting earlier approval`, async () => {
