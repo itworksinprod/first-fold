@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { diagnoseFactSummary, validateFactSummary, normalizeClaimwiseSummary } from '../scripts/automation/fact-summary-diagnostic.mjs';
 import { buildWorkersAiRequest, DEFAULT_CLOUDFLARE_AI_MODEL } from '../scripts/automation/free/workers-ai.mjs';
 import { GENERIC_FACT_SUMMARY_PROMPT } from '../scripts/automation/free/generic-fact-summary-prompt.mjs';
@@ -140,6 +141,18 @@ test('plain-language checkpoint changes only presentation instructions, not sect
   assert.equal(GENERIC_FACT_SUMMARY_PROMPT.split(added).length, 2);
   assert.equal(hash(GENERIC_FACT_SUMMARY_PROMPT.replace(added, '')),
     'aeee569b4d1ab6897555eff115ebc832eb53db4e8e461caac7687d2998d6c149');
+});
+
+test('plain-language fact inputs include source-bound definitions without changing evidence scope', async () => {
+  const facts = JSON.parse(await readFile(new URL('../docs/checkpoints/mit-fact-sheet.json', import.meta.url), 'utf8'));
+  assert.equal(facts.excerptSha256, '081196aa0f2c507e6b75f5a7018a594af882468006401c1b1428f96e4eb74801');
+  assert.equal(facts.facts.length, 7);
+  assert.deepEqual(facts.facts.find(f => f.id === 'definition-required-rules').passageIds, ['P2']);
+  assert.deepEqual(facts.facts.find(f => f.id === 'definition-partial-solutions').passageIds, ['P12']);
+  assert.doesNotMatch(facts.facts.find(f => f.id === 'mechanism').text, /trajectory optimization|optimal control/);
+  assert.deepEqual(facts.scope, { manuallySelectedFacts: true, independentCorroboration: false,
+    fullArticleIncluded: false, publicationFreshnessVerified: false, summaryApproved: false,
+    emailAuthorizedByThisArtifact: false });
 });
 
 for (const outcome of ['pass', 'changed-source', 'veto', 'bad-hash', 'quota', 'copy']) {

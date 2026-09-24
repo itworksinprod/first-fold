@@ -6,6 +6,16 @@
   "attribution": "MIT News reports research by MIT researchers. This is the originating institution's account, not independent corroboration.",
   "facts": [
     {
+      "id": "definition-required-rules",
+      "text": "MIT uses hard constraints to mean requirements that must be met, such as safety rules, physical limits or conditions of the task.",
+      "passageIds": ["P2"]
+    },
+    {
+      "id": "definition-partial-solutions",
+      "text": "MIT calls a model's partial solutions during generation intermediate samples.",
+      "passageIds": ["P12"]
+    },
+    {
       "id": "method",
       "text": "MIT researchers developed HardFlow to steer generation toward final outputs that meet hard constraints, without requiring every intermediate sample to meet them.",
       "passageIds": ["P4", "P15"]
@@ -22,7 +32,7 @@
     },
     {
       "id": "mechanism",
-      "text": "Forcing intermediate samples to satisfy constraints can prevent a better final solution. HardFlow treats sampling as trajectory optimization, using optimal control to make corrections while enforcing final-output constraints.",
+      "text": "MIT says requiring partially formed answers to meet the strict requirements can stop a model reaching a better finished answer. HardFlow makes small corrections while a model generates an answer and enforces strict requirements on the finished result.",
       "passageIds": ["P12", "P13", "P16"]
     },
     {

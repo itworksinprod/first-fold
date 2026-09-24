@@ -385,3 +385,38 @@ identified through what they do; simpler wording does not add unsupported facts,
 guarantees, deployments or stronger claims. Both the exact-text source check and a
 separate reviewer must pass this scope before the next editorial change. A pass
 here is not approval of the complete article, automatic discovery or daily email.
+
+### Plain-language instruction-only result: HOLD
+
+Run [35949335191](https://github.com/itworksinprod/first-fold/actions/runs/35949335191)
+used `0e7794a48afb48fa1da3a309e6fe0814e26a1c83`. All four automated field reviews
+passed after five requests, but the 119-word body retained unexplained hard
+constraints, intermediate samples, pretrained models, trajectory optimization
+and optimal control. A green factual check did not satisfy this checkpoint.
+No retry or step-two/step-three changes were made for that attempt. All 1,280
+software tests passed before publishing. Artifact 10788276230 SHA-256:
+`d1147cdb5bdc1106836711d1468ef0cf2a260d9daa895cca2b9176040987d64a`.
+Draft SHA-256:
+`a013eeb25c9d442a6b7ca3c0a499c0df46553323582e33ca5f126636f2bb0a40`.
+
+The captured request confirms that the writer received jargon-heavy fact entries,
+not the source's explicit definitions in P2 and P12. This is an evidence-input
+limitation as well as an observed failure to follow the plain-language instruction;
+repeating the same run would not address it. The next repair must remain within
+step one and be tested separately; factual support cannot be carried across edits.
+
+### Step-one input repair (separate bounded experiment)
+
+The independent reviewer also held the exact text for unexplained terms. The
+generic prompt is now frozen unchanged at the step-one fingerprint above. The
+fact sheet adds two separately identified definitions, manually paraphrased from
+P2 and P12, and restates the mechanism fact in concrete language from P13/P16.
+The five development facts, attribution and all unresolved scope flags remain;
+no factual capability, benefit, future development or deployment claim is added.
+The source excerpt fingerprint is unchanged. This is a manually improved evidence
+packet, NOT demonstrated automatic extraction or a topic-independent success.
+
+One new no-email experiment will test that distinct input change under the same
+five-request/3,600-token ceiling and original plain-language pass criteria. No
+unchanged-run retry, model swap, section-purpose change or email. The new draft
+must receive its own exact-text factual and separate plain-language review.
