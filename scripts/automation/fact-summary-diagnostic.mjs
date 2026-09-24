@@ -20,7 +20,7 @@ export function validateFactSummary(draft, excerpt, publisher = 'Anthropic') {
         /[{}<>]|```|[\p{Cc}\p{Cf}]|["“”]\s*[:,]|\b(?:whatHappened|whyItMatters|whatToWatch)\s*["“”]?\s*:/u.test(draft[field])) throw fail('FACT_SUMMARY_TEXT');
   }
   const body = fields.slice(1).map(field => draft[field]).join(' ');
-  if (body.split(/\s+/).length < 150 || body.split(/\s+/).length > 225) throw fail('FACT_SUMMARY_LENGTH');
+  if (body.split(/\s+/).length < 110 || body.split(/\s+/).length > 225) throw fail('FACT_SUMMARY_LENGTH');
   if (!['Anthropic', 'MIT'].includes(publisher) || !new RegExp(`\\b${publisher}\\b`).test(draft.whatHappened)) throw fail('FACT_SUMMARY_ATTRIBUTION');
   const original = ` ${tokens(excerpt).join(' ')} `;
   const copy = tokens(fields.map(field => draft[field]).join(' '));
@@ -109,7 +109,7 @@ whatToWatch: explain the automation-rating limitation and proposed third-party o
 Describe human supervision as the reported state, not proof of a general need for oversight.
 Avoid filler such as 'is significant' and do not repeat the percentages in whyItMatters.`
   : 'Return exactly headline, whatHappened, whyItMatters, whatToWatch as plain text strings in JSON.'}
-Aim for 180–200 words across the three body fields (hard bounds 150–225, headline excluded).
+Aim for 180–200 words across the three body fields (hard bounds 110–225, headline excluded).
 Plan roughly 75 words for whatHappened, 65 for whyItMatters and 45 for whatToWatch.
 Use the space to explain the supervision-versus-autonomy distinction and the different compute denominators.
 Do not pad with repetition or generic advice. Original wording: do not copy 12 consecutive source words.

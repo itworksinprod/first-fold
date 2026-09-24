@@ -17,7 +17,7 @@ const sheet = { sourceUrl: 'https://www.anthropic.com/institute/measuring-pace-o
 
 test('summary requires exact fields, bounded prose, attribution and original wording', () => {
   assert.equal(validateFactSummary(draft, excerpt), true);
-  for (const bad of [{ ...draft, extra: true }, { ...draft, whatHappened: '{}' }, { ...draft, whatToWatch: 'Short.' },
+  for (const bad of [{ ...draft, extra: true }, { ...draft, whatHappened: '{}' }, { ...draft, whatHappened: 'Anthropic reports a change.', whyItMatters: 'Short.', whatToWatch: 'Short.' },
     { ...draft, headline: '<script>' }, { ...draft, whatHappened: draft.whatHappened.replace('Anthropic', 'A vendor') }]) {
     assert.throws(() => validateFactSummary(bad, excerpt));
   }
@@ -26,6 +26,18 @@ test('summary requires exact fields, bounded prose, attribution and original wor
 
 const unitDraft = Object.fromEntries(Object.entries(draft).map(([field, value]) =>
   [field, field === 'headline' ? value : value.match(/[^.]+\./g).map(s => s.trim())]));
+
+test('user-approved 110-word minimum and 225-word maximum exclude the headline', () => {
+  for (const count of [109, 110, 116, 149, 150, 225, 226]) {
+    // Synthetic text checks boundaries only, never editorial quality.
+    const words = Array.from({ length: count }, (_, i) => i === 0 ? 'MIT' : `token${i}`);
+    const candidate = { headline: 'This headline never contributes to the body word count',
+      whatHappened: words.slice(0, 40).join(' '), whyItMatters: words.slice(40, 75).join(' '),
+      whatToWatch: words.slice(75).join(' ') };
+    if (count >= 110 && count <= 225) assert.equal(validateFactSummary(candidate, excerpt, 'MIT'), true);
+    else assert.throws(() => validateFactSummary(candidate, excerpt, 'MIT'), /FACT_SUMMARY_LENGTH/);
+  }
+});
 
 test('claimwise summary derives every displayed word from the captured review inventory', () => {
   const input = structuredClone(unitDraft);
@@ -108,7 +120,8 @@ for (const outcome of ['pass', 'veto', 'omitted', 'bad-hash', 'quota', 'changed-
 }
 
 test('generalization prompt is frozen, topic-independent and profile scope is closed', async () => {
-  assert.equal(hash(GENERIC_FACT_SUMMARY_PROMPT), '47895a243263950e287a6da63c67551e7d125aa376a52cb5901fc150d780457a');
+  assert.equal(hash(GENERIC_FACT_SUMMARY_PROMPT), 'aeee569b4d1ab6897555eff115ebc832eb53db4e8e461caac7687d2998d6c149');
+  assert.match(GENERIC_FACT_SUMMARY_PROMPT, /hard bounds 110–225, headline excluded/);
   assert.doesNotMatch(GENERIC_FACT_SUMMARY_PROMPT, /\b(?:Anthropic|MIT|HardFlow|compute|Claude|robot)\b|26%/i);
   for (const options of [{ profile: 'arbitrary-url', claimwise: true }, { profile: 'mit-generalization', claimwise: false }]) {
     await assert.rejects(diagnoseFactSummary(options), /FACT_SUMMARY_PROFILE/);

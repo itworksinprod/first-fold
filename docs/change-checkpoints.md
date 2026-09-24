@@ -5,6 +5,13 @@ locally, review the diff, publish the intended revision, verify that revision
 live, and report evidence. A failed checkpoint remains unfinished. Distinguish
 built, locally tested, published, and live verified; do not advance on tests alone.
 
+Current experimental summary requirement: the user explicitly lowered the
+minimum body length to **110 words**, retaining the **225-word maximum**. The
+headline is excluded. This supersedes only the length floor in the historical
+checkpoints below, not their recorded outcomes or any factual/editorial veto.
+Daily production requirements remain unchanged until a separate integration
+checkpoint; this change applies to the isolated fact-summary diagnostics.
+
 ## Anthropic reader checkpoint
 
 Scope: approve the exact www.anthropic.com publisher host as an originating
@@ -295,3 +302,25 @@ should address reliable body planning/length and useful synthesis in a generic,
 bounded way, with its own tests and a predeclared live evaluation. Do not add
 MIT-specific instructions, pad the text, weaken the length limit, or retry until
 a lucky response passes. Automatic fact selection remains a separate checkpoint.
+
+## User-approved 110-word floor
+
+The user requested the minimum change after seeing the second-article result.
+Both isolated fact-summary prompt variants and their shared validator now use
+110–225 body words. No source, originality, attribution, per-unit evidence review,
+manual editorial review, cost, request, or delivery guard was weakened. The generic
+prompt differs from the frozen trial only in the user-approved numeric floor;
+new prompt SHA-256:
+`aeee569b4d1ab6897555eff115ebc832eb53db4e8e461caac7687d2998d6c149`.
+
+Re-evaluating the exact saved MIT response from run 35942202356 locally passes
+the static shape, length (116 words), attribution and originality checks. No text
+was rewritten and no model was called. This is NOT a retrospective successful
+workflow run: that run remains failed, and the four automated field reviews never
+ran. Editorial usefulness and the completed review chain remain open gates.
+
+All 1,279 local tests pass. Boundary regression tests reject 109 and 226 words,
+accept 110 through 225, including the 116-word range, and exclude headline words.
+Next: a bounded no-email
+live check under the revised contract, then exact-text source and usefulness
+review. Do not claim publication readiness merely because the length gate passes.
