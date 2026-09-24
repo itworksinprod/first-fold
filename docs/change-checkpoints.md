@@ -362,3 +362,26 @@ section honestly. Review the exact replacement text before approving any preview
 or email. Do not carry this draft's factual verdict across an edit. Daily delivery,
 automatic fact selection, full-article coverage and broader generalization remain
 separate unfinished checkpoints.
+
+## Sequential editorial checkpoints: 1. Plain language
+
+The user requested the three editorial repairs separately. This checkpoint changes
+only generic readability instructions: use everyday wording, explain necessary
+technical terms using the supplied facts, and preserve scope and limitations.
+The section-purpose rules for Why it matters and What to watch are unchanged;
+their respective improvements remain later checkpoints. A regression test removes
+the four new instructions and recovers the prior prompt fingerprint exactly.
+
+Predeclared prompt SHA-256:
+`2976ca639f09e1a68bb675633b352738ee96c086e396910f32b6fe59a390ee46`.
+The fixed source, manually selected fact sheet, 110–225 body-word limit,
+originality gate and exact-text factual review stay unchanged. One live no-email
+attempt, at most five requests and 3,600 requested output tokens; no retry or paid
+fallback. Source and draft captures remain encrypted in GitHub artifacts.
+
+Pass criteria for this step: a non-specialist can understand the headline and
+core explanation without unexplained technical terminology; necessary names are
+identified through what they do; simpler wording does not add unsupported facts,
+guarantees, deployments or stronger claims. Both the exact-text source check and a
+separate reviewer must pass this scope before the next editorial change. A pass
+here is not approval of the complete article, automatic discovery or daily email.

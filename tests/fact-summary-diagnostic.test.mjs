@@ -120,7 +120,7 @@ for (const outcome of ['pass', 'veto', 'omitted', 'bad-hash', 'quota', 'changed-
 }
 
 test('generalization prompt is frozen, topic-independent and profile scope is closed', async () => {
-  assert.equal(hash(GENERIC_FACT_SUMMARY_PROMPT), 'aeee569b4d1ab6897555eff115ebc832eb53db4e8e461caac7687d2998d6c149');
+  assert.equal(hash(GENERIC_FACT_SUMMARY_PROMPT), '2976ca639f09e1a68bb675633b352738ee96c086e396910f32b6fe59a390ee46');
   assert.match(GENERIC_FACT_SUMMARY_PROMPT, /hard bounds 110–225, headline excluded/);
   assert.doesNotMatch(GENERIC_FACT_SUMMARY_PROMPT, /\b(?:Anthropic|MIT|HardFlow|compute|Claude|robot)\b|26%/i);
   for (const options of [{ profile: 'arbitrary-url', claimwise: true }, { profile: 'mit-generalization', claimwise: false }]) {
@@ -128,6 +128,18 @@ test('generalization prompt is frozen, topic-independent and profile scope is cl
   }
   assert.throws(() => validateFactSummary(draft, excerpt, ''), /ATTRIBUTION/);
   assert.throws(() => validateFactSummary({ ...draft, whatHappened: draft.whatHappened.replace('Anthropic', 'COMMIT') }, excerpt, 'MIT'), /ATTRIBUTION/);
+});
+
+test('plain-language checkpoint changes only presentation instructions, not section purposes or evidence rules', () => {
+  const added = [
+    'Write for a curious reader who follows technology but is not a specialist in this subject.',
+    'Use everyday wording in the headline and body. Replace technical terms with a source-supported explanation on first use, rather than adding a second technical term.',
+    'Keep a technical name only when needed to identify the method or product; explain what it does using the reviewed facts.',
+    'A simpler explanation must preserve the original conditions and limits. If the reviewed facts do not support an explanation, omit the nonessential term rather than supply background from memory.',
+  ].join('\n') + '\n';
+  assert.equal(GENERIC_FACT_SUMMARY_PROMPT.split(added).length, 2);
+  assert.equal(hash(GENERIC_FACT_SUMMARY_PROMPT.replace(added, '')),
+    'aeee569b4d1ab6897555eff115ebc832eb53db4e8e461caac7687d2998d6c149');
 });
 
 for (const outcome of ['pass', 'changed-source', 'veto', 'bad-hash', 'quota', 'copy']) {
