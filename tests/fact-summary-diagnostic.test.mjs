@@ -44,7 +44,7 @@ test('claimwise summary derives every displayed word from the captured review in
 });
 
 for (const profile of ['anthropic', 'mit-generalization']) {
-for (const outcome of ['pass', 'veto', 'omitted', 'bad-hash', 'quota', 'changed-source', 'wrong-source']) {
+for (const outcome of ['pass', 'veto', 'omitted', 'bad-hash', 'quota', 'changed-source', 'wrong-source', 'too-short']) {
   test(`claimwise ${profile} summary ${outcome} checks all units without email or retry`, async () => {
     const generic = profile === 'mit-generalization';
     const expectedDraft = generic ? JSON.parse(JSON.stringify(draft).replaceAll('Anthropic', 'MIT')) : draft;
@@ -67,6 +67,8 @@ for (const outcome of ['pass', 'veto', 'omitted', 'bad-hash', 'quota', 'changed-
         if (outcome === 'quota') throw Object.assign(new Error('private quota detail'), { code: 'QUOTA' });
         const data = JSON.parse(options.messages[1].content);
         let editorialPayload = expectedUnits;
+        if (outcome === 'too-short') editorialPayload = Object.fromEntries(Object.entries(expectedUnits).map(([k, v]) =>
+          [k, k === 'headline' ? v : [v[0]]]));
         if (calls === 1 && generic) {
           assert.equal(options.messages[0].content.split('\nJSON schema:')[0], GENERIC_FACT_SUMMARY_PROMPT);
           assert.deepEqual(data, { attribution: expectedSheet.attribution, facts: expectedSheet.facts });
@@ -86,9 +88,15 @@ for (const outcome of ['pass', 'veto', 'omitted', 'bad-hash', 'quota', 'changed-
     assert.equal(result.report.emailSent, false);
     assert.equal(result.report.searchQueries, 0);
     assert.ok(result.report.outputBudget <= 3600);
-    assert.equal(calls, outcome === 'pass' ? 5 : ['changed-source', 'wrong-source'].includes(outcome) ? 0 : outcome === 'quota' ? 1 : 2);
+    assert.equal(calls, outcome === 'pass' ? 5 : ['changed-source', 'wrong-source'].includes(outcome) ? 0 : ['quota', 'too-short'].includes(outcome) ? 1 : 2);
     assert.equal(result.report.status, outcome === 'pass' ? 'draft-awaiting-manual-review' : 'failed');
     assert.doesNotMatch(JSON.stringify(result.report), /private quota detail/);
+    if (outcome === 'too-short') {
+      assert.equal(result.report.code, 'FACT_SUMMARY_LENGTH');
+      assert.equal(result.sealed.fieldReviews.length, 0);
+      assert.ok(result.sealed.rawDraft);
+      assert.equal(result.sealed.draft, undefined);
+    }
     if (outcome === 'pass') {
       assert.deepEqual(checkedUnits, Object.values(result.sealed.reviewUnits));
       assert.deepEqual(result.sealed.draft, expectedDraft);

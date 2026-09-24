@@ -261,3 +261,37 @@ check of usefulness, attribution, scope and unsupported implications. It remains
 a hold if the automated reviewer passes text that fails manual review. Budget:
 five requests at most, 3,600 requested output tokens, existing free provider only.
 No email, paid fallback, scheduling changes, recipient changes or promotion.
+
+### Second-article result: tested, not passed
+
+Live run [35942202356](https://github.com/itworksinprod/first-fold/actions/runs/35942202356)
+used `fb2591094c8731d6f420131286e399d426f9c21d` and the frozen prompt hash above.
+The protected source excerpt matched the predeclared fingerprint. One writer
+request succeeded, but its six body units contained only 116 words, below the
+unchanged 150–225-word requirement. The gate returned `FACT_SUMMARY_LENGTH` before
+any model review. No retries, repair prompts, alternative models, email or daily
+changes followed. The request allowed at most 1,200 output tokens (not a
+measurement of billed/actual generated tokens). All 1,278 local tests passed,
+including short-output rejection before review with the raw response retained
+only inside the encrypted diagnostic.
+
+Downloaded artifact SHA-256:
+`a48be668c59d1f735b08f81c2c11d93d7df586bac750e5d90733cd16f3bd0abb`.
+Raw, unapproved response SHA-256:
+`9f8e29982c3488d4dc509ad0d312668ab160a932e957065230bdd81edac1528f`.
+The decrypted capture stays outside the public repository.
+
+Manual inspection of all seven units (including headline) found the factual
+content supported by the captured passages: method P4/P15, experiments P5,
+deployment P6, intermediate-sample limitation P13, control formulation P16, and
+conditional robot-path example P20. However, the response mostly reproduced the
+manually prepared facts with limited explanation. A supported short digest is
+not a pass for the requested finished summary, nor evidence that the reviewer
+generalizes: no automated review calls were reached. This remains an unapproved
+draft and does not inherit the first article's approval.
+
+The experiment is complete; generalization remains unproven. Next small repair
+should address reliable body planning/length and useful synthesis in a generic,
+bounded way, with its own tests and a predeclared live evaluation. Do not add
+MIT-specific instructions, pad the text, weaken the length limit, or retry until
+a lucky response passes. Automatic fact selection remains a separate checkpoint.
