@@ -12,6 +12,11 @@ checkpoints below, not their recorded outcomes or any factual/editorial veto.
 Daily production requirements remain unchanged until a separate integration
 checkpoint; this change applies to the isolated fact-summary diagnostics.
 
+Current sequential editorial status: **step 1 (plain language) is still held**.
+The qualification guard is locally tested and live-verified, but the edited article
+is not approved. Step 2 (useful significance) and step 3 (meaningful watch guidance)
+have not started. Do not advance merely because a safety guard works as intended.
+
 ## Anthropic reader checkpoint
 
 Scope: approve the exact www.anthropic.com publisher host as an originating
@@ -503,3 +508,35 @@ remain required and cannot be overridden by a green run.
 One new six-request/4,800-token maximum no-email trial will evaluate the distinct
 guarded copyeditor. No retry or switch of model; step two and step three remain
 blocked until the exact edited result passes factual preservation and clarity.
+
+### Guarded live result: protection verified, article still held
+
+Run [35950798848](https://github.com/itworksinprod/first-fold/actions/runs/35950798848)
+used `b86a03de3edf65316823ff3e956f4fa5e5608733`. It stopped at
+`FACT_SUMMARY_COPYEDIT_QUALIFICATION` after the writer and copyeditor: two requests,
+2,400 requested output tokens, no factual-review calls, no accepted draft, no
+fallback and no email. The 120-word raw edit was retained only in the encrypted
+diagnostic. The existing source fingerprint was unchanged.
+
+Artifact 10788233781 SHA-256:
+`1200d7991d72f701b9117143b88a31d2a069182e737bb7a6fe715d4c4480a498`.
+Unapproved normalized edit SHA-256, calculated locally for evidence only:
+`8b40172144c62896265d5f394f87edbeeb8cc1d56831d6b64acd2e07bad7075e`.
+No provider review or publication approval is implied by that local normalization.
+
+Exact before/after inspection found substantive omissions, not merely a harmless
+lexical false positive: the intermediate-versus-final distinction, one experimental
+domain, the generative-model category and deployment-time condition, and the
+deployment-evidence caveat were removed. The edit also changed can to could and
+added a better-results claim to the first unit. The guard correctly held this
+version; its success does not solve the readability task. A separate reviewing
+agent independently confirmed these omissions and the justified hold. All 1,309 local tests
+passed before the run, including negative controls and explicit demonstrations
+that same-signature semantic drift can still evade this lexical guard.
+
+The bounded experiment is concluded without a retry. Step one remains incomplete.
+Next narrow design: constrain the editor to small, exact phrase replacements in
+the immutable baseline, leaving surrounding claims/conditions untouched, then
+apply the same qualification checks and exact-text review. This should be tested
+as a new isolated checkpoint, not used to override today's hold. Steps two/three,
+email, daily promotion, automatic fact extraction and wider generalization wait.
