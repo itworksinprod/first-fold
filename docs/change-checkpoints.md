@@ -236,3 +236,28 @@ still caught faults the automated reviewer missed in earlier runs. Sentence-size
 units do not prove automatic atomic-claim extraction. Next checkpoint: test a
 different article without article-specific prompt changes, and assess whether the
 writer/reviewer approach generalizes before daily integration or an email test.
+
+## Second-article generalization checkpoint (predeclared, no-email)
+
+The new opt-in `generic-second-article` mode tests the reviewed MIT HardFlow
+article with a separate, topic-independent writer prompt. The previously passed
+Anthropic path and daily production are unchanged. The generic prompt was fixed
+before any live second-article writing response; SHA-256:
+`47895a243263950e287a6da63c67551e7d125aa376a52cb5901fc150d780457a`.
+No topic examples, expected prose or article-specific correction instructions
+are part of it. One live attempt, no retry or prompt tuning to rescue this sample.
+
+The five fact-sheet entries were manually compared with the protected reader's
+captured paragraphs: method P4/P15, reported experiments P5, deployment P6,
+mechanism P12/P13/P16, additional goals and conditional example P20. The bounded
+excerpt does not include the entire article or underlying paper. This tests
+writing and review from manually prepared facts, not automatic extraction,
+selection, freshness, independent corroboration or full daily delivery.
+
+The fixed source URL/publisher and full excerpt hash must match before writing.
+Success requires unchanged 150–225-word and originality limits, every displayed
+unit reviewed against captured source passages, and a separate exact-text manual
+check of usefulness, attribution, scope and unsupported implications. It remains
+a hold if the automated reviewer passes text that fails manual review. Budget:
+five requests at most, 3,600 requested output tokens, existing free provider only.
+No email, paid fallback, scheduling changes, recipient changes or promotion.

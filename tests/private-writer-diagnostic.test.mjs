@@ -411,6 +411,7 @@ test("mode and key preflight reject before credentials while the omitted mode st
   assert.equal(resolvePrivateWriterDiagnosticMode(), "source");
   assert.equal(resolvePrivateWriterDiagnosticMode("source"), "source");
   assert.equal(resolvePrivateWriterDiagnosticMode("provider-only"), "provider-only");
+  assert.equal(resolvePrivateWriterDiagnosticMode("generic-second-article"), "generic-second-article");
   const env = { ...authority, DIAGNOSTIC_PUBLIC_KEY: publicKey, PRIVATE_WRITER_DIAGNOSTIC_MODE: "provider-only" };
   for (const field of ["CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_AI_API_TOKEN"]) {
     Object.defineProperty(env, field, { enumerable: true, get() { assert.fail("Preflight must not read credentials"); } });

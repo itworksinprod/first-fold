@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { diagnoseFactSummary, validateFactSummary, normalizeClaimwiseSummary } from '../scripts/automation/fact-summary-diagnostic.mjs';
 import { buildWorkersAiRequest, DEFAULT_CLOUDFLARE_AI_MODEL } from '../scripts/automation/free/workers-ai.mjs';
+import { GENERIC_FACT_SUMMARY_PROMPT } from '../scripts/automation/free/generic-fact-summary-prompt.mjs';
 const hash = text => createHash('sha256').update(text).digest('hex');
 const excerpt = 'Synthetic evidence used solely for control-flow tests, not real factual qualification.';
 const draft = {
@@ -42,13 +43,21 @@ test('claimwise summary derives every displayed word from the captured review in
   assert.throws(() => normalizeClaimwiseSummary(unitDraft, draft.whatHappened), /ORIGINALITY/);
 });
 
-for (const outcome of ['pass', 'veto', 'omitted', 'bad-hash', 'quota', 'changed-source']) {
-  test(`claimwise new summary ${outcome} checks all units without email or retry`, async () => {
+for (const profile of ['anthropic', 'mit-generalization']) {
+for (const outcome of ['pass', 'veto', 'omitted', 'bad-hash', 'quota', 'changed-source', 'wrong-source']) {
+  test(`claimwise ${profile} summary ${outcome} checks all units without email or retry`, async () => {
+    const generic = profile === 'mit-generalization';
+    const expectedDraft = generic ? JSON.parse(JSON.stringify(draft).replaceAll('Anthropic', 'MIT')) : draft;
+    const expectedUnits = generic ? JSON.parse(JSON.stringify(unitDraft).replaceAll('Anthropic', 'MIT')) : unitDraft;
+    const expectedSheet = generic ? { ...sheet, publisherKey: 'mit', sourceUrl: 'https://news.mit.edu/2026/new-method-enables-ai-safety-critical-situations-0914' } : sheet;
     let calls = 0;
     const checkedUnits = [];
     const result = await diagnoseFactSummary({ publicKey: 'mock', accountId: '0'.repeat(32), apiToken: 'mock',
-      now: new Date('2026-09-23T04:00:00Z'), endpoint: 'https://provider.example/fixed', claimwise: true,
-      articleFetcher: async () => outcome === 'changed-source' ? 'changed' : excerpt, sheetLoader: async () => sheet,
+      now: new Date('2026-09-23T04:00:00Z'), endpoint: 'https://provider.example/fixed', claimwise: true, profile,
+      articleFetcher: async input => {
+        assert.deepEqual(input, { url: expectedSheet.sourceUrl, publisherKey: expectedSheet.publisherKey });
+        return outcome === 'changed-source' ? 'changed' : excerpt;
+      }, sheetLoader: async () => outcome === 'wrong-source' ? { ...expectedSheet, sourceUrl: 'https://untrusted.example/' } : expectedSheet,
       sealDiagnostic: v => v, fetchImpl: async () => ({ ok: true }), aiRequestImpl: async options => {
         calls++;
         assert.equal(options.maxAttempts, 1);
@@ -57,7 +66,11 @@ for (const outcome of ['pass', 'veto', 'omitted', 'bad-hash', 'quota', 'changed-
         await options.fetchImpl('https://provider.example/fixed', { method: 'POST', redirect: 'error', body: JSON.stringify(body) });
         if (outcome === 'quota') throw Object.assign(new Error('private quota detail'), { code: 'QUOTA' });
         const data = JSON.parse(options.messages[1].content);
-        let editorialPayload = unitDraft;
+        let editorialPayload = expectedUnits;
+        if (calls === 1 && generic) {
+          assert.equal(options.messages[0].content.split('\nJSON schema:')[0], GENERIC_FACT_SUMMARY_PROMPT);
+          assert.deepEqual(data, { attribution: expectedSheet.attribution, facts: expectedSheet.facts });
+        }
         if (calls > 1) {
           checkedUnits.push(data.claims.map(c => c.text));
           assert.equal(data.passages[0].text, excerpt);
@@ -73,16 +86,28 @@ for (const outcome of ['pass', 'veto', 'omitted', 'bad-hash', 'quota', 'changed-
     assert.equal(result.report.emailSent, false);
     assert.equal(result.report.searchQueries, 0);
     assert.ok(result.report.outputBudget <= 3600);
-    assert.equal(calls, outcome === 'pass' ? 5 : outcome === 'changed-source' ? 0 : outcome === 'quota' ? 1 : 2);
+    assert.equal(calls, outcome === 'pass' ? 5 : ['changed-source', 'wrong-source'].includes(outcome) ? 0 : outcome === 'quota' ? 1 : 2);
     assert.equal(result.report.status, outcome === 'pass' ? 'draft-awaiting-manual-review' : 'failed');
     assert.doesNotMatch(JSON.stringify(result.report), /private quota detail/);
     if (outcome === 'pass') {
       assert.deepEqual(checkedUnits, Object.values(result.sealed.reviewUnits));
-      assert.deepEqual(result.sealed.draft, draft);
-      assert.equal(result.sealed.draftSha256, hash(JSON.stringify(draft)));
+      assert.deepEqual(result.sealed.draft, expectedDraft);
+      assert.equal(result.sealed.draftSha256, hash(JSON.stringify(expectedDraft)));
+      if (generic) assert.equal(result.sealed.promptSha256, hash(GENERIC_FACT_SUMMARY_PROMPT));
     }
   });
 }
+}
+
+test('generalization prompt is frozen, topic-independent and profile scope is closed', async () => {
+  assert.equal(hash(GENERIC_FACT_SUMMARY_PROMPT), '47895a243263950e287a6da63c67551e7d125aa376a52cb5901fc150d780457a');
+  assert.doesNotMatch(GENERIC_FACT_SUMMARY_PROMPT, /\b(?:Anthropic|MIT|HardFlow|compute|Claude|robot)\b|26%/i);
+  for (const options of [{ profile: 'arbitrary-url', claimwise: true }, { profile: 'mit-generalization', claimwise: false }]) {
+    await assert.rejects(diagnoseFactSummary(options), /FACT_SUMMARY_PROFILE/);
+  }
+  assert.throws(() => validateFactSummary(draft, excerpt, ''), /ATTRIBUTION/);
+  assert.throws(() => validateFactSummary({ ...draft, whatHappened: draft.whatHappened.replace('Anthropic', 'COMMIT') }, excerpt, 'MIT'), /ATTRIBUTION/);
+});
 
 for (const outcome of ['pass', 'changed-source', 'veto', 'bad-hash', 'quota', 'copy']) {
   test(`bounded fact summary ${outcome} cannot send or silently retry`, async () => {

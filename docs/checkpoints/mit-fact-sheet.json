@@ -1,0 +1,42 @@
+{
+  "status": "manually-reviewed-source-backed-facts-not-an-edition",
+  "sourceUrl": "https://news.mit.edu/2026/new-method-enables-ai-safety-critical-situations-0914",
+  "publisherKey": "mit",
+  "excerptSha256": "081196aa0f2c507e6b75f5a7018a594af882468006401c1b1428f96e4eb74801",
+  "attribution": "MIT News reports research by MIT researchers. This is the originating institution's account, not independent corroboration.",
+  "facts": [
+    {
+      "id": "method",
+      "text": "MIT researchers developed HardFlow to steer generation toward final outputs that meet hard constraints, without requiring every intermediate sample to meet them.",
+      "passageIds": ["P4", "P15"]
+    },
+    {
+      "id": "reported-results",
+      "text": "MIT reports experiments across robotics, control of physical processes and computer vision in which the method satisfied required constraints and found better solutions than existing techniques.",
+      "passageIds": ["P5"]
+    },
+    {
+      "id": "deployment",
+      "text": "The technique can operate on pretrained generative models at deployment time without retraining.",
+      "passageIds": ["P6"]
+    },
+    {
+      "id": "mechanism",
+      "text": "Forcing intermediate samples to satisfy constraints can prevent a better final solution. HardFlow treats sampling as trajectory optimization, using optimal control to make corrections while enforcing final-output constraints.",
+      "passageIds": ["P12", "P13", "P16"]
+    },
+    {
+      "id": "quality-objectives",
+      "text": "MIT says the optimization formulation can include additional quality goals. Its example is a robot path that both avoids collisions and minimizes distance. This example is a capability described with could, not evidence of a deployed system.",
+      "passageIds": ["P20"]
+    }
+  ],
+  "scope": {
+    "manuallySelectedFacts": true,
+    "independentCorroboration": false,
+    "fullArticleIncluded": false,
+    "publicationFreshnessVerified": false,
+    "summaryApproved": false,
+    "emailAuthorizedByThisArtifact": false
+  }
+}
