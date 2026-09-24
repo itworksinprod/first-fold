@@ -324,3 +324,41 @@ accept 110 through 225, including the 116-word range, and exclude headline words
 Next: a bounded no-email
 live check under the revised contract, then exact-text source and usefulness
 review. Do not claim publication readiness merely because the length gate passes.
+
+### Revised-contract live result: factual pass, editorial hold
+
+Run [35946385748](https://github.com/itworksinprod/first-fold/actions/runs/35946385748)
+used `f47b8f8101c537b0ed8190aea45967cbf92db824` and the revised generic prompt
+fingerprint above. It completed five requests, all four automated field reviews,
+and the unchanged static checks. The body contains 116 words across six units,
+plus one headline unit. No retry, paid provider, email or daily promotion occurred.
+The local suite also passed all 1,279 tests at this revision.
+
+Artifact 10786504316 SHA-256:
+`c724b2319bc2e51026ba9f1f49a12ae51f81129016cd38679d8856edf3077891`.
+Exact normalized draft SHA-256:
+`fe46377ea567bf84f9ea6d662ca3c62b041a3f37c0f2e66687d5e4bbdff016b7`.
+The downloaded artifact hash, source hash, draft hash and complete displayed-text
+coverage were checked locally. Its prose is unchanged from the prior failed
+116-word attempt; lowering the user-approved floor let it reach evidence review,
+but did not improve the prose. The old failed run remains failed.
+
+Exact-text inspection by the primary agent and a separate reviewing agent agrees
+with factual support: method P4/P15, experiments P5, deployment-time use P6,
+mechanism P13/P16 and conditional quality-goal example P20. No universal safety,
+deployed-system, independent-corroboration or verified-freshness claim was found.
+This is a bounded single-source check, not human approval or general reliability.
+
+Reader-ready status remains HOLD. Core terms such as hard constraints and
+intermediate samples are unexplained; the analysis emphasizes technical mechanism
+without clear practical stakes; and What to watch describes an existing capability,
+not a future development or unresolved observation. The captured evidence does
+not announce a next step, so none may be invented. The shorter minimum does not
+remove the usefulness and clarity requirements.
+
+Next narrow checkpoint: one bounded, generic editorial revision using the same
+evidence, explaining core terms and practical significance and handling the watch
+section honestly. Review the exact replacement text before approving any preview
+or email. Do not carry this draft's factual verdict across an edit. Daily delivery,
+automatic fact selection, full-article coverage and broader generalization remain
+separate unfinished checkpoints.
