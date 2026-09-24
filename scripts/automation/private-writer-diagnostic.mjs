@@ -65,7 +65,7 @@ export function assertDiagnosticAuthority(env) {
 }
 
 export function resolvePrivateWriterDiagnosticMode(value = "source") {
-  if (!["source", "source-recheck", "source-recheck-explicit", "source-field-review", "review-controls", "explicit-review-controls", "split-review-controls", "isolated-review-controls", "field-review-controls", "provider-only", "reviewed-fact-summary", "causal-review-controls", "claimwise-review-controls", "claimwise-fact-summary", "generic-second-article"].includes(value)) throw failure("DIAGNOSTIC_MODE_INVALID");
+  if (!["source", "source-recheck", "source-recheck-explicit", "source-field-review", "review-controls", "explicit-review-controls", "split-review-controls", "isolated-review-controls", "field-review-controls", "provider-only", "reviewed-fact-summary", "causal-review-controls", "claimwise-review-controls", "claimwise-fact-summary", "generic-second-article", "plain-language-second-article"].includes(value)) throw failure("DIAGNOSTIC_MODE_INVALID");
   return value;
 }
 
@@ -135,10 +135,11 @@ export async function diagnoseOneWriter({ publicKey, accountId, apiToken, now = 
   if (typeof apiToken !== "string" || !apiToken.trim()) throw failure("DIAGNOSTIC_CONFIGURATION_INVALID");
   if (mode === "provider-only") return diagnoseProvider({ publicKey, accountId, apiToken, now,
     aiRequestImpl, fetchImpl, endpoint });
-  if (["reviewed-fact-summary", "claimwise-fact-summary", "generic-second-article"].includes(mode)) {
+  if (["reviewed-fact-summary", "claimwise-fact-summary", "generic-second-article", "plain-language-second-article"].includes(mode)) {
     const { diagnoseFactSummary } = await import('./fact-summary-diagnostic.mjs');
     return diagnoseFactSummary({ publicKey, accountId, apiToken, now, aiRequestImpl, fetchImpl, endpoint, sealDiagnostic,
-      claimwise: mode !== 'reviewed-fact-summary', profile: mode === 'generic-second-article' ? 'mit-generalization' : 'anthropic' });
+      claimwise: mode !== 'reviewed-fact-summary', profile: ['generic-second-article', 'plain-language-second-article'].includes(mode) ? 'mit-generalization' : 'anthropic',
+      plainLanguageCopyedit: mode === 'plain-language-second-article' });
   }
   if (["split-review-controls", "isolated-review-controls"].includes(mode)) {
     const { diagnoseSplitReview } = await import("./split-review-diagnostic.mjs");

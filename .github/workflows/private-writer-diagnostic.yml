@@ -23,6 +23,7 @@ on:
           - claimwise-review-controls
           - claimwise-fact-summary
           - generic-second-article
+          - plain-language-second-article
       public_key:
         description: Ephemeral RSA-3072 public key in base64 DER format (never a private key)
         required: true

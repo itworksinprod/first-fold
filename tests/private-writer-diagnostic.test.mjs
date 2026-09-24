@@ -412,11 +412,15 @@ test("mode and key preflight reject before credentials while the omitted mode st
   assert.equal(resolvePrivateWriterDiagnosticMode("source"), "source");
   assert.equal(resolvePrivateWriterDiagnosticMode("provider-only"), "provider-only");
   assert.equal(resolvePrivateWriterDiagnosticMode("generic-second-article"), "generic-second-article");
+  assert.equal(resolvePrivateWriterDiagnosticMode("plain-language-second-article"), "plain-language-second-article");
   const env = { ...authority, DIAGNOSTIC_PUBLIC_KEY: publicKey, PRIVATE_WRITER_DIAGNOSTIC_MODE: "provider-only" };
   for (const field of ["CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_AI_API_TOKEN"]) {
     Object.defineProperty(env, field, { enumerable: true, get() { assert.fail("Preflight must not read credentials"); } });
   }
   assert.equal(validatePrivateWriterDiagnosticOptions(env), "provider-only");
+  const copyediting = Object.create(null, Object.getOwnPropertyDescriptors(env));
+  copyediting.PRIVATE_WRITER_DIAGNOSTIC_MODE = "plain-language-second-article";
+  assert.equal(validatePrivateWriterDiagnosticOptions(copyediting), "plain-language-second-article");
   for (const patch of [{ GITHUB_ACTOR: "other" }, { DIAGNOSTIC_PUBLIC_KEY: "bad" },
     { PRIVATE_WRITER_DIAGNOSTIC_MODE: "arbitrary" }]) {
     const rejected = Object.create(null, Object.getOwnPropertyDescriptors(env));
@@ -447,4 +451,12 @@ test("diagnostic workflow is manual/read-only and cannot send, bill, publish or 
   assert.ok(workflow.indexOf("Validate diagnostic mode and encryption") < workflow.indexOf("secrets.CLOUDFLARE_AI_API_TOKEN"));
   assert.match(workflow, /private-writer-diagnostic\.mjs validate/);
   assert.match(workflow, /PRIVATE_WRITER_DIAGNOSTIC_MODE: \$\{\{ inputs\.mode \|\| 'source' \}\}/);
+  assert.match(workflow, /^\s+- plain-language-second-article\s*$/m);
+});
+
+test("plain-language CLI mode routes only the opted-in second article through copyediting", async () => {
+  // Source contract only: executing this CLI branch would fetch its pinned real article.
+  const source = await readFile(new URL("../scripts/automation/private-writer-diagnostic.mjs", import.meta.url), "utf8");
+  assert.match(source, /plainLanguageCopyedit:\s*mode === ['"]plain-language-second-article['"]/);
+  assert.match(source, /profile:\s*\[['"]generic-second-article['"],\s*['"]plain-language-second-article['"]\]\.includes\(mode\)\s*\?\s*['"]mit-generalization['"]\s*:\s*['"]anthropic['"]/);
 });

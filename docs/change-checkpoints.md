@@ -420,3 +420,44 @@ One new no-email experiment will test that distinct input change under the same
 five-request/3,600-token ceiling and original plain-language pass criteria. No
 unchanged-run retry, model swap, section-purpose change or email. The new draft
 must receive its own exact-text factual and separate plain-language review.
+
+### Definition-enriched input result: clearer, still held
+
+Run [35949619786](https://github.com/itworksinprod/first-fold/actions/runs/35949619786)
+used `3d4fb9079e07216007f9830bd8a5095292283069` with the same generic prompt.
+Five requests and all four automatic reviews completed; no email or retry.
+Artifact 10788490691 SHA-256:
+`710c62f0cdf072a14c7ee9fd18f924b356b975bfbdd1bff45e479fdf9c9b715c`.
+Draft SHA-256:
+`e0a2421baa12d87c3f76f4825c9a76b6d41c5b21dd2897fec362a47c90ff0687`.
+The draft explained hard constraints with examples and used the concrete mechanism
+description, but retained intermediate samples, pretrained/deployment time and
+optimization formulation. Source-backed wording improved; the full plain-language
+criterion did not pass. Automatic factual approval again did not close this step.
+
+### Isolated copyediting experiment (still step one)
+
+Independent exact-text review also held the definition-enriched 148-word draft.
+Rather than rewriting the evidence into a ready-made article, the new opt-in
+`plain-language-second-article` mode adds one presentation-only copyeditor after
+the existing writer. The baseline is that run's fresh, privately captured draft,
+not an inherited approval. Its normalized text, units and hash are saved before
+copyediting; the original raw output is also retained inside the encrypted capture.
+
+The copyeditor receives the draft and the same reviewed facts. It must preserve
+claims, attribution, conditions, section placement and per-field unit counts.
+It must not add analysis, a benefit, advice or a future development. Fixed prompt
+SHA-256: `e72898a39a163fcc1a58023da19e2ff99e54ab65ef20eed445a6c6d2959155b3`.
+The final edited text receives the unchanged static and four exact-text factual
+checks. Count checks are structural only; separate before/after manual review
+must also establish that the copyeditor did not omit, replace or move a claim.
+
+Predeclared budget for this explicit mode only: one writer, one copyeditor, four
+review calls; at most six requests and 4,800 requested output tokens. One attempt
+per call, no retry, writer fallback, alternative model or paid provider. Existing
+modes retain their original budgets. No email, recipient, daily production,
+schedule or account change. A step-one pass requires source support, preservation
+of the baseline's claims, and plain language before steps two and three begin.
+The workflow's existing eight-minute outer timeout remains intentional: very slow
+provider responses may end the run before encrypted capture is written. That is
+a failed experiment, never permission to bypass review or retry automatically.
