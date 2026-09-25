@@ -936,3 +936,52 @@ callback after the diagnostic returned. The new runner now latches any refusal
 and closes each callback on both success and failure. Regression tests and
 independent re-review verify both fixes. Existing reviewer/editor policies and
 ordinary production paths remain unchanged.
+
+### Preservation controls live result: two false approvals
+
+Run [36086122705](https://github.com/itworksinprod/first-fold/actions/runs/36086122705)
+used `08a946f19fed700ebfd4c488b13a08f4372ca428`. All six calls returned structurally
+valid, exactly bound responses. Four answers were correct; the unchanged reviewer
+falsely accepted two source-supported but unfaithful edits. The predeclared gate
+correctly failed with `PRESERVATION_REVIEW_MISCLASSIFIED`, not a provider, quota,
+transport or malformed-output failure. No retry or further live request followed.
+
+| Case | Expected | Live result | Interpretation |
+| --- | --- | --- | --- |
+| PR01: mandatory → must meet | Accept | Accept | Faithful rewrite recognized |
+| PR02: mandatory → narrow range | Reject | Accept | Obligation replaced by restrictiveness |
+| PR03: remove noise-resistant | Reject | Reject | Meaningful modifier loss caught |
+| PR04: pretrained → already trained | Accept | Accept | Faithful rewrite recognized |
+| PR05: category → selected examples | Reject | Accept | Narrowing wrongly allowed |
+| PR06: remove observed credential condition | Reject | Reject | Operating circumstance loss caught |
+
+PR02's comparison said “Matches source”; PR05's said “narrower claim” yet still
+approved it. This is evidence that the model sometimes prioritizes truth in the
+source over before/after preservation despite the existing explicit instruction.
+It is not evidence that a broader rewrite is safe, or that the reviewer reliably
+detects all other kinds of drift. Two faithful positives and two negative types
+passed only on this small fixed sample.
+
+The encrypted artifact ID is 10843677400; its downloaded ZIP SHA-256 matches the
+GitHub digest:
+`7bc7306c9a0ce290d9efcf76e3e5e8a2a71d1de914660d6a01dd848d50660193`.
+Exact local replay verified all six frozen inputs, v3 prompts, suffix/schema
+assembly, request hashes, response review hashes and computed outcomes. The
+serialized capture is 35,957 bytes. Six inference/network calls used at most
+3,600 requested output tokens; zero search requests and no email. This closes
+the isolated measurement checkpoint, not step one or reviewer qualification.
+
+Independent audit confirms the hold and those exact input/outcome bindings. Raw
+provider envelopes are intentionally absent: their recorded response SHA-256
+values have validated shape/provenance but cannot be independently recomputed
+from the parsed editorial payload alone. This limitation does not affect the
+recomputed request/review hashes or the observed classification errors.
+
+Next smallest recommended checkpoint: an opt-in controls-only variant with
+separate `sourceSupported` and `meaningPreserved` judgments, separate short
+comparisons, and local AND acceptance. Keep this frozen case set, model, budget,
+and ordinary v3/publication paths unchanged. All six final claims are
+source-supported; only PR01/PR04 preserve the original meaning. Require both
+dimensions correct for every case, not merely the combined classification.
+This next variant is not implemented here. No newspaper delivery, paid provider,
+billing, schedule, recipient or editorial-threshold changes occurred.
