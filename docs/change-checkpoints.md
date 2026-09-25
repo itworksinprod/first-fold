@@ -985,3 +985,54 @@ source-supported; only PR01/PR04 preserve the original meaning. Require both
 dimensions correct for every case, not merely the combined classification.
 This next variant is not implemented here. No newspaper delivery, paid provider,
 billing, schedule, recipient or editorial-threshold changes occurred.
+
+### Separate source and preservation judgments (controls-only checkpoint)
+
+The user authorized the next small change. New opt-in mode
+`split-preservation-review-controls` uses an experimental v4 response contract:
+each claim receives its own `sourceSupported` and `meaningPreserved` booleans,
+with separate short comparisons. Acceptance is their conjunction computed
+locally, never an overall model-issued approval. Source support still requires
+1–3 valid evidence IDs even when preservation is false. The prompt distinguishes
+truth in the source from faithful editing, and checks both source-true additions
+and loss/narrowing. It contains no case-specific wording or expected answers.
+
+The v4 policy, complete before/after inventory and source passages bind a new
+review hash. Only an issued frozen view accepts its exact response shape and
+complete unique claim IDs. Missing fields, stale v3 hashes/verdicts, strings in
+place of booleans, invalid evidence, sparse/accessor arrays and extra properties
+are rejected. The v3 builder, prompt, schema, ordinary fact-summary flow and
+production reviewer are not edited.
+
+The unchanged six controls remain frozen at
+`d17df1cf570ba50385b56b837c30d566c98ee46777e44cad70ac30169f4e70cb`.
+V4 prompt SHA-256:
+`bc3477446736333236b73d6b31736c46d726e762a34c48c0d124afe41d6df962`.
+Expected dimensions stay audit-side: all six final sentences are source-supported;
+only PR01 and PR04 preserve meaning. Both dimensions must be correct in every
+case, not just the combined AND. A false source verdict cannot earn a correct
+rejection by accident. These controls test preservation discrimination, not
+detection of unsupported source claims or general reviewer reliability.
+
+Predeclared live trial: one no-email run, same model, six stateless calls at most,
+600 requested output tokens per call, same temperature and transport bounds,
+one attempt per call, no correction feedback or extra provider. Valid wrong
+answers continue through the fixed set; malformed/provider/transport failures
+stop. Existing refusal/lifetime guards and encrypted-only evidence remain.
+No fixture edits, writer/editor calls, article fetching, search, billing,
+delivery, production promotion, or step-two/three changes belong to this trial.
+
+Preflight: all 1,375 automated tests pass, including nine independently authored
+new test groups. Testing caught sparse input inventories and validation after
+cloning; the v4 builder now rejects sparse inventories before using the old
+builder, and the diagnostic validates the exact v4 object before cloning it.
+Invalid v4 objects are not traversed for capture: the audit records null plus
+`responseRejectedBeforeCapture`, then stops as malformed. Valid but incorrect
+judgments still retain their exact content for inspection. Independent review
+verified these fixes and found no blocking issue. It also clarified the generic
+replacement-direction wording before the final prompt hash was frozen.
+
+An offline replay through the real request builder with mocked answers measured
+3,940 / 3,992 / 3,920 / 3,991 / 3,905 / 4,025 request bytes and a 38,413-byte
+serialized capture, within unchanged limits. This verifies plumbing and size,
+not live semantic accuracy. Existing v3 controls and production tests still pass.
