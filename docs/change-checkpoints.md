@@ -1381,3 +1381,47 @@ abstention, length-boundary, transport/provenance, mandatory source-check and
 changed-meaning rejection coverage. Independent implementation review found no
 blocking issue and separately passed 92 relevant tests. This authorizes the
 single predeclared trial, not a claim that live prose already passes.
+
+The first sentence-level live trial
+[36176641571](https://github.com/itworksinprod/first-fold/actions/runs/36176641571)
+on `f52ade3a6f8fe00a22fb2953b3cd30ab07f95232` reached all four fields with exactly
+nine actual calls, a 6,600 requested output-token cap, and one local headline
+identity. All source checks passed. Meaning checks passed what-happened and
+why-it-matters, but rejected what-to-watch, citing the addition of `finding a`.
+The combined gate correctly retained the hold: `FACT_SUMMARY_REVIEW_REJECTED`.
+No email, promotion, or unchanged retry followed. This report does not assume
+the reviewer's semantic judgment is correct; it needs independent examination.
+
+The headline is byte-identical and the body changed from 148 to 145 words.
+Exact replay verified the source fingerprint, ordered rewrite inventory, applied
+edits, final text, all nine prompt/request bindings and captured review verdicts,
+plus the separate local identity. Artifact 10882278646 ZIP SHA-256 matches GitHub:
+`a1bf0e55195110868d2970fa810d58e9f5e84f9ae0cd6043dae9f1bc351e8a81`.
+Baseline draft SHA-256:
+`e0a2421baa12d87c3f76f4825c9a76b6d41c5b21dd2897fec362a47c90ff0687`.
+Final draft SHA-256:
+`c6a6d0f2ba1e5b95730682b3df08f733c4f4bed138451f2bb585cc7d07bd3842`.
+Source fingerprint remains `081196aa0f2c507e6b75f5a7018a594af882468006401c1b1428f96e4eb74801`.
+
+Independent semantic audit retains HOLD for insufficient plain-language
+improvement. The last-field veto appears to be a false positive: `finding a`
+makes the robot-path activity explicit without asserting deployment or changing
+its goals. The source itself uses intermediate-step wording, so that substitution
+is not a demonstrated factual contradiction. The shift from partially formed
+answers to models meeting requirements is less precise in isolation. None of
+this overrides the live gate or makes the largely cosmetic rewrite readable.
+
+The next revision changes only the generic rewrite instructions: prioritize
+technical terms with a complete equivalent in the supplied reviewed facts,
+preserve grammatical kind and subject/object relationships, avoid cosmetic
+synonym swaps, and leave clear or uncertain sentences byte-identical. It adds
+no article-specific term or replacement. Reviewer prompts, fact sheet, writer,
+transport and budgets remain unchanged. New prompt SHA-256:
+`f67a0e2ad4b38755e35f0a6e73b2e52d7c70a8a21d0124c6dda16f02b1384267`.
+All 1,414 tests pass on this revision. After independent prompt preflight,
+allow one changed-prompt no-email trial with the same success criteria and
+9-call/6,600-token ceiling; this is not an unchanged retry or reviewer override.
+Independent preflight found no blocking change and approved that bounded trial.
+It also independently replayed the prior artifact's nine requests and hashes.
+Its caveat remains: the reviewed facts define only some jargon, so untouched
+technical sentences can still prevent a whole-body clarity pass.
