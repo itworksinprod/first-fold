@@ -841,3 +841,46 @@ replacement, 110–225 body words, all existing mechanical checks, all four exac
 source/preservation reviews, and independent clarity/meaning approval. A valid
 abstention is a safe hold, not completion. No retries for a lucky result, accepted
 original fallback, email, billing, daily promotion or step-two/three changes.
+
+### Single-phrase live result: mechanical pass, semantic review hold
+
+Run [36083381051](https://github.com/itworksinprod/first-fold/actions/runs/36083381051)
+used `f2b7693fbfdb6e2dbab406ddde2006c0fdbf83f7`. The single replacement passed the
+local gates and all four automated source/preservation reviews within six calls
+and 4,800 requested output tokens. The body remained 148 words. No email was sent.
+The run was green, but its status was only `draft-awaiting-manual-review`.
+
+Independent exact-text review **holds** this draft. The only edit changed hard
+constraints to tight limits. The source defines the former by nonnegotiability:
+requirements must be met, not merely restrictive or narrow limits. The replacement
+does not adequately preserve/explain that distinction. Other specialist terms
+remain unexplained, so the full article has not met the readability checkpoint.
+All other wording, attribution, conditions and caveats remained byte-identical.
+
+Catalog reissuance and single-edit replay reproduced the exact final text and
+hash. All four captured requests equal rebuilt v3 source-plus-before/after review
+inputs and response hashes match. Thus the preservation policy genuinely ran
+live; this is not a stale review or wrong-input problem. The model's short
+source-match verdicts nevertheless missed the meaning shift. A green automated
+review does not override the independent hold. The abstention branch remains
+verified offline only; this live model chose replacement.
+
+Artifact 10843221833 SHA-256:
+`a2c2c193d556ddfec0fd3cd4ed3ee1e08854bc3b90c9254a22d07c886743b27d`.
+Baseline draft SHA-256:
+`e0a2421baa12d87c3f76f4825c9a76b6d41c5b21dd2897fec362a47c90ff0687`.
+Ordered baseline unit SHA-256:
+`7c861c82935843bcf4d249d0267e76182b17cd95d8c9a37abbe82a82b4a36acc`.
+Unapproved final draft SHA-256:
+`23fe1cae95d7a76bbe8c32c91265ae495d5a63cf71efcdc4dfe4cd61d97ecb61`.
+Catalog/source fingerprints match the previous fixed-source trial. Exact capture
+size is 112,481 bytes, retained decrypted only in the local 2026-09-24 review folder.
+
+This completes the one-edit implementation/test checkpoint, not step one or
+delivery qualification. The next independent recommendation is a small isolated
+reviewer check using frozen neutral sentence pairs: faithful definition paraphrase
+versus changed dimension, lost modifier/category or dropped condition. Keep
+expected labels out of model inputs; use no writer/editor regeneration, manually
+fixed article, source-specific replacement rule or retry-until-pass. This tests
+the observed reviewer false-positive separately from editor proposal quality.
+No further live test, daily promotion, email or step-two/three work occurred here.
