@@ -750,3 +750,49 @@ before/after reviews, and an independent exact-text verdict confirming preserved
 meaning and genuinely clearer prose. IDs prove location, not meaning. A failure
 remains a hold; do not retry for a lucky result. No daily promotion, recipient or
 schedule changes, email, billing, step-two/three work or automatic fact extraction.
+
+### Frozen-catalog live result: valid addresses, unchanged-edit hold
+
+Run [36078074990](https://github.com/itworksinprod/first-fold/actions/runs/36078074990)
+used `c571d919f1f6cc5ba76083cfb7f993d72ea71409`. It stopped at
+`FACT_SUMMARY_PHRASE_EDIT_UNCHANGED` after two requests/2,400 requested output
+tokens. The entire proposal stayed held; no accepted draft, four-field semantic
+reviews, fallback, retry or email followed. This was a model-proposal defect,
+not a provider quota or credential failure.
+
+Rebuilding the catalog locally reproduced all 380 spans and its hash exactly.
+All six proposed IDs existed and identified exact original spans in the right
+sentences; the prior missing-target defect did not recur. The first proposed
+edit replaced a phrase with itself, and the last did the same. The first sentence
+also had three proposed edits, exceeding the two-edit batch limit. No invalid
+edit was silently removed to produce an accepted subset. The baseline had 148
+body words; there is no final accepted draft hash.
+
+Artifact 10840816676 SHA-256:
+`329f4c1ecf1810965b88e8605acdfb949f941cf06e27514ee1b63183bd8558a6`.
+Baseline draft SHA-256:
+`e0a2421baa12d87c3f76f4825c9a76b6d41c5b21dd2897fec362a47c90ff0687`.
+Ordered baseline unit SHA-256:
+`7c861c82935843bcf4d249d0267e76182b17cd95d8c9a37abbe82a82b4a36acc`.
+Catalog SHA-256:
+`a7bd81c9b194e314233b9267ae4c992369d8c272fea2c4b14552cdcaa4f3272b`.
+The source fingerprint is unchanged; decrypted source/model data remains only in
+the local 2026-09-24 review directory, outside this public repository.
+
+Independent exact-text review confirmed the whole-batch hold and catalog/source
+hashes. Besides the no-ops and three-edit limit violation, two opening targets
+were adjacent with no untouched word between them. Meaning and clarity remain
+unqualified: changing hard constraints to tight constraints confuses mandatory
+status with restrictiveness, and changing optimization formulation to improvement
+formulation loses precision while remaining awkward. Two minor synonym changes
+were harmless but did not adequately resolve the remaining jargon. No subset is
+approved; the v3 before/after review calls still have not executed in a live run.
+
+This completes the bounded addressing trial, not step one. The next small
+experiment should ask for one meaningful, source-supported technical-phrase
+replacement or an explicit abstention, rather than a batch of up to six edits.
+An abstention must not be counted as an improved or approved article; retain all
+existing vetoes and independent exact review. Any manually chosen focus must be
+identified as a targeted/manual experiment, not generic selection success. This
+next experiment is not implemented by this result record. No retry, email or
+daily production change occurred.
