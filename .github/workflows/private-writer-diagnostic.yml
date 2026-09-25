@@ -47,7 +47,7 @@ jobs:
         with:
           node-version: '24'
       - name: Test diagnostic boundaries before using credentials
-        run: node --test tests/claimwise-review.test.mjs tests/copyedit-preservation-review.test.mjs tests/causal-review.test.mjs tests/fact-summary-diagnostic.test.mjs tests/phrase-copyedit.test.mjs tests/phrase-copyedit-catalog.test.mjs tests/phrase-copyedit-context.test.mjs tests/copyedit-qualification-guard.test.mjs tests/private-writer-diagnostic.test.mjs tests/reviewer-transport-diagnostic.test.mjs tests/split-claim-review.test.mjs tests/foundation-recheck.test.mjs tests/grounded-draft.test.mjs tests/free-workers-ai.test.mjs
+        run: node --test tests/claimwise-review.test.mjs tests/copyedit-preservation-review.test.mjs tests/causal-review.test.mjs tests/fact-summary-diagnostic.test.mjs tests/single-phrase-copyedit.test.mjs tests/phrase-copyedit.test.mjs tests/phrase-copyedit-catalog.test.mjs tests/phrase-copyedit-context.test.mjs tests/copyedit-qualification-guard.test.mjs tests/private-writer-diagnostic.test.mjs tests/reviewer-transport-diagnostic.test.mjs tests/split-claim-review.test.mjs tests/foundation-recheck.test.mjs tests/grounded-draft.test.mjs tests/free-workers-ai.test.mjs
       - name: Validate diagnostic mode and encryption before credentials
         env:
           DIAGNOSTIC_PUBLIC_KEY: ${{ inputs.public_key }}

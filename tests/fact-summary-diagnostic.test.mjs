@@ -6,8 +6,8 @@ import { diagnoseFactSummary, validateFactSummary, normalizeClaimwiseSummary } f
 import { buildWorkersAiRequest, DEFAULT_CLOUDFLARE_AI_MODEL } from '../scripts/automation/free/workers-ai.mjs';
 import { GENERIC_FACT_SUMMARY_PROMPT } from '../scripts/automation/free/generic-fact-summary-prompt.mjs';
 import { PLAIN_LANGUAGE_COPYEDIT_PROMPT } from '../scripts/automation/free/plain-language-copyedit-prompt.mjs';
-import { phraseCopyeditUnitsHash, PHRASE_COPYEDIT_LIMITS, PHRASE_COPYEDIT_PROTECTED_WORDS } from '../scripts/automation/free/phrase-copyedit.mjs';
-import { buildPhraseCopyeditCatalog } from '../scripts/automation/free/phrase-copyedit-catalog.mjs';
+import { phraseCopyeditUnitsHash, PHRASE_COPYEDIT_PROTECTED_WORDS } from '../scripts/automation/free/phrase-copyedit.mjs';
+import { buildSinglePhraseCopyeditView, SINGLE_PHRASE_COPYEDIT_LIMITS } from '../scripts/automation/free/single-phrase-copyedit.mjs';
 import { buildClaimwiseFactReview } from '../scripts/automation/free/claimwise-fact-review.mjs';
 const hash = text => createHash('sha256').update(text).digest('hex');
 const excerpt = 'Synthetic evidence used solely for control-flow tests, not real factual qualification.';
@@ -37,16 +37,14 @@ const unitDraft = Object.fromEntries(Object.entries(draft).map(([field, value]) 
 const copyeditInput = JSON.parse(JSON.stringify(unitDraft).replaceAll('Anthropic', 'MIT'));
 const copyeditProposal = { unitsSha256: phraseCopyeditUnitsHash(normalizeClaimwiseSummary(copyeditInput, excerpt, 'MIT').units), replacements: [
   { field: 'whatHappened', unitIndex: 0, find: 'published measurements', replace: 'shared measurements' },
-  { field: 'whyItMatters', unitIndex: 0, find: 'assigning work', replace: 'giving work' },
-  { field: 'whatToWatch', unitIndex: 1, find: 'equivalent tasks', replace: 'similar tasks' },
 ] };
 const copyeditOutput = structuredClone(copyeditInput);
 for (const edit of copyeditProposal.replacements) {
   copyeditOutput[edit.field][edit.unitIndex] = copyeditOutput[edit.field][edit.unitIndex].replace(edit.find, edit.replace);
 }
 function catalogProposal(writerPayload, edits) {
-  const catalog = buildPhraseCopyeditCatalog(normalizeClaimwiseSummary(writerPayload, excerpt, 'MIT').units);
-  return { catalogSha256: catalog.data.catalogSha256, replacements: edits.map(edit => {
+  const catalog = buildSinglePhraseCopyeditView(normalizeClaimwiseSummary(writerPayload, excerpt, 'MIT').units);
+  return { catalogSha256: catalog.data.catalogSha256, decision: 'replace', replacements: edits.map(edit => {
     const unit = catalog.data.units.find(unit => unit.field === edit.field && unit.unitIndex === edit.unitIndex);
     const span = catalog.data.spans.find(span => span.unitId === unit.unitId && span.find === edit.find);
     assert.ok(span, 'Fixture targets must exist in the program-issued catalog');
@@ -104,10 +102,10 @@ async function runCopyeditFixture({ options = {}, writerPayload = copyeditInput,
       } else if (editing) {
         assert.notDeepEqual(request.schema, writerSchema);
         const before = normalizeClaimwiseSummary(writerPayload, excerpt, 'MIT');
-        const catalog = buildPhraseCopyeditCatalog(before.units);
+        const catalog = buildSinglePhraseCopyeditView(before.units);
         assert.deepEqual(request.schema, catalog.schema);
         assert.deepEqual(data, { catalog: catalog.data,
-          limits: PHRASE_COPYEDIT_LIMITS, protectedWords: PHRASE_COPYEDIT_PROTECTED_WORDS,
+          limits: SINGLE_PHRASE_COPYEDIT_LIMITS, protectedWords: PHRASE_COPYEDIT_PROTECTED_WORDS,
           attribution: copyeditSheet.attribution, facts: copyeditSheet.facts });
         copyeditPrompt = request.messages[0].content.split('\nJSON schema:')[0];
         assert.notEqual(copyeditPrompt, GENERIC_FACT_SUMMARY_PROMPT);
@@ -165,14 +163,15 @@ test('opt-in copyediting plumbing captures both versions and reviews every final
   assert.deepEqual(result.sealed.beforeCopyedit, { ...before, draftSha256: hash(JSON.stringify(before.draft)), unitsSha256: phraseCopyeditUnitsHash(before.units) });
   assert.equal(result.sealed.promptSha256, hash(GENERIC_FACT_SUMMARY_PROMPT));
   assert.equal(result.copyeditPrompt, PLAIN_LANGUAGE_COPYEDIT_PROMPT);
-  assert.match(PLAIN_LANGUAGE_COPYEDIT_PROMPT, /small plain-language phrase replacements, not rewritten sentences/);
-  assert.equal(hash(PLAIN_LANGUAGE_COPYEDIT_PROMPT), 'be49e5d0207620e8d2b95758a23d4d2c2d05fe81069e6487efe66c20d19d0fa6');
+  assert.match(PLAIN_LANGUAGE_COPYEDIT_PROMPT, /ONE meaningful plain-language phrase replacement, not rewritten sentences/);
+  assert.equal(hash(PLAIN_LANGUAGE_COPYEDIT_PROMPT), '2fa180aeda7b76ddc6ff1e87e9686d9e0cbf395c76d4801963cc76f150932719');
   assert.doesNotMatch(PLAIN_LANGUAGE_COPYEDIT_PROMPT, /\b(?:Anthropic|MIT|HardFlow|Claude|robot)\b/i);
   assert.equal(result.sealed.copyeditPromptSha256, hash(result.copyeditPrompt));
-  assert.equal(result.sealed.copyeditStrategy, 'catalog-bound-phrase-replacements-v3');
-  assert.deepEqual(result.sealed.copyeditCatalog, buildPhraseCopyeditCatalog(before.units).data);
+  assert.equal(result.sealed.copyeditStrategy, 'single-phrase-or-abstain-v4');
+  assert.deepEqual(result.sealed.copyeditCatalog, buildSinglePhraseCopyeditView(before.units).data);
   assert.deepEqual(result.sealed.rawCopyedit, boundCopyeditProposal);
-  assert.equal(result.sealed.editsApplied.length, 3);
+  assert.equal(result.sealed.copyeditDecision, 'replace');
+  assert.equal(result.sealed.editsApplied.length, 1);
   assert.deepEqual(result.sealed.rawDraft, copyeditOutput);
   assert.deepEqual(result.sealed.draft, after.draft);
   assert.deepEqual(result.sealed.reviewUnits, after.units);
@@ -184,7 +183,7 @@ test('opt-in copyediting plumbing captures both versions and reviews every final
   assert.deepEqual(result.reviewRequests.map(review => review.claims.map(claim => claim.text)), Object.values(after.units));
   for (const [field, units] of Object.entries(after.units)) {
     assert.equal(units.length, before.units[field].length);
-    if (field === 'headline') assert.deepEqual(units, before.units[field]);
+    if (field !== 'whatHappened') assert.deepEqual(units, before.units[field]);
     else assert.ok(units.some((unit, index) => unit !== before.units[field][index]));
   }
 });
@@ -213,6 +212,7 @@ test('explicit false retains the existing five-call generic writer and review bu
   assert.equal(result.sealed.rawCopyedit, undefined);
   assert.equal(result.sealed.copyeditPromptSha256, undefined);
   assert.equal(result.sealed.copyeditStrategy, undefined);
+  assert.equal(result.sealed.copyeditDecision, undefined);
   assert.deepEqual(result.sealed.rawDraft, copyeditInput);
 });
 
@@ -254,12 +254,19 @@ for (const stage of ['writer']) {
   }
 }
 
-for (const defect of ['whole-rewrite', 'stale-hash', 'unknown-id', 'duplicate-id', 'invented-location', 'protected-cue', 'extra-prose', 'empty-edits', 'repeated-context']) {
+for (const defect of ['whole-rewrite', 'stale-hash', 'unknown-id', 'duplicate-id', 'second-edit', 'missing-decision', 'unknown-decision', 'abstain-with-edit', 'unchanged-edit', 'invented-location', 'protected-cue', 'extra-prose', 'empty-edits', 'repeated-context']) {
   test(`phrase copyediting rejects ${defect} after two calls without fallback`, async () => {
     const editedPayload = defect === 'whole-rewrite' ? structuredClone(copyeditOutput) : structuredClone(boundCopyeditProposal);
     if (defect === 'stale-hash') editedPayload.catalogSha256 = '0'.repeat(64);
     if (defect === 'unknown-id') editedPayload.replacements[0].spanId = 'P99999';
     if (defect === 'duplicate-id') editedPayload.replacements.push(structuredClone(editedPayload.replacements[0]));
+    if (defect === 'second-edit') editedPayload.replacements.push(catalogProposal(copyeditInput, [
+      { field: 'whyItMatters', unitIndex: 0, find: 'assigning work', replace: 'giving work' },
+    ]).replacements[0]);
+    if (defect === 'missing-decision') delete editedPayload.decision;
+    if (defect === 'unknown-decision') editedPayload.decision = 'approved';
+    if (defect === 'abstain-with-edit') editedPayload.decision = 'abstain';
+    if (defect === 'unchanged-edit') editedPayload.replacements[0].replace = 'published measurements';
     if (defect === 'invented-location') editedPayload.replacements[0].find = 'invented location';
     if (defect === 'protected-cue') editedPayload.replacements[0].replace = 'can share measurements';
     if (defect === 'extra-prose') editedPayload.whatHappened = copyeditOutput.whatHappened;
@@ -269,15 +276,45 @@ for (const defect of ['whole-rewrite', 'stale-hash', 'unknown-id', 'duplicate-id
     }]).replacements[0];
     const result = await runCopyeditFixture({ editedPayload });
     assert.equal(result.report.status, 'failed');
-    assert.match(result.report.code, /^FACT_SUMMARY_PHRASE_(?:EDIT|CATALOG)_/);
+    assert.match(result.report.code, /^FACT_SUMMARY_(?:PHRASE_(?:EDIT|CATALOG)|SINGLE_PHRASE)_/);
     assert.equal(result.requests.length, 2);
     assert.equal(result.sealed.fieldReviews.length, 0);
     assert.deepEqual(result.sealed.rawCopyedit, editedPayload);
     assert.equal(result.sealed.draft, undefined);
     assert.equal(result.sealed.reviewUnits, undefined);
     assert.equal(result.sealed.draftSha256, undefined);
+    assert.equal(result.sealed.copyeditDecision, undefined);
   });
 }
+
+test('valid abstention is a captured hold after two calls, never an approved original or fallback', async () => {
+  const editedPayload = { catalogSha256: boundCopyeditProposal.catalogSha256, decision: 'abstain', replacements: [] };
+  const result = await runCopyeditFixture({ editedPayload });
+  assert.equal(result.report.status, 'failed', 'CLI must not portray an abstention as a qualified draft');
+  assert.equal(result.report.code, 'FACT_SUMMARY_COPYEDIT_ABSTAINED');
+  assert.equal(result.sealed.copyeditDecision, 'abstain');
+  assert.deepEqual(result.sealed.rawCopyedit, editedPayload);
+  assert.deepEqual(result.sealed.beforeCopyedit.units, normalizeClaimwiseSummary(copyeditInput, excerpt, 'MIT').units);
+  assert.equal(result.requests.length, 2);
+  assert.equal(result.report.outputBudget, 2400);
+  assert.deepEqual(result.sealed.fieldReviews, []);
+  assert.deepEqual(result.report.fieldsPassed, []);
+  for (const field of ['draft', 'reviewUnits', 'draftSha256', 'editsApplied']) assert.equal(result.sealed[field], undefined);
+});
+
+test('malformed or stale abstentions cannot use the intentional-hold outcome', async () => {
+  const valid = { catalogSha256: boundCopyeditProposal.catalogSha256, decision: 'abstain', replacements: [] };
+  for (const editedPayload of [{ ...valid, catalogSha256: '0'.repeat(64) }, { ...valid, extra: 'unreviewed' },
+    { ...valid, replacements: null }, { ...valid, decision: null }, { ...valid, replacements: boundCopyeditProposal.replacements }]) {
+    const result = await runCopyeditFixture({ editedPayload });
+    assert.equal(result.report.status, 'failed');
+    assert.notEqual(result.report.code, 'FACT_SUMMARY_COPYEDIT_ABSTAINED');
+    assert.equal(result.sealed.copyeditDecision, undefined);
+    assert.equal(result.requests.length, 2);
+    assert.deepEqual(result.sealed.fieldReviews, []);
+    assert.equal(result.sealed.draft, undefined);
+  }
+});
 
 test('valid phrase edits still face the final body-length check before factual requests', async () => {
   const writerPayload = structuredClone(copyeditInput);

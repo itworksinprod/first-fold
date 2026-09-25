@@ -796,3 +796,48 @@ existing vetoes and independent exact review. Any manually chosen focus must be
 identified as a targeted/manual experiment, not generic selection success. This
 next experiment is not implemented by this result record. No retry, email or
 daily production change occurred.
+
+### One phrase or abstention checkpoint (step one only)
+
+The user authorized the next incremental change: ask for one meaningful phrase
+replacement, not a batch. A new opt-in decision wrapper requires exactly the
+catalog hash, a `replace` or `abstain` decision, and a replacements array. Replace
+requires exactly one existing span ID and replacement; abstain requires an empty
+array. The runtime enforces this pairing independently of the response schema.
+The old batch catalog and lower-level phrase guards remain unchanged.
+
+Both decisions require the issued frozen view and unchanged original inventory.
+Strict own-data descriptors and dense native arrays reject inherited values,
+getters and hidden serialization/iterator methods without invoking them. An
+unknown target, unchanged phrase, extra edit, malformed decision or invalid
+substitution is still an error, never converted to abstention or silently dropped.
+A valid abstention is captured as `FACT_SUMMARY_COPYEDIT_ABSTAINED` and stops the
+diagnostic before any accepted draft or final review call. It remains a red/held
+run, not a successful summary or acceptance of the unchanged writer output.
+
+The generic prompt asks for one complete technical phrase whose meaning is
+established by the supplied facts, with genuinely easier wording in its full
+sentence. It discourages isolated modifier swaps and familiar-word synonyms.
+It supplies no manually chosen target, source-specific vocabulary or replacement.
+This is an instruction, not a mechanical proof of term completeness or meaning:
+the catalog still includes fragments, and all source/preservation and independent
+readability checks remain required. Prompt SHA-256:
+`2fa180aeda7b76ddc6ff1e87e9686d9e0cbf395c76d4801963cc76f150932719`.
+
+All 1,359 tests pass, including eight independent new test groups and integration
+checks for both decision branches, malformed abstentions, no-op holds and the
+unchanged ordinary five-call mode. Independent code review found no blocking
+issue. Offline mocked replay of the prior MIT baseline and real fact sheet gave
+complete request sizes of 4,990 / 47,919 / 10,313 / 11,798 / 11,066 / 10,868 bytes
+and a 112,919-byte capture. The abstention branch stopped after the first two
+requests, with a 78,662-byte capture. Both fit the unchanged 70,000-byte request
+and 350,000-byte capture caps; these are size/control-flow tests, not semantic
+approval or live results.
+
+Predeclared live trial: one no-email `plain-language-second-article` run, unchanged
+MIT evidence/fact sheet, writer prompt, free model, and six-request/4,800-requested
+output-token ceiling; one attempt per request. Success requires one meaningful
+replacement, 110–225 body words, all existing mechanical checks, all four exact
+source/preservation reviews, and independent clarity/meaning approval. A valid
+abstention is a safe hold, not completion. No retries for a lucky result, accepted
+original fallback, email, billing, daily promotion or step-two/three changes.

@@ -8,8 +8,8 @@ import { buildClaimwiseFactReview, validateClaimwiseFactReview } from './free/cl
 import { DEFAULT_CLOUDFLARE_AI_MODEL, buildWorkersAiRequest, workersAiFailureDiagnostic } from './free/workers-ai.mjs';
 import { GENERIC_FACT_SUMMARY_PROMPT } from './free/generic-fact-summary-prompt.mjs';
 import { PLAIN_LANGUAGE_COPYEDIT_PROMPT } from './free/plain-language-copyedit-prompt.mjs';
-import { phraseCopyeditUnitsHash, PHRASE_COPYEDIT_LIMITS, PHRASE_COPYEDIT_PROTECTED_WORDS } from './free/phrase-copyedit.mjs';
-import { buildPhraseCopyeditCatalog, applyCatalogPhraseCopyedits } from './free/phrase-copyedit-catalog.mjs';
+import { phraseCopyeditUnitsHash, PHRASE_COPYEDIT_PROTECTED_WORDS } from './free/phrase-copyedit.mjs';
+import { buildSinglePhraseCopyeditView, applySinglePhraseCopyedit, SINGLE_PHRASE_COPYEDIT_LIMITS } from './free/single-phrase-copyedit.mjs';
 
 const fields = ['headline', 'whatHappened', 'whyItMatters', 'whatToWatch'];
 const hash = text => createHash('sha256').update(text).digest('hex');
@@ -65,7 +65,7 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
   const capture = { purpose: plainLanguageCopyedit ? 'plain-language-copyedit-awaiting-manual-review' : generic ? 'generic-second-article-awaiting-manual-review' : claimwise ? 'claimwise-fact-summary-awaiting-manual-review' : 'reviewed-fact-summary-awaiting-manual-review',
     ...(generic ? { promptSha256: hash(GENERIC_FACT_SUMMARY_PROMPT), factSelection: 'manual' } : {}), calls: [], fieldReviews: [], emailSent: false };
   if (plainLanguageCopyedit) {
-    capture.copyeditStrategy = 'catalog-bound-phrase-replacements-v3';
+    capture.copyeditStrategy = 'single-phrase-or-abstain-v4';
     capture.copyeditPromptSha256 = hash(PLAIN_LANGUAGE_COPYEDIT_PROMPT);
   }
   let modelRequests = 0, networkRequests = 0, outputBudget = 0, code = null;
@@ -136,14 +136,16 @@ The article is one company's account. No tables or appendix are available. No ou
     if (plainLanguageCopyedit) {
       capture.beforeCopyedit = { draft: structuredClone(normalized.draft), units: structuredClone(normalized.units),
         draftSha256: hash(JSON.stringify(normalized.draft)), unitsSha256: phraseCopyeditUnitsHash(normalized.units) };
-      const catalog = buildPhraseCopyeditCatalog(normalized.units);
+      const catalog = buildSinglePhraseCopyeditView(normalized.units);
       capture.copyeditCatalog = catalog.data;
       const proposal = await request(PLAIN_LANGUAGE_COPYEDIT_PROMPT,
         { catalog: catalog.data,
-          limits: PHRASE_COPYEDIT_LIMITS, protectedWords: PHRASE_COPYEDIT_PROTECTED_WORDS,
+          limits: SINGLE_PHRASE_COPYEDIT_LIMITS, protectedWords: PHRASE_COPYEDIT_PROTECTED_WORDS,
           attribution: sheet.attribution, facts: sheet.facts }, catalog.schema, 1200);
       capture.rawCopyedit = structuredClone(proposal);
-      const applied = applyCatalogPhraseCopyedits(normalized.units, proposal, catalog);
+      const applied = applySinglePhraseCopyedit(normalized.units, proposal, catalog);
+      capture.copyeditDecision = applied.decision;
+      if (applied.decision === 'abstain') throw fail('FACT_SUMMARY_COPYEDIT_ABSTAINED');
       capture.editsApplied = applied.editsApplied;
       const edited = { headline: applied.units.headline[0],
         ...Object.fromEntries(fields.slice(1).map(field => [field, applied.units[field]])) };
