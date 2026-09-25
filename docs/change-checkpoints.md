@@ -884,3 +884,55 @@ expected labels out of model inputs; use no writer/editor regeneration, manually
 fixed article, source-specific replacement rule or retry-until-pass. This tests
 the observed reviewer false-positive separately from editor proposal quality.
 No further live test, daily promotion, email or step-two/three work occurred here.
+
+### Fixed preservation-review controls (step one diagnostic only)
+
+The next authorized checkpoint isolates the reviewer from the writer/editor.
+The opt-in `preservation-review-controls` mode makes six separate stateless
+requests, each containing one frozen synthetic source and one before/after pair.
+Two edits preserve meaning; four lose an obligation, modifier, category or
+observed operating circumstance. The negative final sentences are themselves
+source-supported: rejection must catch the preservation loss rather than merely
+the absence of source evidence. Independent review corrected an ambiguous use
+of “enforces” before freezing the obligation/restrictiveness contrast. The
+credential example does not claim that credential validity was proven necessary
+or that requests would fail after expiry; it tests retention of an observed
+operating circumstance only.
+
+Frozen case-set SHA-256:
+`d17df1cf570ba50385b56b837c30d566c98ee46777e44cad70ac30169f4e70cb`.
+The existing v3 reviewer prompt is unchanged (SHA-256
+`04b918fe7e676bfbbab9e77cc10a343e1e7645d23c64b572a37dfa653e3c612a`).
+Its comparison-length suffix, schema transport, model, temperature and per-call
+limits match the actual fact-summary reviewer. Expected labels, case IDs and
+rationales remain evaluation-side and are not in model messages. No previous
+response or correction is supplied to a later request.
+
+Predeclared trial: one run, at most six inference/network calls and 3,600
+requested output tokens, one attempt per call. All six valid labels must match
+the frozen answers; a majority, all-accept or all-reject result cannot pass.
+Valid wrong answers are recorded while the remaining fixed cases continue.
+Malformed responses, provenance/network violations and provider/quota failures
+stop the trial without a retry or alternate model. Exact requests, responses,
+labels, rationales and hashes are encrypted for local independent inspection;
+public output contains only bounded status/counts and per-case validity/results.
+No research, article fetching, writer, copyeditor, email, edition or promotion
+runs in this mode. A six-case pass would be evidence on these controls only,
+not proof of general reviewer reliability or completion of step one.
+
+Independent code preflight found no blocking issue and independently verified
+the frozen hashes, hidden answers, exact prompt assembly and failure boundaries.
+Offline mocked replay through the real request builder produced request sizes
+of 3,979 / 4,031 / 3,959 / 4,030 / 3,944 / 4,064 bytes and a 36,067-byte capture,
+within the existing limits. These mocked labels establish plumbing/size only,
+not semantic performance. The inherited eight-minute workflow deadline can stop
+six worst-case 90-second responses before the final encrypted artifact exists;
+such an interrupted trial cannot pass or qualify the reviewer.
+
+All 1,366 automated tests pass, including seven independently authored diagnostic
+test groups. Those tests caught two noncompliant-adapter edge cases before any
+live request: forwarding after a swallowed refusal and invoking a retained
+callback after the diagnostic returned. The new runner now latches any refusal
+and closes each callback on both success and failure. Regression tests and
+independent re-review verify both fixes. Existing reviewer/editor policies and
+ordinary production paths remain unchanged.
