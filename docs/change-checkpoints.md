@@ -1036,3 +1036,54 @@ An offline replay through the real request builder with mocked answers measured
 3,940 / 3,992 / 3,920 / 3,991 / 3,905 / 4,025 request bytes and a 38,413-byte
 serialized capture, within unchanged limits. This verifies plumbing and size,
 not live semantic accuracy. Existing v3 controls and production tests still pass.
+
+### Split-judgment live result: all meaning decisions correct, one source error
+
+Run [36087196399](https://github.com/itworksinprod/first-fold/actions/runs/36087196399)
+used `8d8e16ea6ff7e09c08785b1cac921b3e9cc2dc9a`. All six responses were structurally
+valid. Meaning preservation was correct on all six controls, including both
+previous false approvals. Source support was correct on five controls. Thus
+five cases met the predeclared two-dimension criterion; the run correctly
+remained red with `PRESERVATION_REVIEW_MISCLASSIFIED`.
+
+| Case | Source judgment | Preservation judgment | Both dimensions correct |
+| --- | --- | --- | --- |
+| PR01 | True | True | Yes |
+| PR02 | True | False | Yes |
+| PR03 | True | False | Yes |
+| PR04 | True | True | Yes |
+| PR05 | True | False | Yes |
+| PR06 | False | False | No: source should be true |
+
+PR02 now identifies the lost mandatory status; PR05 identifies the lost broader
+category. PR06 correctly identifies a lost credential condition, but its separate
+source comparison says “missing expiration detail” and returns false. The
+sentence still describes only the observed trial, during which no requests
+occurred after expiry. Missing that contextual detail is a preservation loss,
+not by itself evidence that the retained observation is false. PR03's source
+comparison also discusses a missing detail while its source boolean is true,
+so the model's separation is not yet consistent.
+
+The local combined accept/reject result is correct on all six, but that does not
+override the stricter requirement that both judgments be correct. No relabeling,
+gate relaxation or retry was used to obtain a green status. This is limited
+evidence from one previously used fixed set, not a general accuracy measurement.
+
+Artifact 10844606680 ZIP SHA-256 matched the GitHub digest:
+`1598e5de40133e0bc8d2cc3a3a6523d91c5c47b127235bf78a946265959fbbd5`.
+Local replay rebuilt all six exact inputs, prompts, schemas and request hashes,
+validated response review hashes, and recomputed both judgments and local AND
+outcomes. The capture is 38,448 serialized bytes. Six model/network calls, at
+most 3,600 requested output tokens, zero searches and no email. Raw provider
+envelopes are absent, so their recorded response hashes cannot be independently
+recomputed from the parsed responses. Step one and production qualification
+remain on hold; this bounded split-review trial itself has finished.
+
+Independent audit confirms the exact bindings, outcomes and hold. Its smallest
+next recommendation is to clarify only the generic SOURCE SUPPORT instructions:
+judge assertions actually made, not completeness against previous wording or
+every source detail. Omission alone need not make a claim unsupported, but an
+omission that broadens scope or strengthens the assertion still can. Freeze the
+preservation instructions, schema, case set, model and budget for that separate
+trial. This recommendation is not implemented here. No further live run,
+relabeling, promotion, delivery, paid-provider or billing change occurred.
