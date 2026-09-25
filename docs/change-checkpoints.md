@@ -1157,3 +1157,66 @@ runner groups. Tests cover all truth combinations, context isolation, malformed
 objects before cloning, replay, encryption, provider failures and closed request
 callbacks. Independent read-only review and real-adapter offline mocks found no
 blocking issue. Mock success verifies transport/scoring, not model reliability.
+
+Live original-set run
+[36090597465](https://github.com/itworksinprod/first-fold/actions/runs/36090597465)
+on `e1700c92d0817a59e6b5c31182d45ce085a0bab2` passed all six cases on both
+dimensions (twelve valid responses/calls, 7,200 requested output-token cap).
+PR06 now has source=true and meaning=false; the preservation explanation names
+the lost credential-validity condition. The other previous meaning failures
+remain rejected. This is evidence for the context-isolation hypothesis, not a
+general accuracy estimate. No prompts, labels or fixtures changed during the run.
+Artifact 10845960518 ZIP SHA-256 matched GitHub:
+`5aa88b941c0b4740f2a1503ca6482fb2c76b1e8fb4b841eab4fe4de7563b01ec`.
+
+The independent audit verified all exact bindings and permitted the frozen
+holdout trial. Run
+[36090841497](https://github.com/itworksinprod/first-fold/actions/runs/36090841497)
+used the same `e1700c9` revision and unchanged prompts. Eight valid responses:
+source judgments 4/4 correct, preservation 3/4 correct. PH03 correctly failed
+source support but incorrectly failed preservation despite identical before/after
+sentences. The other three pairs passed. Thus the unchanged strict gate correctly
+held at 3/4; no article integration or step-one approval followed. Artifact
+10846050861 ZIP SHA-256 matched GitHub:
+`b8519a6ca049d4cd4b7c6ebbb655da3d1fba93a9da363ea33728762d4c5f5c7b`.
+This set is now a regression set, not an untouched holdout for future revisions.
+
+### Text-only meaning and exact identity
+
+Independent audit confirmed PH03's factual-context contamination. The next
+opt-in experiment separates the roles completely: source review keeps all
+publisher evidence and its frozen prompt; meaning review receives only aligned
+before/after sentences. It checks language equivalence, not factual truth. If an
+unknown specialized term needs an unavailable definition, the meaning gate must
+hold rather than invent one. This loses source-assisted term disambiguation; it
+is not an automatic reliability claim.
+
+After validating and binding the full inventory, byte-identical before/after
+text has a deterministic local preservation result. It skips only the meaning
+request, never source checking. No normalization or matching by partial text is
+allowed. Local decisions have separate provenance and zero provider calls; no
+provider response is fabricated. Any changed unit requires complete model review
+of the aligned inventory. Old diagnostic modes remain unchanged.
+
+Freeze text-only meaning prompt SHA-256:
+`f5fb2ef48f411206c144deb92d0956e6fa89d63cdbb521c71d4caf5ede221e27`.
+The independent reviewer supplied fresh PH05 before implementation: a false
+shipping assertion rewritten from active to passive voice. Labels false/true
+and all quantities/actor/time were independently checked. It cannot take the
+identity shortcut. Separate fixture SHA-256:
+`4efffdd8cda3804ab7e3eaa865d6ab890090ee5026e0bb3550fb2317f851c21e`.
+
+Predeclared order, one run each and no result-dependent retries: fresh PH05
+(two calls/1,200 requested output tokens), then the original six controls
+(twelve/7,200), then the unchanged four-case regression set (seven/4,200 plus
+one local identity check). Stop on a failed gate, diagnose before changing
+anything, and retain every outcome. The existing strict both-dimensions criterion
+and transport timeout/limits remain. No article, email or daily promotion follows
+without its own exact-text review. Sentence-level rewriting is a separate user
+choice; the existing phrase-only editor has not been expanded.
+
+Preflight: all 1,400 automated tests pass, including eleven new text-only/identity
+test groups. Independent review found no blocking issue. Offline real-adapter
+mocks checked new and legacy modes, source failure before the identity decision,
+and PH05 taking the actual model path. Prompt and fixtures are frozen for the
+predeclared live sequence; no provider call has yet qualified this revision.

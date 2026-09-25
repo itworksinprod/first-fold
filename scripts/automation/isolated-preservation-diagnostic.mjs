@@ -2,7 +2,9 @@
 import { createHash } from 'node:crypto';
 import { PRESERVATION_REVIEW_CONTROLS, PRESERVATION_CASESET_SHA256 } from './preservation-review-cases.mjs';
 import { PRESERVATION_HOLDOUT_CONTROLS, PRESERVATION_HOLDOUT_CASESET_SHA256 } from './preservation-holdout-cases.mjs';
+import { PRESERVATION_PARAPHRASE_CONTROLS, PRESERVATION_PARAPHRASE_CASESET_SHA256 } from './preservation-paraphrase-case.mjs';
 import { buildIsolatedPreservationReview, validateIsolatedPreservationReview } from './free/isolated-preservation-review.mjs';
+import { buildTextPreservationReview, validateTextPreservationReview, exactTextPreservation } from './free/text-preservation-review.mjs';
 import { DEFAULT_CLOUDFLARE_AI_MODEL, buildWorkersAiRequest, workersAiFailureDiagnostic } from './free/workers-ai.mjs';
 
 const hash = text => createHash('sha256').update(text).digest('hex');
@@ -11,16 +13,26 @@ const TOKENS = 600;
 const ownCodes = new Set(['PRESERVATION_REVIEW_NETWORK', 'PRESERVATION_REVIEW_PROVENANCE', 'PRESERVATION_REVIEW_MALFORMED']);
 
 export async function diagnoseIsolatedPreservation({ publicKey, accountId, apiToken, now,
-  aiRequestImpl, fetchImpl, endpoint, sealDiagnostic, holdout = false }) {
-  if (typeof holdout !== 'boolean') throw failure('PRESERVATION_REVIEW_PROFILE');
-  const controls = holdout ? PRESERVATION_HOLDOUT_CONTROLS : PRESERVATION_REVIEW_CONTROLS;
-  const cap = controls.length * 2, calls = [], results = [];
+  aiRequestImpl, fetchImpl, endpoint, sealDiagnostic, holdout = false, textOnly = false, paraphrase = false }) {
+  if ([holdout, textOnly, paraphrase].some(v => typeof v !== 'boolean') ||
+      (paraphrase && (!holdout || !textOnly))) throw failure('PRESERVATION_REVIEW_PROFILE');
+  const controls = paraphrase ? PRESERVATION_PARAPHRASE_CONTROLS : holdout ? PRESERVATION_HOLDOUT_CONTROLS : PRESERVATION_REVIEW_CONTROLS;
+  const cap = controls.length * 2, calls = [], results = [], localDecisions = [];
   let modelRequests = 0, networkRequests = 0, code = null;
   // No caller-controlled text, case labels, budget, model, prompt or retries.
   outer: for (const control of controls) {
     const verdicts = {};
     for (const dimension of ['source', 'meaning']) {
-      const view = buildIsolatedPreservationReview(control.input, dimension);
+      const textMeaning = textOnly && dimension === 'meaning';
+      const view = textMeaning ? buildTextPreservationReview(control.input) : buildIsolatedPreservationReview(control.input, dimension);
+      if (textMeaning) {
+        const identity = exactTextPreservation(view);
+        if (identity) {
+          verdicts.meaning = identity;
+          localDecisions.push({ caseId: control.caseId, dimension, request: view.data, verdict: identity });
+          continue;
+        }
+      }
       const prompt = `${view.prompt}\nJSON schema: ${JSON.stringify(view.schema)}`;
       const options = { model: DEFAULT_CLOUDFLARE_AI_MODEL,
         messages: [{ role: 'system', content: prompt }, { role: 'user', content: JSON.stringify(view.data) }],
@@ -51,7 +63,8 @@ export async function diagnoseIsolatedPreservation({ publicKey, accountId, apiTo
         if (result.provider !== 'cloudflare-workers-ai' || result.model !== DEFAULT_CLOUDFLARE_AI_MODEL ||
             result.requestSha256 !== requestSha256 || !/^[a-f0-9]{64}$/u.test(result.responseSha256 ?? '') ||
             result.attemptCount !== 1) throw failure('PRESERVATION_REVIEW_PROVENANCE');
-        const checked = validateIsolatedPreservationReview(result.editorialPayload, view);
+        const checked = textMeaning ? validateTextPreservationReview(result.editorialPayload, view)
+          : validateIsolatedPreservationReview(result.editorialPayload, view);
         call.response = checked.valid ? structuredClone(result.editorialPayload) : null;
         if (!checked.valid) call.responseRejectedBeforeCapture = true;
         Object.assign(call, { responseSha256: result.responseSha256, provider: result.provider,
@@ -75,13 +88,14 @@ export async function diagnoseIsolatedPreservation({ publicKey, accountId, apiTo
   }
   const passed = results.length === controls.length && results.every(r => r.passed);
   if (!passed && !code) code = 'PRESERVATION_REVIEW_MISCLASSIFIED';
-  const report = { mode: `isolated-preservation-${holdout ? 'holdouts' : 'controls'}-not-an-edition`,
+  const report = { mode: `${textOnly ? 'text' : 'isolated'}-preservation-${paraphrase ? 'paraphrase' : holdout ? 'holdouts' : 'controls'}-not-an-edition`,
     status: passed ? 'reviewer-controls-passed' : 'failed', code,
-    caseSetSha256: holdout ? PRESERVATION_HOLDOUT_CASESET_SHA256 : PRESERVATION_CASESET_SHA256,
+    caseSetSha256: paraphrase ? PRESERVATION_PARAPHRASE_CASESET_SHA256 : holdout ? PRESERVATION_HOLDOUT_CASESET_SHA256 : PRESERVATION_CASESET_SHA256,
     totalCases: controls.length, completedCases: results.length, correctCases: results.filter(r => r.passed).length,
     modelRequests, networkRequests, outputBudget: modelRequests * TOKENS, searchQueries: 0, emailSent: false,
+    ...(textOnly ? { localIdentityReviews: localDecisions.length } : {}),
     cases: results.map(({ caseId, valid, passed, sourceCorrect, meaningCorrect }) => ({ caseId, valid, passed, sourceCorrect, meaningCorrect })),
     failures: calls.flatMap(call => call.failure ? [call.failure] : []) };
   return { report, sealed: sealDiagnostic({ purpose: report.mode, capturedAt: now.toISOString(),
-    cases: controls, calls, results, report }, publicKey) };
+    cases: controls, calls, results, report, ...(textOnly ? { localDecisions } : {}) }, publicKey) };
 }
