@@ -1104,3 +1104,56 @@ must be right in every case. Passing this reused set is only a prerequisite:
 independent held-out source-negative cases and a preserved, readable 110–225-word
 article must pass before step one can be called ready. No email, daily promotion,
 recipient, schedule, threshold or billing change is authorized by this trial.
+
+The clarification did not resolve the error. Run
+[36089683469](https://github.com/itworksinprod/first-fold/actions/runs/36089683469)
+on `006565c4663e15d1b34aa5f2bdaf4b0b54aef6ea` returned six valid responses, five
+fully correct cases, and the same PR06 false source rejection (“condition
+omitted”). All six preservation decisions were right. The expected labels and
+strict hold remain unchanged. Artifact 10845665189 SHA-256:
+`9fc7747eb2672e821df228294c002e16b3a3bcf5e66312d998e12c4d235acceb`.
+Independent replay checked exact inputs, prompt, schema, request hashes and
+outcomes. No unchanged rerun was attempted.
+
+### Isolate the two review contexts
+
+The next incremental hypothesis is context interference: asking about loss of
+meaning in the same request may contaminate source-support assessment. New
+opt-in controls make two stateless requests per case. Source-only sees the final
+claims and passages, never the previous sentence. Meaning-only sees both versions
+and the passages, never the source verdict. These are separate requests to the
+same free model, not independent providers. Role-specific hashes and exact
+schemas bind each response; the local program computes their conjunction.
+
+Freeze both prompts before running. Predeclared original-set trial: six unchanged
+cases, twelve calls maximum, 600 requested output tokens per call (7,200 total),
+one attempt each, no correction feedback. Each call has a 30-second timeout,
+bounding provider waits to six minutes within the existing eight-minute job.
+Failures stop and seal available evidence. Valid negative/wrong judgments do not
+skip the other dimension. Prior diagnostic modes and budgets remain unchanged.
+
+An independent reviewer authored and separately adjudicated four fresh controls
+before any provider call, one per source/preservation truth combination. Their
+frozen hash is `e7e009c6cecb1f4c95e24c4d546517a9cc04db9e1ad7518ab319177cbefd1b9b`.
+The optional holdout mode uses only those four fixed cases, at most eight calls
+and 4,800 requested output tokens with the same frozen policy. It is reserved
+until the original controls pass, and cannot select arbitrary inputs. Both
+dimensions and their explanations require independent audit; neither gate is
+weakened. No email, paid research, billing, daily delivery or editorial promotion.
+
+Preflight caught a new-contract mistake before live use: requiring publisher
+citations for a true meaning judgment would conflate source truth with equality
+of the two sentences. The isolated meaning response therefore permits 0–3 known
+IDs (useful for source-defined terms), while a true source judgment still needs
+1–3 supporting IDs. Both judgments remain independently required; an unchanged
+false claim passes preservation only and is still rejected by source review.
+Old reviewer contracts are untouched. Frozen prompt SHA-256 values:
+
+- Source: `153fe4f6767cae01903dd734dbb12245ba914ada5bd97d4506a1fb2a8006b4a7`.
+- Meaning: `80f9d3a58321336d6c9c380643de06e709f393732da37dc8e7591a41dc5d1532`.
+
+Preflight: all 1,389 automated tests pass, including 13 new isolated-builder and
+runner groups. Tests cover all truth combinations, context isolation, malformed
+objects before cloning, replay, encryption, provider failures and closed request
+callbacks. Independent read-only review and real-adapter offline mocks found no
+blocking issue. Mock success verifies transport/scoring, not model reliability.
