@@ -8,7 +8,8 @@ import { GENERIC_FACT_SUMMARY_PROMPT } from '../scripts/automation/free/generic-
 import { PLAIN_LANGUAGE_COPYEDIT_PROMPT } from '../scripts/automation/free/plain-language-copyedit-prompt.mjs';
 import { phraseCopyeditUnitsHash, PHRASE_COPYEDIT_PROTECTED_WORDS } from '../scripts/automation/free/phrase-copyedit.mjs';
 import { buildSinglePhraseCopyeditView, SINGLE_PHRASE_COPYEDIT_LIMITS } from '../scripts/automation/free/single-phrase-copyedit.mjs';
-import { buildClaimwiseFactReview } from '../scripts/automation/free/claimwise-fact-review.mjs';
+import { buildIsolatedPreservationReview } from '../scripts/automation/free/isolated-preservation-review.mjs';
+import { buildTextPreservationReview, exactTextPreservation } from '../scripts/automation/free/text-preservation-review.mjs';
 const hash = text => createHash('sha256').update(text).digest('hex');
 const excerpt = 'Synthetic evidence used solely for control-flow tests, not real factual qualification.';
 const draft = {
@@ -57,8 +58,8 @@ const copyeditSheet = { ...sheet, publisherKey: 'mit',
 const copyeditEndpoint = 'https://provider.example/fixed';
 async function runCopyeditFixture({ options = {}, writerPayload = copyeditInput, editedPayload = boundCopyeditProposal,
   rejectAt = -1, rejection = null } = {}) {
-  const requests = [], networkCalls = [], reviewRequests = [];
-  let writerSchema, copyeditPrompt;
+  const requests = [], networkCalls = [], reviewRequests = [], reviewMeta = [];
+  let writerSchema, copyeditPrompt, payloadGetterReads = 0;
   const result = await diagnoseFactSummary({ publicKey: 'mock', accountId: '0'.repeat(32), apiToken: 'mock',
     now: new Date('2026-09-23T04:00:00Z'), endpoint: copyeditEndpoint,
     claimwise: true, profile: 'mit-generalization', plainLanguageCopyedit: true, ...options,
@@ -79,6 +80,7 @@ async function runCopyeditFixture({ options = {}, writerPayload = copyeditInput,
       const data = JSON.parse(request.messages[1].content);
       const editing = index === 1 && options.plainLanguageCopyedit !== false;
       assert.equal(request.maxTokens, index === 0 || editing ? 1200 : 600);
+      assert.equal(request.timeoutMs, options.plainLanguageCopyedit !== false && index > 1 ? 30000 : 90000);
       const { body } = buildWorkersAiRequest(request);
       const init = { method: 'POST', redirect: 'error', body: JSON.stringify(body) };
       assert.ok(Buffer.byteLength(init.body) <= 70000, 'Complete serialized request, including escaped prompt/schema/evidence, must fit');
@@ -88,7 +90,10 @@ async function runCopyeditFixture({ options = {}, writerPayload = copyeditInput,
       if (index === rejectAt && rejection === 'body') {
         await request.fetchImpl(copyeditEndpoint, { ...init, body: '{}' });
       }
-      await request.fetchImpl(copyeditEndpoint, init);
+      if (index === rejectAt && rejection === 'swallowed-denial') {
+        try { await request.fetchImpl('https://unapproved.example/', init); } catch { /* Denial remains terminal. */ }
+      }
+      if (!(index === rejectAt && rejection === 'skip-fetch')) await request.fetchImpl(copyeditEndpoint, init);
       if (index === rejectAt && rejection === 'retry') await request.fetchImpl(copyeditEndpoint, init);
       if (index === rejectAt && rejection === 'quota') {
         throw Object.assign(new Error('private copyediting quota detail'), { code: 'QUOTA' });
@@ -112,27 +117,51 @@ async function runCopyeditFixture({ options = {}, writerPayload = copyeditInput,
         editorialPayload = structuredClone(editedPayload);
       } else {
         reviewRequests.push(data);
-        assert.equal(data.passages[0].text, excerpt);
-        const field = Object.keys(copyeditInput)[reviewRequests.length - 1];
+        const meaning = data.policy === 'text-only-preservation-v1';
+        const field = meaning ? reviewMeta.at(-1).field
+          : Object.keys(copyeditInput)[reviewMeta.filter(review => review.dimension === 'source').length];
+        reviewMeta.push({ field, dimension: meaning ? 'meaning' : 'source', requestIndex: index });
+        const before = normalizeClaimwiseSummary(writerPayload, excerpt, 'MIT');
+        let verdictKey = 'supported';
         if (options.plainLanguageCopyedit !== false) {
-          assert.equal(data.policy, 'explicit-claimwise-preservation-v3');
-          assert.deepEqual(data.previousClaims.map(claim => claim.text), normalizeClaimwiseSummary(writerPayload, excerpt, 'MIT').units[field]);
-          assert.match(request.messages[0].content, /supported must be false if EITHER source support OR preservation fails/);
+          const input = { text: data.claims.map(claim => claim.text).join(' '),
+            claims: data.claims.map(claim => claim.text), previousClaims: before.units[field],
+            sources: [{ publisher: 'MIT', passages: [{ evidenceId: 'S1P1', text: excerpt }] }] };
+          const view = meaning ? buildTextPreservationReview(input) : buildIsolatedPreservationReview(input, 'source');
+          assert.deepEqual(data, view.data);
+          assert.deepEqual(request.schema, view.schema);
+          assert.equal(request.messages[0].content, `${view.prompt}\nJSON schema: ${JSON.stringify(view.schema)}`);
+          verdictKey = meaning ? 'meaningPreserved' : 'sourceSupported';
+          if (meaning) {
+            assert.deepEqual(Object.keys(data), ['policy', 'claims', 'previousClaims', 'reviewSha256']);
+            assert.deepEqual(data.previousClaims.map(claim => claim.text), before.units[field]);
+            assert.doesNotMatch(JSON.stringify(data), /passages|publisher|Synthetic plumbing judgment/);
+          } else {
+            assert.equal(data.passages[0].text, excerpt);
+            assert.equal(data.policy, 'isolated-claimwise-source-v1');
+            assert.equal(data.previousClaims, undefined);
+          }
         } else {
+          assert.equal(data.passages[0].text, excerpt);
           assert.equal(data.policy, 'explicit-claimwise-evidence-v2');
           assert.equal(data.previousClaims, undefined);
         }
         editorialPayload = { reviewSha256: data.reviewSha256, judgments: data.claims.map(claim => ({
           claimId: claim.claimId, comparison: 'Synthetic plumbing judgment, not semantic qualification.',
-          evidenceIds: ['S1P1'], supported: !(index === rejectAt && rejection === 'unsupported'),
+          ...(!meaning ? { evidenceIds: ['S1P1'] } : {}), [verdictKey]: !(index === rejectAt && rejection === 'unsupported'),
         })) };
         if (index === rejectAt && rejection === 'omitted') editorialPayload.judgments.pop();
         if (index === rejectAt && rejection === 'stale-review') {
-          const field = Object.keys(copyeditInput)[reviewRequests.length - 1];
-          const before = normalizeClaimwiseSummary(copyeditInput, excerpt, 'MIT');
-          editorialPayload.reviewSha256 = buildClaimwiseFactReview({ text: before.draft[field],
-            claims: before.units[field], sources: [{ publisher: 'MIT', passages: [{ evidenceId: 'S1P1', text: excerpt }] }] }).data.reviewSha256;
+          editorialPayload.reviewSha256 = meaning
+            ? buildTextPreservationReview({ claims: data.claims.map(claim => claim.text),
+              previousClaims: before.units[field].map((text, i) => i ? text : `${text} Changed prior meaning.`) }).data.reviewSha256
+            : buildIsolatedPreservationReview({ text: before.draft[field], claims: before.units[field],
+              sources: [{ publisher: 'MIT', passages: [{ evidenceId: 'S1P1', text: excerpt }] }] }, 'source').data.reviewSha256;
           assert.notEqual(editorialPayload.reviewSha256, data.reviewSha256);
+        }
+        if (index === rejectAt && rejection === 'getter') {
+          Object.defineProperty(editorialPayload.judgments[0], 'comparison', { enumerable: true,
+            get() { payloadGetterReads++; return 'Getter must not execute'; } });
         }
       }
       return { editorialPayload, provider: 'cloudflare-workers-ai', model: DEFAULT_CLOUDFLARE_AI_MODEL, attemptCount: 1,
@@ -141,14 +170,14 @@ async function runCopyeditFixture({ options = {}, writerPayload = copyeditInput,
     } });
   assert.equal(result.report.emailSent, false);
   assert.equal(result.report.searchQueries, 0);
-  assert.ok(requests.length <= 6);
-  assert.ok(networkCalls.length <= 6);
-  assert.ok(result.report.outputBudget <= 4800);
+  assert.ok(requests.length <= 7);
+  assert.ok(networkCalls.length <= 7);
+  assert.ok(result.report.outputBudget <= 5400);
   assert.equal(result.report.modelRequests, requests.length);
   assert.equal(result.report.networkRequests, networkCalls.length);
   assert.ok(Buffer.byteLength(JSON.stringify(result.sealed)) <= 350000, 'Full successful or failed capture must fit the encryption limit');
   assert.doesNotMatch(JSON.stringify(result.report), /private copyediting quota detail|Revised MIT|Synthetic fixture/);
-  return { ...result, requests, networkCalls, reviewRequests, copyeditPrompt };
+  return { ...result, requests, networkCalls, reviewRequests, reviewMeta, copyeditPrompt, payloadGetterReads };
 }
 
 test('opt-in copyediting plumbing captures both versions and reviews every final edited unit from scratch', async () => {
@@ -157,9 +186,9 @@ test('opt-in copyediting plumbing captures both versions and reviews every final
   const after = normalizeClaimwiseSummary(copyeditOutput, excerpt, 'MIT');
   assert.equal(result.report.status, 'draft-awaiting-manual-review');
   assert.equal(result.report.mode, 'plain-language-copyedit-awaiting-manual-review');
-  assert.equal(result.report.outputBudget, 4800);
-  assert.equal(result.requests.length, 6);
-  assert.equal(result.networkCalls.length, 6);
+  assert.equal(result.report.outputBudget, 5400);
+  assert.equal(result.requests.length, 7);
+  assert.equal(result.networkCalls.length, 7);
   assert.deepEqual(result.sealed.beforeCopyedit, { ...before, draftSha256: hash(JSON.stringify(before.draft)), unitsSha256: phraseCopyeditUnitsHash(before.units) });
   assert.equal(result.sealed.promptSha256, hash(GENERIC_FACT_SUMMARY_PROMPT));
   assert.equal(result.copyeditPrompt, PLAIN_LANGUAGE_COPYEDIT_PROMPT);
@@ -179,8 +208,47 @@ test('opt-in copyediting plumbing captures both versions and reviews every final
   assert.notEqual(result.sealed.draftSha256, result.sealed.beforeCopyedit.draftSha256);
   assert.deepEqual(result.report.fieldsPassed, Object.keys(after.draft));
   assert.deepEqual(result.sealed.fieldReviews.map(review => review.field), Object.keys(after.draft));
-  assert.deepEqual(result.reviewRequests.map(review => review.statement), Object.values(after.draft));
-  assert.deepEqual(result.reviewRequests.map(review => review.claims.map(claim => claim.text)), Object.values(after.units));
+  const sourceRequests = result.reviewRequests.filter(review => review.policy === 'isolated-claimwise-source-v1');
+  assert.deepEqual(sourceRequests.map(review => review.statement), Object.values(after.draft));
+  assert.deepEqual(sourceRequests.map(review => review.claims.map(claim => claim.text)), Object.values(after.units));
+  assert.deepEqual(result.reviewMeta, [
+    { field: 'headline', dimension: 'source', requestIndex: 2 },
+    { field: 'whatHappened', dimension: 'source', requestIndex: 3 },
+    { field: 'whatHappened', dimension: 'meaning', requestIndex: 4 },
+    { field: 'whyItMatters', dimension: 'source', requestIndex: 5 },
+    { field: 'whatToWatch', dimension: 'source', requestIndex: 6 },
+  ]);
+  assert.equal(result.sealed.reviewStrategy, 'isolated-source-plus-text-preservation-v1');
+  assert.deepEqual(result.sealed.localReviews.map(review => review.field), ['headline', 'whyItMatters', 'whatToWatch']);
+  for (const local of result.sealed.localReviews) {
+    const view = buildTextPreservationReview({ claims: after.units[local.field], previousClaims: before.units[local.field] });
+    assert.equal(local.dimension, 'meaning');
+    assert.deepEqual(local.request, view.data);
+    assert.deepEqual(local.verdict, exactTextPreservation(view));
+    assert.equal(local.provider, undefined);
+    assert.equal(local.responseSha256, undefined);
+  }
+  for (const [index, call] of result.sealed.calls.entries()) {
+    const { body } = buildWorkersAiRequest(result.requests[index]);
+    assert.equal(call.requestSha256, hash(JSON.stringify({ provider: 'cloudflare-workers-ai', model: DEFAULT_CLOUDFLARE_AI_MODEL, body })));
+    assert.equal(call.responseSha256, 'b'.repeat(64));
+    assert.equal(call.provider, 'cloudflare-workers-ai');
+    assert.equal(call.model, DEFAULT_CLOUDFLARE_AI_MODEL);
+    assert.equal(call.attemptCount, 1);
+    if (index > 1) {
+      assert.equal(call.field, result.reviewMeta[index - 2].field);
+      assert.equal(call.dimension, result.reviewMeta[index - 2].dimension);
+      assert.equal(call.promptSha256, hash(result.requests[index].messages[0].content));
+    }
+  }
+  for (const review of result.sealed.fieldReviews) {
+    assert.deepEqual(review.verdict, { valid: true, supported: true, sourceSupported: true, meaningPreserved: true });
+    assert.equal(review.source.verdict.valid, true);
+    assert.equal(review.source.verdict.supported, true);
+    assert.equal(review.meaning.verdict.valid, true);
+    assert.equal(review.meaning.verdict.supported, true);
+    assert.equal(review.meaning.local === true, review.field !== 'whatHappened');
+  }
   for (const [field, units] of Object.entries(after.units)) {
     assert.equal(units.length, before.units[field].length);
     if (field !== 'whatHappened') assert.deepEqual(units, before.units[field]);
@@ -213,6 +281,8 @@ test('explicit false retains the existing five-call generic writer and review bu
   assert.equal(result.sealed.copyeditPromptSha256, undefined);
   assert.equal(result.sealed.copyeditStrategy, undefined);
   assert.equal(result.sealed.copyeditDecision, undefined);
+  assert.equal(result.sealed.reviewStrategy, undefined);
+  assert.equal(result.sealed.localReviews, undefined);
   assert.deepEqual(result.sealed.rawDraft, copyeditInput);
 });
 
@@ -333,19 +403,50 @@ test('valid phrase edits still face the final body-length check before factual r
   assert.equal(result.sealed.fieldReviews.length, 0);
 });
 
-for (const rejection of ['unsupported', 'omitted', 'stale-review']) {
+for (const rejection of ['unsupported', 'omitted', 'stale-review', 'getter']) {
   test(`copyediting final ${rejection} review stops immediately without inheriting earlier approval`, async () => {
-    // Headline is deliberately immutable; stale body reviews must not transfer.
-    for (let rejectAt = rejection === 'stale-review' ? 3 : 2; rejectAt <= 5; rejectAt++) {
+    // Same-policy hashes must bind the edited claim and its exact prior wording.
+    for (const rejectAt of rejection === 'stale-review' ? [3, 4] : [2, 3, 4, 5, 6]) {
       const result = await runCopyeditFixture({ rejectAt, rejection });
+      const fieldIndex = [0, 1, 1, 2, 3][rejectAt - 2];
       assert.equal(result.report.status, 'failed');
       assert.equal(result.report.code, 'FACT_SUMMARY_REVIEW_REJECTED');
-      assert.equal(result.requests.length, rejectAt + 1);
-      assert.equal(result.sealed.fieldReviews.length, rejectAt - 1);
-      assert.deepEqual(result.report.fieldsPassed, Object.keys(copyeditInput).slice(0, rejectAt - 2));
+      assert.equal(result.requests.length, rejectAt + 1 + (rejection === 'unsupported' && rejectAt === 3 ? 1 : 0));
+      assert.equal(result.sealed.fieldReviews.length, fieldIndex + 1);
+      assert.deepEqual(result.report.fieldsPassed, Object.keys(copyeditInput).slice(0, fieldIndex));
+      const failed = result.sealed.fieldReviews.at(-1);
+      assert.equal(failed.verdict.supported, false);
+      if (rejection !== 'unsupported' && rejectAt !== 4) {
+        assert.equal(failed.meaning, null, 'Malformed source cannot reach meaning or identity');
+        assert.equal(failed.source.response, null);
+        assert.equal(failed.source.responseRejectedBeforeCapture, true);
+      }
+      if (rejection === 'unsupported' && rejectAt === 3) {
+        assert.equal(failed.verdict.sourceSupported, false);
+        assert.equal(failed.verdict.meaningPreserved, true);
+        assert.equal(failed.meaning.verdict.valid, true, 'A valid false source still gets a separate meaning judgment');
+      }
+      assert.equal(result.payloadGetterReads, 0, 'Reject malformed descriptors before cloning private captures');
+      assert.ok(result.sealed.localReviews.every(review => review.field !== failed.field || rejection === 'unsupported'));
     }
   });
 }
+
+test('source transport and provenance failures stop before any local identity can be created', async () => {
+  for (const rejection of ['skip-fetch', 'swallowed-denial', 'provenance', 'quota']) {
+    const result = await runCopyeditFixture({ rejectAt: 2, rejection });
+    assert.equal(result.report.code, rejection === 'provenance' ? 'FACT_SUMMARY_PROVENANCE'
+      : rejection === 'quota' ? 'QUOTA' : 'FACT_SUMMARY_NETWORK');
+    assert.equal(result.requests.length, 3);
+    assert.equal(result.networkCalls.length, ['skip-fetch', 'swallowed-denial'].includes(rejection) ? 2 : 3);
+    assert.deepEqual(result.report.fieldsPassed, []);
+    assert.deepEqual(result.sealed.localReviews, []);
+    const saved = result.requests[2], { body } = buildWorkersAiRequest(saved);
+    await assert.rejects(saved.fetchImpl(copyeditEndpoint, { method: 'POST', redirect: 'error', body: JSON.stringify(body) }),
+      error => error.code === 'FACT_SUMMARY_NETWORK');
+    assert.equal(result.networkCalls.length, ['skip-fetch', 'swallowed-denial'].includes(rejection) ? 2 : 3);
+  }
+});
 
 for (const rejectAt of [0, 1, 2]) {
   test(`copyediting quota failure on request ${rejectAt + 1} cannot trigger another request`, async () => {

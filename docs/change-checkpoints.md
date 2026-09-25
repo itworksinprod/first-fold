@@ -1219,4 +1219,70 @@ Preflight: all 1,400 automated tests pass, including eleven new text-only/identi
 test groups. Independent review found no blocking issue. Offline real-adapter
 mocks checked new and legacy modes, source failure before the identity decision,
 and PH05 taking the actual model path. Prompt and fixtures are frozen for the
-predeclared live sequence; no provider call has yet qualified this revision.
+predeclared live sequence.
+
+Fresh PH05 run
+[36092178986](https://github.com/itworksinprod/first-fold/actions/runs/36092178986)
+on `d4dedef3f02fa6841dd5575eb8e149ab756211d8` passed both labels with two actual
+provider calls and zero identity shortcuts (1,200 requested output-token cap).
+Source=false correctly cites that none of the crates shipped; meaning=true
+recognizes the active/passive paraphrase. Independent replay verified the exact
+fixture, prompts, schemas, request bindings, verdicts and provenance fields.
+Artifact 10846395966 ZIP SHA-256 matched GitHub:
+`b97d814a3824ab51bb3ca663bf62be12c44d5816274c3b6595c194fbb6db1ff3`.
+This single fresh case is not an article or step-one qualification.
+
+Original six-case run
+[36092326305](https://github.com/itworksinprod/first-fold/actions/runs/36092326305)
+used the same frozen revision and passed 6/6 on both dimensions. Twelve actual
+calls, zero identity shortcuts, 7,200 requested output-token cap. Preservation
+correctly rejected replacing mandatory limits with narrow limits, dropping a
+noise-resistance modifier, narrowing a category to examples, and removing the
+credential-validity condition. Artifact 10845558182 ZIP SHA-256 matched GitHub:
+`245cbd1247318d0d3634ba2ad32b5870616dc1bb34b4c8dec799a1157d047838`.
+
+Unchanged four-case regression run
+[36092496797](https://github.com/itworksinprod/first-fold/actions/runs/36092496797)
+on the same `d4dedef` revision passed 4/4. Seven actual calls, one separate local
+identity decision, 4,200 requested output-token cap. PH03's source contradiction
+was still rejected; its unchanged wording was recognized locally rather than
+assigned a fabricated model response. The changed lighting condition and removed
+battery-powered qualifier were both rejected. Artifact 10846435998 ZIP SHA-256
+matched GitHub:
+`5fc2ba10822f121ec0838ad9898d1be414c65aef9436630a92156bbca41ee4ff`.
+
+These three live trials used the same frozen prompt revision, with no unchanged
+retries: eleven distinct cases, twenty-one actual calls, and one local identity
+decision. Ten cases were previously exercised regressions; only PH05 was new to
+the provider. This is a bounded reviewer qualification, not a general accuracy
+estimate or proof that the article is readable. Step one remains held.
+
+### Article integration of the qualified separate reviewers
+
+The next narrow integration keeps the existing single-phrase-or-abstain editor
+and writer unchanged. Each final article field receives a source-only check;
+meaning checks see aligned before/after text only, with exact identity recorded
+locally for untouched fields. Both checks must pass; source failure can never be
+overridden by identity. The headline remains immutable. The maximum is seven
+actual calls and 5,400 requested output tokens (two 1,200-token writing/editing
+calls, four 600-token source calls and one 600-token changed-field meaning call),
+plus three local identity checks. Reviewer timeouts are 30 seconds; writer/editor
+timeouts remain 90 seconds, within the existing eight-minute workflow limit.
+
+After local tests and independent preflight, allow one fixed-article live trial
+with unchanged prompts, then independent exact-text source/meaning/readability
+review. Retain the actual result even if the editor abstains or the article is
+awkward. Do not rerun unchanged for a lucky draft. No email, daily integration,
+editorial threshold change, or sentence-level rewrite is authorized by this
+reviewer integration. Permission to expand beyond phrase edits is still pending.
+
+Article integration local verification: all 1,402 automated tests pass, including
+64 targeted fact-summary/preservation groups. Tests cover the seven-call budget,
+three local identities, mandatory source checking, same-role stale review hashes,
+malformed payload rejection before capture, 30/90-second timeout split, skipped
+or swallowed transport failures, and callbacks invoked after their request ends.
+Legacy diagnostic modes, writer/editor prompts and the source fact sheet are
+unchanged. No live article result is claimed by these offline tests.
+Independent preflight found no blocking issue and approved the one bounded
+phrase-only article trial. It did not approve sentence-level rewriting or
+completion of step one.

@@ -5,6 +5,8 @@ import { createHash } from 'node:crypto';
 import { fetchReviewedArticle } from './free/feed-engine.mjs';
 import { buildFieldFactReview, validateFieldFactReview } from './free/field-fact-review.mjs';
 import { buildClaimwiseFactReview, validateClaimwiseFactReview } from './free/claimwise-fact-review.mjs';
+import { buildIsolatedPreservationReview, validateIsolatedPreservationReview } from './free/isolated-preservation-review.mjs';
+import { buildTextPreservationReview, validateTextPreservationReview, exactTextPreservation } from './free/text-preservation-review.mjs';
 import { DEFAULT_CLOUDFLARE_AI_MODEL, buildWorkersAiRequest, workersAiFailureDiagnostic } from './free/workers-ai.mjs';
 import { GENERIC_FACT_SUMMARY_PROMPT } from './free/generic-fact-summary-prompt.mjs';
 import { PLAIN_LANGUAGE_COPYEDIT_PROMPT } from './free/plain-language-copyedit-prompt.mjs';
@@ -56,8 +58,8 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
   const generic = profile === 'mit-generalization';
   if (typeof plainLanguageCopyedit !== 'boolean' || (plainLanguageCopyedit && (!generic || !claimwise))) throw fail('FACT_SUMMARY_MODE');
   if (!['anthropic', 'mit-generalization'].includes(profile) || (profile === 'mit-generalization' && !claimwise)) throw fail('FACT_SUMMARY_PROFILE');
-  const maxRequests = plainLanguageCopyedit ? 6 : 5;
-  const maxOutputBudget = plainLanguageCopyedit ? 4800 : claimwise ? 3600 : 2800;
+  const maxRequests = plainLanguageCopyedit ? 7 : 5;
+  const maxOutputBudget = plainLanguageCopyedit ? 5400 : claimwise ? 3600 : 2800;
   const publisher = generic ? 'MIT' : 'Anthropic';
   const sourceUrl = generic ? 'https://news.mit.edu/2026/new-method-enables-ai-safety-critical-situations-0914'
     : 'https://www.anthropic.com/institute/measuring-pace-of-ai-development';
@@ -67,28 +69,53 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
   if (plainLanguageCopyedit) {
     capture.copyeditStrategy = 'single-phrase-or-abstain-v4';
     capture.copyeditPromptSha256 = hash(PLAIN_LANGUAGE_COPYEDIT_PROMPT);
+    capture.reviewStrategy = 'isolated-source-plus-text-preservation-v1';
+    capture.localReviews = [];
   }
   let modelRequests = 0, networkRequests = 0, outputBudget = 0, code = null;
-  const request = async (prompt, data, schema, maxTokens) => {
+  const request = async (prompt, data, schema, maxTokens,
+    { timeoutMs = 90000, deferCapture = false, metadata = null } = {}) => {
+    const systemPrompt = `${prompt}\nJSON schema: ${JSON.stringify(schema)}`;
     const options = { model: DEFAULT_CLOUDFLARE_AI_MODEL,
-      messages: [{ role: 'system', content: `${prompt}\nJSON schema: ${JSON.stringify(schema)}` }, { role: 'user', content: JSON.stringify(data) }],
+      messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: JSON.stringify(data) }],
       schema, responseFormat: 'json_object', maxTokens, maxAttempts: 1, temperature: 0.1,
-      timeoutMs: 90000, maxRequestBytes: 70000, maxResponseBytes: 100000 };
+      timeoutMs, maxRequestBytes: 70000, maxResponseBytes: 100000 };
     if (++modelRequests > maxRequests || (outputBudget += maxTokens) > maxOutputBudget) throw fail('FACT_SUMMARY_BUDGET');
     const { body } = buildWorkersAiRequest(options);
     const bodyText = JSON.stringify(body);
     const expected = hash(JSON.stringify({ provider: 'cloudflare-workers-ai', model: DEFAULT_CLOUDFLARE_AI_MODEL, body }));
-    const call = { request: data }; capture.calls.push(call);
-    let attempts = 0;
-    const result = await aiRequestImpl({ ...options, accountId, apiToken,
-      validatePayload: value => Boolean(value && typeof value === 'object' && !Array.isArray(value)),
-      fetchImpl: async (url, init) => {
-        if (url !== endpoint || init?.method !== 'POST' || init.redirect !== 'error' || init.body !== bodyText ||
-            ++attempts > 1 || ++networkRequests > maxRequests) throw fail('FACT_SUMMARY_NETWORK');
-        return fetchImpl(url, init);
-      } });
+    const call = { ...(metadata ?? {}), request: data };
+    if (metadata) Object.assign(call, { promptSha256: hash(systemPrompt), requestSha256: expected });
+    capture.calls.push(call);
+    let attempts = 0, networkViolation = false, active = true, result;
+    try {
+      result = await aiRequestImpl({ ...options, accountId, apiToken,
+        validatePayload: value => Boolean(value && typeof value === 'object' && !Array.isArray(value)),
+        fetchImpl: async (url, init) => {
+          if (plainLanguageCopyedit) {
+            if (!active || networkViolation || url !== endpoint || init?.method !== 'POST' || init.redirect !== 'error' ||
+                init.body !== bodyText || attempts >= 1 || networkRequests >= maxRequests) {
+              networkViolation = true;
+              throw fail('FACT_SUMMARY_NETWORK');
+            }
+            attempts++;
+            networkRequests++;
+            return fetchImpl(url, init);
+          }
+          if (url !== endpoint || init?.method !== 'POST' || init.redirect !== 'error' || init.body !== bodyText ||
+              ++attempts > 1 || ++networkRequests > maxRequests) throw fail('FACT_SUMMARY_NETWORK');
+          return fetchImpl(url, init);
+        } });
+      active = false;
+      if (plainLanguageCopyedit && (networkViolation || attempts !== 1)) throw fail('FACT_SUMMARY_NETWORK');
+    } finally {
+      active = false;
+    }
     if (result.provider !== 'cloudflare-workers-ai' || result.model !== DEFAULT_CLOUDFLARE_AI_MODEL || result.requestSha256 !== expected ||
         !/^[a-f0-9]{64}$/.test(result.responseSha256 ?? '') || result.attemptCount !== 1) throw fail('FACT_SUMMARY_PROVENANCE');
+    if (metadata) Object.assign(call, { responseSha256: result.responseSha256,
+      provider: result.provider, model: result.model, attemptCount: result.attemptCount });
+    if (deferCapture) return { payload: result.editorialPayload, call };
     call.response = structuredClone(result.editorialPayload);
     return result.editorialPayload;
   };
@@ -130,7 +157,8 @@ Compute is an imperfect safety-effort proxy because safety research can use less
 The two reported percentages describe different pools of work; preserve their labels without adding a causal explanation.
 Give a specific evidence-backed limitation to watch, not generic advice. Do not imply this is today's news.
 The article is one company's account. No tables or appendix are available. No outside facts or fabricated quotes.`,
-      { attribution: sheet.attribution, facts: sheet.facts }, schema, 1200);
+      { attribution: sheet.attribution, facts: sheet.facts }, schema, 1200,
+      plainLanguageCopyedit ? { metadata: { stage: 'writer' } } : undefined);
     capture.rawDraft = structuredClone(raw);
     let normalized = claimwise ? normalizeClaimwiseSummary(raw, excerpt, publisher) : null;
     if (plainLanguageCopyedit) {
@@ -141,7 +169,8 @@ The article is one company's account. No tables or appendix are available. No ou
       const proposal = await request(PLAIN_LANGUAGE_COPYEDIT_PROMPT,
         { catalog: catalog.data,
           limits: SINGLE_PHRASE_COPYEDIT_LIMITS, protectedWords: PHRASE_COPYEDIT_PROTECTED_WORDS,
-          attribution: sheet.attribution, facts: sheet.facts }, catalog.schema, 1200);
+          attribution: sheet.attribution, facts: sheet.facts }, catalog.schema, 1200,
+        { metadata: { stage: 'copyedit' } });
       capture.rawCopyedit = structuredClone(proposal);
       const applied = applySinglePhraseCopyedit(normalized.units, proposal, catalog);
       capture.copyeditDecision = applied.decision;
@@ -163,8 +192,56 @@ The article is one company's account. No tables or appendix are available. No ou
     if (claimwise) capture.reviewUnits = structuredClone(normalized.units);
     const source = { publisher, passages: excerpt.split('\n').map((text, i) => ({ evidenceId: `S1P${i + 1}`, text })) };
     for (const field of fields) {
-      const view = claimwise ? buildClaimwiseFactReview({ text: draft[field], sources: [source], claims: normalized.units[field],
-        ...(plainLanguageCopyedit ? { previousClaims: capture.beforeCopyedit.units[field] } : {}) })
+      if (plainLanguageCopyedit) {
+        const sourceView = buildIsolatedPreservationReview({ text: draft[field], sources: [source],
+          claims: normalized.units[field] }, 'source');
+        const sourceResult = await request(sourceView.prompt, sourceView.data, sourceView.schema, 600,
+          { timeoutMs: 30000, deferCapture: true, metadata: { stage: 'review', field, dimension: 'source' } });
+        const sourceVerdict = validateIsolatedPreservationReview(sourceResult.payload, sourceView);
+        if (!sourceVerdict.valid) {
+          sourceResult.call.responseRejectedBeforeCapture = true;
+          capture.fieldReviews.push({ field,
+            source: { response: null, responseRejectedBeforeCapture: true, verdict: sourceVerdict },
+            meaning: null,
+            verdict: { valid: false, supported: false, sourceSupported: false, meaningPreserved: false } });
+          throw fail('FACT_SUMMARY_REVIEW_REJECTED');
+        }
+        sourceResult.call.response = structuredClone(sourceResult.payload);
+        const sourceReview = { response: structuredClone(sourceResult.payload), verdict: sourceVerdict };
+
+        const meaningView = buildTextPreservationReview({ claims: normalized.units[field],
+          previousClaims: capture.beforeCopyedit.units[field] });
+        const identityVerdict = exactTextPreservation(meaningView);
+        let meaningReview, meaningVerdict;
+        if (identityVerdict) {
+          meaningVerdict = identityVerdict;
+          const localReview = { field, dimension: 'meaning', request: meaningView.data,
+            verdict: structuredClone(identityVerdict) };
+          capture.localReviews.push(localReview);
+          meaningReview = { local: true, verdict: identityVerdict };
+        } else {
+          const meaningResult = await request(meaningView.prompt, meaningView.data, meaningView.schema, 600,
+            { timeoutMs: 30000, deferCapture: true, metadata: { stage: 'review', field, dimension: 'meaning' } });
+          meaningVerdict = validateTextPreservationReview(meaningResult.payload, meaningView);
+          if (!meaningVerdict.valid) {
+            meaningResult.call.responseRejectedBeforeCapture = true;
+            capture.fieldReviews.push({ field, source: sourceReview,
+              meaning: { response: null, responseRejectedBeforeCapture: true, verdict: meaningVerdict },
+              verdict: { valid: false, supported: false, sourceSupported: sourceVerdict.supported, meaningPreserved: false } });
+            throw fail('FACT_SUMMARY_REVIEW_REJECTED');
+          }
+          meaningResult.call.response = structuredClone(meaningResult.payload);
+          meaningReview = { response: structuredClone(meaningResult.payload), verdict: meaningVerdict };
+        }
+        const verdict = { valid: sourceVerdict.valid && meaningVerdict.valid,
+          supported: sourceVerdict.supported && meaningVerdict.supported,
+          sourceSupported: sourceVerdict.supported, meaningPreserved: meaningVerdict.supported };
+        capture.fieldReviews.push({ field, source: sourceReview, meaning: meaningReview, verdict });
+        if (!verdict.valid || !verdict.supported) throw fail('FACT_SUMMARY_REVIEW_REJECTED');
+        continue;
+      }
+      const view = claimwise
+        ? buildClaimwiseFactReview({ text: draft[field], sources: [source], claims: normalized.units[field] })
         : buildFieldFactReview({ text: draft[field], sources: [source] });
       const response = await request(`${view.prompt}\nKeep each comparison under 160 characters. Select only 1–3 decisive evidenceIds for supported claims. Do not list every passage.`, view.data, view.schema, claimwise ? 600 : 400);
       const verdict = claimwise ? validateClaimwiseFactReview(response, view) : validateFieldFactReview(response, view);
