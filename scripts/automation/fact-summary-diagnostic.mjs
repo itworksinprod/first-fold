@@ -12,6 +12,7 @@ import { GENERIC_FACT_SUMMARY_PROMPT } from './free/generic-fact-summary-prompt.
 import { PLAIN_LANGUAGE_COPYEDIT_PROMPT } from './free/plain-language-copyedit-prompt.mjs';
 import { phraseCopyeditUnitsHash, PHRASE_COPYEDIT_PROTECTED_WORDS } from './free/phrase-copyedit.mjs';
 import { buildSinglePhraseCopyeditView, applySinglePhraseCopyedit, SINGLE_PHRASE_COPYEDIT_LIMITS } from './free/single-phrase-copyedit.mjs';
+import { buildSentenceRewriteView, applySentenceRewrite, SENTENCE_REWRITE_PROMPT } from './free/sentence-rewrite.mjs';
 
 const fields = ['headline', 'whatHappened', 'whyItMatters', 'whatToWatch'];
 const hash = text => createHash('sha256').update(text).digest('hex');
@@ -52,23 +53,26 @@ export function normalizeClaimwiseSummary(raw, excerpt, publisher = 'Anthropic')
 }
 
 export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now, aiRequestImpl, fetchImpl, endpoint, sealDiagnostic,
-  claimwise = false, profile = 'anthropic', plainLanguageCopyedit = false,
+  claimwise = false, profile = 'anthropic', plainLanguageCopyedit = false, sentenceLanguageRewrite = false,
   articleFetcher = fetchReviewedArticle, sheetLoader }) {
   if (typeof claimwise !== 'boolean') throw fail('FACT_SUMMARY_MODE');
   const generic = profile === 'mit-generalization';
   if (typeof plainLanguageCopyedit !== 'boolean' || (plainLanguageCopyedit && (!generic || !claimwise))) throw fail('FACT_SUMMARY_MODE');
+  if (typeof sentenceLanguageRewrite !== 'boolean' ||
+      (sentenceLanguageRewrite && (!generic || !claimwise || plainLanguageCopyedit))) throw fail('FACT_SUMMARY_MODE');
   if (!['anthropic', 'mit-generalization'].includes(profile) || (profile === 'mit-generalization' && !claimwise)) throw fail('FACT_SUMMARY_PROFILE');
-  const maxRequests = plainLanguageCopyedit ? 7 : 5;
-  const maxOutputBudget = plainLanguageCopyedit ? 5400 : claimwise ? 3600 : 2800;
+  const editedReviewPath = plainLanguageCopyedit || sentenceLanguageRewrite;
+  const maxRequests = sentenceLanguageRewrite ? 9 : plainLanguageCopyedit ? 7 : 5;
+  const maxOutputBudget = sentenceLanguageRewrite ? 6600 : plainLanguageCopyedit ? 5400 : claimwise ? 3600 : 2800;
   const publisher = generic ? 'MIT' : 'Anthropic';
   const sourceUrl = generic ? 'https://news.mit.edu/2026/new-method-enables-ai-safety-critical-situations-0914'
     : 'https://www.anthropic.com/institute/measuring-pace-of-ai-development';
   const publisherKey = generic ? 'mit' : 'anthropic';
-  const capture = { purpose: plainLanguageCopyedit ? 'plain-language-copyedit-awaiting-manual-review' : generic ? 'generic-second-article-awaiting-manual-review' : claimwise ? 'claimwise-fact-summary-awaiting-manual-review' : 'reviewed-fact-summary-awaiting-manual-review',
+  const capture = { purpose: sentenceLanguageRewrite ? 'sentence-language-rewrite-awaiting-manual-review' : plainLanguageCopyedit ? 'plain-language-copyedit-awaiting-manual-review' : generic ? 'generic-second-article-awaiting-manual-review' : claimwise ? 'claimwise-fact-summary-awaiting-manual-review' : 'reviewed-fact-summary-awaiting-manual-review',
     ...(generic ? { promptSha256: hash(GENERIC_FACT_SUMMARY_PROMPT), factSelection: 'manual' } : {}), calls: [], fieldReviews: [], emailSent: false };
-  if (plainLanguageCopyedit) {
-    capture.copyeditStrategy = 'single-phrase-or-abstain-v4';
-    capture.copyeditPromptSha256 = hash(PLAIN_LANGUAGE_COPYEDIT_PROMPT);
+  if (editedReviewPath) {
+    capture.copyeditStrategy = sentenceLanguageRewrite ? 'sentence-by-sentence-v1' : 'single-phrase-or-abstain-v4';
+    capture.copyeditPromptSha256 = hash(sentenceLanguageRewrite ? SENTENCE_REWRITE_PROMPT : PLAIN_LANGUAGE_COPYEDIT_PROMPT);
     capture.reviewStrategy = 'isolated-source-plus-text-preservation-v1';
     capture.localReviews = [];
   }
@@ -92,7 +96,7 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
       result = await aiRequestImpl({ ...options, accountId, apiToken,
         validatePayload: value => Boolean(value && typeof value === 'object' && !Array.isArray(value)),
         fetchImpl: async (url, init) => {
-          if (plainLanguageCopyedit) {
+          if (editedReviewPath) {
             if (!active || networkViolation || url !== endpoint || init?.method !== 'POST' || init.redirect !== 'error' ||
                 init.body !== bodyText || attempts >= 1 || networkRequests >= maxRequests) {
               networkViolation = true;
@@ -107,7 +111,7 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
           return fetchImpl(url, init);
         } });
       active = false;
-      if (plainLanguageCopyedit && (networkViolation || attempts !== 1)) throw fail('FACT_SUMMARY_NETWORK');
+      if (editedReviewPath && (networkViolation || attempts !== 1)) throw fail('FACT_SUMMARY_NETWORK');
     } finally {
       active = false;
     }
@@ -158,21 +162,33 @@ The two reported percentages describe different pools of work; preserve their la
 Give a specific evidence-backed limitation to watch, not generic advice. Do not imply this is today's news.
 The article is one company's account. No tables or appendix are available. No outside facts or fabricated quotes.`,
       { attribution: sheet.attribution, facts: sheet.facts }, schema, 1200,
-      plainLanguageCopyedit ? { metadata: { stage: 'writer' } } : undefined);
+      editedReviewPath ? { metadata: { stage: 'writer' } } : undefined);
     capture.rawDraft = structuredClone(raw);
     let normalized = claimwise ? normalizeClaimwiseSummary(raw, excerpt, publisher) : null;
-    if (plainLanguageCopyedit) {
+    if (editedReviewPath) {
       capture.beforeCopyedit = { draft: structuredClone(normalized.draft), units: structuredClone(normalized.units),
         draftSha256: hash(JSON.stringify(normalized.draft)), unitsSha256: phraseCopyeditUnitsHash(normalized.units) };
-      const catalog = buildSinglePhraseCopyeditView(normalized.units);
+      const catalog = sentenceLanguageRewrite ? buildSentenceRewriteView(normalized.units) : buildSinglePhraseCopyeditView(normalized.units);
       capture.copyeditCatalog = catalog.data;
-      const proposal = await request(PLAIN_LANGUAGE_COPYEDIT_PROMPT,
-        { catalog: catalog.data,
-          limits: SINGLE_PHRASE_COPYEDIT_LIMITS, protectedWords: PHRASE_COPYEDIT_PROTECTED_WORDS,
-          attribution: sheet.attribution, facts: sheet.facts }, catalog.schema, 1200,
-        { metadata: { stage: 'copyedit' } });
-      capture.rawCopyedit = structuredClone(proposal);
-      const applied = applySinglePhraseCopyedit(normalized.units, proposal, catalog);
+      const editData = sentenceLanguageRewrite
+        ? { catalog: catalog.data, attribution: sheet.attribution, facts: sheet.facts }
+        : { catalog: catalog.data, limits: SINGLE_PHRASE_COPYEDIT_LIMITS,
+          protectedWords: PHRASE_COPYEDIT_PROTECTED_WORDS, attribution: sheet.attribution, facts: sheet.facts };
+      // Validate the new rewrite's strict shape before cloning or capturing it.
+      const result = await request(sentenceLanguageRewrite ? SENTENCE_REWRITE_PROMPT : PLAIN_LANGUAGE_COPYEDIT_PROMPT,
+        editData, catalog.schema, 1200, { deferCapture: sentenceLanguageRewrite, metadata: { stage: 'copyedit' } });
+      const proposal = sentenceLanguageRewrite ? result.payload : result;
+      if (!sentenceLanguageRewrite) capture.rawCopyedit = structuredClone(proposal);
+      let applied;
+      try {
+        applied = sentenceLanguageRewrite ? applySentenceRewrite(normalized.units, proposal, catalog)
+          : applySinglePhraseCopyedit(normalized.units, proposal, catalog);
+      } catch (error) {
+        if (sentenceLanguageRewrite) result.call.responseRejectedBeforeCapture = true;
+        throw error;
+      }
+      if (sentenceLanguageRewrite) result.call.response = structuredClone(proposal);
+      if (sentenceLanguageRewrite) capture.rawCopyedit = structuredClone(proposal);
       capture.copyeditDecision = applied.decision;
       if (applied.decision === 'abstain') throw fail('FACT_SUMMARY_COPYEDIT_ABSTAINED');
       capture.editsApplied = applied.editsApplied;
@@ -180,7 +196,7 @@ The article is one company's account. No tables or appendix are available. No ou
         ...Object.fromEntries(fields.slice(1).map(field => [field, applied.units[field]])) };
       const checked = normalizeClaimwiseSummary(edited, excerpt, publisher);
       // Mechanical containment is not semantic equivalence. Review all final
-      // text, then independently compare the exact substitutions before approval.
+      // text, then independently compare each aligned before/after unit.
       raw = edited;
       normalized = checked;
       capture.rawDraft = structuredClone(raw);
@@ -192,7 +208,7 @@ The article is one company's account. No tables or appendix are available. No ou
     if (claimwise) capture.reviewUnits = structuredClone(normalized.units);
     const source = { publisher, passages: excerpt.split('\n').map((text, i) => ({ evidenceId: `S1P${i + 1}`, text })) };
     for (const field of fields) {
-      if (plainLanguageCopyedit) {
+      if (editedReviewPath) {
         const sourceView = buildIsolatedPreservationReview({ text: draft[field], sources: [source],
           claims: normalized.units[field] }, 'source');
         const sourceResult = await request(sourceView.prompt, sourceView.data, sourceView.schema, 600,

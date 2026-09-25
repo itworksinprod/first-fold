@@ -24,6 +24,7 @@ on:
           - claimwise-fact-summary
           - generic-second-article
           - plain-language-second-article
+          - sentence-language-second-article
           - preservation-review-controls
           - split-preservation-review-controls
           - isolated-preservation-controls
@@ -59,6 +60,8 @@ jobs:
         run: node --test tests/split-preservation-review.test.mjs tests/preservation-review-diagnostic.test.mjs tests/claimwise-review.test.mjs tests/copyedit-preservation-review.test.mjs tests/causal-review.test.mjs tests/fact-summary-diagnostic.test.mjs tests/single-phrase-copyedit.test.mjs tests/phrase-copyedit.test.mjs tests/phrase-copyedit-catalog.test.mjs tests/phrase-copyedit-context.test.mjs tests/copyedit-qualification-guard.test.mjs tests/private-writer-diagnostic.test.mjs tests/reviewer-transport-diagnostic.test.mjs tests/split-claim-review.test.mjs tests/foundation-recheck.test.mjs tests/grounded-draft.test.mjs tests/free-workers-ai.test.mjs
       - name: Test isolated source and preservation boundaries before credentials
         run: node --test tests/isolated-preservation-review.test.mjs tests/isolated-preservation-diagnostic.test.mjs tests/text-preservation-review.test.mjs tests/text-preservation-diagnostic.test.mjs
+      - name: Test isolated sentence rewriting before credentials
+        run: node --test tests/sentence-language-rewrite.test.mjs tests/sentence-language-diagnostic.test.mjs
       - name: Validate diagnostic mode and encryption before credentials
         env:
           DIAGNOSTIC_PUBLIC_KEY: ${{ inputs.public_key }}

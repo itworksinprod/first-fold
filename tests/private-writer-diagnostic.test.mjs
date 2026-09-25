@@ -458,5 +458,5 @@ test("plain-language CLI mode routes only the opted-in second article through co
   // Source contract only: executing this CLI branch would fetch its pinned real article.
   const source = await readFile(new URL("../scripts/automation/private-writer-diagnostic.mjs", import.meta.url), "utf8");
   assert.match(source, /plainLanguageCopyedit:\s*mode === ['"]plain-language-second-article['"]/);
-  assert.match(source, /profile:\s*\[['"]generic-second-article['"],\s*['"]plain-language-second-article['"]\]\.includes\(mode\)\s*\?\s*['"]mit-generalization['"]\s*:\s*['"]anthropic['"]/);
+  assert.match(source, /profile:\s*\[['"]generic-second-article['"],\s*['"]plain-language-second-article['"],\s*['"]sentence-language-second-article['"]\]\.includes\(mode\)\s*\?\s*['"]mit-generalization['"]\s*:\s*['"]anthropic['"]/);
 });

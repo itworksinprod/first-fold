@@ -65,6 +65,7 @@ export function assertDiagnosticAuthority(env) {
 }
 
 export function resolvePrivateWriterDiagnosticMode(value = "source") {
+  if (value === 'sentence-language-second-article') return value;
   if (['text-preservation-controls', 'text-preservation-holdouts', 'text-preservation-paraphrase'].includes(value)) return value;
   if (['isolated-preservation-controls', 'isolated-preservation-holdouts'].includes(value)) return value;
   if (!["source", "source-recheck", "source-recheck-explicit", "source-field-review", "review-controls", "explicit-review-controls", "split-review-controls", "isolated-review-controls", "field-review-controls", "provider-only", "reviewed-fact-summary", "causal-review-controls", "claimwise-review-controls", "claimwise-fact-summary", "generic-second-article", "plain-language-second-article", "preservation-review-controls", "split-preservation-review-controls"].includes(value)) throw failure("DIAGNOSTIC_MODE_INVALID");
@@ -148,11 +149,11 @@ export async function diagnoseOneWriter({ publicKey, accountId, apiToken, now = 
     return diagnosePreservationReview({ publicKey, accountId, apiToken, now, aiRequestImpl, fetchImpl, endpoint, sealDiagnostic,
       splitDimensions: mode === 'split-preservation-review-controls' });
   }
-  if (["reviewed-fact-summary", "claimwise-fact-summary", "generic-second-article", "plain-language-second-article"].includes(mode)) {
+  if (["reviewed-fact-summary", "claimwise-fact-summary", "generic-second-article", "plain-language-second-article", "sentence-language-second-article"].includes(mode)) {
     const { diagnoseFactSummary } = await import('./fact-summary-diagnostic.mjs');
     return diagnoseFactSummary({ publicKey, accountId, apiToken, now, aiRequestImpl, fetchImpl, endpoint, sealDiagnostic,
-      claimwise: mode !== 'reviewed-fact-summary', profile: ['generic-second-article', 'plain-language-second-article'].includes(mode) ? 'mit-generalization' : 'anthropic',
-      plainLanguageCopyedit: mode === 'plain-language-second-article' });
+      claimwise: mode !== 'reviewed-fact-summary', profile: ['generic-second-article', 'plain-language-second-article', 'sentence-language-second-article'].includes(mode) ? 'mit-generalization' : 'anthropic',
+      plainLanguageCopyedit: mode === 'plain-language-second-article', sentenceLanguageRewrite: mode === 'sentence-language-second-article' });
   }
   if (["split-review-controls", "isolated-review-controls"].includes(mode)) {
     const { diagnoseSplitReview } = await import("./split-review-diagnostic.mjs");

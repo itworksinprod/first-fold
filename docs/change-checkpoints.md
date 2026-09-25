@@ -1327,3 +1327,57 @@ plain-language readability. Later fields never completed automated review.
 The review safeguard checkpoint is complete for this bounded trial; step one
 as a whole remains incomplete pending the editing-strategy decision and a
 passing exact-text article test. Steps two and three have not begun.
+
+### Approved sentence-by-sentence experiment
+
+Carlos has now explicitly approved expanding phrase-only editing to sentence
+rewriting. The permission above is resolved for this isolated experiment, not
+daily delivery. New opt-in mode `sentence-language-second-article` leaves the
+old phrase mode and all frozen reviewer prompts unchanged. The original writer,
+manually reviewed fact sheet, protected article fetch and source fingerprint
+also stay unchanged, so this tests the editing strategy rather than new research.
+
+One rewrite pass receives a baseline-bound ordered body-unit inventory and the
+same reviewed facts. It must return exactly one corresponding sentence per unit,
+in the original order. It cannot supply a new headline, merge, omit or add units.
+The headline is restored byte-for-byte from the baseline. All actors, quantities,
+conditions, comparisons, attribution, uncertainty and limits must survive; a
+matching inventory alone does not establish that they did. Unchanged units are
+allowed when no safe simplification is available; a wholly unchanged response
+is a hold, not a successful rewrite. The final joined body must remain 110–225
+words and pass the existing originality and text checks.
+
+Every final field still needs its own source-only review. Each changed field
+also needs the qualified text-only before/after meaning review, with no publisher
+evidence or sibling verdict supplied to it. Exact identity skips only the meaning
+request for an unchanged field; it never bypasses factual checking. A rejection,
+malformed result, provenance mismatch or exhausted provider allowance stops the
+trial without email, automatic retry, paid fallback or promotion.
+
+Predeclared bound: one 1,200-token writer call, one 1,200-token rewrite call,
+four source reviews and at most three changed-body meaning reviews at 600 tokens
+each: nine actual provider calls and a 6,600 requested output-token ceiling.
+The immutable headline uses local meaning identity but mandatory source review.
+Writer/editor timeouts remain 90 seconds, reviewer timeouts 30 seconds, within
+the existing eight-minute workflow limit. These caps are not actual usage or
+proof of available daily quota.
+
+After tests and independent implementation review, perform one fixed-article
+no-email trial. Success requires all four source and all applicable preservation
+checks, exact artifact/provenance replay, and independent review of the final
+wording for ordinary-reader clarity without fact or meaning drift. Retain any
+failure and diagnose it before a changed experiment; no unchanged lucky retries.
+Even a pass qualifies this article experiment only, not fresh daily discovery,
+the full newspaper, or automatic delivery. Steps two and three remain untouched.
+
+Frozen generic sentence-rewrite prompt SHA-256:
+`199bdef679fcf2306f5bd57e7365eafe5d7d326f801ddf2a2f336847677fa9c9`.
+The sentence guard rejects conspicuous multi-sentence output while allowing
+common abbreviations, initials and decimal values. It is not a proof of grammar
+or completeness; the independent exact-text review must check those explicitly.
+
+Local verification: all 1,414 automated tests pass, including new ordered-rewrite,
+abstention, length-boundary, transport/provenance, mandatory source-check and
+changed-meaning rejection coverage. Independent implementation review found no
+blocking issue and separately passed 92 relevant tests. This authorizes the
+single predeclared trial, not a claim that live prose already passes.
