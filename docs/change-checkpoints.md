@@ -666,3 +666,42 @@ blocking issue; saved faulty output fails the new context gate. The review also
 confirmed bounded local work, exact legacy-v2 compatibility and unchanged model
 request limits. This clears the implementation for the single trial, not a news
 summary for delivery.
+
+### Sentence-context live result: held on a misaddressed phrase
+
+Run [36076772550](https://github.com/itworksinprod/first-fold/actions/runs/36076772550)
+used `d11a15609b8926d532f94ec549411895037413a7`. It stopped at
+`FACT_SUMMARY_PHRASE_EDIT_MATCH` after two requests/2,400 requested output tokens.
+The editor asked to replace a phrase in a sentence where that phrase did not
+exist. No accepted draft, fallback, source/preservation review call or email was
+produced. This was a malformed edit proposal, not a credential or provider block.
+
+Local replay of the three proposed edits separately shows: the opening's edit
+passes mechanical checks; the significance edit has the missing match; the watch
+edit would introduce a duplicate modifier and is rejected by the new context
+guard. That replay is diagnostic evidence only, not cherry-picking a publishable
+subset. The entire proposal remains held. The context protection is tested
+against real captured proposals locally; the newly added v3 semantic comparisons
+were NOT exercised live because the exact-match gate stopped the run first.
+
+Artifact 10840650725 SHA-256:
+`745045c7511e1f2c22c4fd6b787d537a421838fd8b19a672e68cc157ec599247`.
+Baseline draft SHA-256:
+`37be93ef7ca66ba26abd3640d9474d69b17f5ecbed16277ae4e80f88312d82b4`.
+Ordered baseline unit SHA-256:
+`14d4af8f9cc3db7909a2f526ad6366ebf7a6257aef6aebb03b29f4f26feb74a4`.
+There is no final accepted draft hash. Source fingerprint remains unchanged;
+the encrypted capture was decrypted only into the local 2026-09-24 review folder.
+
+This bounded trial ends without a retry. Next small design should make the
+sentence/phrase target explicit and mechanically bound, rather than relying on
+the editor to infer an array index and repeat a phrase from memory. Preserve
+strict exact matching; never use fuzzy retargeting or silently drop rejected
+edits. Step one remains open, and steps two/three and daily/email integration wait.
+
+Independent exact-text review confirmed the missing target and the further
+duplicate/modifier-loss defect, while judging the first isolated substitution
+faithful and clearer. It recommends a frozen, baseline-bound catalog of exact
+editable spans (IDs, locations and sentence context), with the model returning
+only an existing span ID and replacement. That is the next addressing-only
+checkpoint, not permission to bypass any meaning or quality hold.
