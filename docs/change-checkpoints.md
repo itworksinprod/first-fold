@@ -1286,3 +1286,44 @@ unchanged. No live article result is claimed by these offline tests.
 Independent preflight found no blocking issue and approved the one bounded
 phrase-only article trial. It did not approve sentence-level rewriting or
 completion of step one.
+
+Live article trial
+[36092991729](https://github.com/itworksinprod/first-fold/actions/runs/36092991729)
+on `82283d0169e8dcc8d2e58e611f6f0a8e20e11257` stopped with
+`FACT_SUMMARY_REVIEW_REJECTED`: five actual calls, 4,200 requested output-token
+cap, one local identity decision, only the headline passed. The phrase editor
+again proposed `hard constraints` → `tight limits`. The three what-happened
+source judgments accepted the text, but the new meaning reviewer rejected its
+changed first unit while accepting the two unchanged units. The mandatory
+combined gate therefore blocked the draft before later fields or any email.
+This is a functioning rejection safeguard, not a successful plain-language
+article or completion of step one. No unchanged retry was attempted.
+
+The 148-word draft meets the length bound but remains unapproved. Exact local
+replay verified the issued phrase catalog, applied substitution, unchanged
+surrounding units, source fingerprint, final hash, review requests/verdicts and
+separate headline identity record. Artifact 10846511708 ZIP SHA-256 matched
+GitHub: `b795eb6319d5a556e3166b2cf96f9b54b34e9856e2043c31dbeb22c9a9365421`.
+Baseline SHA-256:
+`f16bba0d8be5d6baa815d8cf2929bd7510e79c3661fcc10282d2887fd7806120`.
+Final SHA-256:
+`ebec66ee33388377d78db5476e19b84cbfef50f880cd597509bd7ce89743f33e`.
+The source remains the manually reviewed MIT excerpt
+`081196aa0f2c507e6b75f5a7018a594af882468006401c1b1428f96e4eb74801`.
+
+The next proposed change is a bounded sentence-by-sentence rewrite with fixed
+facts, ordering and headline, separate source and meaning checks, and independent
+exact-text review. This expands the user's earlier phrase-only restriction, so
+the requested permission remains a necessary decision before implementation.
+No daily delivery, recipient, schedule, billing, or public edition changed.
+
+Independent exact-text audit confirmed HOLD. It replayed all five requests,
+source/catalog/substitution/final bindings and the headline identity. The
+preservation veto is justified: nonnegotiable requirements are not synonymous
+with tight limits. Both before/after bodies are 148 words. Other factual content
+and the deployment caveat remain intact, but unexplained intermediate samples,
+pretrained models, deployment time and optimization formulation still impede
+plain-language readability. Later fields never completed automated review.
+The review safeguard checkpoint is complete for this bounded trial; step one
+as a whole remains incomplete pending the editing-strategy decision and a
+passing exact-text article test. Steps two and three have not begun.
