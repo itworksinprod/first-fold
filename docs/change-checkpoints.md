@@ -619,3 +619,50 @@ retain semantic negative cases for replacing a general category with examples
 or dropping a meaningful modifier. Preserve the original wording on a hold only
 as diagnostic evidence, not an automatically accepted fallback. A new bounded
 trial needs its own stated criteria; do not rerun this one for a lucky result.
+
+### Sentence-context checkpoint (step one only)
+
+The next user-authorized increment keeps the phrase-only interface and adds local
+repetition holds on each complete assembled sentence. It rejects newly increased
+adjacent duplicate-word counts or repetitions of any phrase of three or more
+lexical words. Counts are normalized, overlapping and compared with the original
+sentence; existing repetitions are not silently rewritten. All phrase lengths
+are checked because a longer repeated sequence can recombine shorter windows
+without increasing their counts. Input is bounded at 2,000 characters and 512
+lexical components per sentence to bound that local work.
+
+Replay of the previous encrypted capture holds the opening's duplicated examples
+and the watch section's duplicated modifier locally. The significance edit's
+scope narrowing does not create repetition, so it still passes this mechanical
+guard and requires semantic review. Negative controls explicitly retain this
+limitation; no claim of deterministic meaning verification is made.
+
+The same four review requests now include the exact aligned original sentences
+in this opt-in mode only. The v3 review hash binds final claims, previous claims,
+source evidence and policy. A true verdict requires BOTH source support and
+preserved meaning, including no omissions, added assertions, category narrowing,
+modifier loss, changed conditions or caveat subject. Prior wording is comparison
+context, not evidence. Malformed prior inventories cannot silently use the old
+policy. Callers without a prior inventory retain their exact v2 data and prompt.
+Automated semantic judgment remains fallible; independent manual review is still
+the final checkpoint, not replaced by a green run.
+
+The phrase prompt now asks the editor to evaluate the whole assembled sentence,
+leave already explained terms alone, and retain generality and meaningful
+modifiers. No supplied source-specific replacements or manually polished draft
+are added. Prompt SHA-256:
+`c5401ac07ddd1e108a9b608d5fea295087644c033aaaf1f373dd589342c25006`.
+
+Predeclared live check: one fixed-source no-email trial, same model, fact sheet,
+writer prompt, 110–225-word body requirement, one attempt per call, and unchanged
+six-request/4,800-requested-output-token ceiling. Require local containment and
+context checks, all four source-and-preservation reviews, then independent
+before/after/source review confirming faithful, genuinely clearer prose. Any
+failed gate stays held; no automatic accepted fallback, rerun-until-green,
+email, paid provider, daily promotion or step-two/three work is authorized here.
+
+Preflight: all 1,330 tests pass. Independent code and regression review found no
+blocking issue; saved faulty output fails the new context gate. The review also
+confirmed bounded local work, exact legacy-v2 compatibility and unchanged model
+request limits. This clears the implementation for the single trial, not a news
+summary for delivery.

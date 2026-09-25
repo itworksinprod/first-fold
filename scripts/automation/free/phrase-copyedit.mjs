@@ -2,6 +2,7 @@
 // same thing. Exact-text factual and independent before/after review remain required.
 import { createHash } from 'node:crypto';
 import { assertCopyeditQualifications } from './copyedit-qualification-guard.mjs';
+import { assertPhraseCopyeditContext } from './phrase-copyedit-context.mjs';
 
 const fields = ['headline', 'whatHappened', 'whyItMatters', 'whatToWatch'];
 const bodyFields = fields.slice(1);
@@ -77,7 +78,9 @@ export function applyPhraseCopyedits(beforeUnits, proposal, expectedUnitsSha256)
       cursor = edit.end;
       editsApplied.push(edit);
     }
-    units[field][unitIndex] = output + baseline.slice(cursor);
+    const assembled = output + baseline.slice(cursor);
+    assertPhraseCopyeditContext(baseline, assembled);
+    units[field][unitIndex] = assembled;
   }
   assertCopyeditQualifications(beforeUnits, units);
   return { units, editsApplied };

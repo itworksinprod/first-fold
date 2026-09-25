@@ -102,6 +102,15 @@ async function runCopyeditFixture({ options = {}, writerPayload = copyeditInput,
       } else {
         reviewRequests.push(data);
         assert.equal(data.passages[0].text, excerpt);
+        const field = Object.keys(copyeditInput)[reviewRequests.length - 1];
+        if (options.plainLanguageCopyedit !== false) {
+          assert.equal(data.policy, 'explicit-claimwise-preservation-v3');
+          assert.deepEqual(data.previousClaims.map(claim => claim.text), normalizeClaimwiseSummary(writerPayload, excerpt, 'MIT').units[field]);
+          assert.match(request.messages[0].content, /supported must be false if EITHER source support OR preservation fails/);
+        } else {
+          assert.equal(data.policy, 'explicit-claimwise-evidence-v2');
+          assert.equal(data.previousClaims, undefined);
+        }
         editorialPayload = { reviewSha256: data.reviewSha256, judgments: data.claims.map(claim => ({
           claimId: claim.claimId, comparison: 'Synthetic plumbing judgment, not semantic qualification.',
           evidenceIds: ['S1P1'], supported: !(index === rejectAt && rejection === 'unsupported'),
@@ -143,10 +152,10 @@ test('opt-in copyediting plumbing captures both versions and reviews every final
   assert.equal(result.sealed.promptSha256, hash(GENERIC_FACT_SUMMARY_PROMPT));
   assert.equal(result.copyeditPrompt, PLAIN_LANGUAGE_COPYEDIT_PROMPT);
   assert.match(PLAIN_LANGUAGE_COPYEDIT_PROMPT, /small plain-language phrase replacements, not rewritten sentences/);
-  assert.equal(hash(PLAIN_LANGUAGE_COPYEDIT_PROMPT), 'b9d08ea0419d6c2957d5159e90ef0043929d001a1d0ce7f5492d99a4489b6dc3');
+  assert.equal(hash(PLAIN_LANGUAGE_COPYEDIT_PROMPT), 'c5401ac07ddd1e108a9b608d5fea295087644c033aaaf1f373dd589342c25006');
   assert.doesNotMatch(PLAIN_LANGUAGE_COPYEDIT_PROMPT, /\b(?:Anthropic|MIT|HardFlow|Claude|robot)\b/i);
   assert.equal(result.sealed.copyeditPromptSha256, hash(result.copyeditPrompt));
-  assert.equal(result.sealed.copyeditStrategy, 'exact-phrase-replacements-v1');
+  assert.equal(result.sealed.copyeditStrategy, 'sentence-context-phrase-replacements-v2');
   assert.deepEqual(result.sealed.rawCopyedit, copyeditProposal);
   assert.equal(result.sealed.editsApplied.length, 3);
   assert.deepEqual(result.sealed.rawDraft, copyeditOutput);
@@ -212,13 +221,16 @@ for (const stage of ['writer']) {
   }
 }
 
-for (const defect of ['whole-rewrite', 'stale-hash', 'protected-cue', 'extra-prose', 'empty-edits']) {
+for (const defect of ['whole-rewrite', 'stale-hash', 'protected-cue', 'extra-prose', 'empty-edits', 'repeated-context']) {
   test(`phrase copyediting rejects ${defect} after two calls without fallback`, async () => {
     const editedPayload = defect === 'whole-rewrite' ? structuredClone(copyeditOutput) : structuredClone(copyeditProposal);
     if (defect === 'stale-hash') editedPayload.unitsSha256 = '0'.repeat(64);
     if (defect === 'protected-cue') editedPayload.replacements[0].replace = 'can share measurements';
     if (defect === 'extra-prose') editedPayload.whatHappened = copyeditOutput.whatHappened;
     if (defect === 'empty-edits') editedPayload.replacements = [];
+    if (defect === 'repeated-context') editedPayload.replacements[0] = {
+      field: 'whatHappened', unitIndex: 1, find: 'category', replace: 'a category',
+    };
     const result = await runCopyeditFixture({ editedPayload });
     assert.equal(result.report.status, 'failed');
     assert.match(result.report.code, /^FACT_SUMMARY_PHRASE_EDIT_/);

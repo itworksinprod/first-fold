@@ -64,7 +64,7 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
   const capture = { purpose: plainLanguageCopyedit ? 'plain-language-copyedit-awaiting-manual-review' : generic ? 'generic-second-article-awaiting-manual-review' : claimwise ? 'claimwise-fact-summary-awaiting-manual-review' : 'reviewed-fact-summary-awaiting-manual-review',
     ...(generic ? { promptSha256: hash(GENERIC_FACT_SUMMARY_PROMPT), factSelection: 'manual' } : {}), calls: [], fieldReviews: [], emailSent: false };
   if (plainLanguageCopyedit) {
-    capture.copyeditStrategy = 'exact-phrase-replacements-v1';
+    capture.copyeditStrategy = 'sentence-context-phrase-replacements-v2';
     capture.copyeditPromptSha256 = hash(PLAIN_LANGUAGE_COPYEDIT_PROMPT);
   }
   let modelRequests = 0, networkRequests = 0, outputBudget = 0, code = null;
@@ -158,7 +158,8 @@ The article is one company's account. No tables or appendix are available. No ou
     if (claimwise) capture.reviewUnits = structuredClone(normalized.units);
     const source = { publisher, passages: excerpt.split('\n').map((text, i) => ({ evidenceId: `S1P${i + 1}`, text })) };
     for (const field of fields) {
-      const view = claimwise ? buildClaimwiseFactReview({ text: draft[field], sources: [source], claims: normalized.units[field] })
+      const view = claimwise ? buildClaimwiseFactReview({ text: draft[field], sources: [source], claims: normalized.units[field],
+        ...(plainLanguageCopyedit ? { previousClaims: capture.beforeCopyedit.units[field] } : {}) })
         : buildFieldFactReview({ text: draft[field], sources: [source] });
       const response = await request(`${view.prompt}\nKeep each comparison under 160 characters. Select only 1–3 decisive evidenceIds for supported claims. Do not list every passage.`, view.data, view.schema, claimwise ? 600 : 400);
       const verdict = claimwise ? validateClaimwiseFactReview(response, view) : validateFieldFactReview(response, view);
