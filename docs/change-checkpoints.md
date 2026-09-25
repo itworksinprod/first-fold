@@ -13,8 +13,8 @@ Daily production requirements remain unchanged until a separate integration
 checkpoint; this change applies to the isolated fact-summary diagnostics.
 
 Current sequential editorial status: **step 1 (plain language) is still held**.
-The qualification guard is locally tested and live-verified, but the edited article
-is not approved. Step 2 (useful significance) and step 3 (meaningful watch guidance)
+The qualification guard and exact phrase containment are locally tested and
+live-verified, but the edited article is not approved. Step 2 (useful significance) and step 3 (meaningful watch guidance)
 have not started. Do not advance merely because a safety guard works as intended.
 
 ## Anthropic reader checkpoint
@@ -581,3 +581,41 @@ Independent recheck found both mechanical issues resolved, with no remaining
 blocking finding in this narrow implementation. All 1,317 automated tests pass.
 Phrase prompt SHA-256:
 `b9d08ea0419d6c2957d5159e90ef0043929d001a1d0ce7f5492d99a4489b6dc3`.
+
+### Phrase-replacement live result: containment passed, wording held
+
+Run [36075869420](https://github.com/itworksinprod/first-fold/actions/runs/36075869420)
+used `3d265bd70c2cc72a76b0d546b1e19eb3ba21c343`. All four final-text factual
+reviews passed within six requests/4,800 requested output tokens. The model
+proposed three replacements, taking the body from 148 to 154 words. Local replay
+from immutable baseline offsets reproduced the captured final text exactly.
+Independent review confirmed the headline, unit order, all surrounding text,
+deployment conditions and deployment-evidence caveat remained unchanged.
+
+This is nevertheless an **editorial HOLD**, not approval of the summary. Two
+replacements narrowed general requirements to particular examples, and one lost
+the quality dimension from quality goals. The assembled wording also repeated
+the safety/physical-limit example phrase and duplicated an adjacent modifier.
+Several specialist terms remain unexplained. The independent reviewer confirmed
+these defects even though all automated factual checks were green. The prior
+wholesale sentence omissions are contained; meaning preservation and clarity are
+not yet solved. No email, retry, daily integration or step-two/three work occurred.
+
+Artifact 10840376688 SHA-256:
+`0edcc1b4ef6f8e1a2156ea1071e33c7a7fa2bbf165163da494dbdd716fee278b`.
+Baseline draft SHA-256:
+`f16bba0d8be5d6baa815d8cf2929bd7510e79c3661fcc10282d2887fd7806120`.
+Ordered baseline unit SHA-256:
+`378ddf7a74ebe3f507f7188ba400fb8f9153046726d3d3ae6aeb77dd105cb3bb`.
+Unapproved final draft SHA-256:
+`7fc1796f8e3514b378a67c2abb7189850dd551d4517c0063b255763ca0380809`.
+Source fingerprint remains unchanged. Decrypted evidence stays outside the public
+repository under the local 2026-09-24 review directory.
+
+Next narrow checkpoint, not implemented by this trial: check each replacement in
+its full sentence context before approval. Add offline rejection controls for
+newly repeated words at replacement boundaries and repeated multiword phrases;
+retain semantic negative cases for replacing a general category with examples
+or dropping a meaningful modifier. Preserve the original wording on a hold only
+as diagnostic evidence, not an automatically accepted fallback. A new bounded
+trial needs its own stated criteria; do not rerun this one for a lucky result.
