@@ -1425,3 +1425,42 @@ Independent preflight found no blocking change and approved that bounded trial.
 It also independently replayed the prior artifact's nine requests and hashes.
 Its caveat remains: the reviewed facts define only some jargon, so untouched
 technical sentences can still prevent a whole-body clarity pass.
+
+Changed-prompt trial
+[36177626527](https://github.com/itworksinprod/first-fold/actions/runs/36177626527)
+on `b88fe4de08c0cbfafc0fbc84d92a08101d54e4eb` also held with
+`FACT_SUMMARY_REVIEW_REJECTED`: five actual calls, 4,200 requested output-token
+cap, one local headline identity. Source review accepted the headline and
+what-happened inventory; meaning review rejected the changed first unit. The
+only edit substituted `requirements that must be met` for `hard constraints`,
+yielding the awkward `outputs that meet requirements that must be met`.
+The later fields did not reach automated review and have no approval.
+
+Independent exact-text review confirms the term substitution is meaning-preserving
+under the supplied source definition; this is another observed false positive,
+not permission to remove the meaning gate. The rewrite is still not a readability
+pass. More importantly, the newly generated baseline introduced an unsupported
+claim about the importance of further real-world evaluation and attributed it to
+MIT. Neither the captured source nor the reviewed fact sheet supports that advice.
+The editor retained it because editing is constrained to preserve baseline facts.
+The writer varied between trials despite an unchanged prompt. A preservation
+experiment must therefore not assume its newly generated baseline is valid.
+
+Main replay verified all five full prompt/request bindings, source fingerprint,
+ordered inventory/application, unchanged headline, exact final text, captured
+verdicts and local identity. The body went from 167 to 170 words. Artifact
+10882856406 ZIP SHA-256 matches GitHub:
+`599b6a840d01a5484bd784e2085c0a9dbb9c117625e75ba24eb2aeca21ba594a`.
+Baseline SHA-256:
+`a79087a8a371abc03baa125714cfa65666f8a40044e08dc1962db12b07d73a96`.
+Final SHA-256:
+`75e1989bbcf0d37bf888906b78799abf1713b9e068254b25d8e5e5ddd82524eb`.
+
+Both predeclared trials are concluded without retry or promotion. Sentence-level
+containment and separate review plumbing are implemented and locally verified;
+the complete plain-language article checkpoint is still HOLD. The next small
+checkpoint is offline source-qualification of a frozen private baseline before
+another editing experiment. Do not ask an equivalence-constrained editor to
+repair unsupported writer claims, and do not change reviewer policy merely to
+force either held output through. No daily workflow, email recipient, schedule,
+billing or public edition changed; no email was sent.
