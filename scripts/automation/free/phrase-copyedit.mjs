@@ -8,7 +8,10 @@ const fields = ['headline', 'whatHappened', 'whyItMatters', 'whatToWatch'];
 const bodyFields = fields.slice(1);
 const fail = reason => Object.assign(new Error(`FACT_SUMMARY_PHRASE_EDIT_${reason}`), { code: `FACT_SUMMARY_PHRASE_EDIT_${reason}` });
 const exactKeys = (value, keys) => value && Object.getPrototypeOf(value) === Object.prototype &&
-  Object.keys(value).sort().join('|') === [...keys].sort().join('|');
+  Reflect.ownKeys(value).length === keys.length && keys.every(key => {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    return descriptor && Object.hasOwn(descriptor, 'value') && descriptor.enumerable;
+  });
 const phrasePattern = /^[a-z]+(?:[-'][a-z]+)*(?: [a-z]+(?:[-'][a-z]+)*)*$/u;
 const tokenCharacter = /[\p{L}\p{M}\p{N}_'’\-]/u;
 const wordCount = text => (text.match(/[\p{L}\p{N}]+/gu) ?? []).length;
@@ -32,10 +35,39 @@ export const PHRASE_COPYEDIT_SCHEMA = {
 export const phraseCopyeditUnitsHash = units => createHash('sha256')
   .update(JSON.stringify(Object.fromEntries(fields.map(field => [field, units[field]])))).digest('hex');
 
+export function assertPhraseCopyeditUnits(beforeUnits) {
+  if (!exactKeys(beforeUnits, fields) || fields.some(field => {
+    const parts = beforeUnits[field];
+    if (!Array.isArray(parts) || Object.getPrototypeOf(parts) !== Array.prototype ||
+        parts.length < 1 || parts.length > (field === 'headline' ? 1 : 4) ||
+        Reflect.ownKeys(parts).length !== parts.length + 1) return true;
+    for (let index = 0; index < parts.length; index++) {
+      const descriptor = Object.getOwnPropertyDescriptor(parts, String(index));
+      if (!descriptor || !Object.hasOwn(descriptor, 'value') || !descriptor.enumerable) return true;
+      const unit = descriptor.value;
+      if (typeof unit !== 'string' || !unit || unit !== unit.trim() || unit.length > (field === 'headline' ? 160 : 1000)) return true;
+    }
+    return false;
+  })) throw fail('INPUT');
+}
+
+export function assertPhraseCopyeditPhrase(phrase, maxWords) {
+  if (typeof phrase !== 'string' || phrase.length > 80 || !phrasePattern.test(phrase) ||
+      wordCount(phrase) > maxWords || phrase.normalize('NFKC') !== phrase) throw fail('SPAN');
+  const words = phrase.match(/[\p{L}]+/gu);
+  if (words.some(word => PHRASE_COPYEDIT_PROTECTED_WORDS.includes(word)) || /n't\b/u.test(phrase)) throw fail('PROTECTED');
+}
+
+export function phraseCopyeditFindSpan(unit, find) {
+  assertPhraseCopyeditPhrase(find, PHRASE_COPYEDIT_LIMITS.maxFindWords);
+  const start = unit.indexOf(find), end = start + find.length;
+  if (start < 0 || unit.indexOf(find, start + 1) !== -1 ||
+      tokenCharacter.test([...unit.slice(0, start)].at(-1) ?? '') || tokenCharacter.test([...unit.slice(end)][0] ?? '')) throw fail('MATCH');
+  return { start, end };
+}
+
 export function applyPhraseCopyedits(beforeUnits, proposal, expectedUnitsSha256) {
-  if (!exactKeys(beforeUnits, fields) || fields.some(field => !Array.isArray(beforeUnits[field]) ||
-      beforeUnits[field].length < 1 || beforeUnits[field].length > (field === 'headline' ? 1 : 4) ||
-      beforeUnits[field].some(unit => typeof unit !== 'string' || !unit || unit !== unit.trim()))) throw fail('INPUT');
+  assertPhraseCopyeditUnits(beforeUnits);
   const actualHash = phraseCopyeditUnitsHash(beforeUnits);
   if (expectedUnitsSha256 !== actualHash || !exactKeys(proposal, ['unitsSha256', 'replacements']) ||
       proposal.unitsSha256 !== actualHash || !Array.isArray(proposal.replacements) ||
@@ -45,19 +77,13 @@ export function applyPhraseCopyedits(beforeUnits, proposal, expectedUnitsSha256)
     if (!exactKeys(edit, ['field', 'unitIndex', 'find', 'replace']) || !bodyFields.includes(edit.field) ||
         !Number.isInteger(edit.unitIndex) || edit.unitIndex < 0 || edit.unitIndex >= beforeUnits[edit.field].length) throw fail('TARGET');
     for (const [key, maxWords] of [['find', 5], ['replace', 8]]) {
-      const phrase = edit[key];
-      if (typeof phrase !== 'string' || phrase.length > 80 || !phrasePattern.test(phrase) ||
-          wordCount(phrase) > maxWords || phrase.normalize('NFKC') !== phrase) throw fail('SPAN');
-      const words = phrase.match(/[\p{L}]+/gu);
-      if (words.some(word => PHRASE_COPYEDIT_PROTECTED_WORDS.includes(word)) || /n't\b/u.test(phrase)) throw fail('PROTECTED');
+      assertPhraseCopyeditPhrase(edit[key], maxWords);
     }
     if (edit.find === edit.replace) throw fail('UNCHANGED');
     const unit = beforeUnits[edit.field][edit.unitIndex];
-    const start = unit.indexOf(edit.find), end = start + edit.find.length;
     // Literal, unique, whole-token matches only. No fuzzy matching, regex supplied
     // by the model, or applying later edits against an already modified sentence.
-    if (start < 0 || unit.indexOf(edit.find, start + 1) !== -1 ||
-        tokenCharacter.test([...unit.slice(0, start)].at(-1) ?? '') || tokenCharacter.test([...unit.slice(end)][0] ?? '')) throw fail('MATCH');
+    const { start, end } = phraseCopyeditFindSpan(unit, edit.find);
     const key = `${edit.field}:${edit.unitIndex}`;
     const edits = byUnit.get(key) ?? [];
     edits.push({ ...edit, start, end });

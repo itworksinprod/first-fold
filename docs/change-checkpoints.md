@@ -705,3 +705,48 @@ faithful and clearer. It recommends a frozen, baseline-bound catalog of exact
 editable spans (IDs, locations and sentence context), with the model returning
 only an existing span ID and replacement. That is the next addressing-only
 checkpoint, not permission to bypass any meaning or quality hold.
+
+### Frozen phrase-catalog checkpoint (step one only)
+
+The next increment removes model-supplied phrase locations. The program enumerates
+eligible exact body spans using the same grammar, protected-word, whole-token,
+unique-match and per-sentence coverage rules as the existing application guard.
+The editor receives those spans, their complete sentence context, and a dynamic
+schema; it returns only an existing span ID and new wording. It cannot supply a
+field, sentence index, find phrase or offset. No source-specific phrase choices
+or manually improved article text are supplied.
+
+The ordered catalog is deeply frozen, baseline-hash-bound (including the unchanged
+headline) and bound to its issued object through private runtime state. A catalog
+hash binds its version, sentences, span IDs, order, text and positions. Stale
+baselines, copied catalogs, unknown/duplicate IDs, extra locations and invalid
+edits hold the entire proposal. All resolved substitutions enter the existing
+batch guards together; there is no fuzzy match, dropped edit or accepted original
+fallback. Empty catalogs or catalogs above 512 spans/40,000 serialized UTF-8 bytes
+hold before the editor request, without truncation.
+
+Tests found a local-input edge case where a hidden array serialization method
+could disguise a changed baseline. Baselines now require ordinary own data
+properties and dense native arrays, rejecting custom methods, inherited indices,
+accessors and additional properties. Provider JSON cannot contain such methods,
+but local callers now receive the same dependable binding. Exact boundary tests
+cover 512/513 spans and 40,000/40,001 bytes, including multibyte input.
+
+All 1,344 tests pass. Independent code review found no blocking issue for the
+isolated JSON provider path. An offline six-response mock using the previous
+captured MIT baseline and real fact sheet measured complete serialized provider
+requests of 4,990 / 45,874 / 10,313 / 11,792 / 11,108 / 10,868 bytes (limit 70,000)
+and a full capture of 110,641 bytes (limit 350,000). That is transport-size evidence,
+not factual approval or a live success. The baseline produced 367 eligible spans;
+the previous nonexistent significance-section target has no selectable ID.
+Prompt SHA-256:
+`be49e5d0207620e8d2b95758a23d4d2c2d05fe81069e6487efe66c20d19d0fa6`.
+
+Predeclared trial: one no-email `plain-language-second-article` run on the unchanged
+fixed MIT article/fact sheet and writer prompt, with the same free model, six-call
+and 4,800-requested-output-token ceilings, one attempt per call. Require a valid
+issued-ID proposal, all local gates, a 110–225-word body, four final source and
+before/after reviews, and an independent exact-text verdict confirming preserved
+meaning and genuinely clearer prose. IDs prove location, not meaning. A failure
+remains a hold; do not retry for a lucky result. No daily promotion, recipient or
+schedule changes, email, billing, step-two/three work or automatic fact extraction.

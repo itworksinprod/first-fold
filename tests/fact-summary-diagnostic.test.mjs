@@ -6,7 +6,8 @@ import { diagnoseFactSummary, validateFactSummary, normalizeClaimwiseSummary } f
 import { buildWorkersAiRequest, DEFAULT_CLOUDFLARE_AI_MODEL } from '../scripts/automation/free/workers-ai.mjs';
 import { GENERIC_FACT_SUMMARY_PROMPT } from '../scripts/automation/free/generic-fact-summary-prompt.mjs';
 import { PLAIN_LANGUAGE_COPYEDIT_PROMPT } from '../scripts/automation/free/plain-language-copyedit-prompt.mjs';
-import { phraseCopyeditUnitsHash, PHRASE_COPYEDIT_SCHEMA, PHRASE_COPYEDIT_LIMITS, PHRASE_COPYEDIT_PROTECTED_WORDS } from '../scripts/automation/free/phrase-copyedit.mjs';
+import { phraseCopyeditUnitsHash, PHRASE_COPYEDIT_LIMITS, PHRASE_COPYEDIT_PROTECTED_WORDS } from '../scripts/automation/free/phrase-copyedit.mjs';
+import { buildPhraseCopyeditCatalog } from '../scripts/automation/free/phrase-copyedit-catalog.mjs';
 import { buildClaimwiseFactReview } from '../scripts/automation/free/claimwise-fact-review.mjs';
 const hash = text => createHash('sha256').update(text).digest('hex');
 const excerpt = 'Synthetic evidence used solely for control-flow tests, not real factual qualification.';
@@ -43,10 +44,20 @@ const copyeditOutput = structuredClone(copyeditInput);
 for (const edit of copyeditProposal.replacements) {
   copyeditOutput[edit.field][edit.unitIndex] = copyeditOutput[edit.field][edit.unitIndex].replace(edit.find, edit.replace);
 }
+function catalogProposal(writerPayload, edits) {
+  const catalog = buildPhraseCopyeditCatalog(normalizeClaimwiseSummary(writerPayload, excerpt, 'MIT').units);
+  return { catalogSha256: catalog.data.catalogSha256, replacements: edits.map(edit => {
+    const unit = catalog.data.units.find(unit => unit.field === edit.field && unit.unitIndex === edit.unitIndex);
+    const span = catalog.data.spans.find(span => span.unitId === unit.unitId && span.find === edit.find);
+    assert.ok(span, 'Fixture targets must exist in the program-issued catalog');
+    return { spanId: span.spanId, replace: edit.replace };
+  }) };
+}
+const boundCopyeditProposal = catalogProposal(copyeditInput, copyeditProposal.replacements);
 const copyeditSheet = { ...sheet, publisherKey: 'mit',
   sourceUrl: 'https://news.mit.edu/2026/new-method-enables-ai-safety-critical-situations-0914' };
 const copyeditEndpoint = 'https://provider.example/fixed';
-async function runCopyeditFixture({ options = {}, writerPayload = copyeditInput, editedPayload = copyeditProposal,
+async function runCopyeditFixture({ options = {}, writerPayload = copyeditInput, editedPayload = boundCopyeditProposal,
   rejectAt = -1, rejection = null } = {}) {
   const requests = [], networkCalls = [], reviewRequests = [];
   let writerSchema, copyeditPrompt;
@@ -72,6 +83,7 @@ async function runCopyeditFixture({ options = {}, writerPayload = copyeditInput,
       assert.equal(request.maxTokens, index === 0 || editing ? 1200 : 600);
       const { body } = buildWorkersAiRequest(request);
       const init = { method: 'POST', redirect: 'error', body: JSON.stringify(body) };
+      assert.ok(Buffer.byteLength(init.body) <= 70000, 'Complete serialized request, including escaped prompt/schema/evidence, must fit');
       if (index === rejectAt && rejection === 'endpoint') {
         await request.fetchImpl('https://unapproved.example/send-email', init);
       }
@@ -91,9 +103,10 @@ async function runCopyeditFixture({ options = {}, writerPayload = copyeditInput,
         editorialPayload = structuredClone(writerPayload);
       } else if (editing) {
         assert.notDeepEqual(request.schema, writerSchema);
-        assert.deepEqual(request.schema, PHRASE_COPYEDIT_SCHEMA);
         const before = normalizeClaimwiseSummary(writerPayload, excerpt, 'MIT');
-        assert.deepEqual(data, { units: before.units, unitsSha256: phraseCopyeditUnitsHash(before.units),
+        const catalog = buildPhraseCopyeditCatalog(before.units);
+        assert.deepEqual(request.schema, catalog.schema);
+        assert.deepEqual(data, { catalog: catalog.data,
           limits: PHRASE_COPYEDIT_LIMITS, protectedWords: PHRASE_COPYEDIT_PROTECTED_WORDS,
           attribution: copyeditSheet.attribution, facts: copyeditSheet.facts });
         copyeditPrompt = request.messages[0].content.split('\nJSON schema:')[0];
@@ -135,6 +148,7 @@ async function runCopyeditFixture({ options = {}, writerPayload = copyeditInput,
   assert.ok(result.report.outputBudget <= 4800);
   assert.equal(result.report.modelRequests, requests.length);
   assert.equal(result.report.networkRequests, networkCalls.length);
+  assert.ok(Buffer.byteLength(JSON.stringify(result.sealed)) <= 350000, 'Full successful or failed capture must fit the encryption limit');
   assert.doesNotMatch(JSON.stringify(result.report), /private copyediting quota detail|Revised MIT|Synthetic fixture/);
   return { ...result, requests, networkCalls, reviewRequests, copyeditPrompt };
 }
@@ -152,11 +166,12 @@ test('opt-in copyediting plumbing captures both versions and reviews every final
   assert.equal(result.sealed.promptSha256, hash(GENERIC_FACT_SUMMARY_PROMPT));
   assert.equal(result.copyeditPrompt, PLAIN_LANGUAGE_COPYEDIT_PROMPT);
   assert.match(PLAIN_LANGUAGE_COPYEDIT_PROMPT, /small plain-language phrase replacements, not rewritten sentences/);
-  assert.equal(hash(PLAIN_LANGUAGE_COPYEDIT_PROMPT), 'c5401ac07ddd1e108a9b608d5fea295087644c033aaaf1f373dd589342c25006');
+  assert.equal(hash(PLAIN_LANGUAGE_COPYEDIT_PROMPT), 'be49e5d0207620e8d2b95758a23d4d2c2d05fe81069e6487efe66c20d19d0fa6');
   assert.doesNotMatch(PLAIN_LANGUAGE_COPYEDIT_PROMPT, /\b(?:Anthropic|MIT|HardFlow|Claude|robot)\b/i);
   assert.equal(result.sealed.copyeditPromptSha256, hash(result.copyeditPrompt));
-  assert.equal(result.sealed.copyeditStrategy, 'sentence-context-phrase-replacements-v2');
-  assert.deepEqual(result.sealed.rawCopyedit, copyeditProposal);
+  assert.equal(result.sealed.copyeditStrategy, 'catalog-bound-phrase-replacements-v3');
+  assert.deepEqual(result.sealed.copyeditCatalog, buildPhraseCopyeditCatalog(before.units).data);
+  assert.deepEqual(result.sealed.rawCopyedit, boundCopyeditProposal);
   assert.equal(result.sealed.editsApplied.length, 3);
   assert.deepEqual(result.sealed.rawDraft, copyeditOutput);
   assert.deepEqual(result.sealed.draft, after.draft);
@@ -201,6 +216,24 @@ test('explicit false retains the existing five-call generic writer and review bu
   assert.deepEqual(result.sealed.rawDraft, copyeditInput);
 });
 
+test('empty or oversized target catalogs hold after the writer and before the editor request', async () => {
+  for (const oversized of [false, true]) {
+    const words = Array.from({ length: 210 }, (_, i) => oversized
+      ? `word${String.fromCharCode(97 + Math.floor(i / 26), 97 + i % 26)}` : String(1000 + i));
+    const writerPayload = { headline: 'MIT synthetic catalog limit fixture',
+      whatHappened: [`MIT ${words.slice(0, 70).join(' ')}.`],
+      whyItMatters: [`${words.slice(70, 140).join(' ')}.`],
+      whatToWatch: [`${words.slice(140).join(' ')}.`] };
+    const result = await runCopyeditFixture({ writerPayload });
+    assert.equal(result.report.code, `FACT_SUMMARY_PHRASE_CATALOG_${oversized ? 'BUDGET' : 'EMPTY'}`);
+    assert.equal(result.requests.length, 1);
+    assert.equal(result.report.outputBudget, 1200);
+    assert.equal(result.sealed.rawCopyedit, undefined);
+    assert.equal(result.sealed.draft, undefined);
+    assert.deepEqual(result.sealed.fieldReviews, []);
+  }
+});
+
 for (const stage of ['writer']) {
   for (const defect of ['shape', 'units', 'too-short']) {
     test(`copyediting rejects ${stage} ${defect} before further requests`, async () => {
@@ -221,19 +254,22 @@ for (const stage of ['writer']) {
   }
 }
 
-for (const defect of ['whole-rewrite', 'stale-hash', 'protected-cue', 'extra-prose', 'empty-edits', 'repeated-context']) {
+for (const defect of ['whole-rewrite', 'stale-hash', 'unknown-id', 'duplicate-id', 'invented-location', 'protected-cue', 'extra-prose', 'empty-edits', 'repeated-context']) {
   test(`phrase copyediting rejects ${defect} after two calls without fallback`, async () => {
-    const editedPayload = defect === 'whole-rewrite' ? structuredClone(copyeditOutput) : structuredClone(copyeditProposal);
-    if (defect === 'stale-hash') editedPayload.unitsSha256 = '0'.repeat(64);
+    const editedPayload = defect === 'whole-rewrite' ? structuredClone(copyeditOutput) : structuredClone(boundCopyeditProposal);
+    if (defect === 'stale-hash') editedPayload.catalogSha256 = '0'.repeat(64);
+    if (defect === 'unknown-id') editedPayload.replacements[0].spanId = 'P99999';
+    if (defect === 'duplicate-id') editedPayload.replacements.push(structuredClone(editedPayload.replacements[0]));
+    if (defect === 'invented-location') editedPayload.replacements[0].find = 'invented location';
     if (defect === 'protected-cue') editedPayload.replacements[0].replace = 'can share measurements';
     if (defect === 'extra-prose') editedPayload.whatHappened = copyeditOutput.whatHappened;
     if (defect === 'empty-edits') editedPayload.replacements = [];
-    if (defect === 'repeated-context') editedPayload.replacements[0] = {
+    if (defect === 'repeated-context') editedPayload.replacements[0] = catalogProposal(copyeditInput, [{
       field: 'whatHappened', unitIndex: 1, find: 'category', replace: 'a category',
-    };
+    }]).replacements[0];
     const result = await runCopyeditFixture({ editedPayload });
     assert.equal(result.report.status, 'failed');
-    assert.match(result.report.code, /^FACT_SUMMARY_PHRASE_EDIT_/);
+    assert.match(result.report.code, /^FACT_SUMMARY_PHRASE_(?:EDIT|CATALOG)_/);
     assert.equal(result.requests.length, 2);
     assert.equal(result.sealed.fieldReviews.length, 0);
     assert.deepEqual(result.sealed.rawCopyedit, editedPayload);
@@ -250,10 +286,9 @@ test('valid phrase edits still face the final body-length check before factual r
   writerPayload.whyItMatters = ['The marker moves across a synthetic blue square in the controlled fixture.'];
   const words = 110 - [...writerPayload.whatHappened, ...writerPayload.whyItMatters].join(' ').split(/\s+/).length;
   writerPayload.whatToWatch = [Array.from({ length: words }, (_, i) => `word${i}`).join(' ') + '.'];
-  const normalized = normalizeClaimwiseSummary(writerPayload, excerpt, 'MIT');
-  const editedPayload = { unitsSha256: phraseCopyeditUnitsHash(normalized.units), replacements: [
+  const editedPayload = catalogProposal(writerPayload, [
     { field: 'whyItMatters', unitIndex: 0, find: 'synthetic blue square', replace: 'box' },
-  ] };
+  ]);
   const result = await runCopyeditFixture({ writerPayload, editedPayload });
   assert.equal(result.report.code, 'FACT_SUMMARY_LENGTH');
   assert.equal(result.requests.length, 2);
