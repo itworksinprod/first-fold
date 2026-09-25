@@ -540,3 +540,44 @@ the immutable baseline, leaving surrounding claims/conditions untouched, then
 apply the same qualification checks and exact-text review. This should be tested
 as a new isolated checkpoint, not used to override today's hold. Steps two/three,
 email, daily promotion, automatic fact extraction and wider generalization wait.
+
+### Exact phrase-replacement checkpoint (step one only)
+
+The user requested restricting edits to small phrase replacements. The opted-in
+`plain-language-second-article` diagnostic now asks for substitutions, not a new
+draft. The ordinary writer, fact sheet, model, source fingerprint, selection and
+four final factual checks are unchanged. This is not wired into daily delivery.
+
+The proposed edit inventory is bound to the exact ordered unit arrays by SHA-256.
+Only body fields can change; the headline, unit order and text outside approved
+literal spans are immutable. Each proposal permits 1–6 substitutions total and
+at most two per sentence. Find phrases have at most five words; replacements at
+most eight; each has at most 80 characters. Only lowercase English letters,
+single spaces and internal hyphens/apostrophes are allowed. Joined components
+count separately. Original changed words cannot exceed 25% of a sentence, capped
+at eight. Matches must be unique whole tokens in the immutable original, with an
+untouched word between replacements. Unknown keys, stale hashes, missing or
+ambiguous matches, omissions, overlapping/adjacent spans, protected qualification
+words and whole-draft responses fail closed. No repair retry or original-draft
+fallback is added. All remaining text is assembled from unchanged original slices.
+
+Independent preflight review identified supplementary Unicode boundary and
+compound-word counting loopholes. Those are fixed with complete-code-point
+boundary checks and consistent lexical-component counts; negative controls cover
+them. These controls contain an edit, not its meaning: small noun or verb changes
+can still alter model category, causality or a caveat's subject. Exact source and
+before/after review is mandatory even when all model verdicts are green.
+
+Predeclared live test: one no-email run, fixed MIT article and reviewed fact sheet,
+unchanged writer prompt, no article-specific phrase substitutions supplied by us,
+at most six provider requests/4,800 requested output tokens, one attempt each.
+Success requires valid bounded substitutions, 110–225 body words, all four exact
+final-text factual checks, preserved baseline claims/conditions/qualifications,
+and an independent clarity/preservation verdict. Any failed gate remains a hold;
+do not rewrite the resulting article manually or keep rerunning for a lucky pass.
+Steps two/three, email, paid services and production promotion remain out of scope.
+
+Independent recheck found both mechanical issues resolved, with no remaining
+blocking finding in this narrow implementation. All 1,317 automated tests pass.
+Phrase prompt SHA-256:
+`b9d08ea0419d6c2957d5159e90ef0043929d001a1d0ce7f5492d99a4489b6dc3`.

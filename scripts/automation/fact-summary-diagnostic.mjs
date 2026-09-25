@@ -8,7 +8,7 @@ import { buildClaimwiseFactReview, validateClaimwiseFactReview } from './free/cl
 import { DEFAULT_CLOUDFLARE_AI_MODEL, buildWorkersAiRequest, workersAiFailureDiagnostic } from './free/workers-ai.mjs';
 import { GENERIC_FACT_SUMMARY_PROMPT } from './free/generic-fact-summary-prompt.mjs';
 import { PLAIN_LANGUAGE_COPYEDIT_PROMPT } from './free/plain-language-copyedit-prompt.mjs';
-import { assertCopyeditQualifications } from './free/copyedit-qualification-guard.mjs';
+import { applyPhraseCopyedits, phraseCopyeditUnitsHash, PHRASE_COPYEDIT_SCHEMA, PHRASE_COPYEDIT_LIMITS, PHRASE_COPYEDIT_PROTECTED_WORDS } from './free/phrase-copyedit.mjs';
 
 const fields = ['headline', 'whatHappened', 'whyItMatters', 'whatToWatch'];
 const hash = text => createHash('sha256').update(text).digest('hex');
@@ -63,7 +63,10 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
   const publisherKey = generic ? 'mit' : 'anthropic';
   const capture = { purpose: plainLanguageCopyedit ? 'plain-language-copyedit-awaiting-manual-review' : generic ? 'generic-second-article-awaiting-manual-review' : claimwise ? 'claimwise-fact-summary-awaiting-manual-review' : 'reviewed-fact-summary-awaiting-manual-review',
     ...(generic ? { promptSha256: hash(GENERIC_FACT_SUMMARY_PROMPT), factSelection: 'manual' } : {}), calls: [], fieldReviews: [], emailSent: false };
-  if (plainLanguageCopyedit) capture.copyeditPromptSha256 = hash(PLAIN_LANGUAGE_COPYEDIT_PROMPT);
+  if (plainLanguageCopyedit) {
+    capture.copyeditStrategy = 'exact-phrase-replacements-v1';
+    capture.copyeditPromptSha256 = hash(PLAIN_LANGUAGE_COPYEDIT_PROMPT);
+  }
   let modelRequests = 0, networkRequests = 0, outputBudget = 0, code = null;
   const request = async (prompt, data, schema, maxTokens) => {
     const options = { model: DEFAULT_CLOUDFLARE_AI_MODEL,
@@ -131,15 +134,19 @@ The article is one company's account. No tables or appendix are available. No ou
     let normalized = claimwise ? normalizeClaimwiseSummary(raw, excerpt, publisher) : null;
     if (plainLanguageCopyedit) {
       capture.beforeCopyedit = { draft: structuredClone(normalized.draft), units: structuredClone(normalized.units),
-        draftSha256: hash(JSON.stringify(normalized.draft)) };
-      const edited = await request(PLAIN_LANGUAGE_COPYEDIT_PROMPT,
-        { draft: structuredClone(raw), attribution: sheet.attribution, facts: sheet.facts }, schema, 1200);
-      capture.rawCopyedit = structuredClone(edited);
+        draftSha256: hash(JSON.stringify(normalized.draft)), unitsSha256: phraseCopyeditUnitsHash(normalized.units) };
+      const proposal = await request(PLAIN_LANGUAGE_COPYEDIT_PROMPT,
+        { unitsSha256: capture.beforeCopyedit.unitsSha256, units: structuredClone(normalized.units),
+          limits: PHRASE_COPYEDIT_LIMITS, protectedWords: PHRASE_COPYEDIT_PROTECTED_WORDS,
+          attribution: sheet.attribution, facts: sheet.facts }, PHRASE_COPYEDIT_SCHEMA, 1200);
+      capture.rawCopyedit = structuredClone(proposal);
+      const applied = applyPhraseCopyedits(normalized.units, proposal, capture.beforeCopyedit.unitsSha256);
+      capture.editsApplied = applied.editsApplied;
+      const edited = { headline: applied.units.headline[0],
+        ...Object.fromEntries(fields.slice(1).map(field => [field, applied.units[field]])) };
       const checked = normalizeClaimwiseSummary(edited, excerpt, publisher);
-      // Count/placement is a structural guard only. Exact-text review must still
-      // check that no claim was silently removed, broadened or replaced.
-      if (fields.some(field => checked.units[field].length !== normalized.units[field].length)) throw fail('FACT_SUMMARY_COPYEDIT_COVERAGE');
-      assertCopyeditQualifications(normalized.units, checked.units);
+      // Mechanical containment is not semantic equivalence. Review all final
+      // text, then independently compare the exact substitutions before approval.
       raw = edited;
       normalized = checked;
       capture.rawDraft = structuredClone(raw);
