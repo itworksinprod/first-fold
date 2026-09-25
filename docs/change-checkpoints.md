@@ -1087,3 +1087,20 @@ omission that broadens scope or strengthens the assertion still can. Freeze the
 preservation instructions, schema, case set, model and budget for that separate
 trial. This recommendation is not implemented here. No further live run,
 relabeling, promotion, delivery, paid-provider or billing change occurred.
+
+### Source support versus completeness: narrow follow-up
+
+Carlos asked to continue until step one is functionally ready, retaining the
+incremental test/review workflow. The next change adds only three generic
+sentences to the v4 SOURCE SUPPORT instructions. Judge assertions actually made;
+missing details alone are not unsupported claims, but missing conditions that
+broaden scope or certainty still fail. The meaning-preservation block, schema,
+six cases, labels, model and budgets remain unchanged. Prompt SHA-256 is frozen at
+`c017f5f4154c07e31f3e82f2ac4eda4ca0d517c4c91ebecb92b82c898609459a`.
+
+Predeclared trial: one fixed six-case run, at most six network/model calls and
+3,600 requested output tokens, no retries or correction feedback. Both dimensions
+must be right in every case. Passing this reused set is only a prerequisite:
+independent held-out source-negative cases and a preserved, readable 110–225-word
+article must pass before step one can be called ready. No email, daily promotion,
+recipient, schedule, threshold or billing change is authorized by this trial.

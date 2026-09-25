@@ -107,7 +107,7 @@ test('v4 frozen views require previous text, retain fixed controls and bind a di
   assert.deepEqual(PRESERVATION_REVIEW_CONTROLS.map(control => control.expected), expectedMeaning);
   for (const [index, view] of views.entries()) {
     freezeCheck(view);
-    assert.equal(hash(view.prompt), 'bc3477446736333236b73d6b31736c46d726e762a34c48c0d124afe41d6df962');
+    assert.equal(hash(view.prompt), 'c017f5f4154c07e31f3e82f2ac4eda4ca0d517c4c91ebecb92b82c898609459a');
     assert.equal(view.data.policy, 'explicit-claimwise-preservation-v4');
     const { reviewSha256, ...boundData } = view.data;
     assert.equal(reviewSha256, hash(JSON.stringify(boundData)));
@@ -128,6 +128,20 @@ test('v4 frozen views require previous text, retain fixed controls and bind a di
     sparse[key] = Array(1);
     assert.throws(() => buildSplitPreservationReview(sparse), 'Sparse inventories cannot create vacuous claim approval');
   }
+});
+
+test('source-only clarification preserves the prior introduction, meaning block, schemas and six bound inputs', () => {
+  // These snapshots were verified against HEAD before the SOURCE SUPPORT-only
+  // checkpoint. Prompt clarification must not silently redefine the experiment.
+  for (const { prompt } of views) {
+    const sourceStart = prompt.indexOf('\n\nSOURCE SUPPORT:');
+    const meaningStart = prompt.indexOf('\n\nMEANING PRESERVATION:');
+    assert.ok(sourceStart > 0 && meaningStart > sourceStart);
+    assert.equal(hash(prompt.slice(0, sourceStart)), 'ee4645d21ba84b3f609a9fb99ea4dd7cc9410b52a617549a0e428c9d3ae877dc');
+    assert.equal(hash(prompt.slice(meaningStart)), '6c8aa92a334d3c6b1254f5f46114e311bba27847ddfd436470945c3f8a1328fb');
+  }
+  assert.equal(hash(JSON.stringify(views.map(view => view.schema))), 'a390f94d55b330a9b63605ea5e80ccbe07cc42c4612849f7133867a98596c908');
+  assert.equal(hash(JSON.stringify(views.map(view => view.data))), 'd77c548850c3a5c6ebfc0ca968f779c64ca05cfe09eee145a21ae84f5342c008');
 });
 
 test('local acceptance requires source and preservation true for every canonically ordered claim', () => {

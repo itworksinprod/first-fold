@@ -49,6 +49,9 @@ Use no outside knowledge. The statement is context, not evidence. Preserve IDs a
 
 SOURCE SUPPORT: Does the final claim follow from the supplied publisher passages?
 Compare every factual assertion in claims against ALL passages. Previous wording is not source evidence.
+Judge what the final claim actually asserts, not whether it repeats every detail in the source or previousClaims.
+A supported statement may omit source details and still be true. Missing detail alone is not missing factual support.
+However, reject omissions that broaden the asserted population, time, operating conditions or certainty beyond the passages.
 Check actors, quantities, dates, negation, uncertainty, prerequisites and causal relationships.
 Shared topics, plausible consequences and could/may wording cannot supply missing factual support.
 Set sourceSupported true only if every assertion is supported; use false when uncertain.
