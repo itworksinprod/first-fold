@@ -1,7 +1,8 @@
 # Definition-aware meaning review — controlled qualification
 
-Status: **live fixed-control qualification passed; exact-result independent review passed**.
-This does not close the plain-language article step or approve a daily edition.
+Status: **live fixed-control qualification and saved-article reviewer-context check passed**.
+Independent readability review still holds the article; this does not close the
+plain-language article step or approve a daily edition.
 
 ## The change
 
@@ -15,8 +16,11 @@ Glossary/review code is isolated under `scripts/automation/experiments/`. The
 manually selected `definition-preservation-controls` mode qualifies the reviewer;
 the separate `frozen-definition-language` mode now prepares one saved-article
 trial in the existing encrypted no-email diagnostic. No daily writer or delivery
-path imports the new reviewer. The editor prompt, existing diagnostic modes,
-headline lock, sentence order and 110–225-word requirement are unchanged.
+path imports the new reviewer. Following the saved-article readability failure,
+only `frozen-definition-language` now uses an editor-only sentence-fluency variant.
+The qualified reviewers, other diagnostic modes, headline lock, sentence order
+and 110–225-word requirement remain unchanged. See the frozen-trial checkpoint
+for the current editor hash and still-pending live acceptance.
 
 ## Trust and acceptance boundaries
 

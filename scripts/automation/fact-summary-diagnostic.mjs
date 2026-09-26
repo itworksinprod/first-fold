@@ -16,6 +16,7 @@ import { buildSentenceRewriteView, applySentenceRewrite, SENTENCE_REWRITE_PROMPT
 import { buildDefinitionPreservationReview, validateDefinitionPreservationReview } from './experiments/definition-preservation.mjs';
 import { assertDefinitionGlossary } from './experiments/definition-glossaries.mjs';
 import { assertQualifiedDefinitionReviewer, loadQualifiedMitGlossary } from './experiments/qualified-definition-review.mjs';
+import { DEFINITION_FLUENCY_PROMPT } from './experiments/definition-fluency-prompt.mjs';
 
 const fields = ['headline', 'whatHappened', 'whyItMatters', 'whatToWatch'];
 const hash = text => createHash('sha256').update(text).digest('hex');
@@ -69,6 +70,8 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
   if (typeof definitionPreservation !== 'boolean' || (definitionPreservation && !frozenMode)) throw fail('FACT_SUMMARY_MODE');
   if (!['anthropic', 'mit-generalization'].includes(profile) || (profile === 'mit-generalization' && !claimwise)) throw fail('FACT_SUMMARY_PROFILE');
   const editedReviewPath = plainLanguageCopyedit || sentenceLanguageRewrite;
+  const copyeditPrompt = definitionPreservation ? DEFINITION_FLUENCY_PROMPT
+    : sentenceLanguageRewrite ? SENTENCE_REWRITE_PROMPT : PLAIN_LANGUAGE_COPYEDIT_PROMPT;
   const maxRequests = frozenMode ? 8 : sentenceLanguageRewrite ? 9 : plainLanguageCopyedit ? 7 : 5;
   const maxOutputBudget = frozenMode ? 5400 : sentenceLanguageRewrite ? 6600 : plainLanguageCopyedit ? 5400 : claimwise ? 3600 : 2800;
   const publisher = generic ? 'MIT' : 'Anthropic';
@@ -78,8 +81,9 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
   const capture = { purpose: definitionPreservation ? 'frozen-definition-language-rewrite-awaiting-manual-review' : frozenMode ? 'frozen-sentence-language-rewrite-awaiting-manual-review' : sentenceLanguageRewrite ? 'sentence-language-rewrite-awaiting-manual-review' : plainLanguageCopyedit ? 'plain-language-copyedit-awaiting-manual-review' : generic ? 'generic-second-article-awaiting-manual-review' : claimwise ? 'claimwise-fact-summary-awaiting-manual-review' : 'reviewed-fact-summary-awaiting-manual-review',
     ...(generic ? { ...(frozenMode ? { writerSkipped: true } : { promptSha256: hash(GENERIC_FACT_SUMMARY_PROMPT) }), factSelection: 'manual' } : {}), calls: [], fieldReviews: [], emailSent: false };
   if (editedReviewPath) {
-    capture.copyeditStrategy = sentenceLanguageRewrite ? 'sentence-by-sentence-v1' : 'single-phrase-or-abstain-v4';
-    capture.copyeditPromptSha256 = hash(sentenceLanguageRewrite ? SENTENCE_REWRITE_PROMPT : PLAIN_LANGUAGE_COPYEDIT_PROMPT);
+    capture.copyeditStrategy = definitionPreservation ? 'sentence-definition-fluency-v1'
+      : sentenceLanguageRewrite ? 'sentence-by-sentence-v1' : 'single-phrase-or-abstain-v4';
+    capture.copyeditPromptSha256 = hash(copyeditPrompt);
     capture.reviewStrategy = definitionPreservation ? 'isolated-source-plus-qualified-definition-preservation-v1' : 'isolated-source-plus-text-preservation-v1';
     capture.localReviews = [];
   }
@@ -205,7 +209,7 @@ The article is one company's account. No tables or appendix are available. No ou
         : { catalog: catalog.data, limits: SINGLE_PHRASE_COPYEDIT_LIMITS,
           protectedWords: PHRASE_COPYEDIT_PROTECTED_WORDS, attribution: sheet.attribution, facts: sheet.facts };
       // Validate the new rewrite's strict shape before cloning or capturing it.
-      const result = await request(sentenceLanguageRewrite ? SENTENCE_REWRITE_PROMPT : PLAIN_LANGUAGE_COPYEDIT_PROMPT,
+      const result = await request(copyeditPrompt,
         editData, catalog.schema, 1200, { deferCapture: sentenceLanguageRewrite, metadata: { stage: 'copyedit' } });
       const proposal = sentenceLanguageRewrite ? result.payload : result;
       if (!sentenceLanguageRewrite) capture.rawCopyedit = structuredClone(proposal);

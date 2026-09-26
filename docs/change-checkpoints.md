@@ -1750,3 +1750,58 @@ one user-launched no-email saved-article test. A local mocked end-to-end routing
 and encrypted-roundtrip check also passed (six mock requests, zero real network
 requests); mocked approvals do not establish factual, meaning or readability
 success. No live run or email was triggered while preparing this checkpoint.
+
+### Saved-article exact result — reviewer context passes, article held (September 26)
+
+[Run 36217395043](https://github.com/itworksinprod/first-fold/actions/runs/36217395043)
+used main `c6d99d7216b9acf2ecb3ef7f1b103bcc31b40102` on its first manual attempt.
+The ZIP matched artifact 10897647540, SHA-256
+`58f4aad501b258522ecd346674d6c46022d4fb03c42166277e7b3ad84dc215b0`.
+Authenticated local decryption and independent exact-result review confirmed the
+pinned baseline, single applied edit, all six request bindings and strict review
+verdicts. Four fields passed source checks; changed-field meaning review passed,
+and unchanged fields used local identity only. There were six provider calls,
+4,200 requested output tokens and 151 body words. No research or email occurred.
+
+The qualified definition context resolved the prior mistaken rejection of the
+equivalent term substitution. The overall article remains HOLD: the substitution
+creates redundant wording and leaves several technical terms unexplained. Some
+selected evidence passages also omit support for parts of the first claim, though
+the full captured source supports those details. This citation-selection weakness
+is tracked separately; valid passage IDs alone do not establish complete support.
+
+### Editor fluency — one isolated instruction change (September 26)
+
+The current `frozen-definition-language` mode selects
+`sentence-definition-fluency-v1`. Its prompt replaces only the original
+definition-substitution instruction with a whole-sentence fluency rule. It may
+adjust surrounding grammar and remove repeated obligation wording, but must keep
+the obligation explicit and preserve every subject, scope, condition, qualifier
+and relationship. It must retain the original if the result is not clearer and
+equivalent. No article-specific answer, term replacement or new fact is embedded.
+
+The legacy prompt remains byte-identical. Prompt derivation fails on anchor or
+base-hash drift; the new editor hash is
+`53552e27a77bf1f5e53b3030b35e27940fe4ee78958a4b2a57c862b0be89f74c`.
+The saved baseline, fact context, glossary, source and meaning prompts, model,
+budgets, validation gates, mode/credential authority and encrypted artifact policy
+are unchanged. No workflow mode, secret, retry or provider has been added.
+Only the credential-free test list changes in the workflow.
+
+Offline synthetic examples exercise prompt identity, grammar-edit containment and
+independent vetoes, not model competence. A new one-shot live result must still
+pass exact factual, meaning and readability review before this editor increment
+can be called successful. Citation completeness and remaining unexplained jargon
+remain separate open work; this setup does not approve the article or daily use.
+
+All 1,459 automated tests pass. Credential-free local preflight confirms the
+private saved input is exactly the prior trial's editor input, the encryption
+keys still match, and the revised editor request remains within the existing
+request-size cap. It made zero provider calls. The new prompt changes the actual
+editor instruction, not the article text or the reviewers' acceptance criteria.
+
+Independent preflight found no blockers after inspecting the scoped diff and
+running 107 focused/legacy tests, all passing. It confirmed the selected editor
+hash, byte-identical legacy editor/reviewers/glossary/baseline, and unchanged
+eight-call / 5,400-requested-token cap. Approval is limited to publishing this
+setup for one owner-launched no-email trial, not the article or automatic delivery.
