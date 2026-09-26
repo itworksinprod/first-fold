@@ -1,0 +1,71 @@
+# Frozen-draft editing trial
+
+This is one opt-in, no-email experiment using saved research. It is not a fresh
+daily edition or an approval to send or publish the result. The original
+baseline's `offlineOnly` scope records how it was qualified; the separate manual
+diagnostic authorizes bounded provider processing, not promotion of that baseline
+to a finished paper. All edited text still needs factual, meaning and readability
+review.
+
+## Private setup
+
+The local freeze utility verifies the repository's fixed qualification manifest
+before exporting a secret value. It accepts only private paths inside the sibling
+`first-fold-review` directory and never prints the value:
+
+```text
+node scripts/automation/freeze-fact-baseline.mjs export-secret <private-baseline.json> <new-private-secret.txt>
+```
+
+Create a **repository secret**, not a variable or workflow input, named
+`FIRST_FOLD_FROZEN_BASELINE_B64`, using the exported file's contents. Base64 is
+encoding, not encryption: the value remains private data. GitHub stores the
+secret; this workflow never echoes it or its decoded content. The single-line
+transport is capped at 48,000 bytes. Do not commit either plaintext file.
+See [GitHub's secret setup instructions](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets).
+
+Generate an ephemeral result-encryption key with the existing diagnostic tool:
+
+```text
+node scripts/automation/private-writer-diagnostic.mjs keygen
+```
+
+Keep the private key on the Mac. Only the public key belongs in the workflow's
+`public_key` input. Do not share the private key or API tokens.
+
+## One bounded run
+
+Open **Diagnose one free writer story (encrypted, no email)** on GitHub Actions.
+Run from `main`, choose `frozen-sentence-language`, and supply the public key.
+The same owner/main/first-attempt restrictions remain in force. Do not use the
+older `sentence-language-second-article` mode: it generates a new baseline.
+
+The private secret is exposed only in this mode. Before provider credentials
+are made available, the CLI checks the artifact against the fixed source,
+fact-context, draft, unit and qualification hashes. The runtime repeats that
+check. Missing, changed or malformed input fails without a provider call; there
+is no fallback to a new writer, fresh discovery or another provider.
+
+One rewrite call is followed by four final-source checks and up to three
+changed-body meaning checks: at most eight requests and 5,400 requested output
+tokens. Byte-identical fields use exact local identity for meaning only; their
+source check still runs. The existing model, rewrite prompt, separate reviewer
+prompts, 110–225-word limits, unchanged headline and ordered-unit protections
+remain unchanged. Quota failure, abstention or a rejected check holds the result.
+No automatic retry, email, public edition, billing or daily-workflow change occurs.
+
+## Review, not merely a green job
+
+The artifact remains RSA/AES-encrypted with one-day retention. Public output
+contains only counts, status and sanitized error codes. Download and decrypt it
+locally with the matching private key. Before claiming success:
+
+1. Verify the recorded before draft and units match the qualification manifest.
+2. Replay request hashes, applied edits, final word count, headline and order.
+3. Confirm every final-source and changed-meaning gate passed.
+4. Have an independent reviewer assess the exact final prose for ordinary-reader
+   clarity and source/meaning drift. A transport test is not a readability pass.
+
+Retain a failed trial and diagnose it before changing the experiment. Do not
+rerun an identical experiment until it happens to pass. Do not change the
+qualification hashes or reviewer rules to make an unsupported result pass.

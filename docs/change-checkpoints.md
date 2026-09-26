@@ -1520,3 +1520,44 @@ no-email editing trial, without a new writer call or public plaintext upload.
 Keep the generic rewrite prompt and separate factual/meaning review gates;
 retain failures rather than retrying unchanged. No daily workflow, recipient,
 schedule, billing or public edition changed; this checkpoint sent no email.
+
+### Frozen editing path — implementation checkpoint (September 25)
+
+Added the opt-in `frozen-sentence-language` diagnostic mode. Unlike the older
+sentence experiment, this path uses the privately frozen, pinned baseline and
+captured source; it performs no writer call, source refresh or web discovery.
+The generic rewrite prompt and separate source/meaning reviewer prompts are
+unchanged. The maximum falls from nine calls / 6,600 requested output tokens to
+eight / 5,400 because the writer is skipped, not because a review was removed.
+Every final field still needs source review, and each changed body field needs
+separate before/after meaning review. A final plain-language review is mandatory.
+
+Transport uses a new repository secret, `FIRST_FOLD_FROZEN_BASELINE_B64`, exposed
+only to this explicitly selected mode. It is a single-line encoding of private
+data, not encryption and not a credential. The artifact must match the fixed
+repository qualification both before provider credentials and before inference;
+the CLI does not accept caller-selected pins. The private export utility verifies
+the same pins, writes exclusively with 0600 permissions outside the repository
+and never logs the value. Existing output encryption and one-day retention stay
+unchanged. Setup/run/review instructions are in
+`docs/checkpoints/frozen-editing-trial.md`.
+
+All 1,431 tests pass, including nine new tests for skipping writer/discovery,
+request bindings and caps, every review veto, source/draft drift, malformed
+rewrites, abstention, provider/quota failures, private input preflight and
+mode-scoped secret use. The actual private baseline also passed local pinned
+preflight after export (13,732 encoded bytes; 0600). These are implementation
+and transport checks, not evidence of live prose quality.
+
+Independent preflight found no blockers and passed 109 relevant/legacy tests.
+It independently verified the real baseline's private encoding and fixed pins,
+validation before provider credentials, unchanged prompts and review gates, and
+the lower request cap. The exact CLI preflight also passed locally with no
+provider credentials and empty stdout/stderr. Approval is limited to one bounded
+no-email trial, not a readability or publication pass.
+
+No live frozen-draft run has occurred. This session lacks authenticated browser
+control and GitHub CLI access; GitHub connection was suggested, and Carlos was
+asked to add the prepared private baseline as the repository secret. Do not
+claim the experiment passed while setup, live inference and exact-text review
+remain outstanding. Daily delivery, recipient, schedule and billing are unchanged.

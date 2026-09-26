@@ -25,6 +25,7 @@ on:
           - generic-second-article
           - plain-language-second-article
           - sentence-language-second-article
+          - frozen-sentence-language
           - preservation-review-controls
           - split-preservation-review-controls
           - isolated-preservation-controls
@@ -62,15 +63,19 @@ jobs:
         run: node --test tests/isolated-preservation-review.test.mjs tests/isolated-preservation-diagnostic.test.mjs tests/text-preservation-review.test.mjs tests/text-preservation-diagnostic.test.mjs
       - name: Test isolated sentence rewriting before credentials
         run: node --test tests/sentence-language-rewrite.test.mjs tests/sentence-language-diagnostic.test.mjs
+      - name: Test frozen-baseline boundaries before credentials
+        run: node --test tests/frozen-fact-baseline.test.mjs tests/frozen-sentence-diagnostic.test.mjs
       - name: Validate diagnostic mode and encryption before credentials
         env:
           DIAGNOSTIC_PUBLIC_KEY: ${{ inputs.public_key }}
           PRIVATE_WRITER_DIAGNOSTIC_MODE: ${{ inputs.mode || 'source' }}
+          FIRST_FOLD_FROZEN_BASELINE_B64: ${{ inputs.mode == 'frozen-sentence-language' && secrets.FIRST_FOLD_FROZEN_BASELINE_B64 || '' }}
         run: node scripts/automation/private-writer-diagnostic.mjs validate
       - name: Inspect the selected bounded diagnostic without delivery
         env:
           DIAGNOSTIC_PUBLIC_KEY: ${{ inputs.public_key }}
           PRIVATE_WRITER_DIAGNOSTIC_MODE: ${{ inputs.mode || 'source' }}
+          FIRST_FOLD_FROZEN_BASELINE_B64: ${{ inputs.mode == 'frozen-sentence-language' && secrets.FIRST_FOLD_FROZEN_BASELINE_B64 || '' }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_AI_API_TOKEN: ${{ secrets.CLOUDFLARE_AI_API_TOKEN }}
         run: node scripts/automation/private-writer-diagnostic.mjs run "$RUNNER_TEMP/writer-diagnostic.encrypted.json"

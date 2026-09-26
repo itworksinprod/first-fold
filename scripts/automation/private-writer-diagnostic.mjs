@@ -65,7 +65,7 @@ export function assertDiagnosticAuthority(env) {
 }
 
 export function resolvePrivateWriterDiagnosticMode(value = "source") {
-  if (value === 'sentence-language-second-article') return value;
+  if (['sentence-language-second-article', 'frozen-sentence-language'].includes(value)) return value;
   if (['text-preservation-controls', 'text-preservation-holdouts', 'text-preservation-paraphrase'].includes(value)) return value;
   if (['isolated-preservation-controls', 'isolated-preservation-holdouts'].includes(value)) return value;
   if (!["source", "source-recheck", "source-recheck-explicit", "source-field-review", "review-controls", "explicit-review-controls", "split-review-controls", "isolated-review-controls", "field-review-controls", "provider-only", "reviewed-fact-summary", "causal-review-controls", "claimwise-review-controls", "claimwise-fact-summary", "generic-second-article", "plain-language-second-article", "preservation-review-controls", "split-preservation-review-controls"].includes(value)) throw failure("DIAGNOSTIC_MODE_INVALID");
@@ -78,6 +78,17 @@ export function validatePrivateWriterDiagnosticOptions(env) {
   const mode = resolvePrivateWriterDiagnosticMode(env.PRIVATE_WRITER_DIAGNOSTIC_MODE);
   diagnosticPublicKey(env.DIAGNOSTIC_PUBLIC_KEY);
   return mode;
+}
+
+export async function prepareFrozenDiagnosticBaseline(mode, encoded) {
+  if (mode !== 'frozen-sentence-language') {
+    if (encoded !== undefined && encoded !== '') throw failure('DIAGNOSTIC_UNEXPECTED_BASELINE');
+    return undefined;
+  }
+  const { decodeFrozenBaselineSecret, loadPinnedFrozenFactBaseline } = await import('./free/frozen-fact-baseline.mjs');
+  const text = decodeFrozenBaselineSecret(encoded);
+  await loadPinnedFrozenFactBaseline(text); // Pin check happens before any provider request.
+  return text;
 }
 
 async function diagnoseProvider({ publicKey, accountId, apiToken, now, aiRequestImpl, fetchImpl, endpoint }) {
@@ -128,14 +139,20 @@ async function diagnoseProvider({ publicKey, accountId, apiToken, now, aiRequest
 }
 
 export async function diagnoseOneWriter({ publicKey, accountId, apiToken, now = new Date(),
-  mode = "source",
+  mode = "source", frozenBaselineB64,
   researchImpl = collectFreeResearchSnapshot, aiRequestImpl = requestWorkersAiEditorial,
   fetchImpl = globalThis.fetch } = {}) {
   // Check encryption and credentials before research or inference, not afterwards.
   mode = resolvePrivateWriterDiagnosticMode(mode);
   diagnosticPublicKey(publicKey);
+  const frozenBaselineText = await prepareFrozenDiagnosticBaseline(mode, frozenBaselineB64);
   const endpoint = workersAiRunUrl(accountId, DEFAULT_CLOUDFLARE_AI_MODEL);
   if (typeof apiToken !== "string" || !apiToken.trim()) throw failure("DIAGNOSTIC_CONFIGURATION_INVALID");
+  if (mode === 'frozen-sentence-language') {
+    const { diagnoseFactSummary } = await import('./fact-summary-diagnostic.mjs');
+    return diagnoseFactSummary({ publicKey, accountId, apiToken, now, aiRequestImpl, fetchImpl, endpoint, sealDiagnostic,
+      claimwise: true, profile: 'mit-generalization', sentenceLanguageRewrite: true, frozenBaselineText });
+  }
   if (mode === "provider-only") return diagnoseProvider({ publicKey, accountId, apiToken, now,
     aiRequestImpl, fetchImpl, endpoint });
   if (['isolated-preservation-controls', 'isolated-preservation-holdouts', 'text-preservation-controls', 'text-preservation-holdouts', 'text-preservation-paraphrase'].includes(mode)) {
@@ -275,11 +292,13 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
       await writeFile(args[2], JSON.stringify(value, null, 2), { mode: 0o600, flag: "wx" });
       console.info("Diagnostic decrypted locally; content remains untrusted source/model data.");
     } else if (command === "validate" && args.length === 0) {
-      validatePrivateWriterDiagnosticOptions(process.env);
+      const mode = validatePrivateWriterDiagnosticOptions(process.env);
+      await prepareFrozenDiagnosticBaseline(mode, process.env.FIRST_FOLD_FROZEN_BASELINE_B64);
     } else if (command === "run" && args.length === 1) {
       const mode = validatePrivateWriterDiagnosticOptions(process.env);
       const { sealed, report } = await diagnoseOneWriter({ publicKey: process.env.DIAGNOSTIC_PUBLIC_KEY,
-        mode, accountId: process.env.CLOUDFLARE_ACCOUNT_ID, apiToken: process.env.CLOUDFLARE_AI_API_TOKEN });
+        mode, frozenBaselineB64: process.env.FIRST_FOLD_FROZEN_BASELINE_B64,
+        accountId: process.env.CLOUDFLARE_ACCOUNT_ID, apiToken: process.env.CLOUDFLARE_AI_API_TOKEN });
       await writeFile(args[0], JSON.stringify(sealed), { mode: 0o600, flag: "wx" });
       console.info(`::notice title=One-story diagnostic::${JSON.stringify(report)}`);
       if (report.status === "failed") process.exitCode = 1;

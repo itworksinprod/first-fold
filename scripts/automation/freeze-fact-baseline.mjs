@@ -4,7 +4,7 @@ import { constants } from 'node:fs';
 import { open, readFile, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { freezeFactBaseline, frozenBaselineReceipt } from './free/frozen-fact-baseline.mjs';
+import { freezeFactBaseline, frozenBaselineReceipt, encodeFrozenBaselineSecret } from './free/frozen-fact-baseline.mjs';
 
 const reviewRoot = fileURLToPath(new URL('../../../first-fold-review/', import.meta.url));
 const qualificationUrl = new URL('../../docs/checkpoints/mit-frozen-baseline.json', import.meta.url);
@@ -39,8 +39,8 @@ export async function writePrivateBaseline(filename, text, root = reviewRoot) {
 
 async function main(args) {
   const [mode, input, output] = args;
-  if (!input || (mode === 'freeze' ? args.length !== 3 : mode !== 'verify' || args.length !== 2)) {
-    throw new Error('FROZEN_BASELINE_USAGE: freeze <private-diagnostic.json> <private-output.json> | verify <private-output.json>');
+  if (!input || (['freeze', 'export-secret'].includes(mode) ? args.length !== 3 : mode !== 'verify' || args.length !== 2)) {
+    throw new Error('FROZEN_BASELINE_USAGE: freeze <private-diagnostic.json> <private-output.json> | verify <private-output.json> | export-secret <private-baseline.json> <new-private-secret.txt>');
   }
   const qualification = await readFile(qualificationUrl, 'utf8');
   const text = await readPrivateJson(input);
@@ -49,6 +49,10 @@ async function main(args) {
     const receipt = frozenBaselineReceipt(artifact, qualification);
     await writePrivateBaseline(output, artifact);
     console.log(JSON.stringify(receipt, null, 2));
+  } else if (mode === 'export-secret') {
+    const encoded = encodeFrozenBaselineSecret(text, qualification);
+    await writePrivateBaseline(output, encoded);
+    console.log('Private baseline secret file created locally. Base64 is encoding, not encryption; store only as a GitHub Actions secret.');
   } else console.log(JSON.stringify(frozenBaselineReceipt(text, qualification), null, 2));
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

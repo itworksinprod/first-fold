@@ -2,13 +2,14 @@
 // a matching checksum does not itself establish truth or authorize publication.
 // Accept JSON text, not executable objects/accessors. No network or model calls.
 import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { normalizeClaimwiseSummary } from '../fact-summary-diagnostic.mjs';
 import { assertPhraseCopyeditUnits, phraseCopyeditUnitsHash } from './phrase-copyedit.mjs';
 
 const fields = ['headline', 'whatHappened', 'whyItMatters', 'whatToWatch'];
 const sha = text => createHash('sha256').update(text).digest('hex');
 const hash = value => sha(JSON.stringify(value));
-const fail = reason => new Error(`FROZEN_BASELINE_${reason}`);
+const fail = reason => Object.assign(new Error(`FROZEN_BASELINE_${reason}`), { code: `FROZEN_BASELINE_${reason}` });
 const scope = Object.freeze({ offlineOnly: true, capturedSourceOnly: true,
   freshnessVerified: false, readabilityApproved: false, emailAuthorized: false });
 const exact = (value, keys) => value && typeof value === 'object' && !Array.isArray(value) &&
@@ -17,6 +18,26 @@ const freeze = value => {
   if (value && typeof value === 'object') { Object.values(value).forEach(freeze); Object.freeze(value); }
   return value;
 };
+
+// The fixed production loader has no caller-supplied qualification override.
+export const readFrozenQualification = () => readFile(new URL('../../../docs/checkpoints/mit-frozen-baseline.json', import.meta.url), 'utf8');
+export async function loadPinnedFrozenFactBaseline(text) {
+  return loadFrozenFactBaseline(text, await readFrozenQualification());
+}
+export function encodeFrozenBaselineSecret(text, qualificationText) {
+  loadFrozenFactBaseline(text, qualificationText);
+  const encoded = Buffer.from(text, 'utf8').toString('base64');
+  if (encoded.length > 48_000) throw fail('SECRET_SIZE');
+  return encoded;
+}
+export function decodeFrozenBaselineSecret(value) {
+  if (typeof value !== 'string' || value.length > 48_002) throw fail('SECRET');
+  const encoded = value.trim();
+  if (!encoded || encoded.length > 48_000 || !/^[A-Za-z0-9+/]+={0,2}$/u.test(encoded)) throw fail('SECRET');
+  const bytes = Buffer.from(encoded, 'base64'), text = bytes.toString('utf8');
+  if (bytes.toString('base64') !== encoded || !Buffer.from(text, 'utf8').equals(bytes)) throw fail('SECRET');
+  return text; // Every consumer must still validate the fixed qualification pins.
+}
 function parse(text) {
   if (typeof text !== 'string' || Buffer.byteLength(text) > 2_000_000) throw fail('INPUT');
   try { return JSON.parse(text); } catch { throw fail('JSON'); }
