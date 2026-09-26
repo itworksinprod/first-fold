@@ -1561,3 +1561,55 @@ control and GitHub CLI access; GitHub connection was suggested, and Carlos was
 asked to add the prepared private baseline as the repository secret. Do not
 claim the experiment passed while setup, live inference and exact-text review
 remain outstanding. Daily delivery, recipient, schedule and billing are unchanged.
+
+### Frozen live trial — exact-result review (September 25 Eastern)
+
+Carlos launched [36210756187](https://github.com/itworksinprod/first-fold/actions/runs/36210756187)
+on `d551b162a9c7c00b5dd1d2924505b7ecdd0aae52`, first attempt, in the
+`frozen-sentence-language` mode. Setup tests and private-input/key validation
+passed. The bounded diagnostic failed with `FACT_SUMMARY_REVIEW_REJECTED` after
+four requests and a 3,000 requested-output-token budget. There was no writer
+call, fresh discovery, quota error, email or automatic retry.
+
+The provided ZIP matches GitHub artifact 10895019419, SHA-256:
+`531545dbb0b705f40c18c15506b7da4f43fd3aa57d5a8bfc03027d6b6a8b0ccd`.
+It was decrypted locally outside the repository. Exact replay verified the
+qualified baseline/source/context, issued inventory, applied edit, final draft,
+all four prompt/request hashes, recorded review verdicts and local headline
+identity. The baseline remains
+`e0a2421baa12d87c3f76f4825c9a76b6d41c5b21dd2897fec362a47c90ff0687`.
+Final draft SHA-256:
+`b097befdb559fb56706e7e78e71a8c967f2d42d421452b290fbbbc8b726c2617`.
+Final unit inventory SHA-256:
+`bf521d4fc5dd3742fd34be19acf632cdff3e902effb18fd0c30f41c3109f755d`.
+
+Exactly one body unit changed, bringing the body from 148 to 151 words. Source
+review passed the unchanged headline and all three what-happened units. The
+text-only meaning reviewer rejected the first changed what-happened unit while
+accepting its two unchanged companions. The later body fields did not receive
+automated review; the draft is not approved by those unperformed checks.
+
+Independent review confirms that the substituted mandatory-requirement
+definition preserves the source-defined meaning of the technical term, including
+examples, obligation and the final-versus-intermediate distinction. No newly
+unsupported assertion was identified. However, the substitution creates a
+repetitive nested phrase and leaves other jargon unresolved. It is not a
+readability pass even if its factual equivalence is accepted.
+
+The concrete mismatch is between role inputs: the editor receives the reviewed
+term definition, while the text-only meaning reviewer receives none and is
+instructed to reject equivalence when a specialized definition is unavailable.
+The recorded comparison also describes the substitution direction backwards;
+request replay confirms the actual before/after inputs were not swapped. This
+is a reviewer-context limitation and weak editor output, not an identified
+transport, baseline-selection or provider-availability fault.
+
+HOLD remains in effect. Do not override the failed gate or retry unchanged. The
+next proposed checkpoint is offline design and qualification of a minimal,
+source-bound definition context for meaning review—not full article evidence,
+automatic source-based approval or a hard-coded true verdict. Include controls
+for valid equivalents, weakened obligations, dropped conditions and substituted
+properties; retain the independent final-source veto. Any modified reviewer
+must pass new preflight and qualification before another article run. Readability
+still requires a separate exact-text pass. No runtime or editorial policy was
+changed by this audit, and no email was sent.
