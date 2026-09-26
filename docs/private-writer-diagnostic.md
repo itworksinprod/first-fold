@@ -114,3 +114,25 @@ They do not establish general reviewer reliability, freshness, publication
 approval, or an automatic writer. Exact-output independent inspection is still
 required. The previous article's 159-word body and manual review are separate
 evidence, not a preloaded verdict sent to the reviewer.
+
+### September 26 live result
+
+[Run 36271899933](https://github.com/itworksinprod/first-fold/actions/runs/36271899933)
+used owner/manual/attempt-one authority and trusted main
+`5923f827578b91679cbd9f080da4a355af53d52b`. All six exact saved-input reviews
+completed positively, using six single-attempt provider requests with a total
+3,600-token requested-output cap. No editor, research or email ran. The archive
+SHA-256 matched GitHub metadata:
+`0d22ec8bafb11f8d1ef3b0b736fefe3a42be9ec3b5980c7860df9aae30dfe843`.
+The decrypted capture remained local, with exact request/verdict replay.
+
+Independent inspection passed the exact saved, manually assisted 159-word
+article checkpoint. It did **not** qualify general automatic writing or complete
+machine citation selection. Several abbreviated citation selections omit term
+definition/context support; the separately reviewed complete manual evidence map
+must be retained. Raw provider envelopes were not retained, so their recorded
+hashes are not independently recomputable from parsed replies.
+
+The standard build/test command passed 1,497 tests. All automatic publication and
+email flags remain false. Do not rerun the frozen sample to manufacture broader
+confidence, or transfer its bounded pass to a new article or daily production.
