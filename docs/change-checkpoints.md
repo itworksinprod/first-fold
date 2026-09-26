@@ -1685,3 +1685,68 @@ verified the fixed call/token caps, separate role inputs and per-dimension
 grading, error stops, closed callbacks, label isolation, encrypted capture size
 and unchanged legacy behavior. It cleared publication for one user-launched
 synthetic qualification run only, not an article rerun or delivery integration.
+
+### Definition reviewer — live control checkpoint complete (September 25 Eastern)
+
+[Run 36213351283](https://github.com/itworksinprod/first-fold/actions/runs/36213351283)
+used the reviewed `c3338d37455869c8f9fb29c4d19fcef116d76614` main revision and
+completed successfully on its first owner-launched manual attempt. All 11 source
+and 11 meaning judgments matched the independently predeclared labels. Exactly
+22 requests ran within the 13,200 requested-output-token cap; there were no
+retries, provider failures, article generation, searches or email sends.
+
+The provided ZIP matches GitHub artifact 10895798951, SHA-256
+`7541c1cf4322a051d2999be416560fa451715f5a286f87810e48d3876b17dce3`.
+Authenticated decryption stayed local outside the repo, with a 0600 plaintext
+file. Both main and independent audits rebuilt every view/schema/prompt/request
+and verified all 22 bindings, strict verdicts, labels and recorded results.
+Only G01/G02 satisfy both acceptance dimensions. G05/G07 correctly distinguish
+true final statements from faithful edits; G10 correctly preserves the meaning
+of a false assertion while source review rejects it. Expected labels never enter
+model inputs. Raw provider envelopes are not retained, so recorded response hashes
+are provenance records rather than independently recomputed envelope checksums.
+
+Independent review reports no blocking finding. G07's explanation is terse and
+does not fully articulate category narrowing, but the actual judgment is correct
+under the declared gate. Do not extrapolate robust category reasoning from this
+one case. The fixed-control reviewer checkpoint is now complete; the overall
+article checkpoint is not. Next is separately preparing and reviewing one
+frozen-article trial with unchanged structural, source, meaning and readability
+requirements. This audit did not change runtime code, trigger another workflow,
+send email or alter daily delivery, recipient, scheduling or billing.
+
+### Saved-article definition-review trial — setup (September 26)
+
+Added a separate manual `frozen-definition-language` mode. The pinned MIT saved
+baseline, fact context, editor prompt, headline, sentence inventory/order and
+110–225-word bounds are unchanged. It does not create a new writer baseline or
+fetch fresh research. Before provider credentials and again before the editor,
+the trial checks the baseline, qualified reviewer identity and exact source-bound
+MIT glossary. Changed fields get the qualified definition-aware meaning review;
+unchanged fields retain only a local byte-identity meaning check. Every final
+field still needs its separate source verdict. No expected labels or article
+passages enter the meaning reviewer.
+
+The cap remains eight requests / 5,400 requested output tokens, one attempt per
+request with no retry or alternate provider. Output is encrypted and retained
+for one day; no delivery credential, email, public edition or daily behavior
+changes. The old frozen mode remains intact. Test-only function injection can
+supply an issued synthetic glossary, but must match its source and cannot bypass
+the qualification guard; CLI/environment/artifact data cannot set this loader.
+The live article checkpoint remains pending an exact-result audit and independent
+readability review. Preparing this mode is not evidence that the article passes.
+
+All 1,455 automated tests pass, including eight added tests for qualified identity
+drift, new-mode routing, vocabulary isolation, all separate vetoes, identical-field
+source checks, structure/length/abstention, source-bound issued glossaries and
+provider/provenance failures. Local credential-free preflight also verified the
+real private baseline, both applicable definitions and matching encryption keys;
+it made no provider calls and exposed no private article text.
+
+Independent implementation preflight passed with no blockers after 69 focused
+tests, full-suite log review, exact private baseline/glossary readback and
+credential-boundary inspection. Approval is limited to publishing the setup for
+one user-launched no-email saved-article test. A local mocked end-to-end routing
+and encrypted-roundtrip check also passed (six mock requests, zero real network
+requests); mocked approvals do not establish factual, meaning or readability
+success. No live run or email was triggered while preparing this checkpoint.

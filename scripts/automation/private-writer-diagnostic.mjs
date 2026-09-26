@@ -66,7 +66,7 @@ export function assertDiagnosticAuthority(env) {
 
 export function resolvePrivateWriterDiagnosticMode(value = "source") {
   if (value === 'definition-preservation-controls') return value;
-  if (['sentence-language-second-article', 'frozen-sentence-language'].includes(value)) return value;
+  if (['sentence-language-second-article', 'frozen-sentence-language', 'frozen-definition-language'].includes(value)) return value;
   if (['text-preservation-controls', 'text-preservation-holdouts', 'text-preservation-paraphrase'].includes(value)) return value;
   if (['isolated-preservation-controls', 'isolated-preservation-holdouts'].includes(value)) return value;
   if (!["source", "source-recheck", "source-recheck-explicit", "source-field-review", "review-controls", "explicit-review-controls", "split-review-controls", "isolated-review-controls", "field-review-controls", "provider-only", "reviewed-fact-summary", "causal-review-controls", "claimwise-review-controls", "claimwise-fact-summary", "generic-second-article", "plain-language-second-article", "preservation-review-controls", "split-preservation-review-controls"].includes(value)) throw failure("DIAGNOSTIC_MODE_INVALID");
@@ -82,13 +82,17 @@ export function validatePrivateWriterDiagnosticOptions(env) {
 }
 
 export async function prepareFrozenDiagnosticBaseline(mode, encoded) {
-  if (mode !== 'frozen-sentence-language') {
+  if (!['frozen-sentence-language', 'frozen-definition-language'].includes(mode)) {
     if (encoded !== undefined && encoded !== '') throw failure('DIAGNOSTIC_UNEXPECTED_BASELINE');
     return undefined;
   }
   const { decodeFrozenBaselineSecret, loadPinnedFrozenFactBaseline } = await import('./free/frozen-fact-baseline.mjs');
   const text = decodeFrozenBaselineSecret(encoded);
-  await loadPinnedFrozenFactBaseline(text); // Pin check happens before any provider request.
+  const baseline = await loadPinnedFrozenFactBaseline(text); // Before any provider request.
+  if (mode === 'frozen-definition-language') {
+    const { loadQualifiedMitGlossary } = await import('./experiments/qualified-definition-review.mjs');
+    loadQualifiedMitGlossary(baseline.source.excerpt);
+  }
   return text;
 }
 
@@ -154,10 +158,11 @@ export async function diagnoseOneWriter({ publicKey, accountId, apiToken, now = 
     return diagnoseIsolatedPreservation({ publicKey, accountId, apiToken, now, aiRequestImpl, fetchImpl, endpoint, sealDiagnostic,
       definitionContext: true });
   }
-  if (mode === 'frozen-sentence-language') {
+  if (['frozen-sentence-language', 'frozen-definition-language'].includes(mode)) {
     const { diagnoseFactSummary } = await import('./fact-summary-diagnostic.mjs');
     return diagnoseFactSummary({ publicKey, accountId, apiToken, now, aiRequestImpl, fetchImpl, endpoint, sealDiagnostic,
-      claimwise: true, profile: 'mit-generalization', sentenceLanguageRewrite: true, frozenBaselineText });
+      claimwise: true, profile: 'mit-generalization', sentenceLanguageRewrite: true, frozenBaselineText,
+      definitionPreservation: mode === 'frozen-definition-language' });
   }
   if (mode === "provider-only") return diagnoseProvider({ publicKey, accountId, apiToken, now,
     aiRequestImpl, fetchImpl, endpoint });

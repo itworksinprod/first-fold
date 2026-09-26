@@ -9,6 +9,9 @@ import { buildSentenceRewriteView } from '../scripts/automation/free/sentence-re
 import { SENTENCE_REWRITE_PROMPT } from '../scripts/automation/free/sentence-rewrite-prompt.mjs';
 import { buildIsolatedPreservationReview } from '../scripts/automation/free/isolated-preservation-review.mjs';
 import { buildTextPreservationReview } from '../scripts/automation/free/text-preservation-review.mjs';
+import { buildDefinitionPreservationReview } from '../scripts/automation/experiments/definition-preservation.mjs';
+import { loadDefinitionGlossary, SYNTHETIC_DEFINITION_SOURCE } from '../scripts/automation/experiments/definition-glossaries.mjs';
+import { DEFINITION_REVIEW_QUALIFICATION } from '../scripts/automation/experiments/qualified-definition-review.mjs';
 import { requestWorkersAiEditorial, buildWorkersAiRequest, DEFAULT_CLOUDFLARE_AI_MODEL } from '../scripts/automation/free/workers-ai.mjs';
 import { prepareFrozenDiagnosticBaseline, resolvePrivateWriterDiagnosticMode, diagnoseOneWriter } from '../scripts/automation/private-writer-diagnostic.mjs';
 
@@ -18,14 +21,15 @@ const fields = ['headline', 'whatHappened', 'whyItMatters', 'whatToWatch'];
 const accountId = '0'.repeat(32);
 const endpoint = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${DEFAULT_CLOUDFLARE_AI_MODEL}`;
 // Mock support judgments and invented facts test the plumbing only.
-function fixture() {
+function fixture(definition = false) {
   const raw = { headline: 'MIT describes a research method',
     whatHappened: ['MIT described a research method for studying how a model responds to a fixed collection of tasks under conditions specified by the researchers.',
       'The report explains the procedure and its limits, while separating observations made during the experiment from claims that would require additional testing in other settings.'],
     whyItMatters: ['The account offers a way to discuss the measurements in context, but does not establish that the method will produce the same results for every model.',
       'A reader would need comparable definitions and a matching evaluation procedure before drawing conclusions from differences between this report and measurements published by another team.'],
     whatToWatch: ['Future reports could explain whether the researchers keep the same task definitions and how any changes affect the interpretation of measurements collected during later evaluations.'] };
-  const excerpt = 'PRIVATE_SYNTHETIC_EVIDENCE: source placeholder for request testing.\nSecond synthetic passage.';
+  if (definition) raw.whatHappened[0] = raw.whatHappened[0].replace('fixed collection of tasks', 'set of binding rules');
+  const excerpt = definition ? SYNTHETIC_DEFINITION_SOURCE : 'PRIVATE_SYNTHETIC_EVIDENCE: source placeholder for request testing.\nSecond synthetic passage.';
   const before = normalizeClaimwiseSummary(raw, excerpt, 'MIT');
   const sheet = { sourceUrl: 'https://news.mit.edu/2026/new-method-enables-ai-safety-critical-situations-0914',
     excerptSha256: sha(excerpt), attribution: 'Private synthetic fact context', facts: [] };
@@ -41,8 +45,10 @@ function fixture() {
   const pins = JSON.stringify(q);
   return { raw, before, excerpt, pins, text: freezeFactBaseline(JSON.stringify(diagnostic), JSON.stringify(sheet), pins) };
 }
-async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal, changedFields = fields.slice(1) } = {}) {
-  const f = fixture(), requests = [], network = [];
+async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal, changedFields = fields.slice(1),
+  definition = false, glossaryLoader, sourceMismatch = false } = {}) {
+  const f = fixture(definition && !sourceMismatch), requests = [], network = [];
+  const glossary = definition ? loadDefinitionGlossary('synthetic-generation-definitions-v1', SYNTHETIC_DEFINITION_SOURCE) : null;
   const catalog = buildSentenceRewriteView(f.before.units);
   const rawAfter = structuredClone(f.raw);
   for (const field of changedFields) {
@@ -58,6 +64,8 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
   const result = await diagnoseFactSummary({ publicKey: 'synthetic', accountId, apiToken: 'PRIVATE_TOKEN',
     endpoint, now: new Date('2026-09-25T20:00:00Z'), claimwise: true, profile: 'mit-generalization',
     sentenceLanguageRewrite: true, frozenBaselineText: input, qualificationLoader: async () => f.pins,
+    definitionPreservation: definition,
+    ...(definition ? { definitionGlossaryLoader: glossaryLoader ?? (() => glossary) } : {}),
     articleFetcher: () => assert.fail('Frozen trials must not fetch a fresh article'),
     sheetLoader: () => assert.fail('Frozen trials must use pinned fact context'), sealDiagnostic: v => v,
     aiRequestImpl: async request => {
@@ -92,10 +100,12 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
         assert.deepEqual(data, { catalog: catalog.data, attribution: 'Private synthetic fact context', facts: [] });
         payload = proposal;
       } else {
-        const meaning = data.policy === 'text-only-preservation-v1';
+        const meaning = ['text-only-preservation-v1', 'definition-preservation-offline-v1'].includes(data.policy);
         const field = fields.find(k => JSON.stringify(after.units[k]) === JSON.stringify(data.claims.map(c => c.text)));
         assert.ok(field);
-        const view = meaning ? buildTextPreservationReview({ claims: after.units[field], previousClaims: f.before.units[field] })
+        const view = meaning ? (definition
+          ? buildDefinitionPreservationReview({ claims: after.units[field], previousClaims: f.before.units[field] }, glossary)
+          : buildTextPreservationReview({ claims: after.units[field], previousClaims: f.before.units[field] }))
           : buildIsolatedPreservationReview({ text: after.draft[field], claims: after.units[field],
             sources: [{ publisher: 'MIT', passages: f.excerpt.split('\n').map((text, i) => ({ evidenceId: `S1P${i + 1}`, text })) }] }, 'source');
         assert.deepEqual(data, view.data);
@@ -192,9 +202,13 @@ test('base64 is canonical bounded transport, not self-authentication or encrypti
   await assert.rejects(prepareFrozenDiagnosticBaseline('source', encoded), /UNEXPECTED_BASELINE/);
   assert.equal(await prepareFrozenDiagnosticBaseline('source', ''), undefined);
   assert.equal(resolvePrivateWriterDiagnosticMode('frozen-sentence-language'), 'frozen-sentence-language');
+  assert.equal(resolvePrivateWriterDiagnosticMode('frozen-definition-language'), 'frozen-definition-language');
+  await assert.rejects(prepareFrozenDiagnosticBaseline('frozen-definition-language', encoded), /FROZEN_BASELINE_/);
 });
 test('frozen mode cannot silently enter another diagnostic path or use unvalidated text', async () => {
-  for (const options of [{ sentenceLanguageRewrite: false }, { frozenBaselineText: null }, { plainLanguageCopyedit: true }]) {
+  for (const options of [{ sentenceLanguageRewrite: false }, { frozenBaselineText: null }, { plainLanguageCopyedit: true },
+    { definitionPreservation: true, frozenBaselineText: undefined }, { definitionPreservation: 'true' },
+    { definitionPreservation: true, profile: 'anthropic' }, { definitionPreservation: true, claimwise: false }]) {
     await assert.rejects(diagnoseFactSummary({ profile: 'mit-generalization', claimwise: true,
       sentenceLanguageRewrite: true, frozenBaselineText: fixture().text, ...options }), /FACT_SUMMARY_MODE/);
   }
@@ -204,10 +218,76 @@ test('frozen mode cannot silently enter another diagnostic path or use unvalidat
 test('workflow keeps private input in a mode-scoped secret and validates before provider credentials', async () => {
   const workflow = await readFile(new URL('../.github/workflows/private-writer-diagnostic.yml', import.meta.url), 'utf8');
   assert.match(workflow, /- frozen-sentence-language/);
-  assert.equal((workflow.match(/FIRST_FOLD_FROZEN_BASELINE_B64: \$\{\{ inputs.mode == 'frozen-sentence-language' && secrets.FIRST_FOLD_FROZEN_BASELINE_B64 \|\| '' \}\}/gu) ?? []).length, 2);
+  assert.equal((workflow.match(/FIRST_FOLD_FROZEN_BASELINE_B64: \$\{\{ \(inputs.mode == 'frozen-sentence-language' \|\| inputs.mode == 'frozen-definition-language'\) && secrets.FIRST_FOLD_FROZEN_BASELINE_B64 \|\| '' \}\}/gu) ?? []).length, 2);
   assert.ok(workflow.indexOf('private-writer-diagnostic.mjs validate') < workflow.indexOf('CLOUDFLARE_AI_API_TOKEN:'));
   const validateStep = workflow.slice(workflow.indexOf('- name: Validate diagnostic mode'), workflow.indexOf('- name: Inspect the selected'));
   assert.doesNotMatch(validateStep, /CLOUDFLARE_AI_API_TOKEN|RESEND|GITHUB_TOKEN/);
   assert.doesNotMatch(workflow, /inputs\.baseline|RESEND|OPENAI_API_KEY|contents: write|actions: write/);
   assert.match(workflow, /tests\/frozen-sentence-diagnostic.test.mjs/);
+  assert.match(workflow, /- frozen-definition-language/);
+});
+
+test('definition trial isolates the qualified meaning reviewer while retaining unchanged editor and source gates', async () => {
+  const r = await run({ definition: true });
+  assert.equal(r.report.status, 'draft-awaiting-manual-review');
+  assert.equal(r.report.mode, 'frozen-definition-language-rewrite-awaiting-manual-review');
+  assert.equal(r.report.modelRequests, 8); assert.equal(r.report.outputBudget, 5400);
+  assert.deepEqual(r.report.fieldsPassed, fields);
+  assert.deepEqual(r.sealed.reviewerQualification, DEFINITION_REVIEW_QUALIFICATION);
+  assert.equal(r.sealed.glossaryBinding.sourceSha256, sha(r.f.excerpt));
+  assert.equal(r.sealed.reviewStrategy, 'isolated-source-plus-qualified-definition-preservation-v1');
+  assert.equal(r.sealed.draft.headline, r.f.raw.headline);
+  assert.deepEqual(r.sealed.beforeCopyedit.draft, r.f.before.draft);
+  assert.deepEqual(r.sealed.draft, r.after.draft);
+  assert.equal(r.sealed.calls.filter(c => c.dimension === 'source').length, 4);
+  const meaning = r.sealed.calls.filter(c => c.dimension === 'meaning');
+  assert.equal(meaning.length, 3);
+  assert.deepEqual(meaning[0].request.definitions.map(d => d.term), ['binding rules']);
+  assert.deepEqual(meaning.slice(1).map(c => c.request.definitions), [[], []]);
+  assert.deepEqual(r.sealed.localReviews.map(v => v.field), ['headline']);
+  for (const call of meaning) {
+    assert.equal(call.request.policy, 'definition-preservation-offline-v1');
+    assert.equal(call.request.passages, undefined);
+    assert.equal(call.request.glossaryBinding.manifestSha256, r.sealed.glossaryBinding.manifestSha256);
+  }
+});
+test('definition trial still source-checks identical fields; local identity does not become glossary approval', async () => {
+  const r = await run({ definition: true, changedFields: ['whatHappened'] });
+  assert.equal(r.report.status, 'draft-awaiting-manual-review');
+  assert.equal(r.report.modelRequests, 6);
+  assert.equal(r.sealed.calls.filter(c => c.dimension === 'source').length, 4);
+  assert.equal(r.sealed.calls.filter(c => c.dimension === 'meaning').length, 1);
+  assert.deepEqual(r.sealed.localReviews.map(v => v.field), ['headline', 'whyItMatters', 'whatToWatch']);
+  for (const local of r.sealed.localReviews) assert.equal(local.request.policy, 'text-only-preservation-v1');
+});
+test('every source and definition-meaning veto or malformed verdict holds the new trial', async () => {
+  for (const rejection of ['false', 'malformed']) for (const rejectAt of [1, 2, 3, 4, 5, 6, 7]) {
+    const r = await run({ definition: true, rejection, rejectAt });
+    assert.equal(r.report.code, 'FACT_SUMMARY_REVIEW_REJECTED');
+    assert.equal(r.sealed.fieldReviews.at(-1).verdict.supported, false);
+  }
+});
+test('new trial rejects unknown, cloned or wrong-source glossaries before the editor', async () => {
+  for (const glossaryLoader of [() => ({}), () => structuredClone(loadDefinitionGlossary('synthetic-generation-definitions-v1', SYNTHETIC_DEFINITION_SOURCE)),
+    () => { throw new Error('unavailable'); }]) {
+    const r = await run({ definition: true, glossaryLoader });
+    assert.equal(r.report.status, 'failed'); assert.equal(r.requests.length, 0);
+  }
+  const r = await run({ definition: true, mutateInput: a => { a.source.excerpt += ' drift'; } });
+  assert.equal(r.report.status, 'failed'); assert.equal(r.requests.length, 0);
+  const mismatch = await run({ definition: true, sourceMismatch: true });
+  assert.equal(mismatch.report.code, 'DEFINITION_GLOSSARY_BINDING'); assert.equal(mismatch.requests.length, 0);
+});
+test('new trial keeps structure, length, abstention and free-provider failure gates', async () => {
+  for (const mutateProposal of [p => { p.sentences.reverse(); }, p => { p.sentences.pop(); },
+    p => { p.sentences.forEach((s, i) => { s.text = `MIT short unit ${i}.`; }); }]) {
+    const r = await run({ definition: true, mutateProposal });
+    assert.equal(r.report.status, 'failed'); assert.equal(r.requests.length, 1);
+  }
+  const abstained = await run({ definition: true, changedFields: [], mutateProposal: p => { p.decision = 'abstain'; } });
+  assert.equal(abstained.report.code, 'FACT_SUMMARY_COPYEDIT_ABSTAINED');
+  for (const rejection of ['quota', 'provenance', 'retry', 'extra-network']) {
+    const r = await run({ definition: true, rejectAt: 3, rejection });
+    assert.equal(r.report.status, 'failed'); assert.equal(r.requests.length, 4);
+  }
 });

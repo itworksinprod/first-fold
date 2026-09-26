@@ -13,6 +13,9 @@ import { PLAIN_LANGUAGE_COPYEDIT_PROMPT } from './free/plain-language-copyedit-p
 import { phraseCopyeditUnitsHash, PHRASE_COPYEDIT_PROTECTED_WORDS } from './free/phrase-copyedit.mjs';
 import { buildSinglePhraseCopyeditView, applySinglePhraseCopyedit, SINGLE_PHRASE_COPYEDIT_LIMITS } from './free/single-phrase-copyedit.mjs';
 import { buildSentenceRewriteView, applySentenceRewrite, SENTENCE_REWRITE_PROMPT } from './free/sentence-rewrite.mjs';
+import { buildDefinitionPreservationReview, validateDefinitionPreservationReview } from './experiments/definition-preservation.mjs';
+import { assertDefinitionGlossary } from './experiments/definition-glossaries.mjs';
+import { assertQualifiedDefinitionReviewer, loadQualifiedMitGlossary } from './experiments/qualified-definition-review.mjs';
 
 const fields = ['headline', 'whatHappened', 'whyItMatters', 'whatToWatch'];
 const hash = text => createHash('sha256').update(text).digest('hex');
@@ -54,7 +57,8 @@ export function normalizeClaimwiseSummary(raw, excerpt, publisher = 'Anthropic')
 
 export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now, aiRequestImpl, fetchImpl, endpoint, sealDiagnostic,
   claimwise = false, profile = 'anthropic', plainLanguageCopyedit = false, sentenceLanguageRewrite = false,
-  articleFetcher = fetchReviewedArticle, sheetLoader, frozenBaselineText, qualificationLoader }) {
+  articleFetcher = fetchReviewedArticle, sheetLoader, frozenBaselineText, qualificationLoader,
+  definitionPreservation = false, definitionGlossaryLoader = loadQualifiedMitGlossary }) {
   if (typeof claimwise !== 'boolean') throw fail('FACT_SUMMARY_MODE');
   const generic = profile === 'mit-generalization';
   if (typeof plainLanguageCopyedit !== 'boolean' || (plainLanguageCopyedit && (!generic || !claimwise))) throw fail('FACT_SUMMARY_MODE');
@@ -62,6 +66,7 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
       (sentenceLanguageRewrite && (!generic || !claimwise || plainLanguageCopyedit))) throw fail('FACT_SUMMARY_MODE');
   const frozenMode = frozenBaselineText !== undefined;
   if (frozenMode && (!sentenceLanguageRewrite || typeof frozenBaselineText !== 'string')) throw fail('FACT_SUMMARY_MODE');
+  if (typeof definitionPreservation !== 'boolean' || (definitionPreservation && !frozenMode)) throw fail('FACT_SUMMARY_MODE');
   if (!['anthropic', 'mit-generalization'].includes(profile) || (profile === 'mit-generalization' && !claimwise)) throw fail('FACT_SUMMARY_PROFILE');
   const editedReviewPath = plainLanguageCopyedit || sentenceLanguageRewrite;
   const maxRequests = frozenMode ? 8 : sentenceLanguageRewrite ? 9 : plainLanguageCopyedit ? 7 : 5;
@@ -70,12 +75,12 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
   const sourceUrl = generic ? 'https://news.mit.edu/2026/new-method-enables-ai-safety-critical-situations-0914'
     : 'https://www.anthropic.com/institute/measuring-pace-of-ai-development';
   const publisherKey = generic ? 'mit' : 'anthropic';
-  const capture = { purpose: frozenMode ? 'frozen-sentence-language-rewrite-awaiting-manual-review' : sentenceLanguageRewrite ? 'sentence-language-rewrite-awaiting-manual-review' : plainLanguageCopyedit ? 'plain-language-copyedit-awaiting-manual-review' : generic ? 'generic-second-article-awaiting-manual-review' : claimwise ? 'claimwise-fact-summary-awaiting-manual-review' : 'reviewed-fact-summary-awaiting-manual-review',
+  const capture = { purpose: definitionPreservation ? 'frozen-definition-language-rewrite-awaiting-manual-review' : frozenMode ? 'frozen-sentence-language-rewrite-awaiting-manual-review' : sentenceLanguageRewrite ? 'sentence-language-rewrite-awaiting-manual-review' : plainLanguageCopyedit ? 'plain-language-copyedit-awaiting-manual-review' : generic ? 'generic-second-article-awaiting-manual-review' : claimwise ? 'claimwise-fact-summary-awaiting-manual-review' : 'reviewed-fact-summary-awaiting-manual-review',
     ...(generic ? { ...(frozenMode ? { writerSkipped: true } : { promptSha256: hash(GENERIC_FACT_SUMMARY_PROMPT) }), factSelection: 'manual' } : {}), calls: [], fieldReviews: [], emailSent: false };
   if (editedReviewPath) {
     capture.copyeditStrategy = sentenceLanguageRewrite ? 'sentence-by-sentence-v1' : 'single-phrase-or-abstain-v4';
     capture.copyeditPromptSha256 = hash(sentenceLanguageRewrite ? SENTENCE_REWRITE_PROMPT : PLAIN_LANGUAGE_COPYEDIT_PROMPT);
-    capture.reviewStrategy = 'isolated-source-plus-text-preservation-v1';
+    capture.reviewStrategy = definitionPreservation ? 'isolated-source-plus-qualified-definition-preservation-v1' : 'isolated-source-plus-text-preservation-v1';
     capture.localReviews = [];
   }
   let modelRequests = 0, networkRequests = 0, outputBudget = 0, code = null;
@@ -141,6 +146,17 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
     // Its offline qualification is not inherited final-summary or email approval.
     const excerpt = frozen ? frozen.source.excerpt : await articleFetcher({ url: sheet.sourceUrl, publisherKey });
     if (hash(excerpt) !== sheet.excerptSha256) throw fail('FACT_SUMMARY_EVIDENCE_CHANGED');
+    let glossary;
+    if (definitionPreservation) {
+      capture.reviewerQualification = assertQualifiedDefinitionReviewer();
+      // Trusted dependency injection for synthetic tests only. The CLI always
+      // uses the fixed MIT loader and cannot accept a glossary or override pins.
+      glossary = definitionGlossaryLoader(excerpt);
+      assertDefinitionGlossary(glossary);
+      if (glossary.sourceSha256 !== hash(excerpt)) throw fail('DEFINITION_GLOSSARY_BINDING');
+      capture.glossaryBinding = { id: glossary.id, sourceSha256: glossary.sourceSha256,
+        manifestSha256: glossary.manifestSha256 };
+    }
     capture.source = { url: sheet.sourceUrl, excerpt, excerptSha256: sheet.excerptSha256 };
     const schema = { type: 'object', additionalProperties: false, required: fields,
       properties: Object.fromEntries(fields.map(f => [f, claimwise && f !== 'headline'
@@ -239,20 +255,23 @@ The article is one company's account. No tables or appendix are available. No ou
         sourceResult.call.response = structuredClone(sourceResult.payload);
         const sourceReview = { response: structuredClone(sourceResult.payload), verdict: sourceVerdict };
 
-        const meaningView = buildTextPreservationReview({ claims: normalized.units[field],
-          previousClaims: capture.beforeCopyedit.units[field] });
-        const identityVerdict = exactTextPreservation(meaningView);
+        const meaningInput = { claims: normalized.units[field],
+          previousClaims: capture.beforeCopyedit.units[field] };
+        const textView = buildTextPreservationReview(meaningInput);
+        const identityVerdict = exactTextPreservation(textView);
         let meaningReview, meaningVerdict;
         if (identityVerdict) {
           meaningVerdict = identityVerdict;
-          const localReview = { field, dimension: 'meaning', request: meaningView.data,
+          const localReview = { field, dimension: 'meaning', request: textView.data,
             verdict: structuredClone(identityVerdict) };
           capture.localReviews.push(localReview);
           meaningReview = { local: true, verdict: identityVerdict };
         } else {
+          const meaningView = definitionPreservation ? buildDefinitionPreservationReview(meaningInput, glossary) : textView;
           const meaningResult = await request(meaningView.prompt, meaningView.data, meaningView.schema, 600,
             { timeoutMs: 30000, deferCapture: true, metadata: { stage: 'review', field, dimension: 'meaning' } });
-          meaningVerdict = validateTextPreservationReview(meaningResult.payload, meaningView);
+          meaningVerdict = definitionPreservation ? validateDefinitionPreservationReview(meaningResult.payload, meaningView)
+            : validateTextPreservationReview(meaningResult.payload, meaningView);
           if (!meaningVerdict.valid) {
             meaningResult.call.responseRejectedBeforeCapture = true;
             capture.fieldReviews.push({ field, source: sourceReview,

@@ -36,22 +36,33 @@ Keep the private key on the Mac. Only the public key belongs in the workflow's
 ## One bounded run
 
 Open **Diagnose one free writer story (encrypted, no email)** on GitHub Actions.
-Run from `main`, choose `frozen-sentence-language`, and supply the public key.
+Run from `main`, choose `frozen-definition-language`, and supply the public key.
+This separate opt-in mode uses the definition-aware reviewer qualified by
+[run 36213351283](https://github.com/itworksinprod/first-fold/actions/runs/36213351283).
+The older `frozen-sentence-language` mode remains unchanged for auditability; do
+not rerun it to chase a different answer. No live saved-article result from the
+new mode has been reviewed yet.
 The same owner/main/first-attempt restrictions remain in force. Do not use the
 older `sentence-language-second-article` mode: it generates a new baseline.
 
-The private secret is exposed only in this mode. Before provider credentials
+The private secret is exposed only in these two frozen modes. Before provider credentials
 are made available, the CLI checks the artifact against the fixed source,
 fact-context, draft, unit and qualification hashes. The runtime repeats that
-check. Missing, changed or malformed input fails without a provider call; there
+check. The new mode additionally verifies the source and meaning prompt hashes,
+model, fixed-control identity and glossary manifests against the audited reviewer
+qualification. The MIT glossary must match the exact saved source. Missing,
+changed or malformed input fails without a provider call; there
 is no fallback to a new writer, fresh discovery or another provider.
 
 One rewrite call is followed by four final-source checks and up to three
 changed-body meaning checks: at most eight requests and 5,400 requested output
 tokens. Byte-identical fields use exact local identity for meaning only; their
-source check still runs. The existing model, rewrite prompt, separate reviewer
-prompts, 110–225-word limits, unchanged headline and ordered-unit protections
-remain unchanged. Quota failure, abstention or a rejected check holds the result.
+source check still runs. The existing model, rewrite prompt, source-review prompt,
+110–225-word limits, unchanged headline and ordered-unit protections remain
+unchanged. Only changed-field meaning checks gain minimal, reviewed term
+definitions; they cannot see the article passages or expected control labels.
+This is vocabulary context, not automatic factual or readability approval.
+Quota failure, abstention or a rejected check holds the result.
 No automatic retry, email, public edition, billing or daily-workflow change occurs.
 
 ## Review, not merely a green job

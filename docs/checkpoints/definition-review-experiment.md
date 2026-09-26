@@ -1,6 +1,6 @@
-# Definition-aware meaning review — offline checkpoint
+# Definition-aware meaning review — controlled qualification
 
-Status: **isolated control-run implementation; live semantic qualification pending**.
+Status: **live fixed-control qualification passed; exact-result independent review passed**.
 This does not close the plain-language article step or approve a daily edition.
 
 ## The change
@@ -11,11 +11,12 @@ fix supplies the meaning reviewer with only the relevant, reviewed definitions.
 It does not supply the full article, factual results, desired verdicts or editing
 instructions, and it does not replace the separate source-support review.
 
-Glossary/review code is isolated under `scripts/automation/experiments/`. The only
-integration is the manually selected `definition-preservation-controls` mode in
-the existing encrypted no-email diagnostic. No daily writer or delivery path
-imports the new reviewer. The editor prompt, current article reviewer, headline
-lock, sentence order and 110–225-word requirement are unchanged.
+Glossary/review code is isolated under `scripts/automation/experiments/`. The
+manually selected `definition-preservation-controls` mode qualifies the reviewer;
+the separate `frozen-definition-language` mode now prepares one saved-article
+trial in the existing encrypted no-email diagnostic. No daily writer or delivery
+path imports the new reviewer. The editor prompt, existing diagnostic modes,
+headline lock, sentence order and 110–225-word requirement are unchanged.
 
 ## Trust and acceptance boundaries
 
@@ -81,7 +82,7 @@ Pinned identities:
 - Synthetic glossary: `0cf61d8cd2c159df5444d79ea6975b681d7120d922d258a166f2a3035015fec9`.
 - MIT glossary: `a52f89f3eaf76fd1e20acdd680e0ab8be14a3ecbe7eebf8726ca6611bca138ca`.
 
-## Controlled qualification — prepared, not executed
+## Controlled qualification — executed and audited
 
 The fixed synthetic set uses the existing free-plan-compatible Cloudflare Llama
 reviewer, not the article or a new provider. Expected labels stay outside requests,
@@ -110,7 +111,7 @@ more than the Free-plan allowance. This mode does not enable billing or purchase
 credits; on the existing Free account, quota exhaustion must stop the trial.
 It cannot guarantee available quota or detect an account upgrade made elsewhere.
 
-### Launch once
+### Run settings (historical; do not repeat automatically)
 
 In GitHub Actions, open **Diagnose one free writer story (encrypted, no email)**,
 choose **Run workflow**, keep branch `main`, and select mode
@@ -128,13 +129,50 @@ passed 44 focused tests with no blockers and cleared one manual synthetic run.
 The session preparing this mode has no authenticated GitHub dispatch access;
 publication of the mode must not be confused with starting or passing its test.
 
+### Exact result — September 25 Eastern
+
+[Run 36213351283](https://github.com/itworksinprod/first-fold/actions/runs/36213351283)
+completed successfully on `c3338d37455869c8f9fb29c4d19fcef116d76614`, main,
+owner-launched `workflow_dispatch`, first attempt. Its capture time was
+`2026-09-26T02:58:40.802Z`. All eleven cases completed with all eleven source and
+eleven meaning judgments correct: 22 model/network requests, 13,200 requested
+output-token budget, no retry, no search and no email. Only G01/G02 satisfied both
+acceptance dimensions; the other cases correctly failed at least one dimension.
+
+The user-supplied ZIP matches GitHub artifact `10895798951`:
+`7541c1cf4322a051d2999be416560fa451715f5a286f87810e48d3876b17dce3`.
+It contains only the encrypted envelope and was authenticated/decrypted locally
+outside the repository into a 0600 file. Private formatted audit-file SHA-256:
+`0b50e86a67e1d4846aefc7ff562a5ef4aa6910b54d50a8528e4a5cad039a3d27`.
+No plaintext capture, encryption key or response text was committed.
+
+Main and independent reviews rebuilt every request view, schema and full prompt,
+verified request/prompt hashes and byte sizes, checked fixed case/glossary pins and
+provider/model/attempt bindings, and revalidated all recorded responses against
+the predeclared labels. Results and the complete report were reproduced exactly.
+Source/meaning inputs remained separate; labels and rationales were not supplied
+to the model. Positive source citations and contradiction citations were decisive;
+the added energy claim was rejected as unsupported. Provider response hashes are
+recorded but cannot be recomputed because raw envelopes are deliberately omitted.
+
+G07's meaning explanation identifies the newly named specifics rather than
+explicitly explaining category narrowing. Its veto is correct and the separate
+source review correctly accepts the supported subset, so this is not a blocker
+under the declared criteria. It is not evidence of robust category reasoning.
+
+Independent exact-result review clears this **bounded control checkpoint only**.
+It is ready for preparation and independent preflight of a separate frozen-article
+trial, not an automatic rerun. That trial still needs source, meaning, structural,
+110–225-word and readability checks. No daily-paper reliability, freshness or
+publication claim follows from one small fixed synthetic set.
+
 Predeclared success requires valid, correct results on **all eleven meaning
 judgments and all eleven independent source judgments**. Source support alone
 must not pass G05/G07, and meaning alone must not pass G10. A malformed response,
 quota/provider block, wrong verdict or missing result leaves qualification pending
 or failed; do not cherry-pick or silently retry until a green result appears.
 
-After successful controlled qualification and independent result review, one
-separate frozen-article trial may be considered. It must preserve all existing
+With controlled qualification and independent result review complete, one
+separate frozen-article trial may now be prepared. It must preserve all existing
 content and readability gates. A successful control run is evidence about this
 bounded set only, not a guarantee of daily-paper reliability.
