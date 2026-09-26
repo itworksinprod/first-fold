@@ -83,3 +83,34 @@ that day's published reset. Do not promise immediate recovery, keep retrying a
 known hard limit, switch accounts to evade it, or enable billing. No upgraded
 test email has passed its live quality gates yet. Production settings and the
 recipient remain unchanged.
+## Saved final-review experiment — September 26
+
+The opt-in `saved-final-review` mode performs no drafting or discovery. It checks
+only an independently inspected, manually assisted saved candidate. Its private
+packet is supplied through `FIRST_FOLD_FINAL_REVIEW_PACKET_B64` as gzip/base64;
+compression is transport only, not encryption or authentication. The trusted
+runner requires the exact decoded packet SHA-256
+`3226ceb1b1b10c3f0dcb0363193756df167d5cbdb174d35034afc38d5f84caff`
+and rebuilds its review views before provider access. No plaintext article,
+publisher excerpt, expected judgment or recipient is committed with this setup.
+
+Four source checks cover the headline and every body section. Two separate
+meaning checks compare changed sections with their original wording; two local
+identity checks do not waive source review. Relevant authors' paper excerpts are
+term context, not independent corroboration. Existing prompt/schema rules stay
+fixed, including the 1–3 decisive source-citation limit; that limit is not an
+exhaustive evidence inventory. The new glossary identity and this candidate do
+not inherit automatic approval from older control-set results.
+
+The maximum is six single-attempt Llama reviewer calls, 600 output tokens each
+(3,600 total), with no editor or paid fallback. Any negative verdict, malformed
+response, network/provenance error or quota denial stops the trial. The mode
+uses the existing owner/main/manual/first-attempt authority checks and one-day
+encrypted diagnostic artifact. Its input secret is available only to this mode;
+there are no recipient or email credentials. Daily delivery remains unchanged.
+
+Even six positive results mean only `checks-completed-awaiting-independent-review`.
+They do not establish general reviewer reliability, freshness, publication
+approval, or an automatic writer. Exact-output independent inspection is still
+required. The previous article's 159-word body and manual review are separate
+evidence, not a preloaded verdict sent to the reviewer.

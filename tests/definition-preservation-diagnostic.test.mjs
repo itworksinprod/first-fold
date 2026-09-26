@@ -175,7 +175,7 @@ test('CLI mode retains owner/manual authority and encrypts all prompts and respo
   }
 });
 
-test('workflow tests the new mode before credentials and grants neither delivery access nor new secrets', async () => {
+test('workflow tests definition mode before credentials and scopes unrelated saved inputs away from it', async () => {
   const workflow = await readFile(new URL('../.github/workflows/private-writer-diagnostic.yml', import.meta.url), 'utf8');
   assert.match(workflow, /- definition-preservation-controls/);
   assert.match(workflow, /timeout-minutes: \$\{\{ inputs.mode == 'definition-preservation-controls' && 15 \|\| 8 \}\}/);
@@ -186,6 +186,7 @@ test('workflow tests the new mode before credentials and grants neither delivery
   assert.match(workflow, /persist-credentials: false/); assert.match(workflow, /retention-days: 1/);
   assert.doesNotMatch(workflow, /RESEND|OPENAI_API_KEY|schedule:|contents: write|pull-requests: write/);
   const secrets = [...workflow.matchAll(/secrets\.([A-Z0-9_]+)/gu)].map(m => m[1]);
-  assert.deepEqual([...new Set(secrets)].sort(), ['CLOUDFLARE_AI_API_TOKEN', 'FIRST_FOLD_FROZEN_BASELINE_B64']);
+  assert.deepEqual([...new Set(secrets)].sort(), ['CLOUDFLARE_AI_API_TOKEN', 'FIRST_FOLD_FINAL_REVIEW_PACKET_B64', 'FIRST_FOLD_FROZEN_BASELINE_B64']);
+  assert.equal((workflow.match(/inputs.mode == 'saved-final-review' && secrets.FIRST_FOLD_FINAL_REVIEW_PACKET_B64 \|\| ''/gu) ?? []).length, 2);
   assert.equal((workflow.match(/\(inputs.mode == 'frozen-sentence-language' \|\| inputs.mode == 'frozen-definition-language' \|\| inputs.mode == 'frozen-vocabulary-language' \|\| inputs.mode == 'frozen-reasoning-language'\) && secrets.FIRST_FOLD_FROZEN_BASELINE_B64/gu) ?? []).length, 2);
 });

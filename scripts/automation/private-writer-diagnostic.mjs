@@ -65,6 +65,7 @@ export function assertDiagnosticAuthority(env) {
 }
 
 export function resolvePrivateWriterDiagnosticMode(value = "source") {
+  if (value === 'saved-final-review') return value;
   if (value === 'definition-preservation-controls') return value;
   if (['sentence-language-second-article', 'frozen-sentence-language', 'frozen-definition-language', 'frozen-vocabulary-language', 'frozen-reasoning-language'].includes(value)) return value;
   if (['text-preservation-controls', 'text-preservation-holdouts', 'text-preservation-paraphrase'].includes(value)) return value;
@@ -98,6 +99,15 @@ export async function prepareFrozenDiagnosticBaseline(mode, encoded) {
     }
   }
   return text;
+}
+
+export async function prepareSavedFinalDiagnostic(mode, encoded) {
+  if (mode !== 'saved-final-review') {
+    if (encoded !== undefined && encoded !== '') throw failure('DIAGNOSTIC_UNEXPECTED_SAVED_PACKET');
+    return undefined;
+  }
+  const {decodeSavedFinalReviewPacket,buildSavedFinalReviewPlan} = await import('./saved-final-review-diagnostic.mjs');
+  return buildSavedFinalReviewPlan(decodeSavedFinalReviewPacket(encoded));
 }
 
 async function diagnoseProvider({ publicKey, accountId, apiToken, now, aiRequestImpl, fetchImpl, endpoint }) {
@@ -148,15 +158,21 @@ async function diagnoseProvider({ publicKey, accountId, apiToken, now, aiRequest
 }
 
 export async function diagnoseOneWriter({ publicKey, accountId, apiToken, now = new Date(),
-  mode = "source", frozenBaselineB64,
+  mode = "source", frozenBaselineB64, savedFinalReviewB64,
   researchImpl = collectFreeResearchSnapshot, aiRequestImpl = requestWorkersAiEditorial,
   fetchImpl = globalThis.fetch } = {}) {
   // Check encryption and credentials before research or inference, not afterwards.
   mode = resolvePrivateWriterDiagnosticMode(mode);
   diagnosticPublicKey(publicKey);
   const frozenBaselineText = await prepareFrozenDiagnosticBaseline(mode, frozenBaselineB64);
+  const savedFinalPlan = await prepareSavedFinalDiagnostic(mode, savedFinalReviewB64);
   const endpoint = workersAiRunUrl(accountId, DEFAULT_CLOUDFLARE_AI_MODEL);
   if (typeof apiToken !== "string" || !apiToken.trim()) throw failure("DIAGNOSTIC_CONFIGURATION_INVALID");
+  if (mode === 'saved-final-review') {
+    const {runSavedFinalReviews} = await import('./saved-final-review-diagnostic.mjs');
+    return runSavedFinalReviews({plan: savedFinalPlan, publicKey, accountId, apiToken, now,
+      aiRequestImpl, fetchImpl, endpoint, sealDiagnostic});
+  }
   if (mode === 'definition-preservation-controls') {
     const { diagnoseIsolatedPreservation } = await import('./isolated-preservation-diagnostic.mjs');
     return diagnoseIsolatedPreservation({ publicKey, accountId, apiToken, now, aiRequestImpl, fetchImpl, endpoint, sealDiagnostic,
@@ -311,10 +327,12 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     } else if (command === "validate" && args.length === 0) {
       const mode = validatePrivateWriterDiagnosticOptions(process.env);
       await prepareFrozenDiagnosticBaseline(mode, process.env.FIRST_FOLD_FROZEN_BASELINE_B64);
+      await prepareSavedFinalDiagnostic(mode, process.env.FIRST_FOLD_FINAL_REVIEW_PACKET_B64);
     } else if (command === "run" && args.length === 1) {
       const mode = validatePrivateWriterDiagnosticOptions(process.env);
       const { sealed, report } = await diagnoseOneWriter({ publicKey: process.env.DIAGNOSTIC_PUBLIC_KEY,
         mode, frozenBaselineB64: process.env.FIRST_FOLD_FROZEN_BASELINE_B64,
+        savedFinalReviewB64: process.env.FIRST_FOLD_FINAL_REVIEW_PACKET_B64,
         accountId: process.env.CLOUDFLARE_ACCOUNT_ID, apiToken: process.env.CLOUDFLARE_AI_API_TOKEN });
       await writeFile(args[0], JSON.stringify(sealed), { mode: 0o600, flag: "wx" });
       console.info(`::notice title=One-story diagnostic::${JSON.stringify(report)}`);
