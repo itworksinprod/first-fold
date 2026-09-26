@@ -16,7 +16,7 @@ import { DEFINITION_COMPOSITION_PROMPT } from '../scripts/automation/experiments
 import { DEFINITION_POLISH_PROMPT } from '../scripts/automation/experiments/definition-polish-prompt.mjs';
 import { EDITORIAL_VOCABULARY_PROMPT, buildEditorialVocabulary } from '../scripts/automation/experiments/editorial-vocabulary.mjs';
 import { buildDefinitionContext } from '../scripts/automation/experiments/definition-context.mjs';
-import { requestWorkersAiEditorial, buildWorkersAiRequest, DEFAULT_CLOUDFLARE_AI_MODEL } from '../scripts/automation/free/workers-ai.mjs';
+import { requestWorkersAiEditorial, buildWorkersAiRequest, DEFAULT_CLOUDFLARE_AI_MODEL, FREE_REASONING_WRITER_MODEL, workersAiRunUrl } from '../scripts/automation/free/workers-ai.mjs';
 import { prepareFrozenDiagnosticBaseline, resolvePrivateWriterDiagnosticMode, diagnoseOneWriter } from '../scripts/automation/private-writer-diagnostic.mjs';
 
 const sha = text => createHash('sha256').update(text).digest('hex');
@@ -50,8 +50,8 @@ function fixture(definition = false) {
   return { raw, before, excerpt, pins, text: freezeFactBaseline(JSON.stringify(diagnostic), JSON.stringify(sheet), pins) };
 }
 async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal, changedFields = fields.slice(1),
-  definition = false, glossaryLoader, sourceMismatch = false, mutatePolish, vocabulary = false } = {}) {
-  const polishEnabled = definition && !vocabulary;
+  definition = false, glossaryLoader, sourceMismatch = false, mutatePolish, vocabulary = false, reasoning = false } = {}) {
+  const polishEnabled = definition && !vocabulary && !reasoning;
   const f = fixture(definition && !sourceMismatch), requests = [], network = [];
   const glossary = definition ? loadDefinitionGlossary('synthetic-generation-definitions-v1', SYNTHETIC_DEFINITION_SOURCE) : null;
   const catalog = buildSentenceRewriteView(f.before.units);
@@ -76,12 +76,13 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
     sentenceLanguageRewrite: true, frozenBaselineText: input, qualificationLoader: async () => f.pins,
     definitionPreservation: definition,
     editorialVocabulary: vocabulary,
+    reasoningEditor: reasoning,
     ...(definition ? { definitionGlossaryLoader: glossaryLoader ?? (() => glossary) } : {}),
     articleFetcher: () => assert.fail('Frozen trials must not fetch a fresh article'),
     sheetLoader: () => assert.fail('Frozen trials must use pinned fact context'), sealDiagnostic: v => v,
     aiRequestImpl: async request => {
       const index = requests.length; requests.push(request);
-      assert.equal(request.model, DEFAULT_CLOUDFLARE_AI_MODEL);
+      assert.equal(request.model, reasoning && index === 0 ? FREE_REASONING_WRITER_MODEL : DEFAULT_CLOUDFLARE_AI_MODEL);
       assert.equal(request.maxAttempts, 1);
       assert.equal(request.maxTokens, index === 0 || (polishEnabled && index === 1) ? 1200 : 600);
       assert.equal(request.timeoutMs, index === 0 || (polishEnabled && index === 1) ? 90000 : 30000);
@@ -91,20 +92,32 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
       if (index === rejectAt && rejection === 'extra-network') {
         try { await request.fetchImpl('https://not-approved.example/', init); } catch { /* Must remain denied. */ }
       }
+      if (index === rejectAt && rejection === 'swapped-endpoint') {
+        const wrongModel = index === 0 ? DEFAULT_CLOUDFLARE_AI_MODEL : FREE_REASONING_WRITER_MODEL;
+        try { await request.fetchImpl(workersAiRunUrl(accountId, wrongModel), init); } catch { /* Sticky denial. */ }
+      }
       const answer = await requestWorkersAiEditorial(request);
       if (index === rejectAt && rejection === 'provenance') answer.requestSha256 = '0'.repeat(64);
+      if (index === rejectAt && rejection === 'wrong-model') answer.model = index === 0 ? DEFAULT_CLOUDFLARE_AI_MODEL : FREE_REASONING_WRITER_MODEL;
       if (index === rejectAt && rejection === 'retry') {
-        try { await request.fetchImpl(endpoint, init); } catch { /* Sticky denial must propagate. */ }
+        try { await request.fetchImpl(workersAiRunUrl(accountId, request.model), init); } catch { /* Sticky denial must propagate. */ }
       }
       return answer;
     },
     fetchImpl: async (url, init) => {
-      assert.equal(url, endpoint); assert.equal(init.redirect, 'error');
       const index = requests.length - 1, request = requests[index], body = JSON.parse(init.body);
+      assert.equal(url, workersAiRunUrl(accountId, reasoning && index === 0 ? FREE_REASONING_WRITER_MODEL : DEFAULT_CLOUDFLARE_AI_MODEL));
+      assert.equal(init.redirect, 'error');
       const data = JSON.parse(body.messages[1].content);
       network.push({ url, body });
       if (index === rejectAt && rejection === 'quota') return new Response(JSON.stringify({ success: false,
         errors: [{ code: 3036, message: 'PRIVATE_QUOTA_DETAIL' }] }), { status: 429 });
+      if (index === rejectAt && rejection === 'unsupported-format') return new Response(JSON.stringify({ success: false,
+        errors: [{ code: 3003, message: 'PRIVATE_UNSUPPORTED_FORMAT' }] }), { status: 400 });
+      if (index === rejectAt && ['reasoning-only', 'truncated'].includes(rejection)) return new Response(JSON.stringify({ success: true,
+        result: { choices: [{ index: 0, finish_reason: rejection === 'truncated' ? 'length' : 'stop',
+          message: { role: 'assistant', content: rejection === 'truncated' ? JSON.stringify(proposal) : '', reasoning_content: 'PRIVATE_NOT_FINAL' } }] }, errors: [] }),
+        { headers: { 'content-type': 'application/json' } });
       let payload;
       if (index === 0) {
         assert.equal(request.messages[0].content, `${vocabulary ? EDITORIAL_VOCABULARY_PROMPT : definition ? DEFINITION_COMPOSITION_PROMPT : SENTENCE_REWRITE_PROMPT}\nJSON schema: ${JSON.stringify(catalog.schema)}`);
@@ -136,7 +149,9 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
           [meaning ? 'meaningPreserved' : 'sourceSupported']: !(index === rejectAt && rejection === 'false') })) };
         if (index === rejectAt && rejection === 'malformed') payload.judgments.pop();
       }
-      return new Response(JSON.stringify({ success: true, result: { response: JSON.stringify(payload) }, errors: [] }),
+      return new Response(JSON.stringify({ success: true, result: reasoning && index === 0
+        ? { choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: JSON.stringify(payload) } }] }
+        : { response: JSON.stringify(payload) }, errors: [] }),
         { headers: { 'content-type': 'application/json' } });
     } });
   assert.equal(result.report.modelRequests, requests.length);
@@ -227,12 +242,16 @@ test('base64 is canonical bounded transport, not self-authentication or encrypti
   await assert.rejects(prepareFrozenDiagnosticBaseline('frozen-definition-language', encoded), /FROZEN_BASELINE_/);
   assert.equal(resolvePrivateWriterDiagnosticMode('frozen-vocabulary-language'), 'frozen-vocabulary-language');
   await assert.rejects(prepareFrozenDiagnosticBaseline('frozen-vocabulary-language', encoded), /FROZEN_BASELINE_/);
+  assert.equal(resolvePrivateWriterDiagnosticMode('frozen-reasoning-language'), 'frozen-reasoning-language');
+  await assert.rejects(prepareFrozenDiagnosticBaseline('frozen-reasoning-language', encoded), /FROZEN_BASELINE_/);
 });
 test('frozen mode cannot silently enter another diagnostic path or use unvalidated text', async () => {
   for (const options of [{ sentenceLanguageRewrite: false }, { frozenBaselineText: null }, { plainLanguageCopyedit: true },
     { definitionPreservation: true, frozenBaselineText: undefined }, { definitionPreservation: 'true' },
     { definitionPreservation: true, profile: 'anthropic' }, { definitionPreservation: true, claimwise: false },
-    { editorialVocabulary: true }, { editorialVocabulary: 'true', definitionPreservation: true }]) {
+    { editorialVocabulary: true }, { editorialVocabulary: 'true', definitionPreservation: true },
+    { reasoningEditor: true }, { reasoningEditor: 'true', definitionPreservation: true },
+    { reasoningEditor: true, definitionPreservation: true, editorialVocabulary: true }]) {
     await assert.rejects(diagnoseFactSummary({ profile: 'mit-generalization', claimwise: true,
       sentenceLanguageRewrite: true, frozenBaselineText: fixture().text, ...options }), /FACT_SUMMARY_MODE/);
   }
@@ -242,7 +261,7 @@ test('frozen mode cannot silently enter another diagnostic path or use unvalidat
 test('workflow keeps private input in a mode-scoped secret and validates before provider credentials', async () => {
   const workflow = await readFile(new URL('../.github/workflows/private-writer-diagnostic.yml', import.meta.url), 'utf8');
   assert.match(workflow, /- frozen-sentence-language/);
-  assert.equal((workflow.match(/FIRST_FOLD_FROZEN_BASELINE_B64: \$\{\{ \(inputs.mode == 'frozen-sentence-language' \|\| inputs.mode == 'frozen-definition-language' \|\| inputs.mode == 'frozen-vocabulary-language'\) && secrets.FIRST_FOLD_FROZEN_BASELINE_B64 \|\| '' \}\}/gu) ?? []).length, 2);
+  assert.equal((workflow.match(/FIRST_FOLD_FROZEN_BASELINE_B64: \$\{\{ \(inputs.mode == 'frozen-sentence-language' \|\| inputs.mode == 'frozen-definition-language' \|\| inputs.mode == 'frozen-vocabulary-language' \|\| inputs.mode == 'frozen-reasoning-language'\) && secrets.FIRST_FOLD_FROZEN_BASELINE_B64 \|\| '' \}\}/gu) ?? []).length, 2);
   assert.ok(workflow.indexOf('private-writer-diagnostic.mjs validate') < workflow.indexOf('CLOUDFLARE_AI_API_TOKEN:'));
   const validateStep = workflow.slice(workflow.indexOf('- name: Validate diagnostic mode'), workflow.indexOf('- name: Inspect the selected'));
   assert.doesNotMatch(validateStep, /CLOUDFLARE_AI_API_TOKEN|RESEND|GITHUB_TOKEN/);
@@ -250,6 +269,7 @@ test('workflow keeps private input in a mode-scoped secret and validates before 
   assert.match(workflow, /tests\/frozen-sentence-diagnostic.test.mjs/);
   assert.match(workflow, /- frozen-definition-language/);
   assert.match(workflow, /- frozen-vocabulary-language/);
+  assert.match(workflow, /- frozen-reasoning-language/);
 });
 
 test('definition trial polishes once while retaining original-bound qualified source and meaning gates', async () => {
@@ -413,4 +433,66 @@ test('vocabulary mode rejects changed private baselines and forged glossaries be
   assert.equal(forged.requests.length,0);
   const mismatch=await run({definition:true,vocabulary:true,sourceMismatch:true});
   assert.equal(mismatch.report.code,'DEFINITION_GLOSSARY_BINDING');assert.equal(mismatch.requests.length,0);
+});
+
+test('reasoning experiment changes only editor model, with qualified Llama reviews and original composition input', async () => {
+  const r = await run({ definition: true, reasoning: true });
+  assert.equal(r.report.status, 'draft-awaiting-manual-review');
+  assert.equal(r.report.mode, 'frozen-reasoning-language-rewrite-awaiting-manual-review');
+  assert.equal(r.sealed.copyeditStrategy, 'cloudflare-reasoning-editor-v1');
+  assert.equal(r.sealed.copyeditPromptSha256, sha(DEFINITION_COMPOSITION_PROMPT));
+  assert.equal(r.report.modelRequests, 8); assert.equal(r.report.outputBudget, 5400);
+  assert.equal(r.sealed.polishPromptSha256, undefined); assert.equal(r.sealed.intermediateCopyedit, undefined);
+  assert.deepEqual(r.sealed.reviewerQualification, DEFINITION_REVIEW_QUALIFICATION);
+  assert.equal(r.sealed.calls[0].model, FREE_REASONING_WRITER_MODEL);
+  assert.equal(r.sealed.calls[0].request.wordingHints, undefined);
+  assert.equal(r.sealed.calls[0].request.wordingPolicy, undefined);
+  for (const c of r.sealed.calls.slice(1)) assert.equal(c.model, DEFAULT_CLOUDFLARE_AI_MODEL);
+  assert.equal(r.sealed.calls.filter(c => c.dimension === 'source').length, 4);
+  assert.equal(r.sealed.calls.filter(c => c.dimension === 'meaning').length, 3);
+  assert.deepEqual(r.sealed.beforeCopyedit.draft, r.f.before.draft);
+});
+test('reasoning editor and every reviewer have non-interchangeable endpoints and model provenance', async () => {
+  for (const rejection of ['swapped-endpoint', 'wrong-model', 'provenance', 'retry', 'extra-network']) {
+    for (const rejectAt of [0, 1, 2]) {
+      const r = await run({ definition: true, reasoning: true, rejection, rejectAt });
+      assert.equal(r.report.status, 'failed'); assert.equal(r.requests.length, rejectAt + 1);
+      assert.equal(r.network.length, ['swapped-endpoint', 'extra-network'].includes(rejection) ? rejectAt : rejectAt + 1);
+    }
+  }
+  await assert.rejects(diagnoseFactSummary({ accountId, endpoint: workersAiRunUrl(accountId, FREE_REASONING_WRITER_MODEL),
+    profile: 'mit-generalization', claimwise: true, sentenceLanguageRewrite: true, frozenBaselineText: fixture().text,
+    definitionPreservation: true, reasoningEditor: true }), /FACT_SUMMARY_NETWORK/);
+});
+test('reasoning-only, truncated, unsupported format and quota responses stop without fallback or review', async () => {
+  for (const rejection of ['reasoning-only', 'truncated', 'unsupported-format', 'quota']) {
+    const r = await run({ definition: true, reasoning: true, rejection, rejectAt: 0 });
+    assert.equal(r.report.status, 'failed'); assert.equal(r.requests.length, 1);
+    assert.equal(r.report.outputBudget, 1200); assert.deepEqual(r.sealed.fieldReviews, []);
+    if (rejection === 'truncated') assert.equal(r.report.failure.formatReason, 'OUTPUT_TOKEN_LIMIT');
+  }
+});
+test('reasoning model cannot bypass source, meaning, shape, length, abstention or original baseline', async () => {
+  for (const rejection of ['false', 'malformed']) for (const rejectAt of [1, 2, 3, 4, 5, 6, 7]) {
+    const r = await run({ definition: true, reasoning: true, rejection, rejectAt });
+    assert.equal(r.report.code, 'FACT_SUMMARY_REVIEW_REJECTED');
+    // A well-formed source veto may still collect that same field's meaning
+    // judgment before the combined gate stops. It cannot reach another field.
+    const rejectedCall = r.sealed.calls[rejectAt];
+    assert.ok(r.requests.length >= rejectAt + 1 && r.requests.length <= rejectAt + 2);
+    for (const c of r.sealed.calls.slice(rejectAt + 1)) {
+      assert.equal(c.field, rejectedCall.field); assert.equal(c.dimension, 'meaning');
+    }
+  }
+  for (const mutateProposal of [p => { p.sentences.pop(); }, p => { p.sentences.reverse(); },
+    p => { p.sentences.forEach((s, i) => { s.text = `MIT short unit ${i}.`; }); }]) {
+    const r = await run({ definition: true, reasoning: true, mutateProposal });
+    assert.equal(r.report.status, 'failed'); assert.equal(r.requests.length, 1);
+  }
+  const abstained = await run({ definition: true, reasoning: true, changedFields: [], mutateProposal: p => { p.decision = 'abstain'; } });
+  assert.equal(abstained.report.code, 'FACT_SUMMARY_COPYEDIT_ABSTAINED');
+  const drift = await run({ definition: true, reasoning: true, mutateInput: a => { a.factContext.attribution = 'Changed'; } });
+  assert.equal(drift.requests.length, 0);
+  const forged = await run({ definition: true, reasoning: true, glossaryLoader: () => ({}) });
+  assert.equal(forged.requests.length, 0);
 });

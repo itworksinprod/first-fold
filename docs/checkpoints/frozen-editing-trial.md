@@ -36,9 +36,11 @@ Keep the private key on the Mac. Only the public key belongs in the workflow's
 ## One bounded run
 
 Open **Diagnose one free writer story (encrypted, no email)** on GitHub Actions.
-Run from `main`, choose `frozen-vocabulary-language`, and supply the public key.
+Run from `main`, choose `frozen-reasoning-language`, and supply the public key.
 This separate opt-in mode uses the definition-aware reviewer qualified by
 [run 36213351283](https://github.com/itworksinprod/first-fold/actions/runs/36213351283).
+See the final section for this model-only experiment. The history below records
+earlier held increments, not alternate modes to repeat unchanged.
 The older `frozen-sentence-language` mode remains unchanged for auditability; do
 not rerun it to chase a different answer. Run 36217395043 passed the new meaning
 context check but failed independent readability review. The next revision of
@@ -79,7 +81,7 @@ vocabulary-preparation experiment, not demonstrated general editorial ability.
 The same owner/main/first-attempt restrictions remain in force. Do not use the
 older `sentence-language-second-article` mode: it generates a new baseline.
 
-The private secret is exposed only in these three frozen modes. Before provider credentials
+The private secret is exposed only in these four frozen modes. Before provider credentials
 are made available, the CLI checks the artifact against the fixed source,
 fact-context, draft, unit and qualification hashes. The runtime repeats that
 check. The new mode additionally verifies the source and meaning prompt hashes,
@@ -139,3 +141,21 @@ locally with the matching private key. Before claiming success:
 Retain a failed trial and diagnose it before changing the experiment. Do not
 rerun an identical experiment until it happens to pass. Do not change the
 qualification hashes or reviewer rules to make an unsupported result pass.
+
+## Current next experiment: editor model only
+
+The vocabulary trial 36222177582 remained held: the optional wording was unused.
+Use `frozen-reasoning-language` for the next isolated comparison, not a rerun of the
+vocabulary or polish trials. It sends one editor request to Cloudflare-hosted
+`@cf/openai/gpt-oss-120b` with the identical composition prompt/data from run
+36220958652. All reviewers remain on the qualified Llama model. Each stage binds
+its own exact endpoint/model/hash, with one attempt; there is no endpoint fallback.
+The strategy is `cloudflare-reasoning-editor-v1`, capped at eight calls and 5,400
+requested output tokens, including 1,200 for the editor. No vocabulary hints or
+second polish are included. Reasoning-only, incomplete, malformed, unsupported
+or quota-denied replies stop. The generic JSON-format compatibility must be
+established by the trial, not assumed from the model allowlist. Free-account
+allowance and model availability are provider constraints, not guaranteed by tests.
+This uses neither OpenAI's paid API nor a billing opt-in. No delivery change occurs.
+Compare the exact result with the saved composition trial and retain all manual
+clarity/citation holds; a different model does not inherit editorial approval.

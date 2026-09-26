@@ -28,6 +28,7 @@ on:
           - frozen-sentence-language
           - frozen-definition-language
           - frozen-vocabulary-language
+          - frozen-reasoning-language
           - preservation-review-controls
           - split-preservation-review-controls
           - isolated-preservation-controls
@@ -76,13 +77,13 @@ jobs:
         env:
           DIAGNOSTIC_PUBLIC_KEY: ${{ inputs.public_key }}
           PRIVATE_WRITER_DIAGNOSTIC_MODE: ${{ inputs.mode || 'source' }}
-          FIRST_FOLD_FROZEN_BASELINE_B64: ${{ (inputs.mode == 'frozen-sentence-language' || inputs.mode == 'frozen-definition-language' || inputs.mode == 'frozen-vocabulary-language') && secrets.FIRST_FOLD_FROZEN_BASELINE_B64 || '' }}
+          FIRST_FOLD_FROZEN_BASELINE_B64: ${{ (inputs.mode == 'frozen-sentence-language' || inputs.mode == 'frozen-definition-language' || inputs.mode == 'frozen-vocabulary-language' || inputs.mode == 'frozen-reasoning-language') && secrets.FIRST_FOLD_FROZEN_BASELINE_B64 || '' }}
         run: node scripts/automation/private-writer-diagnostic.mjs validate
       - name: Inspect the selected bounded diagnostic without delivery
         env:
           DIAGNOSTIC_PUBLIC_KEY: ${{ inputs.public_key }}
           PRIVATE_WRITER_DIAGNOSTIC_MODE: ${{ inputs.mode || 'source' }}
-          FIRST_FOLD_FROZEN_BASELINE_B64: ${{ (inputs.mode == 'frozen-sentence-language' || inputs.mode == 'frozen-definition-language' || inputs.mode == 'frozen-vocabulary-language') && secrets.FIRST_FOLD_FROZEN_BASELINE_B64 || '' }}
+          FIRST_FOLD_FROZEN_BASELINE_B64: ${{ (inputs.mode == 'frozen-sentence-language' || inputs.mode == 'frozen-definition-language' || inputs.mode == 'frozen-vocabulary-language' || inputs.mode == 'frozen-reasoning-language') && secrets.FIRST_FOLD_FROZEN_BASELINE_B64 || '' }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_AI_API_TOKEN: ${{ secrets.CLOUDFLARE_AI_API_TOKEN }}
         run: node scripts/automation/private-writer-diagnostic.mjs run "$RUNNER_TEMP/writer-diagnostic.encrypted.json"

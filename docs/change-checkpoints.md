@@ -2037,3 +2037,49 @@ hint; request size is 11,580 bytes. MIT wording-registry SHA-256 is
 `fa95415cbffe142e1a47fd0b0e1f372d1ffad0f147abcbba66a1775bbb5d14b0`.
 All checks were offline with zero actual provider calls. Prior reviewer requests
 and vetoes remain unchanged. Live prose is not yet accepted by these setup checks.
+
+### Vocabulary live result — hint unused, article still held (September 26)
+
+[Run 36222177582](https://github.com/itworksinprod/first-fold/actions/runs/36222177582)
+used trusted main `4c5c8f938d9882e044879f4acdfc8e7bf54e1bce`, owner/manual/attempt
+one. The ZIP matched GitHub SHA-256
+`f906fba762c016ec45c962b42d76c6c01c523cce27cb7189adbe7772b5a59c67`.
+Exact offline replay matched all six requests and the full capture: 4,200 requested
+output tokens, 151 words, one edit, no email. The hint reached the editor but was
+unused. The final draft `b097befdb559fb56706e7e78e71a8c967f2d42d421452b290fbbbc8b726c2617`
+repeated the earlier tautology and restored the unexplained intermediate-sample
+term. Independent review retained HOLD for readability and citation coverage.
+Source/meaning support is not an editorial pass; do not repeat this trial unchanged.
+
+### Model-only editor comparison — implementation checkpoint
+
+The new isolated `frozen-reasoning-language` mode compares Cloudflare-hosted
+`@cf/openai/gpt-oss-120b` as the single editor against composition run 36220958652.
+The exact composition prompt, original frozen data, schema, temperature and 1,200
+requested editor-token cap are unchanged. No vocabulary hints, second polish,
+reasoning-effort override or freshly generated baseline is included. All four
+final-source checks and up to three changed-field meaning checks retain the
+qualified Llama model and exact existing prompts. Endpoint, model and request hash
+are bound separately per stage; one stage cannot use the other's endpoint.
+Maximum eight single-attempt calls / 5,400 requested output tokens. No automatic
+retry, fallback, review-policy adjustment, email or daily-workflow change.
+
+Cloudflare's [model page](https://developers.cloudflare.com/workers-ai/models/gpt-oss-120b/)
+documents its native run endpoint and response-format/max-token parameters. The
+general JSON-mode list is less explicit, so unsupported format, reasoning-only,
+truncated or empty output must fail closed. Its [pricing documentation](https://developers.cloudflare.com/workers-ai/platform/pricing/)
+does not list this model among paid-only exceptions; Workers Free rejects excess
+daily usage. Documentation and our allowlist do not establish the account's live
+plan or remaining allowance. This experiment enables no billing and stops on
+quota/provider denial. Independent design review cleared these boundaries, not
+the implementation or eventual prose. Exact-output human readability review and
+all existing 110–225-word, fact, meaning, headline and order gates remain required.
+
+Implementation checks passed all 1,490 tests; independent preflight passed 131
+focused/legacy tests and found no blocker for one bounded no-email trial. The
+actual private-baseline preflight reproduced the saved composition request body
+exactly except model identity (10,502 bytes), retained 25 historical reviewer
+requests and their earlier meaning veto, and made no provider request. Vocabulary
+and polish captures also replayed exactly under the new runtime. Thirteen shared
+adapter/model/policy/legacy/qualification files stayed byte-identical. These checks
+do not establish account quota or approve the eventual article.

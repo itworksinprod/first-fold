@@ -7,7 +7,7 @@ import { buildFieldFactReview, validateFieldFactReview } from './free/field-fact
 import { buildClaimwiseFactReview, validateClaimwiseFactReview } from './free/claimwise-fact-review.mjs';
 import { buildIsolatedPreservationReview, validateIsolatedPreservationReview } from './free/isolated-preservation-review.mjs';
 import { buildTextPreservationReview, validateTextPreservationReview, exactTextPreservation } from './free/text-preservation-review.mjs';
-import { DEFAULT_CLOUDFLARE_AI_MODEL, buildWorkersAiRequest, workersAiFailureDiagnostic } from './free/workers-ai.mjs';
+import { DEFAULT_CLOUDFLARE_AI_MODEL, FREE_REASONING_WRITER_MODEL, workersAiRunUrl, buildWorkersAiRequest, workersAiFailureDiagnostic } from './free/workers-ai.mjs';
 import { GENERIC_FACT_SUMMARY_PROMPT } from './free/generic-fact-summary-prompt.mjs';
 import { PLAIN_LANGUAGE_COPYEDIT_PROMPT } from './free/plain-language-copyedit-prompt.mjs';
 import { phraseCopyeditUnitsHash, PHRASE_COPYEDIT_PROTECTED_WORDS } from './free/phrase-copyedit.mjs';
@@ -62,7 +62,8 @@ export function normalizeClaimwiseSummary(raw, excerpt, publisher = 'Anthropic')
 export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now, aiRequestImpl, fetchImpl, endpoint, sealDiagnostic,
   claimwise = false, profile = 'anthropic', plainLanguageCopyedit = false, sentenceLanguageRewrite = false,
   articleFetcher = fetchReviewedArticle, sheetLoader, frozenBaselineText, qualificationLoader,
-  definitionPreservation = false, definitionGlossaryLoader = loadQualifiedMitGlossary, editorialVocabulary = false }) {
+  definitionPreservation = false, definitionGlossaryLoader = loadQualifiedMitGlossary, editorialVocabulary = false,
+  reasoningEditor = false }) {
   if (typeof claimwise !== 'boolean') throw fail('FACT_SUMMARY_MODE');
   const generic = profile === 'mit-generalization';
   if (typeof plainLanguageCopyedit !== 'boolean' || (plainLanguageCopyedit && (!generic || !claimwise))) throw fail('FACT_SUMMARY_MODE');
@@ -72,9 +73,11 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
   if (frozenMode && (!sentenceLanguageRewrite || typeof frozenBaselineText !== 'string')) throw fail('FACT_SUMMARY_MODE');
   if (typeof definitionPreservation !== 'boolean' || (definitionPreservation && !frozenMode)) throw fail('FACT_SUMMARY_MODE');
   if (typeof editorialVocabulary !== 'boolean' || (editorialVocabulary && !definitionPreservation)) throw fail('FACT_SUMMARY_MODE');
+  if (typeof reasoningEditor !== 'boolean' || (reasoningEditor && (!definitionPreservation || editorialVocabulary))) throw fail('FACT_SUMMARY_MODE');
+  if (reasoningEditor && endpoint !== workersAiRunUrl(accountId, DEFAULT_CLOUDFLARE_AI_MODEL)) throw fail('FACT_SUMMARY_NETWORK');
   if (!['anthropic', 'mit-generalization'].includes(profile) || (profile === 'mit-generalization' && !claimwise)) throw fail('FACT_SUMMARY_PROFILE');
   const editedReviewPath = plainLanguageCopyedit || sentenceLanguageRewrite;
-  const polishEnabled = definitionPreservation && !editorialVocabulary;
+  const polishEnabled = definitionPreservation && !editorialVocabulary && !reasoningEditor;
   const copyeditPrompt = editorialVocabulary ? EDITORIAL_VOCABULARY_PROMPT : definitionPreservation ? DEFINITION_COMPOSITION_PROMPT
     : sentenceLanguageRewrite ? SENTENCE_REWRITE_PROMPT : PLAIN_LANGUAGE_COPYEDIT_PROMPT;
   const maxRequests = polishEnabled ? 9 : frozenMode ? 8 : sentenceLanguageRewrite ? 9 : plainLanguageCopyedit ? 7 : 5;
@@ -83,10 +86,10 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
   const sourceUrl = generic ? 'https://news.mit.edu/2026/new-method-enables-ai-safety-critical-situations-0914'
     : 'https://www.anthropic.com/institute/measuring-pace-of-ai-development';
   const publisherKey = generic ? 'mit' : 'anthropic';
-  const capture = { purpose: editorialVocabulary ? 'frozen-vocabulary-language-rewrite-awaiting-manual-review' : definitionPreservation ? 'frozen-definition-language-rewrite-awaiting-manual-review' : frozenMode ? 'frozen-sentence-language-rewrite-awaiting-manual-review' : sentenceLanguageRewrite ? 'sentence-language-rewrite-awaiting-manual-review' : plainLanguageCopyedit ? 'plain-language-copyedit-awaiting-manual-review' : generic ? 'generic-second-article-awaiting-manual-review' : claimwise ? 'claimwise-fact-summary-awaiting-manual-review' : 'reviewed-fact-summary-awaiting-manual-review',
+  const capture = { purpose: reasoningEditor ? 'frozen-reasoning-language-rewrite-awaiting-manual-review' : editorialVocabulary ? 'frozen-vocabulary-language-rewrite-awaiting-manual-review' : definitionPreservation ? 'frozen-definition-language-rewrite-awaiting-manual-review' : frozenMode ? 'frozen-sentence-language-rewrite-awaiting-manual-review' : sentenceLanguageRewrite ? 'sentence-language-rewrite-awaiting-manual-review' : plainLanguageCopyedit ? 'plain-language-copyedit-awaiting-manual-review' : generic ? 'generic-second-article-awaiting-manual-review' : claimwise ? 'claimwise-fact-summary-awaiting-manual-review' : 'reviewed-fact-summary-awaiting-manual-review',
     ...(generic ? { ...(frozenMode ? { writerSkipped: true } : { promptSha256: hash(GENERIC_FACT_SUMMARY_PROMPT) }), factSelection: 'manual' } : {}), calls: [], fieldReviews: [], emailSent: false };
   if (editedReviewPath) {
-    capture.copyeditStrategy = editorialVocabulary ? 'reviewed-editor-vocabulary-v1' : definitionPreservation ? 'sentence-definition-polish-v1'
+    capture.copyeditStrategy = reasoningEditor ? 'cloudflare-reasoning-editor-v1' : editorialVocabulary ? 'reviewed-editor-vocabulary-v1' : definitionPreservation ? 'sentence-definition-polish-v1'
       : sentenceLanguageRewrite ? 'sentence-by-sentence-v1' : 'single-phrase-or-abstain-v4';
     capture.copyeditPromptSha256 = hash(copyeditPrompt);
     if (polishEnabled) capture.polishPromptSha256 = hash(DEFINITION_POLISH_PROMPT);
@@ -96,15 +99,21 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
   let modelRequests = 0, networkRequests = 0, outputBudget = 0, code = null;
   const request = async (prompt, data, schema, maxTokens,
     { timeoutMs = 90000, deferCapture = false, metadata = null } = {}) => {
+    // The opt-in comparison changes ONLY the first editor. Every review keeps
+    // the qualified model. This is not an either-model endpoint allowlist.
+    const alternateEditor = reasoningEditor && metadata?.stage === 'copyedit';
+    if (alternateEditor && modelRequests !== 0) throw fail('FACT_SUMMARY_NETWORK');
+    const model = alternateEditor ? FREE_REASONING_WRITER_MODEL : DEFAULT_CLOUDFLARE_AI_MODEL;
+    const requestEndpoint = reasoningEditor ? workersAiRunUrl(accountId, model) : endpoint;
     const systemPrompt = `${prompt}\nJSON schema: ${JSON.stringify(schema)}`;
-    const options = { model: DEFAULT_CLOUDFLARE_AI_MODEL,
+    const options = { model,
       messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: JSON.stringify(data) }],
       schema, responseFormat: 'json_object', maxTokens, maxAttempts: 1, temperature: 0.1,
       timeoutMs, maxRequestBytes: 70000, maxResponseBytes: 100000 };
     if (++modelRequests > maxRequests || (outputBudget += maxTokens) > maxOutputBudget) throw fail('FACT_SUMMARY_BUDGET');
     const { body } = buildWorkersAiRequest(options);
     const bodyText = JSON.stringify(body);
-    const expected = hash(JSON.stringify({ provider: 'cloudflare-workers-ai', model: DEFAULT_CLOUDFLARE_AI_MODEL, body }));
+    const expected = hash(JSON.stringify({ provider: 'cloudflare-workers-ai', model, body }));
     const call = { ...(metadata ?? {}), request: data };
     if (metadata) Object.assign(call, { promptSha256: hash(systemPrompt), requestSha256: expected });
     capture.calls.push(call);
@@ -114,7 +123,7 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
         validatePayload: value => Boolean(value && typeof value === 'object' && !Array.isArray(value)),
         fetchImpl: async (url, init) => {
           if (editedReviewPath) {
-            if (!active || networkViolation || url !== endpoint || init?.method !== 'POST' || init.redirect !== 'error' ||
+            if (!active || networkViolation || url !== requestEndpoint || init?.method !== 'POST' || init.redirect !== 'error' ||
                 init.body !== bodyText || attempts >= 1 || networkRequests >= maxRequests) {
               networkViolation = true;
               throw fail('FACT_SUMMARY_NETWORK');
@@ -123,7 +132,7 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
             networkRequests++;
             return fetchImpl(url, init);
           }
-          if (url !== endpoint || init?.method !== 'POST' || init.redirect !== 'error' || init.body !== bodyText ||
+          if (url !== requestEndpoint || init?.method !== 'POST' || init.redirect !== 'error' || init.body !== bodyText ||
               ++attempts > 1 || ++networkRequests > maxRequests) throw fail('FACT_SUMMARY_NETWORK');
           return fetchImpl(url, init);
         } });
@@ -132,7 +141,7 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
     } finally {
       active = false;
     }
-    if (result.provider !== 'cloudflare-workers-ai' || result.model !== DEFAULT_CLOUDFLARE_AI_MODEL || result.requestSha256 !== expected ||
+    if (result.provider !== 'cloudflare-workers-ai' || result.model !== model || result.requestSha256 !== expected ||
         !/^[a-f0-9]{64}$/.test(result.responseSha256 ?? '') || result.attemptCount !== 1) throw fail('FACT_SUMMARY_PROVENANCE');
     if (metadata) Object.assign(call, { responseSha256: result.responseSha256,
       provider: result.provider, model: result.model, attemptCount: result.attemptCount });

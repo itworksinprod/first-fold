@@ -187,5 +187,5 @@ test('workflow tests the new mode before credentials and grants neither delivery
   assert.doesNotMatch(workflow, /RESEND|OPENAI_API_KEY|schedule:|contents: write|pull-requests: write/);
   const secrets = [...workflow.matchAll(/secrets\.([A-Z0-9_]+)/gu)].map(m => m[1]);
   assert.deepEqual([...new Set(secrets)].sort(), ['CLOUDFLARE_AI_API_TOKEN', 'FIRST_FOLD_FROZEN_BASELINE_B64']);
-  assert.equal((workflow.match(/\(inputs.mode == 'frozen-sentence-language' \|\| inputs.mode == 'frozen-definition-language' \|\| inputs.mode == 'frozen-vocabulary-language'\) && secrets.FIRST_FOLD_FROZEN_BASELINE_B64/gu) ?? []).length, 2);
+  assert.equal((workflow.match(/\(inputs.mode == 'frozen-sentence-language' \|\| inputs.mode == 'frozen-definition-language' \|\| inputs.mode == 'frozen-vocabulary-language' \|\| inputs.mode == 'frozen-reasoning-language'\) && secrets.FIRST_FOLD_FROZEN_BASELINE_B64/gu) ?? []).length, 2);
 });
