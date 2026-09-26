@@ -65,6 +65,7 @@ export function assertDiagnosticAuthority(env) {
 }
 
 export function resolvePrivateWriterDiagnosticMode(value = "source") {
+  if (value === 'definition-preservation-controls') return value;
   if (['sentence-language-second-article', 'frozen-sentence-language'].includes(value)) return value;
   if (['text-preservation-controls', 'text-preservation-holdouts', 'text-preservation-paraphrase'].includes(value)) return value;
   if (['isolated-preservation-controls', 'isolated-preservation-holdouts'].includes(value)) return value;
@@ -148,6 +149,11 @@ export async function diagnoseOneWriter({ publicKey, accountId, apiToken, now = 
   const frozenBaselineText = await prepareFrozenDiagnosticBaseline(mode, frozenBaselineB64);
   const endpoint = workersAiRunUrl(accountId, DEFAULT_CLOUDFLARE_AI_MODEL);
   if (typeof apiToken !== "string" || !apiToken.trim()) throw failure("DIAGNOSTIC_CONFIGURATION_INVALID");
+  if (mode === 'definition-preservation-controls') {
+    const { diagnoseIsolatedPreservation } = await import('./isolated-preservation-diagnostic.mjs');
+    return diagnoseIsolatedPreservation({ publicKey, accountId, apiToken, now, aiRequestImpl, fetchImpl, endpoint, sealDiagnostic,
+      definitionContext: true });
+  }
   if (mode === 'frozen-sentence-language') {
     const { diagnoseFactSummary } = await import('./fact-summary-diagnostic.mjs');
     return diagnoseFactSummary({ publicKey, accountId, apiToken, now, aiRequestImpl, fetchImpl, endpoint, sealDiagnostic,

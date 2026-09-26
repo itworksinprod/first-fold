@@ -1613,3 +1613,75 @@ properties; retain the independent final-source veto. Any modified reviewer
 must pass new preflight and qualification before another article run. Readability
 still requires a separate exact-text pass. No runtime or editorial policy was
 changed by this audit, and no email was sent.
+
+### Definition context — offline implementation (September 25)
+
+Added a separate offline glossary experiment to address the reviewer-context
+mismatch without changing the existing writer or runtime reviewers. Fixed,
+source-bound definitions clarify vocabulary only; the meaning view contains no
+full source, article results, expected verdicts or automatic approval. The strict
+existing response validator is reused with a new context-bound review hash.
+Separate source support remains mandatory. Details, pins and success criteria
+are in `docs/checkpoints/definition-review-experiment.md`.
+
+An independent reviewer predeclared eleven synthetic controls: supported
+equivalents, obligation/condition/property/category/actor/quantity changes,
+possibility-to-certainty, an equivalent false assertion and an added unsupported
+fact. Mocked answers test gate plumbing only, not model competence. No live
+reviewer qualification has occurred.
+
+Implementation review found a real selection gap: the captured baseline uses a
+singular technical term while the initial glossary listed only its plural.
+Explicit reviewed singular/plural entries now preserve number and supply both
+needed definitions. Tests exercise this without publishing the private sentence;
+local readback also verified both definitions against the pinned private baseline.
+The partial-solution sense is explicit and distinct from a generation step.
+
+All 1,440 automated tests pass. Nine added tests cover glossary/source integrity,
+minimal scoped context, metadata exclusion, binding and replay protection, strict
+response validation, complete inventories and independent vetoes. No workflow or
+runtime imports the experiment, and no provider call, article rerun or email was
+made. The article checkpoint remains HOLD; next is separately bounded synthetic
+model qualification, not a claim that the daily paper is fixed.
+
+Final independent recheck cleared the offline checkpoint with no remaining
+blockers. It passed all nine focused tests, asserted both selected definitions
+against the exact private baseline, and checked source support, term scope, all
+four documented hashes and eleven control labels. Approval is limited to offline
+implementation; it is not a live model, article, readability or delivery pass.
+
+### Definition reviewer — isolated live-test setup (September 25)
+
+Added the opt-in manual `definition-preservation-controls` mode to the existing
+encrypted no-email diagnostic. It runs the fixed eleven synthetic cases through
+separate source and definition-aware meaning reviews: at most 22 requests and
+13,200 requested output tokens, one attempt each. Correctness is recorded for
+both dimensions; a correct combined reject cannot hide the wrong reason. All
+22 valid judgments must match the predeclared labels to qualify the reviewer.
+No article, fresh research, editor or identity shortcut runs in this mode.
+
+The existing endpoint/request-hash/provenance checks, sticky network denial and
+closed callback lifetimes remain in force. Valid semantic errors are retained
+while finishing the bounded set; provider, quota, provenance and malformed-answer
+failures stop it. There is no retry or paid-provider fallback. This mode alone
+gets 15 minutes for the worst-case request duration plus setup/artifact upload;
+other diagnostic modes keep their eight-minute limit. Owner/main/manual/first-
+attempt authority and one-day encrypted artifact retention are unchanged.
+
+All 1,447 automated tests pass. Seven added integration tests exercise every
+fixed request, strict separation of labels/roles, individual vetoes, complete-set
+grading, malformed/provider/quota/provenance failures, network bypass attempts,
+closed callbacks, encrypted roundtrip and workflow credential boundaries. The
+synthetic tests are mocked and do not constitute live semantic qualification.
+
+The existing public/private diagnostic keys still match. No new secret is needed;
+the frozen article secret remains excluded from this mode. The session has no
+authenticated GitHub dispatch tool or CLI credential, so a user-launched manual
+workflow is still needed after publication. No live run, article rerun or email
+has occurred, and no daily-paper, recipient, schedule or billing setting changed.
+
+Final independent preflight found no blockers, passed 44 focused tests and
+verified the fixed call/token caps, separate role inputs and per-dimension
+grading, error stops, closed callbacks, label isolation, encrypted capture size
+and unchanged legacy behavior. It cleared publication for one user-launched
+synthetic qualification run only, not an article rerun or delivery integration.

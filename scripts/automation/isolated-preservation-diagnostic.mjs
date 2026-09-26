@@ -5,6 +5,9 @@ import { PRESERVATION_HOLDOUT_CONTROLS, PRESERVATION_HOLDOUT_CASESET_SHA256 } fr
 import { PRESERVATION_PARAPHRASE_CONTROLS, PRESERVATION_PARAPHRASE_CASESET_SHA256 } from './preservation-paraphrase-case.mjs';
 import { buildIsolatedPreservationReview, validateIsolatedPreservationReview } from './free/isolated-preservation-review.mjs';
 import { buildTextPreservationReview, validateTextPreservationReview, exactTextPreservation } from './free/text-preservation-review.mjs';
+import { DEFINITION_PRESERVATION_CONTROLS, DEFINITION_CASESET_SHA256 } from './experiments/definition-preservation-cases.mjs';
+import { loadDefinitionGlossary, SYNTHETIC_DEFINITION_SOURCE } from './experiments/definition-glossaries.mjs';
+import { buildDefinitionPreservationReview, validateDefinitionPreservationReview } from './experiments/definition-preservation.mjs';
 import { DEFAULT_CLOUDFLARE_AI_MODEL, buildWorkersAiRequest, workersAiFailureDiagnostic } from './free/workers-ai.mjs';
 
 const hash = text => createHash('sha256').update(text).digest('hex');
@@ -13,10 +16,12 @@ const TOKENS = 600;
 const ownCodes = new Set(['PRESERVATION_REVIEW_NETWORK', 'PRESERVATION_REVIEW_PROVENANCE', 'PRESERVATION_REVIEW_MALFORMED']);
 
 export async function diagnoseIsolatedPreservation({ publicKey, accountId, apiToken, now,
-  aiRequestImpl, fetchImpl, endpoint, sealDiagnostic, holdout = false, textOnly = false, paraphrase = false }) {
-  if ([holdout, textOnly, paraphrase].some(v => typeof v !== 'boolean') ||
+  aiRequestImpl, fetchImpl, endpoint, sealDiagnostic, holdout = false, textOnly = false, paraphrase = false, definitionContext = false }) {
+  if ([holdout, textOnly, paraphrase, definitionContext].some(v => typeof v !== 'boolean') ||
+      (definitionContext && (holdout || textOnly || paraphrase)) ||
       (paraphrase && (!holdout || !textOnly))) throw failure('PRESERVATION_REVIEW_PROFILE');
-  const controls = paraphrase ? PRESERVATION_PARAPHRASE_CONTROLS : holdout ? PRESERVATION_HOLDOUT_CONTROLS : PRESERVATION_REVIEW_CONTROLS;
+  const controls = definitionContext ? DEFINITION_PRESERVATION_CONTROLS : paraphrase ? PRESERVATION_PARAPHRASE_CONTROLS : holdout ? PRESERVATION_HOLDOUT_CONTROLS : PRESERVATION_REVIEW_CONTROLS;
+  const glossary = definitionContext ? loadDefinitionGlossary('synthetic-generation-definitions-v1', SYNTHETIC_DEFINITION_SOURCE) : null;
   const cap = controls.length * 2, calls = [], results = [], localDecisions = [];
   let modelRequests = 0, networkRequests = 0, code = null;
   // No caller-controlled text, case labels, budget, model, prompt or retries.
@@ -24,7 +29,9 @@ export async function diagnoseIsolatedPreservation({ publicKey, accountId, apiTo
     const verdicts = {};
     for (const dimension of ['source', 'meaning']) {
       const textMeaning = textOnly && dimension === 'meaning';
-      const view = textMeaning ? buildTextPreservationReview(control.input) : buildIsolatedPreservationReview(control.input, dimension);
+      const definitionMeaning = definitionContext && dimension === 'meaning';
+      const view = definitionMeaning ? buildDefinitionPreservationReview(control.input, glossary)
+        : textMeaning ? buildTextPreservationReview(control.input) : buildIsolatedPreservationReview(control.input, dimension);
       if (textMeaning) {
         const identity = exactTextPreservation(view);
         if (identity) {
@@ -63,7 +70,8 @@ export async function diagnoseIsolatedPreservation({ publicKey, accountId, apiTo
         if (result.provider !== 'cloudflare-workers-ai' || result.model !== DEFAULT_CLOUDFLARE_AI_MODEL ||
             result.requestSha256 !== requestSha256 || !/^[a-f0-9]{64}$/u.test(result.responseSha256 ?? '') ||
             result.attemptCount !== 1) throw failure('PRESERVATION_REVIEW_PROVENANCE');
-        const checked = textMeaning ? validateTextPreservationReview(result.editorialPayload, view)
+        const checked = definitionMeaning ? validateDefinitionPreservationReview(result.editorialPayload, view)
+          : textMeaning ? validateTextPreservationReview(result.editorialPayload, view)
           : validateIsolatedPreservationReview(result.editorialPayload, view);
         call.response = checked.valid ? structuredClone(result.editorialPayload) : null;
         if (!checked.valid) call.responseRejectedBeforeCapture = true;
@@ -78,8 +86,8 @@ export async function diagnoseIsolatedPreservation({ publicKey, accountId, apiTo
         break outer;
       } finally { active = false; }
     }
-    const expectedSourceSupported = holdout ? control.expectedSourceSupported : true;
-    const expectedMeaningPreserved = holdout ? control.expectedMeaningPreserved : control.expected;
+    const expectedSourceSupported = holdout || definitionContext ? control.expectedSourceSupported : true;
+    const expectedMeaningPreserved = holdout || definitionContext ? control.expectedMeaningPreserved : control.expected;
     const sourceCorrect = verdicts.source.claims.every(j => j.sourceSupported === expectedSourceSupported);
     const meaningCorrect = verdicts.meaning.claims.every(j => j.meaningPreserved === expectedMeaningPreserved);
     results.push({ caseId: control.caseId, valid: true, verdicts, expectedSourceSupported, expectedMeaningPreserved,
@@ -88,9 +96,11 @@ export async function diagnoseIsolatedPreservation({ publicKey, accountId, apiTo
   }
   const passed = results.length === controls.length && results.every(r => r.passed);
   if (!passed && !code) code = 'PRESERVATION_REVIEW_MISCLASSIFIED';
-  const report = { mode: `${textOnly ? 'text' : 'isolated'}-preservation-${paraphrase ? 'paraphrase' : holdout ? 'holdouts' : 'controls'}-not-an-edition`,
+  const report = { mode: `${definitionContext ? 'definition' : textOnly ? 'text' : 'isolated'}-preservation-${paraphrase ? 'paraphrase' : holdout ? 'holdouts' : 'controls'}-not-an-edition`,
     status: passed ? 'reviewer-controls-passed' : 'failed', code,
-    caseSetSha256: paraphrase ? PRESERVATION_PARAPHRASE_CASESET_SHA256 : holdout ? PRESERVATION_HOLDOUT_CASESET_SHA256 : PRESERVATION_CASESET_SHA256,
+    caseSetSha256: definitionContext ? DEFINITION_CASESET_SHA256 : paraphrase ? PRESERVATION_PARAPHRASE_CASESET_SHA256 : holdout ? PRESERVATION_HOLDOUT_CASESET_SHA256 : PRESERVATION_CASESET_SHA256,
+    ...(definitionContext ? { glossarySourceSha256: glossary.sourceSha256, glossaryManifestSha256: glossary.manifestSha256,
+      maximumModelRequests: cap, maximumOutputBudget: cap * TOKENS } : {}),
     totalCases: controls.length, completedCases: results.length, correctCases: results.filter(r => r.passed).length,
     modelRequests, networkRequests, outputBudget: modelRequests * TOKENS, searchQueries: 0, emailSent: false,
     ...(textOnly ? { localIdentityReviews: localDecisions.length } : {}),

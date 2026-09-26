@@ -33,6 +33,7 @@ on:
           - text-preservation-controls
           - text-preservation-holdouts
           - text-preservation-paraphrase
+          - definition-preservation-controls
       public_key:
         description: Ephemeral RSA-3072 public key in base64 DER format (never a private key)
         required: true
@@ -45,7 +46,9 @@ jobs:
   diagnose:
     if: github.repository == 'itworksinprod/first-fold' && github.ref == 'refs/heads/main' && github.actor == 'itworksinprod' && github.run_attempt == 1
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    # The 22-call definition control set allows 30 seconds per request plus
+    # credential-free setup and artifact upload. All earlier modes stay at 8.
+    timeout-minutes: ${{ inputs.mode == 'definition-preservation-controls' && 15 || 8 }}
     permissions:
       contents: read
     steps:
@@ -61,6 +64,8 @@ jobs:
         run: node --test tests/split-preservation-review.test.mjs tests/preservation-review-diagnostic.test.mjs tests/claimwise-review.test.mjs tests/copyedit-preservation-review.test.mjs tests/causal-review.test.mjs tests/fact-summary-diagnostic.test.mjs tests/single-phrase-copyedit.test.mjs tests/phrase-copyedit.test.mjs tests/phrase-copyedit-catalog.test.mjs tests/phrase-copyedit-context.test.mjs tests/copyedit-qualification-guard.test.mjs tests/private-writer-diagnostic.test.mjs tests/reviewer-transport-diagnostic.test.mjs tests/split-claim-review.test.mjs tests/foundation-recheck.test.mjs tests/grounded-draft.test.mjs tests/free-workers-ai.test.mjs
       - name: Test isolated source and preservation boundaries before credentials
         run: node --test tests/isolated-preservation-review.test.mjs tests/isolated-preservation-diagnostic.test.mjs tests/text-preservation-review.test.mjs tests/text-preservation-diagnostic.test.mjs
+      - name: Test definition-aware reviewer boundaries before credentials
+        run: node --test tests/definition-preservation.test.mjs tests/definition-preservation-diagnostic.test.mjs
       - name: Test isolated sentence rewriting before credentials
         run: node --test tests/sentence-language-rewrite.test.mjs tests/sentence-language-diagnostic.test.mjs
       - name: Test frozen-baseline boundaries before credentials
