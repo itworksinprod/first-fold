@@ -17,6 +17,7 @@ import { buildDefinitionPreservationReview, validateDefinitionPreservationReview
 import { assertDefinitionGlossary } from './experiments/definition-glossaries.mjs';
 import { assertQualifiedDefinitionReviewer, loadQualifiedMitGlossary } from './experiments/qualified-definition-review.mjs';
 import { DEFINITION_COMPOSITION_PROMPT } from './experiments/definition-composition-prompt.mjs';
+import { DEFINITION_POLISH_PROMPT } from './experiments/definition-polish-prompt.mjs';
 import { buildDefinitionContext } from './experiments/definition-context.mjs';
 
 const fields = ['headline', 'whatHappened', 'whyItMatters', 'whatToWatch'];
@@ -73,8 +74,8 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
   const editedReviewPath = plainLanguageCopyedit || sentenceLanguageRewrite;
   const copyeditPrompt = definitionPreservation ? DEFINITION_COMPOSITION_PROMPT
     : sentenceLanguageRewrite ? SENTENCE_REWRITE_PROMPT : PLAIN_LANGUAGE_COPYEDIT_PROMPT;
-  const maxRequests = frozenMode ? 8 : sentenceLanguageRewrite ? 9 : plainLanguageCopyedit ? 7 : 5;
-  const maxOutputBudget = frozenMode ? 5400 : sentenceLanguageRewrite ? 6600 : plainLanguageCopyedit ? 5400 : claimwise ? 3600 : 2800;
+  const maxRequests = definitionPreservation ? 9 : frozenMode ? 8 : sentenceLanguageRewrite ? 9 : plainLanguageCopyedit ? 7 : 5;
+  const maxOutputBudget = definitionPreservation ? 6600 : frozenMode ? 5400 : sentenceLanguageRewrite ? 6600 : plainLanguageCopyedit ? 5400 : claimwise ? 3600 : 2800;
   const publisher = generic ? 'MIT' : 'Anthropic';
   const sourceUrl = generic ? 'https://news.mit.edu/2026/new-method-enables-ai-safety-critical-situations-0914'
     : 'https://www.anthropic.com/institute/measuring-pace-of-ai-development';
@@ -82,9 +83,10 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
   const capture = { purpose: definitionPreservation ? 'frozen-definition-language-rewrite-awaiting-manual-review' : frozenMode ? 'frozen-sentence-language-rewrite-awaiting-manual-review' : sentenceLanguageRewrite ? 'sentence-language-rewrite-awaiting-manual-review' : plainLanguageCopyedit ? 'plain-language-copyedit-awaiting-manual-review' : generic ? 'generic-second-article-awaiting-manual-review' : claimwise ? 'claimwise-fact-summary-awaiting-manual-review' : 'reviewed-fact-summary-awaiting-manual-review',
     ...(generic ? { ...(frozenMode ? { writerSkipped: true } : { promptSha256: hash(GENERIC_FACT_SUMMARY_PROMPT) }), factSelection: 'manual' } : {}), calls: [], fieldReviews: [], emailSent: false };
   if (editedReviewPath) {
-    capture.copyeditStrategy = definitionPreservation ? 'sentence-definition-composition-v1'
+    capture.copyeditStrategy = definitionPreservation ? 'sentence-definition-polish-v1'
       : sentenceLanguageRewrite ? 'sentence-by-sentence-v1' : 'single-phrase-or-abstain-v4';
     capture.copyeditPromptSha256 = hash(copyeditPrompt);
+    if (definitionPreservation) capture.polishPromptSha256 = hash(DEFINITION_POLISH_PROMPT);
     capture.reviewStrategy = definitionPreservation ? 'isolated-source-plus-qualified-definition-preservation-v1' : 'isolated-source-plus-text-preservation-v1';
     capture.localReviews = [];
   }
@@ -227,10 +229,42 @@ The article is one company's account. No tables or appendix are available. No ou
       if (sentenceLanguageRewrite) capture.rawCopyedit = structuredClone(proposal);
       capture.copyeditDecision = applied.decision;
       if (applied.decision === 'abstain') throw fail('FACT_SUMMARY_COPYEDIT_ABSTAINED');
-      capture.editsApplied = applied.editsApplied;
-      const edited = { headline: applied.units.headline[0],
+      if (!definitionPreservation) capture.editsApplied = applied.editsApplied;
+      let edited = { headline: applied.units.headline[0],
         ...Object.fromEntries(fields.slice(1).map(field => [field, applied.units[field]])) };
-      const checked = normalizeClaimwiseSummary(edited, excerpt, publisher);
+      let checked = normalizeClaimwiseSummary(edited, excerpt, publisher);
+      if (definitionPreservation) {
+        // Structural/length validation does not make this proposal evidence.
+        // Both editors use the ORIGINAL issued catalog and baseline hash.
+        capture.intermediateCopyedit = { status: 'unapproved-editor-proposal',
+          draft: structuredClone(checked.draft), units: structuredClone(checked.units),
+          draftSha256: hash(JSON.stringify(checked.draft)),
+          unitsSha256: phraseCopyeditUnitsHash(checked.units) };
+        const polish = await request(DEFINITION_POLISH_PROMPT,
+          { ...editData, unapprovedSentences: structuredClone(proposal.sentences) },
+          catalog.schema, 1200, { deferCapture: true, metadata: { stage: 'fluency-polish' } });
+        let finalApplied;
+        try {
+          finalApplied = applySentenceRewrite(normalized.units, polish.payload, catalog);
+        } catch (error) {
+          polish.call.responseRejectedBeforeCapture = true;
+          throw error;
+        }
+        polish.call.response = structuredClone(polish.payload);
+        capture.rawPolish = structuredClone(polish.payload);
+        capture.polishDecision = finalApplied.decision;
+        if (finalApplied.decision === 'abstain') throw fail('FACT_SUMMARY_POLISH_ABSTAINED');
+        const polishedRaw = { headline: finalApplied.units.headline[0],
+          ...Object.fromEntries(fields.slice(1).map(field => [field, finalApplied.units[field]])) };
+        const polished = normalizeClaimwiseSummary(polishedRaw, excerpt, publisher);
+        if (phraseCopyeditUnitsHash(polished.units) === capture.intermediateCopyedit.unitsSha256) {
+          throw fail('FACT_SUMMARY_POLISH_UNCHANGED');
+        }
+        applied = finalApplied;
+        edited = polishedRaw;
+        checked = polished;
+      }
+      capture.editsApplied = applied.editsApplied;
       // Mechanical containment is not semantic equivalence. Review all final
       // text, then independently compare each aligned before/after unit.
       raw = edited;

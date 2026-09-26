@@ -1936,3 +1936,53 @@ files, and cleared one no-email trial. Credential-free runtime preflight matched
 the prior editor data exactly; the new request is 10,502 bytes within the same
 70,000-byte cap. All 25 recorded reviewer requests remain byte-compatible, the
 prior meaning veto stays rejected, and no real provider calls occur in preflight.
+
+### Composition-priority live result — same held text (September 26)
+
+[Run 36220958652](https://github.com/itworksinprod/first-fold/actions/runs/36220958652),
+trusted main `532e49ccc82da459e56cc61ddfddd0915b23a16d`, owner/manual/attempt one,
+passed automated checks. Artifact ZIP SHA-256 matched GitHub metadata:
+`d3c81a2e632958fc3a90d80a2bc8863b02c1cf8f234df4a5c8772e7bf63c4990`.
+Exact offline replay matched the six requests and entire capture (4,200 requested
+output tokens, 151 body words, one edit, no email). Independent inspection again
+found byte-identical final prose and proposal, supported against the full source
+but held for fluency, remaining jargon and incomplete selected first-claim citations.
+Three distinct editor instructions have now yielded the same literal wording.
+Do not treat another prompt variation or a green technical run as progress by itself.
+
+### Separately bounded fluency-polish stage — implementation checkpoint
+
+The next isolated experiment adds exactly one polish call after a structurally
+valid first rewrite. The first editor, its source-bound data and definitions stay
+unchanged. The second editor receives the ORIGINAL catalog, the same factual and
+vocabulary context, and the first proposal explicitly marked unapproved. Both
+responses must satisfy the ORIGINAL issued catalog and baseline hash. A malformed,
+overlong, abstaining, unchanged, quota-limited or failed polish stops; there is no
+retry or fallback to the first draft. The intermediate is never factual evidence
+or a newly approved baseline. Both requests and responses remain privately captured.
+
+Final source checks assess exact final prose. Meaning checks compare it with the
+ORIGINAL, never with the intermediate; all existing qualified reviewer prompts,
+source/glossary pins and vetoes remain unchanged. Unchanged fields retain source
+checks and exact local identity for meaning only. Manual fluency and citation
+review remain required, and word count stays 110–225 with an immutable headline.
+
+Only `frozen-definition-language` selects `sentence-definition-polish-v1`. Its
+maximum is now nine single-attempt requests / 6,600 requested output tokens:
+two editors at 1,200, four source checks at 600, and up to three meaning checks at
+600. This explicitly replaces that experiment's earlier eight/5,400 limit; legacy
+modes keep their old limits. Free-provider denial stops the trial, never enables
+billing or a paid fallback. No email, recipient or daily workflow is changed.
+The original composition prompt hash remains pinned; polish prompt SHA-256 is
+`caf9d4e5f116c9d4029a1598692949c2bbcc3936d5988a69f2d6892d68529d1a`.
+Independent design review found no blocker under these boundaries; implementation
+still requires tests, independent preflight and exact live-output review.
+
+Implementation verification passed all 1,477 tests; independent preflight passed
+134 focused/legacy tests and found no blocker for one no-email live trial. The
+real-input offline preflight reproduced the first request exactly, validated its
+recorded unapproved proposal, and checked the second request at 8,398 bytes while
+retaining the original baseline. Its 27,264-byte partial capture passed the
+unchanged encryption size guard. No real provider request occurred. Twenty-five
+historical reviewer requests remain unchanged and the prior meaning veto remains
+rejected. These checks clear setup only, not final fluency or citation adequacy.

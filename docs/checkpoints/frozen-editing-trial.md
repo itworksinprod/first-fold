@@ -62,6 +62,13 @@ The next experiment changes only the remaining term-substitution priority:
 compose the sentence naturally from reviewed meaning rather than copying a
 definition's wording. This is a hypothesis, not a diagnosed cause. Every other
 instruction and all data, reviewers and budgets remain unchanged.
+Run 36220958652 also produced the identical held text. The current experiment
+therefore adds a separately bounded fluency-polish stage after the first proposal,
+rather than repeating another unchanged prompt trial. The first proposal remains
+unapproved; the polish call receives the original catalog and vocabulary/facts,
+and both proposals must bind to that original catalog. It cannot create a new
+baseline. A failed, malformed, abstaining or unchanged polish holds immediately,
+with no retry or fallback to the first proposal.
 The same owner/main/first-attempt restrictions remain in force. Do not use the
 older `sentence-language-second-article` mode: it generates a new baseline.
 
@@ -74,14 +81,19 @@ qualification. The MIT glossary must match the exact saved source. Missing,
 changed or malformed input fails without a provider call; there
 is no fallback to a new writer, fresh discovery or another provider.
 
-One rewrite call is followed by four final-source checks and up to three
-changed-body meaning checks: at most eight requests and 5,400 requested output
-tokens. Byte-identical fields use exact local identity for meaning only; their
+In the current definition mode, one rewrite and one polish call are followed by
+four final-source checks and up to three changed-body meaning checks: at most
+nine requests and 6,600 requested output tokens. This increase applies only to
+that isolated experiment; the older frozen-sentence mode retains eight/5,400.
+Meaning checks compare the final units against the ORIGINAL, not the intermediate.
+Byte-identical fields use exact local identity for meaning only; their
 source check still runs. The model, qualified source/meaning reviewer prompts,
 110–225-word limits, unchanged headline and ordered-unit protections remain
 unchanged. The current definition mode uses editor strategy
-`sentence-definition-composition-v1`, prompt SHA-256
+`sentence-definition-polish-v1`, first editor prompt SHA-256
 `936ce587507b25fe0298722062db5f03c6b96df5b2a1d504210fc9aea0687a7e`.
+The separate polish prompt SHA-256 is
+`caf9d4e5f116c9d4029a1598692949c2bbcc3936d5988a69f2d6892d68529d1a`.
 Its base fluency prompt's definition instruction differs from the original editor:
 it permits surrounding grammar adjustments that eliminate repetition without
 weakening obligations, scope or conditions. The appended synthetic contrast

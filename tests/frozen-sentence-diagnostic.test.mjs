@@ -13,6 +13,7 @@ import { buildDefinitionPreservationReview } from '../scripts/automation/experim
 import { loadDefinitionGlossary, SYNTHETIC_DEFINITION_SOURCE } from '../scripts/automation/experiments/definition-glossaries.mjs';
 import { DEFINITION_REVIEW_QUALIFICATION } from '../scripts/automation/experiments/qualified-definition-review.mjs';
 import { DEFINITION_COMPOSITION_PROMPT } from '../scripts/automation/experiments/definition-composition-prompt.mjs';
+import { DEFINITION_POLISH_PROMPT } from '../scripts/automation/experiments/definition-polish-prompt.mjs';
 import { buildDefinitionContext } from '../scripts/automation/experiments/definition-context.mjs';
 import { requestWorkersAiEditorial, buildWorkersAiRequest, DEFAULT_CLOUDFLARE_AI_MODEL } from '../scripts/automation/free/workers-ai.mjs';
 import { prepareFrozenDiagnosticBaseline, resolvePrivateWriterDiagnosticMode, diagnoseOneWriter } from '../scripts/automation/private-writer-diagnostic.mjs';
@@ -48,7 +49,7 @@ function fixture(definition = false) {
   return { raw, before, excerpt, pins, text: freezeFactBaseline(JSON.stringify(diagnostic), JSON.stringify(sheet), pins) };
 }
 async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal, changedFields = fields.slice(1),
-  definition = false, glossaryLoader, sourceMismatch = false } = {}) {
+  definition = false, glossaryLoader, sourceMismatch = false, mutatePolish } = {}) {
   const f = fixture(definition && !sourceMismatch), requests = [], network = [];
   const glossary = definition ? loadDefinitionGlossary('synthetic-generation-definitions-v1', SYNTHETIC_DEFINITION_SOURCE) : null;
   const catalog = buildSentenceRewriteView(f.before.units);
@@ -58,9 +59,14 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
     rawAfter[field][0] = rawAfter[field][0].replace(...pair);
   }
   const after = normalizeClaimwiseSummary(rawAfter, f.excerpt, 'MIT');
-  const proposal = { baselineSha256: catalog.data.baselineSha256, decision: 'rewrite',
+  const finalProposal = { baselineSha256: catalog.data.baselineSha256, decision: 'rewrite',
     sentences: catalog.data.units.map(u => ({ unitId: u.unitId, text: after.units[u.field][u.unitIndex] })) };
+  const proposal = structuredClone(finalProposal);
+  if (definition && changedFields.length) {
+    proposal.sentences[0].text = proposal.sentences[0].text.replace(/research (?:approach|method)/u, 'research procedure');
+  }
   if (mutateProposal) mutateProposal(proposal);
+  if (mutatePolish) mutatePolish(finalProposal, proposal, catalog);
   let input = f.text;
   if (mutateInput) { const a = JSON.parse(input); mutateInput(a); input = JSON.stringify(a); }
   const result = await diagnoseFactSummary({ publicKey: 'synthetic', accountId, apiToken: 'PRIVATE_TOKEN',
@@ -74,8 +80,8 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
       const index = requests.length; requests.push(request);
       assert.equal(request.model, DEFAULT_CLOUDFLARE_AI_MODEL);
       assert.equal(request.maxAttempts, 1);
-      assert.equal(request.maxTokens, index === 0 ? 1200 : 600);
-      assert.equal(request.timeoutMs, index === 0 ? 90000 : 30000);
+      assert.equal(request.maxTokens, index === 0 || (definition && index === 1) ? 1200 : 600);
+      assert.equal(request.timeoutMs, index === 0 || (definition && index === 1) ? 90000 : 30000);
       assert.equal(request.temperature, 0.1);
       const { body } = buildWorkersAiRequest(request);
       const init = { method: 'POST', redirect: 'error', body: JSON.stringify(body) };
@@ -102,6 +108,12 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
         assert.deepEqual(data, { catalog: catalog.data, attribution: 'Private synthetic fact context', facts: [],
           ...(definition ? buildDefinitionContext(catalog.data.units.map(unit => unit.text), glossary) : {}) });
         payload = proposal;
+      } else if (definition && index === 1) {
+        assert.equal(request.messages[0].content, `${DEFINITION_POLISH_PROMPT}\nJSON schema: ${JSON.stringify(catalog.schema)}`);
+        assert.deepEqual(data, { catalog: catalog.data, attribution: 'Private synthetic fact context', facts: [],
+          ...buildDefinitionContext(catalog.data.units.map(unit => unit.text), glossary),
+          unapprovedSentences: proposal.sentences });
+        payload = finalProposal;
       } else {
         const meaning = ['text-only-preservation-v1', 'definition-preservation-offline-v1'].includes(data.policy);
         const field = fields.find(k => JSON.stringify(after.units[k]) === JSON.stringify(data.claims.map(c => c.text)));
@@ -125,7 +137,7 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
     } });
   assert.equal(result.report.modelRequests, requests.length);
   assert.equal(result.report.networkRequests, network.length);
-  assert.ok(requests.length <= 8 && result.report.outputBudget <= 5400);
+  assert.ok(requests.length <= (definition ? 9 : 8) && result.report.outputBudget <= (definition ? 6600 : 5400));
   assert.equal(result.report.emailSent, false); assert.equal(result.report.searchQueries, 0);
   assert.doesNotMatch(JSON.stringify(result.report), /PRIVATE_|Private synthetic/);
   return { ...result, requests, network, f, after };
@@ -232,17 +244,23 @@ test('workflow keeps private input in a mode-scoped secret and validates before 
   assert.match(workflow, /- frozen-definition-language/);
 });
 
-test('definition trial selects only the fluency editor while retaining qualified source and meaning gates', async () => {
+test('definition trial polishes once while retaining original-bound qualified source and meaning gates', async () => {
   const r = await run({ definition: true });
   assert.equal(r.report.status, 'draft-awaiting-manual-review');
   assert.equal(r.report.mode, 'frozen-definition-language-rewrite-awaiting-manual-review');
-  assert.equal(r.report.modelRequests, 8); assert.equal(r.report.outputBudget, 5400);
+  assert.equal(r.report.modelRequests, 9); assert.equal(r.report.outputBudget, 6600);
   assert.deepEqual(r.report.fieldsPassed, fields);
   assert.deepEqual(r.sealed.reviewerQualification, DEFINITION_REVIEW_QUALIFICATION);
   assert.equal(r.sealed.glossaryBinding.sourceSha256, sha(r.f.excerpt));
   assert.equal(r.sealed.reviewStrategy, 'isolated-source-plus-qualified-definition-preservation-v1');
-  assert.equal(r.sealed.copyeditStrategy, 'sentence-definition-composition-v1');
+  assert.equal(r.sealed.copyeditStrategy, 'sentence-definition-polish-v1');
   assert.equal(r.sealed.copyeditPromptSha256, sha(DEFINITION_COMPOSITION_PROMPT));
+  assert.equal(r.sealed.polishPromptSha256, sha(DEFINITION_POLISH_PROMPT));
+  assert.equal(r.sealed.intermediateCopyedit.status, 'unapproved-editor-proposal');
+  assert.notDeepEqual(r.sealed.intermediateCopyedit.units, r.sealed.reviewUnits);
+  assert.deepEqual(r.sealed.calls.slice(0,2).map(c=>c.stage), ['copyedit','fluency-polish']);
+  assert.equal(r.sealed.rawPolish.baselineSha256,r.sealed.copyeditCatalog.baselineSha256);
+  assert.equal(r.sealed.editsApplied[0].before,r.f.before.units.whatHappened[0]);
   assert.equal(r.sealed.draft.headline, r.f.raw.headline);
   assert.deepEqual(r.sealed.beforeCopyedit.draft, r.f.before.draft);
   assert.deepEqual(r.sealed.draft, r.after.draft);
@@ -270,17 +288,50 @@ test('legacy frozen editor inputs and prompts do not receive experimental vocabu
 test('definition trial still source-checks identical fields; local identity does not become glossary approval', async () => {
   const r = await run({ definition: true, changedFields: ['whatHappened'] });
   assert.equal(r.report.status, 'draft-awaiting-manual-review');
-  assert.equal(r.report.modelRequests, 6);
+  assert.equal(r.report.modelRequests, 7);
   assert.equal(r.sealed.calls.filter(c => c.dimension === 'source').length, 4);
   assert.equal(r.sealed.calls.filter(c => c.dimension === 'meaning').length, 1);
   assert.deepEqual(r.sealed.localReviews.map(v => v.field), ['headline', 'whyItMatters', 'whatToWatch']);
   for (const local of r.sealed.localReviews) assert.equal(local.request.policy, 'text-only-preservation-v1');
 });
 test('every source and definition-meaning veto or malformed verdict holds the new trial', async () => {
-  for (const rejection of ['false', 'malformed']) for (const rejectAt of [1, 2, 3, 4, 5, 6, 7]) {
+  for (const rejection of ['false', 'malformed']) for (const rejectAt of [2, 3, 4, 5, 6, 7, 8]) {
     const r = await run({ definition: true, rejection, rejectAt });
     assert.equal(r.report.code, 'FACT_SUMMARY_REVIEW_REJECTED');
     assert.equal(r.sealed.fieldReviews.at(-1).verdict.supported, false);
+  }
+});
+
+test('polish structural errors, lost binding and forbidden headline never fall back to the first proposal', async () => {
+  for (const mutatePolish of [p=>{p.sentences.pop();},p=>{p.sentences.reverse();},
+    p=>{p.baselineSha256='0'.repeat(64);},p=>{p.headline='Unauthorized headline';},
+    p=>{p.sentences[0].text+=' Extra sentence.';},p=>{p.sentences[0].text='<html>';},
+    p=>{p.sentences.forEach((s,i)=>{s.text=`MIT short unit ${i}.`;});}]) {
+    const r=await run({definition:true,mutatePolish});
+    assert.equal(r.report.status,'failed'); assert.equal(r.requests.length,2);
+    assert.equal(r.sealed.intermediateCopyedit.status,'unapproved-editor-proposal');
+    assert.deepEqual(r.sealed.fieldReviews,[]); assert.equal(r.sealed.draft,undefined);
+  }
+});
+
+test('unchanged polish and abstention hold before final review; neither grants intermediate approval', async () => {
+  const unchanged=await run({definition:true,mutatePolish:(p,first)=>Object.assign(p,structuredClone(first))});
+  assert.equal(unchanged.report.code,'FACT_SUMMARY_POLISH_UNCHANGED');
+  assert.equal(unchanged.requests.length,2); assert.equal(unchanged.report.outputBudget,2400);
+  assert.deepEqual(unchanged.sealed.fieldReviews,[]); assert.equal(unchanged.sealed.draft,undefined);
+  const abstained=await run({definition:true,mutatePolish:(p,first,catalog)=>{
+    p.decision='abstain';p.sentences=catalog.data.units.map(u=>({unitId:u.unitId,text:u.text}));
+  }});
+  assert.equal(abstained.report.code,'FACT_SUMMARY_POLISH_ABSTAINED');
+  assert.equal(abstained.requests.length,2);assert.deepEqual(abstained.sealed.fieldReviews,[]);
+});
+
+test('polish quota, transport or provenance failure stops after one attempt without another provider', async () => {
+  for(const rejection of ['quota','provenance','retry','extra-network']) {
+    const r=await run({definition:true,rejectAt:1,rejection});
+    assert.equal(r.report.status,'failed'); assert.equal(r.requests.length,2);
+    assert.equal(r.network.length,rejection==='extra-network'?1:2);
+    assert.deepEqual(r.sealed.fieldReviews,[]); assert.equal(r.sealed.draft,undefined);
   }
 });
 test('new trial rejects unknown, cloned or wrong-source glossaries before the editor', async () => {
