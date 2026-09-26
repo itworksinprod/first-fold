@@ -12,7 +12,7 @@ import { buildTextPreservationReview } from '../scripts/automation/free/text-pre
 import { buildDefinitionPreservationReview } from '../scripts/automation/experiments/definition-preservation.mjs';
 import { loadDefinitionGlossary, SYNTHETIC_DEFINITION_SOURCE } from '../scripts/automation/experiments/definition-glossaries.mjs';
 import { DEFINITION_REVIEW_QUALIFICATION } from '../scripts/automation/experiments/qualified-definition-review.mjs';
-import { DEFINITION_FLUENCY_PROMPT } from '../scripts/automation/experiments/definition-fluency-prompt.mjs';
+import { DEFINITION_INTEGRATION_PROMPT } from '../scripts/automation/experiments/definition-integration-prompt.mjs';
 import { buildDefinitionContext } from '../scripts/automation/experiments/definition-context.mjs';
 import { requestWorkersAiEditorial, buildWorkersAiRequest, DEFAULT_CLOUDFLARE_AI_MODEL } from '../scripts/automation/free/workers-ai.mjs';
 import { prepareFrozenDiagnosticBaseline, resolvePrivateWriterDiagnosticMode, diagnoseOneWriter } from '../scripts/automation/private-writer-diagnostic.mjs';
@@ -98,7 +98,7 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
         errors: [{ code: 3036, message: 'PRIVATE_QUOTA_DETAIL' }] }), { status: 429 });
       let payload;
       if (index === 0) {
-        assert.equal(request.messages[0].content, `${definition ? DEFINITION_FLUENCY_PROMPT : SENTENCE_REWRITE_PROMPT}\nJSON schema: ${JSON.stringify(catalog.schema)}`);
+        assert.equal(request.messages[0].content, `${definition ? DEFINITION_INTEGRATION_PROMPT : SENTENCE_REWRITE_PROMPT}\nJSON schema: ${JSON.stringify(catalog.schema)}`);
         assert.deepEqual(data, { catalog: catalog.data, attribution: 'Private synthetic fact context', facts: [],
           ...(definition ? buildDefinitionContext(catalog.data.units.map(unit => unit.text), glossary) : {}) });
         payload = proposal;
@@ -241,8 +241,8 @@ test('definition trial selects only the fluency editor while retaining qualified
   assert.deepEqual(r.sealed.reviewerQualification, DEFINITION_REVIEW_QUALIFICATION);
   assert.equal(r.sealed.glossaryBinding.sourceSha256, sha(r.f.excerpt));
   assert.equal(r.sealed.reviewStrategy, 'isolated-source-plus-qualified-definition-preservation-v1');
-  assert.equal(r.sealed.copyeditStrategy, 'sentence-definition-context-v1');
-  assert.equal(r.sealed.copyeditPromptSha256, sha(DEFINITION_FLUENCY_PROMPT));
+  assert.equal(r.sealed.copyeditStrategy, 'sentence-definition-integration-v1');
+  assert.equal(r.sealed.copyeditPromptSha256, sha(DEFINITION_INTEGRATION_PROMPT));
   assert.equal(r.sealed.draft.headline, r.f.raw.headline);
   assert.deepEqual(r.sealed.beforeCopyedit.draft, r.f.before.draft);
   assert.deepEqual(r.sealed.draft, r.after.draft);

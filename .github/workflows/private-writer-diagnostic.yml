@@ -70,7 +70,7 @@ jobs:
       - name: Test isolated sentence rewriting before credentials
         run: node --test tests/sentence-language-rewrite.test.mjs tests/sentence-language-diagnostic.test.mjs
       - name: Test frozen-baseline boundaries before credentials
-        run: node --test tests/frozen-fact-baseline.test.mjs tests/frozen-sentence-diagnostic.test.mjs tests/qualified-definition-review.test.mjs tests/definition-fluency-prompt.test.mjs tests/definition-context.test.mjs
+        run: node --test tests/frozen-fact-baseline.test.mjs tests/frozen-sentence-diagnostic.test.mjs tests/qualified-definition-review.test.mjs tests/definition-fluency-prompt.test.mjs tests/definition-context.test.mjs tests/definition-integration-prompt.test.mjs
       - name: Validate diagnostic mode and encryption before credentials
         env:
           DIAGNOSTIC_PUBLIC_KEY: ${{ inputs.public_key }}

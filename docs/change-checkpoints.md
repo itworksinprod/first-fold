@@ -1869,3 +1869,30 @@ Freeze the shared context design and reviewers. The next smallest offline
 checkpoint is an editor-only, topic-independent synthetic example of natural
 sentence integration while retaining obligation and scope. Do not prescribe the
 MIT answer, weaken gates, or retry unchanged inputs until they happen to pass.
+
+### Natural definition integration — editor-only example (September 26)
+
+The next bounded experiment appends one independently proposed fictional style
+contrast about an orientation waiver. It shows how a literal term definition can
+repeat an action already named in the sentence, and how to integrate that definition
+naturally without losing either necessary condition, the actor, or possibility.
+It expressly forbids importing the example as article evidence, dropping a distinct
+qualification, or shortening a definition whose referent would become ambiguous.
+No MIT-specific sentence or desired article wording is supplied.
+
+Only `frozen-definition-language` selects `sentence-definition-integration-v1`.
+Prompt SHA-256:
+`56cff94f6bc64500881a8b46e08b39d6406e1a13e6d76fdced6f007f93002433`.
+The prior fluency instructions are an unchanged prefix; source-bound editor input,
+baseline, glossary, all reviewer prompts/schemas, source/meaning/structural/length
+gates, original modes, provider, model and request budget remain unchanged.
+The example is training guidance, not a semantic qualification or eval answer.
+
+All 1,469 tests pass. Independent preflight ran 126 focused/legacy tests, found no
+blocking issue, and cleared one no-email live trial. Credential-free runtime
+preflight verifies the exact previous editor data and the new 10,304-byte request
+within the unchanged size cap; all 25 previously checked reviewer requests remain
+byte-compatible and the previous meaning veto stays rejected. No real provider
+call occurred in preflight. The exact live output still needs separate source,
+preservation and readability review; neither the example nor green unit tests
+approve an article, daily integration or email.

@@ -51,6 +51,11 @@ the editor prompt or either reviewer. Run 36219672362 passed the live automated
 checks and independent review of this context correction. The article remains
 held for repetitive wording, unexplained jargon and incomplete selected citations;
 do not rerun the unchanged setup or treat this bounded pass as article approval.
+The next isolated increment appends one fictional, topic-independent example of
+natural definition integration to the editor prompt. Its original, literal and
+fluent sentences retain the same actor, possibility and two necessary conditions.
+This is writing guidance, not source evidence, reviewer input or a prescribed
+article answer. The actual editor data and both reviewers remain unchanged.
 The same owner/main/first-attempt restrictions remain in force. Do not use the
 older `sentence-language-second-article` mode: it generates a new baseline.
 
@@ -69,11 +74,12 @@ tokens. Byte-identical fields use exact local identity for meaning only; their
 source check still runs. The model, qualified source/meaning reviewer prompts,
 110–225-word limits, unchanged headline and ordered-unit protections remain
 unchanged. The current definition mode uses editor strategy
-`sentence-definition-context-v1`, retaining fluency prompt SHA-256
-`53552e27a77bf1f5e53b3030b35e27940fe4ee78958a4b2a57c862b0be89f74c`.
-Only its definition-substitution instruction differs from the original editor:
+`sentence-definition-integration-v1`, prompt SHA-256
+`56cff94f6bc64500881a8b46e08b39d6406e1a13e6d76fdced6f007f93002433`.
+Its base fluency prompt's definition instruction differs from the original editor:
 it permits surrounding grammar adjustments that eliminate repetition without
-weakening obligations, scope or conditions. All legacy editor modes retain their
+weakening obligations, scope or conditions. The appended synthetic contrast
+illustrates that rule but must never supply article facts. All legacy editor modes retain their
 original prompt. Changed-field meaning checks use minimal, reviewed term
 definitions; they cannot see the article passages or expected control labels.
 The current editor additionally receives the same source/manifest binding and
