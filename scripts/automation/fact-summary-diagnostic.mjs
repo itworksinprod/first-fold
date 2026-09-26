@@ -16,7 +16,7 @@ import { buildSentenceRewriteView, applySentenceRewrite, SENTENCE_REWRITE_PROMPT
 import { buildDefinitionPreservationReview, validateDefinitionPreservationReview } from './experiments/definition-preservation.mjs';
 import { assertDefinitionGlossary } from './experiments/definition-glossaries.mjs';
 import { assertQualifiedDefinitionReviewer, loadQualifiedMitGlossary } from './experiments/qualified-definition-review.mjs';
-import { DEFINITION_INTEGRATION_PROMPT } from './experiments/definition-integration-prompt.mjs';
+import { DEFINITION_COMPOSITION_PROMPT } from './experiments/definition-composition-prompt.mjs';
 import { buildDefinitionContext } from './experiments/definition-context.mjs';
 
 const fields = ['headline', 'whatHappened', 'whyItMatters', 'whatToWatch'];
@@ -71,7 +71,7 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
   if (typeof definitionPreservation !== 'boolean' || (definitionPreservation && !frozenMode)) throw fail('FACT_SUMMARY_MODE');
   if (!['anthropic', 'mit-generalization'].includes(profile) || (profile === 'mit-generalization' && !claimwise)) throw fail('FACT_SUMMARY_PROFILE');
   const editedReviewPath = plainLanguageCopyedit || sentenceLanguageRewrite;
-  const copyeditPrompt = definitionPreservation ? DEFINITION_INTEGRATION_PROMPT
+  const copyeditPrompt = definitionPreservation ? DEFINITION_COMPOSITION_PROMPT
     : sentenceLanguageRewrite ? SENTENCE_REWRITE_PROMPT : PLAIN_LANGUAGE_COPYEDIT_PROMPT;
   const maxRequests = frozenMode ? 8 : sentenceLanguageRewrite ? 9 : plainLanguageCopyedit ? 7 : 5;
   const maxOutputBudget = frozenMode ? 5400 : sentenceLanguageRewrite ? 6600 : plainLanguageCopyedit ? 5400 : claimwise ? 3600 : 2800;
@@ -82,7 +82,7 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
   const capture = { purpose: definitionPreservation ? 'frozen-definition-language-rewrite-awaiting-manual-review' : frozenMode ? 'frozen-sentence-language-rewrite-awaiting-manual-review' : sentenceLanguageRewrite ? 'sentence-language-rewrite-awaiting-manual-review' : plainLanguageCopyedit ? 'plain-language-copyedit-awaiting-manual-review' : generic ? 'generic-second-article-awaiting-manual-review' : claimwise ? 'claimwise-fact-summary-awaiting-manual-review' : 'reviewed-fact-summary-awaiting-manual-review',
     ...(generic ? { ...(frozenMode ? { writerSkipped: true } : { promptSha256: hash(GENERIC_FACT_SUMMARY_PROMPT) }), factSelection: 'manual' } : {}), calls: [], fieldReviews: [], emailSent: false };
   if (editedReviewPath) {
-    capture.copyeditStrategy = definitionPreservation ? 'sentence-definition-integration-v1'
+    capture.copyeditStrategy = definitionPreservation ? 'sentence-definition-composition-v1'
       : sentenceLanguageRewrite ? 'sentence-by-sentence-v1' : 'single-phrase-or-abstain-v4';
     capture.copyeditPromptSha256 = hash(copyeditPrompt);
     capture.reviewStrategy = definitionPreservation ? 'isolated-source-plus-qualified-definition-preservation-v1' : 'isolated-source-plus-text-preservation-v1';

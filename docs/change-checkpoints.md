@@ -1896,3 +1896,43 @@ byte-compatible and the previous meaning veto stays rejected. No real provider
 call occurred in preflight. The exact live output still needs separate source,
 preservation and readability review; neither the example nor green unit tests
 approve an article, daily integration or email.
+
+### Integration-example live result — no improvement (September 26)
+
+[Run 36220438673](https://github.com/itworksinprod/first-fold/actions/runs/36220438673)
+used trusted main revision `06fe0a4e2ba7a843a201abe31d2aada0354baa8b`, the owner,
+manual dispatch and first attempt. All automated checks passed. The encrypted
+ZIP digest matched GitHub metadata:
+`0c1bd3acff63af0ce7ef7a882a0ca80d81053cea5b9819f065f25c10b05996a8`.
+Exact offline replay matched all six requests and the complete capture, with
+4,200 requested output tokens, 151 body words, one changed sentence and no email.
+
+Independent exact-text review found the proposal and final draft byte-identical
+to run 36219672362. Source support and meaning pass against the full captured
+evidence, but the example yielded no observable fluency improvement. The
+tautology, other jargon and incomplete selected first-claim citations remain.
+This intervention failed its readability objective; step one remains held.
+
+### Sentence composition priority — next editor-only experiment
+
+The next hypothesis is that the remaining instruction to prioritize replacing
+terms before structural editing anchors literal substitution. This is not a
+proven cause or a transport bug. Replace only that instruction: compose naturally
+from a reviewed definition's meaning without requiring its exact wording, while
+retaining the concept's grammatical kind, complete sense, scope and conditions.
+No article-specific answer is supplied. All other instructions, example, input
+data, schemas, source/meaning reviewers, glossary, guards and budgets are unchanged.
+
+Only the existing isolated definition mode selects
+`sentence-definition-composition-v1`, editor prompt SHA-256
+`936ce587507b25fe0298722062db5f03c6b96df5b2a1d504210fc9aea0687a7e`.
+This setup needs local tests, independent preflight and one bounded live trial;
+no article or email approval is implied. Preserve the failed predecessor for
+auditability rather than rerunning it for a lucky result.
+
+Local verification passed all 1,472 tests. Independent preflight passed 129
+focused/legacy tests, verified the one-line change and unchanged reviewer/legacy
+files, and cleared one no-email trial. Credential-free runtime preflight matched
+the prior editor data exactly; the new request is 10,502 bytes within the same
+70,000-byte cap. All 25 recorded reviewer requests remain byte-compatible, the
+prior meaning veto stays rejected, and no real provider calls occur in preflight.

@@ -56,6 +56,12 @@ natural definition integration to the editor prompt. Its original, literal and
 fluent sentences retain the same actor, possibility and two necessary conditions.
 This is writing guidance, not source evidence, reviewer input or a prescribed
 article answer. The actual editor data and both reviewers remain unchanged.
+Run 36220438673 passed automated source/meaning checks but produced the exact
+same proposal and draft as its predecessor; the example did not solve fluency.
+The next experiment changes only the remaining term-substitution priority:
+compose the sentence naturally from reviewed meaning rather than copying a
+definition's wording. This is a hypothesis, not a diagnosed cause. Every other
+instruction and all data, reviewers and budgets remain unchanged.
 The same owner/main/first-attempt restrictions remain in force. Do not use the
 older `sentence-language-second-article` mode: it generates a new baseline.
 
@@ -74,8 +80,8 @@ tokens. Byte-identical fields use exact local identity for meaning only; their
 source check still runs. The model, qualified source/meaning reviewer prompts,
 110–225-word limits, unchanged headline and ordered-unit protections remain
 unchanged. The current definition mode uses editor strategy
-`sentence-definition-integration-v1`, prompt SHA-256
-`56cff94f6bc64500881a8b46e08b39d6406e1a13e6d76fdced6f007f93002433`.
+`sentence-definition-composition-v1`, prompt SHA-256
+`936ce587507b25fe0298722062db5f03c6b96df5b2a1d504210fc9aea0687a7e`.
 Its base fluency prompt's definition instruction differs from the original editor:
 it permits surrounding grammar adjustments that eliminate repetition without
 weakening obligations, scope or conditions. The appended synthetic contrast
