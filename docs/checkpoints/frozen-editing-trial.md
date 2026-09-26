@@ -47,7 +47,10 @@ assembled-sentence fluency; it did not pass the live article review.
 Run 36219118294 then failed meaning preservation after changing a partial output
 into a process step. The current increment shares the existing relevant glossary
 entries (including their sense boundaries) with the editor. It does not change
-the editor prompt or either reviewer and still needs live exact-output review.
+the editor prompt or either reviewer. Run 36219672362 passed the live automated
+checks and independent review of this context correction. The article remains
+held for repetitive wording, unexplained jargon and incomplete selected citations;
+do not rerun the unchanged setup or treat this bounded pass as article approval.
 The same owner/main/first-attempt restrictions remain in force. Do not use the
 older `sentence-language-second-article` mode: it generates a new baseline.
 

@@ -22,6 +22,10 @@ After run 36219118294's preservation veto, that same mode also supplies the edit
 with the existing relevant source-bound definitions and their explicit senses.
 The prompt and qualified reviewer inputs remain unchanged; the shared selection
 helper prevents editor/reviewer vocabulary entries from drifting independently.
+Run 36219672362 then passed automated review and independent review of the shared
+context correction. This is a bounded saved-article result, not a readability
+pass: repetitive wording, unexplained jargon and incomplete citation selection
+still hold the article. See the change checkpoints for the exact result receipt.
 The qualified reviewers, other diagnostic modes, headline lock, sentence order
 and 110–225-word requirement remain unchanged. See the frozen-trial checkpoint
 for the current editor hash and still-pending live acceptance.

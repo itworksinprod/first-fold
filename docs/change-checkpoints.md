@@ -1842,3 +1842,30 @@ better generated prose. Independent review passed 122 focused/legacy tests and
 separately verified 13 prior meaning request bindings with no blockers. Cleared
 for publishing this setup and one no-email trial only; article readiness and
 the overall plain-language checkpoint remain held pending live exact-result review.
+
+### Shared vocabulary exact result — bounded pass, article held (September 26)
+
+[Run 36219672362](https://github.com/itworksinprod/first-fold/actions/runs/36219672362)
+completed successfully on main `cb1a939b4e9da04f355ecf8f41062af17c064970`, owner
+dispatch, attempt one. Artifact 10898288402 matched ZIP SHA-256
+`5de841ac07995677f055cecfa5ffc3f457400affdcb1739539b1ad23a3f55ef0`.
+Authenticated local decryption and exact offline replay verified all six request
+bindings, the unchanged source/baseline, one edited sentence, every source and
+meaning verdict, local identity checks and complete report. Requested output
+budget was 4,200 tokens; final body 151 words. No research, retry or email occurred.
+
+The editor now keeps the partial-output concept rather than substituting a
+generation step. All four fields pass source checks; the changed field passes
+meaning review and unchanged fields retain exact local identity only. Independent
+exact-result review found no new unsupported assertion and cleared the shared
+context substep **for this artifact only**. Draft hash:
+`bed4511d4d20f5fcd5e5dd7f8c7594c34844f105026edf2c79715b60929265f6`.
+
+The article still fails the separate readability checkpoint: redundant assembled
+wording reappears and other technical terms remain unexplained. First-claim
+citations also omit some supporting context available elsewhere in the captured
+source. Do not advance to significance/watch guidance, daily integration or email.
+Freeze the shared context design and reviewers. The next smallest offline
+checkpoint is an editor-only, topic-independent synthetic example of natural
+sentence integration while retaining obligation and scope. Do not prescribe the
+MIT answer, weaken gates, or retry unchanged inputs until they happen to pass.
