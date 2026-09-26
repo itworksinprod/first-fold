@@ -1986,3 +1986,54 @@ retaining the original baseline. Its 27,264-byte partial capture passed the
 unchanged encryption size guard. No real provider request occurred. Twenty-five
 historical reviewer requests remain unchanged and the prior meaning veto remains
 rejected. These checks clear setup only, not final fluency or citation adequacy.
+
+### Two-stage live result — safe abstention, no article (September 26)
+
+[Run 36221481899](https://github.com/itworksinprod/first-fold/actions/runs/36221481899)
+used trusted main `29973a0a1a9452a510d998c8f14ecf0e9a3baec1`, owner, manual
+dispatch and first attempt. It failed at “Inspect the selected bounded diagnostic
+without delivery” with `FACT_SUMMARY_POLISH_ABSTAINED`. The model returned every
+original sentence with an abstention. Execution stopped after two calls / 2,400
+requested output tokens, before any final review, with no final draft or email.
+ZIP SHA-256 matched GitHub metadata:
+`241bea547d1ec5cccd57ff92060c0adcb8b1e8542122accd3b8a905de9649f90`.
+Exact offline replay matched the full capture. Independent review confirmed the
+stop was legitimate and no unapproved intermediate was promoted. Step one remains
+held; the two-stage mode is retained for auditability, not an unchanged rerun.
+
+### Optional editor vocabulary — separate one-stage experiment
+
+The opt-in `frozen-vocabulary-language` experiment tests manually reviewed
+term-level wording separately from the canonical reviewer glossary. For the
+existing mandatory-constraint sense, “mandatory requirements” is an equivalent
+wording of requirements that must be met; independent review found the obligation
+and broad category retained. The synthetic nonoptional-rule control uses the same
+lexical equivalence. This is editorial vocabulary preparation, not an independently
+discovered definition, new factual evidence, or proof of general writing ability.
+
+The immutable optional wording registry is bound to the exact existing source
+and canonical glossary manifest. Only whole terms present in original body units
+select hints, with explicit singular/plural forms. Canonical definitions and sense
+exclusions remain supplied unchanged; reviewer requests never receive the hints.
+No automatic substitution, approved flag, prescribed article sentence or forced
+rewrite is introduced. The new mode is secret-scoped alongside the two older
+frozen modes and checks the fixed baseline/glossary/wording before credentials
+and again before inference. No mode accepts caller-provided glossary or hints.
+
+The new strategy is `reviewed-editor-vocabulary-v1`, one editor and existing final
+source/meaning checks, at most eight single-attempt calls / 5,400 requested output
+tokens. It does not run or relax the earlier polish mode, which retains its own
+nine/6,600 cap and abstention. All original-to-final, structure, attribution,
+originality, 110–225-word, headline, quota and provider controls remain. Editor
+prompt SHA-256:
+`819f782fdfe725449e85b05fcfd34664ba0c28c61f2f66e9c5b38fd6e0bd7c8c`.
+Setup and live exact-text review are still required. Remaining jargon, citation
+coverage and whole-article readiness cannot be approved by a term hint.
+
+Local verification passed all 1,486 tests. Independent preflight passed 150
+focused/legacy tests and cleared one no-email trial. Real-input preflight checked
+the new CLI validation and exact original editor data plus the single relevant
+hint; request size is 11,580 bytes. MIT wording-registry SHA-256 is
+`fa95415cbffe142e1a47fd0b0e1f372d1ffad0f147abcbba66a1775bbb5d14b0`.
+All checks were offline with zero actual provider calls. Prior reviewer requests
+and vetoes remain unchanged. Live prose is not yet accepted by these setup checks.

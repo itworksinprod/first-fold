@@ -14,6 +14,7 @@ import { loadDefinitionGlossary, SYNTHETIC_DEFINITION_SOURCE } from '../scripts/
 import { DEFINITION_REVIEW_QUALIFICATION } from '../scripts/automation/experiments/qualified-definition-review.mjs';
 import { DEFINITION_COMPOSITION_PROMPT } from '../scripts/automation/experiments/definition-composition-prompt.mjs';
 import { DEFINITION_POLISH_PROMPT } from '../scripts/automation/experiments/definition-polish-prompt.mjs';
+import { EDITORIAL_VOCABULARY_PROMPT, buildEditorialVocabulary } from '../scripts/automation/experiments/editorial-vocabulary.mjs';
 import { buildDefinitionContext } from '../scripts/automation/experiments/definition-context.mjs';
 import { requestWorkersAiEditorial, buildWorkersAiRequest, DEFAULT_CLOUDFLARE_AI_MODEL } from '../scripts/automation/free/workers-ai.mjs';
 import { prepareFrozenDiagnosticBaseline, resolvePrivateWriterDiagnosticMode, diagnoseOneWriter } from '../scripts/automation/private-writer-diagnostic.mjs';
@@ -49,7 +50,8 @@ function fixture(definition = false) {
   return { raw, before, excerpt, pins, text: freezeFactBaseline(JSON.stringify(diagnostic), JSON.stringify(sheet), pins) };
 }
 async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal, changedFields = fields.slice(1),
-  definition = false, glossaryLoader, sourceMismatch = false, mutatePolish } = {}) {
+  definition = false, glossaryLoader, sourceMismatch = false, mutatePolish, vocabulary = false } = {}) {
+  const polishEnabled = definition && !vocabulary;
   const f = fixture(definition && !sourceMismatch), requests = [], network = [];
   const glossary = definition ? loadDefinitionGlossary('synthetic-generation-definitions-v1', SYNTHETIC_DEFINITION_SOURCE) : null;
   const catalog = buildSentenceRewriteView(f.before.units);
@@ -62,7 +64,7 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
   const finalProposal = { baselineSha256: catalog.data.baselineSha256, decision: 'rewrite',
     sentences: catalog.data.units.map(u => ({ unitId: u.unitId, text: after.units[u.field][u.unitIndex] })) };
   const proposal = structuredClone(finalProposal);
-  if (definition && changedFields.length) {
+  if (polishEnabled && changedFields.length) {
     proposal.sentences[0].text = proposal.sentences[0].text.replace(/research (?:approach|method)/u, 'research procedure');
   }
   if (mutateProposal) mutateProposal(proposal);
@@ -73,6 +75,7 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
     endpoint, now: new Date('2026-09-25T20:00:00Z'), claimwise: true, profile: 'mit-generalization',
     sentenceLanguageRewrite: true, frozenBaselineText: input, qualificationLoader: async () => f.pins,
     definitionPreservation: definition,
+    editorialVocabulary: vocabulary,
     ...(definition ? { definitionGlossaryLoader: glossaryLoader ?? (() => glossary) } : {}),
     articleFetcher: () => assert.fail('Frozen trials must not fetch a fresh article'),
     sheetLoader: () => assert.fail('Frozen trials must use pinned fact context'), sealDiagnostic: v => v,
@@ -80,8 +83,8 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
       const index = requests.length; requests.push(request);
       assert.equal(request.model, DEFAULT_CLOUDFLARE_AI_MODEL);
       assert.equal(request.maxAttempts, 1);
-      assert.equal(request.maxTokens, index === 0 || (definition && index === 1) ? 1200 : 600);
-      assert.equal(request.timeoutMs, index === 0 || (definition && index === 1) ? 90000 : 30000);
+      assert.equal(request.maxTokens, index === 0 || (polishEnabled && index === 1) ? 1200 : 600);
+      assert.equal(request.timeoutMs, index === 0 || (polishEnabled && index === 1) ? 90000 : 30000);
       assert.equal(request.temperature, 0.1);
       const { body } = buildWorkersAiRequest(request);
       const init = { method: 'POST', redirect: 'error', body: JSON.stringify(body) };
@@ -104,11 +107,12 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
         errors: [{ code: 3036, message: 'PRIVATE_QUOTA_DETAIL' }] }), { status: 429 });
       let payload;
       if (index === 0) {
-        assert.equal(request.messages[0].content, `${definition ? DEFINITION_COMPOSITION_PROMPT : SENTENCE_REWRITE_PROMPT}\nJSON schema: ${JSON.stringify(catalog.schema)}`);
+        assert.equal(request.messages[0].content, `${vocabulary ? EDITORIAL_VOCABULARY_PROMPT : definition ? DEFINITION_COMPOSITION_PROMPT : SENTENCE_REWRITE_PROMPT}\nJSON schema: ${JSON.stringify(catalog.schema)}`);
         assert.deepEqual(data, { catalog: catalog.data, attribution: 'Private synthetic fact context', facts: [],
-          ...(definition ? buildDefinitionContext(catalog.data.units.map(unit => unit.text), glossary) : {}) });
+          ...(definition ? buildDefinitionContext(catalog.data.units.map(unit => unit.text), glossary) : {}),
+          ...(vocabulary ? buildEditorialVocabulary(catalog.data.units.map(unit => unit.text), glossary) : {}) });
         payload = proposal;
-      } else if (definition && index === 1) {
+      } else if (polishEnabled && index === 1) {
         assert.equal(request.messages[0].content, `${DEFINITION_POLISH_PROMPT}\nJSON schema: ${JSON.stringify(catalog.schema)}`);
         assert.deepEqual(data, { catalog: catalog.data, attribution: 'Private synthetic fact context', facts: [],
           ...buildDefinitionContext(catalog.data.units.map(unit => unit.text), glossary),
@@ -137,7 +141,7 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
     } });
   assert.equal(result.report.modelRequests, requests.length);
   assert.equal(result.report.networkRequests, network.length);
-  assert.ok(requests.length <= (definition ? 9 : 8) && result.report.outputBudget <= (definition ? 6600 : 5400));
+  assert.ok(requests.length <= (polishEnabled ? 9 : 8) && result.report.outputBudget <= (polishEnabled ? 6600 : 5400));
   assert.equal(result.report.emailSent, false); assert.equal(result.report.searchQueries, 0);
   assert.doesNotMatch(JSON.stringify(result.report), /PRIVATE_|Private synthetic/);
   return { ...result, requests, network, f, after };
@@ -221,11 +225,14 @@ test('base64 is canonical bounded transport, not self-authentication or encrypti
   assert.equal(resolvePrivateWriterDiagnosticMode('frozen-sentence-language'), 'frozen-sentence-language');
   assert.equal(resolvePrivateWriterDiagnosticMode('frozen-definition-language'), 'frozen-definition-language');
   await assert.rejects(prepareFrozenDiagnosticBaseline('frozen-definition-language', encoded), /FROZEN_BASELINE_/);
+  assert.equal(resolvePrivateWriterDiagnosticMode('frozen-vocabulary-language'), 'frozen-vocabulary-language');
+  await assert.rejects(prepareFrozenDiagnosticBaseline('frozen-vocabulary-language', encoded), /FROZEN_BASELINE_/);
 });
 test('frozen mode cannot silently enter another diagnostic path or use unvalidated text', async () => {
   for (const options of [{ sentenceLanguageRewrite: false }, { frozenBaselineText: null }, { plainLanguageCopyedit: true },
     { definitionPreservation: true, frozenBaselineText: undefined }, { definitionPreservation: 'true' },
-    { definitionPreservation: true, profile: 'anthropic' }, { definitionPreservation: true, claimwise: false }]) {
+    { definitionPreservation: true, profile: 'anthropic' }, { definitionPreservation: true, claimwise: false },
+    { editorialVocabulary: true }, { editorialVocabulary: 'true', definitionPreservation: true }]) {
     await assert.rejects(diagnoseFactSummary({ profile: 'mit-generalization', claimwise: true,
       sentenceLanguageRewrite: true, frozenBaselineText: fixture().text, ...options }), /FACT_SUMMARY_MODE/);
   }
@@ -235,13 +242,14 @@ test('frozen mode cannot silently enter another diagnostic path or use unvalidat
 test('workflow keeps private input in a mode-scoped secret and validates before provider credentials', async () => {
   const workflow = await readFile(new URL('../.github/workflows/private-writer-diagnostic.yml', import.meta.url), 'utf8');
   assert.match(workflow, /- frozen-sentence-language/);
-  assert.equal((workflow.match(/FIRST_FOLD_FROZEN_BASELINE_B64: \$\{\{ \(inputs.mode == 'frozen-sentence-language' \|\| inputs.mode == 'frozen-definition-language'\) && secrets.FIRST_FOLD_FROZEN_BASELINE_B64 \|\| '' \}\}/gu) ?? []).length, 2);
+  assert.equal((workflow.match(/FIRST_FOLD_FROZEN_BASELINE_B64: \$\{\{ \(inputs.mode == 'frozen-sentence-language' \|\| inputs.mode == 'frozen-definition-language' \|\| inputs.mode == 'frozen-vocabulary-language'\) && secrets.FIRST_FOLD_FROZEN_BASELINE_B64 \|\| '' \}\}/gu) ?? []).length, 2);
   assert.ok(workflow.indexOf('private-writer-diagnostic.mjs validate') < workflow.indexOf('CLOUDFLARE_AI_API_TOKEN:'));
   const validateStep = workflow.slice(workflow.indexOf('- name: Validate diagnostic mode'), workflow.indexOf('- name: Inspect the selected'));
   assert.doesNotMatch(validateStep, /CLOUDFLARE_AI_API_TOKEN|RESEND|GITHUB_TOKEN/);
   assert.doesNotMatch(workflow, /inputs\.baseline|RESEND|OPENAI_API_KEY|contents: write|actions: write/);
   assert.match(workflow, /tests\/frozen-sentence-diagnostic.test.mjs/);
   assert.match(workflow, /- frozen-definition-language/);
+  assert.match(workflow, /- frozen-vocabulary-language/);
 });
 
 test('definition trial polishes once while retaining original-bound qualified source and meaning gates', async () => {
@@ -357,4 +365,52 @@ test('new trial keeps structure, length, abstention and free-provider failure ga
     const r = await run({ definition: true, rejectAt: 3, rejection });
     assert.equal(r.report.status, 'failed'); assert.equal(r.requests.length, 4);
   }
+});
+
+test('separate vocabulary mode is one editor with unchanged final checks and eight/5400 cap',async()=>{
+  const r=await run({definition:true,vocabulary:true});
+  assert.equal(r.report.status,'draft-awaiting-manual-review');
+  assert.equal(r.report.mode,'frozen-vocabulary-language-rewrite-awaiting-manual-review');
+  assert.equal(r.report.modelRequests,8);assert.equal(r.report.outputBudget,5400);
+  assert.equal(r.sealed.copyeditStrategy,'reviewed-editor-vocabulary-v1');
+  assert.equal(r.sealed.copyeditPromptSha256,sha(EDITORIAL_VOCABULARY_PROMPT));
+  assert.equal(r.sealed.polishPromptSha256,undefined);assert.equal(r.sealed.intermediateCopyedit,undefined);
+  assert.deepEqual(r.sealed.calls[0].request.wordingHints,[{term:'binding rules',phrase:'mandatory requirements'}]);
+  assert.equal(r.sealed.calls.filter(c=>c.stage==='copyedit').length,1);
+  assert.equal(r.sealed.calls.filter(c=>c.dimension==='source').length,4);
+  assert.equal(r.sealed.calls.filter(c=>c.dimension==='meaning').length,3);
+  assert.deepEqual(r.sealed.beforeCopyedit.draft,r.f.before.draft);
+  assert.deepEqual(r.sealed.reviewerQualification,DEFINITION_REVIEW_QUALIFICATION);
+  for(const call of r.sealed.calls.slice(1)) {
+    assert.equal(call.request.wordingHints,undefined);assert.equal(call.request.wordingPolicy,undefined);
+  }
+});
+test('every source and meaning veto still holds manually assisted vocabulary output',async()=>{
+  for(const rejection of ['false','malformed'])for(const rejectAt of [1,2,3,4,5,6,7]) {
+    const r=await run({definition:true,vocabulary:true,rejection,rejectAt});
+    assert.equal(r.report.code,'FACT_SUMMARY_REVIEW_REJECTED');
+    assert.equal(r.sealed.fieldReviews.at(-1).verdict.supported,false);
+  }
+});
+test('vocabulary mode preserves structural, length, abstention, quota and provenance failures',async()=>{
+  for(const mutateProposal of [p=>{p.sentences.pop();},p=>{p.sentences.reverse();},
+    p=>{p.sentences.forEach((s,i)=>{s.text=`MIT short unit ${i}.`;});}]) {
+    const r=await run({definition:true,vocabulary:true,mutateProposal});
+    assert.equal(r.report.status,'failed');assert.equal(r.requests.length,1);
+  }
+  const noChange=await run({definition:true,vocabulary:true,changedFields:[],mutateProposal:p=>{p.decision='abstain';}});
+  assert.equal(noChange.report.code,'FACT_SUMMARY_COPYEDIT_ABSTAINED');
+  for(const rejection of ['quota','provenance','retry','extra-network']) {
+    const r=await run({definition:true,vocabulary:true,rejectAt:0,rejection});
+    assert.equal(r.report.status,'failed');assert.equal(r.requests.length,1);
+    assert.deepEqual(r.sealed.fieldReviews,[]);
+  }
+});
+test('vocabulary mode rejects changed private baselines and forged glossaries before inference',async()=>{
+  const drift=await run({definition:true,vocabulary:true,mutateInput:a=>{a.factContext.attribution='Changed';}});
+  assert.equal(drift.requests.length,0);
+  const forged=await run({definition:true,vocabulary:true,glossaryLoader:()=>({})});
+  assert.equal(forged.requests.length,0);
+  const mismatch=await run({definition:true,vocabulary:true,sourceMismatch:true});
+  assert.equal(mismatch.report.code,'DEFINITION_GLOSSARY_BINDING');assert.equal(mismatch.requests.length,0);
 });

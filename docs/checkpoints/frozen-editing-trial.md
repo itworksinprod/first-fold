@@ -36,7 +36,7 @@ Keep the private key on the Mac. Only the public key belongs in the workflow's
 ## One bounded run
 
 Open **Diagnose one free writer story (encrypted, no email)** on GitHub Actions.
-Run from `main`, choose `frozen-definition-language`, and supply the public key.
+Run from `main`, choose `frozen-vocabulary-language`, and supply the public key.
 This separate opt-in mode uses the definition-aware reviewer qualified by
 [run 36213351283](https://github.com/itworksinprod/first-fold/actions/runs/36213351283).
 The older `frozen-sentence-language` mode remains unchanged for auditability; do
@@ -69,10 +69,17 @@ unapproved; the polish call receives the original catalog and vocabulary/facts,
 and both proposals must bind to that original catalog. It cannot create a new
 baseline. A failed, malformed, abstaining or unchanged polish holds immediately,
 with no retry or fallback to the first proposal.
+That two-stage trial (36221481899) abstained and remains held; do not repeat it
+unchanged. The new, separate vocabulary mode adds optional manually reviewed
+idiomatic term hints while retaining the full canonical definitions and senses.
+Hints are bound to the same source/glossary manifest, are not facts or approval,
+and never enter reviewer requests. It makes one editor call, not two, with a
+maximum eight requests / 5,400 requested output tokens. This is a manual
+vocabulary-preparation experiment, not demonstrated general editorial ability.
 The same owner/main/first-attempt restrictions remain in force. Do not use the
 older `sentence-language-second-article` mode: it generates a new baseline.
 
-The private secret is exposed only in these two frozen modes. Before provider credentials
+The private secret is exposed only in these three frozen modes. Before provider credentials
 are made available, the CLI checks the artifact against the fixed source,
 fact-context, draft, unit and qualification hashes. The runtime repeats that
 check. The new mode additionally verifies the source and meaning prompt hashes,
@@ -81,7 +88,7 @@ qualification. The MIT glossary must match the exact saved source. Missing,
 changed or malformed input fails without a provider call; there
 is no fallback to a new writer, fresh discovery or another provider.
 
-In the current definition mode, one rewrite and one polish call are followed by
+In the retained definition-polish mode, one rewrite and one polish call are followed by
 four final-source checks and up to three changed-body meaning checks: at most
 nine requests and 6,600 requested output tokens. This increase applies only to
 that isolated experiment; the older frozen-sentence mode retains eight/5,400.
@@ -89,11 +96,14 @@ Meaning checks compare the final units against the ORIGINAL, not the intermediat
 Byte-identical fields use exact local identity for meaning only; their
 source check still runs. The model, qualified source/meaning reviewer prompts,
 110–225-word limits, unchanged headline and ordered-unit protections remain
-unchanged. The current definition mode uses editor strategy
+unchanged. The retained definition-polish mode uses editor strategy
 `sentence-definition-polish-v1`, first editor prompt SHA-256
 `936ce587507b25fe0298722062db5f03c6b96df5b2a1d504210fc9aea0687a7e`.
 The separate polish prompt SHA-256 is
 `caf9d4e5f116c9d4029a1598692949c2bbcc3936d5988a69f2d6892d68529d1a`.
+The new one-stage vocabulary mode instead uses `reviewed-editor-vocabulary-v1`,
+prompt SHA-256
+`819f782fdfe725449e85b05fcfd34664ba0c28c61f2f66e9c5b38fd6e0bd7c8c`.
 Its base fluency prompt's definition instruction differs from the original editor:
 it permits surrounding grammar adjustments that eliminate repetition without
 weakening obligations, scope or conditions. The appended synthetic contrast
