@@ -1464,3 +1464,59 @@ another editing experiment. Do not ask an equivalence-constrained editor to
 repair unsupported writer claims, and do not change reviewer policy merely to
 force either held output through. No daily workflow, email recipient, schedule,
 billing or public edition changed; no email was sent.
+
+### Frozen source-qualified baseline — offline checkpoint (September 25)
+
+The independent reviewer checked the **before-copyedit** snapshot from run
+36176641571 against the exact captured MIT excerpt and approved all seven units
+(headline plus six body sentences) for source support. The evidence map is
+recorded in `docs/checkpoints/mit-frozen-baseline.json`. This is the originating
+institution's account, not independent reporting. The capability qualification
+in the last sentence is retained; it does not assert that no deployment exists.
+This approval is not a freshness, plain-language, final-summary or email pass.
+
+The 148-word baseline, source excerpt and fact context are now frozen in a
+private file outside the repository. The public checkpoint contains hashes and
+passage IDs only, not the private draft or source excerpt. The offline utility
+`scripts/automation/freeze-fact-baseline.mjs` has two commands:
+
+```text
+node scripts/automation/freeze-fact-baseline.mjs freeze <private-diagnostic.json> <new-private-baseline.json>
+node scripts/automation/freeze-fact-baseline.mjs verify <private-baseline.json>
+```
+
+Both paths must resolve inside the sibling `first-fold-review` directory. Output
+creation is exclusive and owner-readable/writable (0600); it will not replace a
+file or follow a leaf symlink. Verification reads no credentials and performs no
+network, model or email operation. It reports hashes and counts, not prose.
+Checksums establish identity with the reviewed baseline, **not factual truth**.
+The trusted manifest is loaded from the repository, never accepted from the
+private artifact or exposed as a command-line override.
+
+Freeze and independent readback matched these pins:
+
+- Draft: `e0a2421baa12d87c3f76f4825c9a76b6d41c5b21dd2897fec362a47c90ff0687`.
+- Units: `7c861c82935843bcf4d249d0267e76182b17cd95d8c9a37abbe82a82b4a36acc`.
+- Source: `081196aa0f2c507e6b75f5a7018a594af882468006401c1b1428f96e4eb74801`.
+- Qualification: `f5a587787a740c575c54593b357671f40bfcc5556d0eecf8bdfe3114e32ddabd`.
+
+All 1,422 automated tests pass. Eight new tests cover before-versus-after
+selection, immutable loading, deterministic editor inventory, modified facts or
+source, tampered/self-reported hashes, complete ordered evidence coverage,
+110–225-word bounds, private-path escape and exclusive file creation. Fixtures
+are synthetic and do not claim semantic qualification.
+
+Independent implementation review found no blocking issue, passed all eight
+focused tests and reproduced the private file byte-for-byte from the reviewed
+capture and fact sheet. It confirmed the seven-unit map, private file permissions,
+path/overwrite safeguards and absence of production routing changes. Its approval
+is limited to this offline frozen-baseline checkpoint.
+
+This closes the offline baseline preparation only. The full plain-language
+article checkpoint remains HOLD. The existing live diagnostic still generates a
+new baseline and must not be presented as a frozen-baseline trial. The next
+separate checkpoint is wiring the verified private baseline into an isolated
+no-email editing trial, without a new writer call or public plaintext upload.
+Keep the generic rewrite prompt and separate factual/meaning review gates;
+retain failures rather than retrying unchanged. No daily workflow, recipient,
+schedule, billing or public edition changed; this checkpoint sent no email.

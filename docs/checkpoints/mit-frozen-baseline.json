@@ -1,0 +1,29 @@
+{
+  "id": "mit-source-qualified-baseline-v1",
+  "status": "source-qualified-for-private-editing-only",
+  "originRun": "36176641571",
+  "originSelection": "beforeCopyedit",
+  "publisher": "MIT",
+  "sourceUrl": "https://news.mit.edu/2026/new-method-enables-ai-safety-critical-situations-0914",
+  "excerptSha256": "081196aa0f2c507e6b75f5a7018a594af882468006401c1b1428f96e4eb74801",
+  "draftSha256": "e0a2421baa12d87c3f76f4825c9a76b6d41c5b21dd2897fec362a47c90ff0687",
+  "unitsSha256": "7c861c82935843bcf4d249d0267e76182b17cd95d8c9a37abbe82a82b4a36acc",
+  "factContextSha256": "6685e9d22c2c73a939d3161b8f0d895c01cd684d85a101f8735b6eb41ab040bf",
+  "factSheetSha256": "302911615858dde81dda2abb5ad6d55842f2f333fdc0084a901e6fb7a312e311",
+  "bodyWords": 148,
+  "review": {
+    "kind": "independent-ai-source-qualification",
+    "reviewedOn": "2026-09-25",
+    "verdict": "supported-by-captured-source",
+    "limits": "One originating institution's account, not independent corroboration. No freshness, readability, final-summary or email approval. The last unit describes a capability, not proof of a deployed system or a claim that none exists.",
+    "evidenceMap": [
+      { "field": "headline", "unitIndex": 0, "passageIds": ["P1", "P15"] },
+      { "field": "whatHappened", "unitIndex": 0, "passageIds": ["P1", "P2", "P4", "P12", "P15"] },
+      { "field": "whatHappened", "unitIndex": 1, "passageIds": ["P5"] },
+      { "field": "whatHappened", "unitIndex": 2, "passageIds": ["P6"] },
+      { "field": "whyItMatters", "unitIndex": 0, "passageIds": ["P12", "P13", "P14"] },
+      { "field": "whyItMatters", "unitIndex": 1, "passageIds": ["P14", "P15", "P16"] },
+      { "field": "whatToWatch", "unitIndex": 0, "passageIds": ["P20"] }
+    ]
+  }
+}
