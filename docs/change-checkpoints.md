@@ -1805,3 +1805,40 @@ running 107 focused/legacy tests, all passing. It confirmed the selected editor
 hash, byte-identical legacy editor/reviewers/glossary/baseline, and unchanged
 eight-call / 5,400-requested-token cap. Approval is limited to publishing this
 setup for one owner-launched no-email trial, not the article or automatic delivery.
+
+### Fluency result and shared vocabulary increment (September 26)
+
+[Run 36219118294](https://github.com/itworksinprod/first-fold/actions/runs/36219118294)
+used main `5c18666585b453a4c43813f7e526ed7dcca33e49`, owner dispatch, attempt one.
+It failed `FACT_SUMMARY_REVIEW_REJECTED` in the diagnostic step after four calls
+and 3,000 requested output tokens. The 149-word result preserved its headline and
+ordered units but changed a partial generated output into a generation step.
+The meaning reviewer rejected that conceptual shift. Independent review agreed
+with HOLD: source support in other passages does not establish preservation of
+the frozen wording. Later fields were not reviewed. Citation coverage and the
+remaining jargon are still unresolved. No email or daily change occurred.
+
+The artifact ZIP matched GitHub's digest
+`a1182da2b493d3479de605e8cf9404c4159921f19cbca208d36c2d36495f5567`.
+Local authenticated decryption and offline replay reproduced the complete capture
+and verdict; private source and model text stayed outside the repository.
+
+The next isolated change is editor **input**, not prompt or reviewer policy.
+`sentence-definition-context-v1` supplies the editor with existing source-bound
+term/definition/sense entries relevant to its original body sentences. The same
+selection helper supplies the meaning reviewer, which still considers both the
+original and proposed sentence. The definition itself was already in the editor's
+facts; its explicit sense exclusion was missing. No article-specific desired
+rewrite or new definition is added. Both reviewer prompts/schemas, the fluency
+prompt, source and baseline pins, gates, model, 110–225-word range, eight-request
+and 5,400-output-token caps remain unchanged. Legacy modes receive no new input.
+
+All 1,465 automated tests pass. The private credential-free preflight verified
+the matching encryption key and real frozen baseline, two relevant editor entries,
+an 8,987-byte editor request, and 25 byte-compatible recorded reviewer requests
+(22 controls plus three reviews from the held article trial). The prior meaning
+veto remains false. These are offline identity/plumbing checks, not proof of
+better generated prose. Independent review passed 122 focused/legacy tests and
+separately verified 13 prior meaning request bindings with no blockers. Cleared
+for publishing this setup and one no-email trial only; article readiness and
+the overall plain-language checkpoint remain held pending live exact-result review.

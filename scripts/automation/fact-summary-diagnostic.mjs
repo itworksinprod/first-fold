@@ -17,6 +17,7 @@ import { buildDefinitionPreservationReview, validateDefinitionPreservationReview
 import { assertDefinitionGlossary } from './experiments/definition-glossaries.mjs';
 import { assertQualifiedDefinitionReviewer, loadQualifiedMitGlossary } from './experiments/qualified-definition-review.mjs';
 import { DEFINITION_FLUENCY_PROMPT } from './experiments/definition-fluency-prompt.mjs';
+import { buildDefinitionContext } from './experiments/definition-context.mjs';
 
 const fields = ['headline', 'whatHappened', 'whyItMatters', 'whatToWatch'];
 const hash = text => createHash('sha256').update(text).digest('hex');
@@ -81,7 +82,7 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
   const capture = { purpose: definitionPreservation ? 'frozen-definition-language-rewrite-awaiting-manual-review' : frozenMode ? 'frozen-sentence-language-rewrite-awaiting-manual-review' : sentenceLanguageRewrite ? 'sentence-language-rewrite-awaiting-manual-review' : plainLanguageCopyedit ? 'plain-language-copyedit-awaiting-manual-review' : generic ? 'generic-second-article-awaiting-manual-review' : claimwise ? 'claimwise-fact-summary-awaiting-manual-review' : 'reviewed-fact-summary-awaiting-manual-review',
     ...(generic ? { ...(frozenMode ? { writerSkipped: true } : { promptSha256: hash(GENERIC_FACT_SUMMARY_PROMPT) }), factSelection: 'manual' } : {}), calls: [], fieldReviews: [], emailSent: false };
   if (editedReviewPath) {
-    capture.copyeditStrategy = definitionPreservation ? 'sentence-definition-fluency-v1'
+    capture.copyeditStrategy = definitionPreservation ? 'sentence-definition-context-v1'
       : sentenceLanguageRewrite ? 'sentence-by-sentence-v1' : 'single-phrase-or-abstain-v4';
     capture.copyeditPromptSha256 = hash(copyeditPrompt);
     capture.reviewStrategy = definitionPreservation ? 'isolated-source-plus-qualified-definition-preservation-v1' : 'isolated-source-plus-text-preservation-v1';
@@ -205,7 +206,8 @@ The article is one company's account. No tables or appendix are available. No ou
       const catalog = sentenceLanguageRewrite ? buildSentenceRewriteView(normalized.units) : buildSinglePhraseCopyeditView(normalized.units);
       capture.copyeditCatalog = catalog.data;
       const editData = sentenceLanguageRewrite
-        ? { catalog: catalog.data, attribution: sheet.attribution, facts: sheet.facts }
+        ? { catalog: catalog.data, attribution: sheet.attribution, facts: sheet.facts,
+          ...(definitionPreservation ? buildDefinitionContext(catalog.data.units.map(unit => unit.text), glossary) : {}) }
         : { catalog: catalog.data, limits: SINGLE_PHRASE_COPYEDIT_LIMITS,
           protectedWords: PHRASE_COPYEDIT_PROTECTED_WORDS, attribution: sheet.attribution, facts: sheet.facts };
       // Validate the new rewrite's strict shape before cloning or capturing it.

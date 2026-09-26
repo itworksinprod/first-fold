@@ -18,6 +18,10 @@ the separate `frozen-definition-language` mode now prepares one saved-article
 trial in the existing encrypted no-email diagnostic. No daily writer or delivery
 path imports the new reviewer. Following the saved-article readability failure,
 only `frozen-definition-language` now uses an editor-only sentence-fluency variant.
+After run 36219118294's preservation veto, that same mode also supplies the editor
+with the existing relevant source-bound definitions and their explicit senses.
+The prompt and qualified reviewer inputs remain unchanged; the shared selection
+helper prevents editor/reviewer vocabulary entries from drifting independently.
 The qualified reviewers, other diagnostic modes, headline lock, sentence order
 and 110–225-word requirement remain unchanged. See the frozen-trial checkpoint
 for the current editor hash and still-pending live acceptance.

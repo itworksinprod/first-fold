@@ -13,6 +13,7 @@ import { buildDefinitionPreservationReview } from '../scripts/automation/experim
 import { loadDefinitionGlossary, SYNTHETIC_DEFINITION_SOURCE } from '../scripts/automation/experiments/definition-glossaries.mjs';
 import { DEFINITION_REVIEW_QUALIFICATION } from '../scripts/automation/experiments/qualified-definition-review.mjs';
 import { DEFINITION_FLUENCY_PROMPT } from '../scripts/automation/experiments/definition-fluency-prompt.mjs';
+import { buildDefinitionContext } from '../scripts/automation/experiments/definition-context.mjs';
 import { requestWorkersAiEditorial, buildWorkersAiRequest, DEFAULT_CLOUDFLARE_AI_MODEL } from '../scripts/automation/free/workers-ai.mjs';
 import { prepareFrozenDiagnosticBaseline, resolvePrivateWriterDiagnosticMode, diagnoseOneWriter } from '../scripts/automation/private-writer-diagnostic.mjs';
 
@@ -98,7 +99,8 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
       let payload;
       if (index === 0) {
         assert.equal(request.messages[0].content, `${definition ? DEFINITION_FLUENCY_PROMPT : SENTENCE_REWRITE_PROMPT}\nJSON schema: ${JSON.stringify(catalog.schema)}`);
-        assert.deepEqual(data, { catalog: catalog.data, attribution: 'Private synthetic fact context', facts: [] });
+        assert.deepEqual(data, { catalog: catalog.data, attribution: 'Private synthetic fact context', facts: [],
+          ...(definition ? buildDefinitionContext(catalog.data.units.map(unit => unit.text), glossary) : {}) });
         payload = proposal;
       } else {
         const meaning = ['text-only-preservation-v1', 'definition-preservation-offline-v1'].includes(data.policy);
@@ -239,7 +241,7 @@ test('definition trial selects only the fluency editor while retaining qualified
   assert.deepEqual(r.sealed.reviewerQualification, DEFINITION_REVIEW_QUALIFICATION);
   assert.equal(r.sealed.glossaryBinding.sourceSha256, sha(r.f.excerpt));
   assert.equal(r.sealed.reviewStrategy, 'isolated-source-plus-qualified-definition-preservation-v1');
-  assert.equal(r.sealed.copyeditStrategy, 'sentence-definition-fluency-v1');
+  assert.equal(r.sealed.copyeditStrategy, 'sentence-definition-context-v1');
   assert.equal(r.sealed.copyeditPromptSha256, sha(DEFINITION_FLUENCY_PROMPT));
   assert.equal(r.sealed.draft.headline, r.f.raw.headline);
   assert.deepEqual(r.sealed.beforeCopyedit.draft, r.f.before.draft);
@@ -248,6 +250,10 @@ test('definition trial selects only the fluency editor while retaining qualified
   const meaning = r.sealed.calls.filter(c => c.dimension === 'meaning');
   assert.equal(meaning.length, 3);
   assert.deepEqual(meaning[0].request.definitions.map(d => d.term), ['binding rules']);
+  const editor = r.sealed.calls[0].request;
+  assert.deepEqual(editor.definitions, meaning[0].request.definitions);
+  assert.deepEqual(editor.glossaryBinding, meaning[0].request.glossaryBinding);
+  assert.deepEqual(Object.keys(editor).sort(), ['attribution', 'catalog', 'definitions', 'facts', 'glossaryBinding']);
   assert.deepEqual(meaning.slice(1).map(c => c.request.definitions), [[], []]);
   assert.deepEqual(r.sealed.localReviews.map(v => v.field), ['headline']);
   for (const call of meaning) {
@@ -255,6 +261,11 @@ test('definition trial selects only the fluency editor while retaining qualified
     assert.equal(call.request.passages, undefined);
     assert.equal(call.request.glossaryBinding.manifestSha256, r.sealed.glossaryBinding.manifestSha256);
   }
+});
+test('legacy frozen editor inputs and prompts do not receive experimental vocabulary context', async () => {
+  const r = await run();
+  assert.deepEqual(Object.keys(r.sealed.calls[0].request).sort(), ['attribution', 'catalog', 'facts']);
+  assert.equal(r.sealed.copyeditPromptSha256, sha(SENTENCE_REWRITE_PROMPT));
 });
 test('definition trial still source-checks identical fields; local identity does not become glossary approval', async () => {
   const r = await run({ definition: true, changedFields: ['whatHappened'] });

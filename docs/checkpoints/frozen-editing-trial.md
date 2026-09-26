@@ -41,9 +41,13 @@ This separate opt-in mode uses the definition-aware reviewer qualified by
 [run 36213351283](https://github.com/itworksinprod/first-fold/actions/runs/36213351283).
 The older `frozen-sentence-language` mode remains unchanged for auditability; do
 not rerun it to chase a different answer. Run 36217395043 passed the new meaning
-context check but failed independent readability review. The current revision of
-`frozen-definition-language` therefore changes only its editor instruction to
-test assembled-sentence fluency; it has not yet passed a live article review.
+context check but failed independent readability review. The next revision of
+`frozen-definition-language` changed only its editor instruction to test
+assembled-sentence fluency; it did not pass the live article review.
+Run 36219118294 then failed meaning preservation after changing a partial output
+into a process step. The current increment shares the existing relevant glossary
+entries (including their sense boundaries) with the editor. It does not change
+the editor prompt or either reviewer and still needs live exact-output review.
 The same owner/main/first-attempt restrictions remain in force. Do not use the
 older `sentence-language-second-article` mode: it generates a new baseline.
 
@@ -62,13 +66,19 @@ tokens. Byte-identical fields use exact local identity for meaning only; their
 source check still runs. The model, qualified source/meaning reviewer prompts,
 110–225-word limits, unchanged headline and ordered-unit protections remain
 unchanged. The current definition mode uses editor strategy
-`sentence-definition-fluency-v1`, prompt SHA-256
+`sentence-definition-context-v1`, retaining fluency prompt SHA-256
 `53552e27a77bf1f5e53b3030b35e27940fe4ee78958a4b2a57c862b0be89f74c`.
 Only its definition-substitution instruction differs from the original editor:
 it permits surrounding grammar adjustments that eliminate repetition without
 weakening obligations, scope or conditions. All legacy editor modes retain their
 original prompt. Changed-field meaning checks use minimal, reviewed term
 definitions; they cannot see the article passages or expected control labels.
+The current editor additionally receives the same source/manifest binding and
+term/definition/sense entries selected from its original body sentences. Shared
+selection keeps the entries identical wherever the editor and reviewer encounter
+the same term. Meaning review also checks terms in the proposed output; that does
+not add them retroactively to the editor's input. No inferred definitions, full
+article passages or reviewer verdicts are added to the editor request.
 This is vocabulary context, not automatic factual or readability approval.
 Quota failure, abstention or a rejected check holds the result.
 No automatic retry, email, public edition, billing or daily-workflow change occurs.
@@ -85,7 +95,7 @@ locally with the matching private key. Before claiming success:
 4. Have an independent reviewer assess the exact final prose for ordinary-reader
    clarity and source/meaning drift. A transport test is not a readability pass.
    For this increment, require genuinely smoother assembled wording without the
-   prior tautology, not merely more words or a differently spelled technical term.
+   prior tautology or concept-category drift, not merely more words or a differently spelled technical term.
    Remaining jargon and incomplete passage citations remain explicit holds; they
    cannot be hidden by a successful editor-only experiment.
 

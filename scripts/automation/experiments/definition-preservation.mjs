@@ -3,17 +3,13 @@
 import { createHash } from 'node:crypto';
 import { buildTextPreservationReview, validateTextPreservationReview } from '../free/text-preservation-review.mjs';
 import { assertDefinitionGlossary } from './definition-glossaries.mjs';
+import { buildDefinitionContext } from './definition-context.mjs';
 
 const issued = new WeakMap();
 const sha = text => createHash('sha256').update(text).digest('hex');
 const freeze = value => {
   if (value && typeof value === 'object') { Object.values(value).forEach(freeze); Object.freeze(value); }
   return value;
-};
-const hasTerm = (text, term) => {
-  // Registry terms contain plain words/spaces only; preserve word boundaries.
-  const escaped = term.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
-  return new RegExp(`(?<![\\p{L}\\p{N}_])${escaped}(?![\\p{L}\\p{N}_])`, 'iu').test(text);
 };
 
 export function buildDefinitionPreservationReview(input, glossary) {
@@ -22,8 +18,7 @@ export function buildDefinitionPreservationReview(input, glossary) {
   const texts = [...base.data.previousClaims, ...base.data.claims].map(item => item.text);
   const data = { policy: 'definition-preservation-offline-v1', claims: base.data.claims,
     previousClaims: base.data.previousClaims,
-    glossaryBinding: { id: glossary.id, sourceSha256: glossary.sourceSha256, manifestSha256: glossary.manifestSha256 },
-    definitions: glossary.definitions.filter(item => texts.some(text => hasTerm(text, item.term))) };
+    ...buildDefinitionContext(texts, glossary) };
   data.reviewSha256 = sha(JSON.stringify(data));
   const schema = structuredClone(base.schema);
   schema.properties.reviewSha256.enum = [data.reviewSha256];
