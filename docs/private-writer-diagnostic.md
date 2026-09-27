@@ -158,3 +158,9 @@ No private article secrets are made available to either mode. A truncated
 response is an incomplete failed comparison, not permission to raise the cap,
 switch models or retry. See the checkpoint's model-only preflight for evidence
 and authorization status; a mock local pass is not live reviewer qualification.
+
+The separate `grammar-reasoning-holdouts` mode uses the same GPT-OSS settings for
+[fresh, independently adjudicated ordinary-language examples](checkpoints/meaning-review-holdouts.md).
+It has the same eleven-request/6,600-token maximum and ten scored plus one
+unscored criterion. No new prompt, provider, source-review or delivery path is
+introduced, and passing cannot promote the reviewer or approve an article.

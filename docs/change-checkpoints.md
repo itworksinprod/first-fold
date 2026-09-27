@@ -2266,3 +2266,24 @@ substantively sound scored rationales, with no blocker to this checkpoint.
 The actual article remains on HOLD. Next is offline preparation/adjudication of
 fresh meaning-only holdouts, followed by separately approved inference before
 considering broader use; do not promote automatically.
+
+### Fresh meaning holdouts — pre-inference preparation
+
+Carlos requested the next unfamiliar-example test. The
+[separate holdout checkpoint](checkpoints/meaning-review-holdouts.md) freezes ten
+fictional scored pairs (five equivalent, five changed) and one unscored ambiguity
+probe. Independent adjudication corrected an added permission-granter and a
+causality rationale before inference, then accepted all labels under hash
+`cc41aad87789d98c8d54cb74992da1065610fbc3bf9332238be41acdad2f56c3`.
+
+The opt-in `grammar-reasoning-holdouts` mode reuses the prior GPT-OSS reviewer,
+unchanged prompt/schema and eleven-call/600-token/single-attempt limits. No
+article secrets, source review, research, email, qualification or daily-delivery
+changes are included. Local tests and independent preflight precede inference;
+no semantic success is inferred from mocked outputs or the earlier known set.
+
+Preflight completed with the build and all 1,526 tests passing. Independent
+review passed 51 focused/legacy tests after correcting one legacy timeout
+assertion to include the new mode, with limits unchanged. Both old live captures
+replay exactly. This clears one bounded live test, not an article or production
+reviewer change.

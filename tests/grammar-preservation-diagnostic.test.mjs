@@ -9,6 +9,8 @@ import { requestWorkersAiEditorial, buildWorkersAiRequest, DEFAULT_CLOUDFLARE_AI
 import { assertQualifiedDefinitionReviewer } from '../scripts/automation/experiments/qualified-definition-review.mjs';
 import { GRAMMAR_PRESERVATION_CONTROLS, GRAMMAR_PRESERVATION_PROBES,
   GRAMMAR_CONTRAST_SHA256, buildGrammarPreservationViews } from '../scripts/automation/experiments/grammar-preservation-cases.mjs';
+import { MEANING_HOLDOUT_CONTROLS, MEANING_HOLDOUT_PROBES, MEANING_HOLDOUT_SHA256,
+  buildMeaningHoldoutViews } from '../scripts/automation/experiments/meaning-holdout-cases.mjs';
 
 const mode = 'grammar-preservation-controls';
 const controls = [...GRAMMAR_PRESERVATION_CONTROLS, ...GRAMMAR_PRESERVATION_PROBES];
@@ -19,12 +21,13 @@ const endpoint = `https://api.cloudflare.com/client/v4/accounts/${base.accountId
 const hash = text => createHash('sha256').update(text).digest('hex');
 
 async function fixture({ integration = false, overrideMeaning, probe = false, corrupt, at = 0, status, mutateResult, attack,
-  reasoningReviewer = false, formatFailure } = {}) {
+  reasoningReviewer = false, holdouts = false, formatFailure } = {}) {
   const model = [], network = [];
   const selectedModel = reasoningReviewer ? FREE_REASONING_WRITER_MODEL : DEFAULT_CLOUDFLARE_AI_MODEL;
   const selectedEndpoint = endpoint.replace(DEFAULT_CLOUDFLARE_AI_MODEL, selectedModel);
-  const selectedMode = reasoningReviewer ? 'grammar-reasoning-controls' : mode;
-  const options = { ...base, endpoint, reasoningReviewer, sealDiagnostic: value => value,
+  const selectedMode = holdouts ? 'grammar-reasoning-holdouts' : reasoningReviewer ? 'grammar-reasoning-controls' : mode;
+  const selectedCases = holdouts ? [...MEANING_HOLDOUT_CONTROLS, ...MEANING_HOLDOUT_PROBES] : controls;
+  const options = { ...base, endpoint, reasoningReviewer, holdouts, sealDiagnostic: value => value,
     controls: [], model: 'unapproved', prompt: 'INJECTED_PROMPT', maxTokens: 16000, maxAttempts: 99,
     researchImpl: () => assert.fail('No research in a grammar control run'),
     aiRequestImpl: async request => {
@@ -48,7 +51,7 @@ async function fixture({ integration = false, overrideMeaning, probe = false, co
       if (status && index === at) return new Response(JSON.stringify({ success: false,
         errors: [{ code: 9999, message: `PRIVATE_PROVIDER_DETAIL ${base.apiToken}` }] }),
       { status, headers: { 'content-type': 'application/json' } });
-      const meaning = index === 10 ? probe : overrideMeaning ?? controls[index].expectedMeaningPreserved;
+      const meaning = index === 10 ? probe : overrideMeaning ?? selectedCases[index].expectedMeaningPreserved;
       const payload = { reviewSha256: data.reviewSha256, judgments: data.claims.map(({ claimId }) => ({ claimId,
         comparison: `PRIVATE_REPLY_${index}: mock plumbing verdict, not semantic evidence.`, meaningPreserved: meaning })) };
       if (corrupt && index === at) corrupt(payload);
@@ -186,7 +189,7 @@ test('entrypoint encrypts exact audit and rejects article secrets or invalid con
 test('workflow isolates synthetic mode, tests before credentials and preserves existing authority and secret scope', async () => {
   const workflow = await readFile(new URL('../.github/workflows/private-writer-diagnostic.yml', import.meta.url), 'utf8');
   assert.match(workflow, /- grammar-preservation-controls/);
-  assert.match(workflow, /timeout-minutes: \$\{\{ inputs.mode == 'definition-preservation-controls' && 15 \|\| \(inputs.mode == 'grammar-preservation-controls' \|\| inputs.mode == 'grammar-reasoning-controls'\) && 10 \|\| 8 \}\}/);
+  assert.match(workflow, /timeout-minutes: \$\{\{ inputs.mode == 'definition-preservation-controls' && 15 \|\| \(inputs.mode == 'grammar-preservation-controls' \|\| inputs.mode == 'grammar-reasoning-controls' \|\| inputs.mode == 'grammar-reasoning-holdouts'\) && 10 \|\| 8 \}\}/);
   assert.ok(11 * 30 + 180 < 10 * 60);
   assert.ok(workflow.indexOf('Test synthetic grammar reviewer boundaries') < workflow.indexOf('secrets.CLOUDFLARE_AI_API_TOKEN'));
   assert.match(workflow, /node --test tests\/grammar-preservation-cases.test.mjs tests\/grammar-preservation-diagnostic.test.mjs/);
@@ -283,4 +286,78 @@ test('reasoning mode encrypts only synthetic audit and rejects private article p
   const workflow = await readFile(new URL('../.github/workflows/private-writer-diagnostic.yml', import.meta.url), 'utf8');
   assert.match(workflow, /- grammar-reasoning-controls/);
   assert.doesNotMatch(workflow, /grammar-reasoning-controls[^\n]*secrets\./);
+});
+
+test('fresh holdout mode is fixed to the frozen set, unchanged reviewer and prior single-attempt limits', async () => {
+  const r = await fixture({ reasoningReviewer: true, holdouts: true, integration: true });
+  const views = buildMeaningHoldoutViews(), known = await fixture({ reasoningReviewer: true });
+  assert.equal(r.report.mode,'grammar-reasoning-holdouts-not-an-edition');
+  assert.equal(r.report.reviewerModel,FREE_REASONING_WRITER_MODEL);
+  assert.equal(r.report.status,'reviewer-controls-passed'); assert.equal(r.report.correctCases,10);
+  assert.equal(r.report.caseSetSha256,MEANING_HOLDOUT_SHA256);
+  assert.deepEqual(r.capture.cases,[...MEANING_HOLDOUT_CONTROLS,...MEANING_HOLDOUT_PROBES]);
+  assert.equal(r.sealed.version,1);
+  for(const [i,request] of r.model.entries()) {
+    const {view}=views[i];
+    assert.deepEqual(request.messages,[{role:'system',content:`${view.prompt}\nJSON schema: ${JSON.stringify(view.schema)}`},
+      {role:'user',content:JSON.stringify(view.data)}]);
+    assert.deepEqual(request.schema,view.schema);
+    for(const key of ['model','maxTokens','maxAttempts','timeoutMs','temperature','responseFormat','maxRequestBytes','maxResponseBytes'])
+      assert.equal(request[key],known.model[i][key]);
+    assert.equal(r.network[i].url,known.network[i].url);
+    assert.equal(r.capture.calls[i].requestSha256,hash(JSON.stringify({provider:'cloudflare-workers-ai',
+      model:FREE_REASONING_WRITER_MODEL,body:r.network[i].body})));
+    assert.doesNotMatch(JSON.stringify(request.messages),/expectedMeaningPreserved|rationale|caseId|INJECTED_PROMPT|PRIVATE_REPLY_/);
+  }
+  assert.doesNotMatch(JSON.stringify({report:r.report,sealed:r.sealed}),/PRIVATE_REPLY_|previousClaims/);
+  assert.equal(assertQualifiedDefinitionReviewer().model,DEFAULT_CLOUDFLARE_AI_MODEL);
+});
+
+test('fresh holdouts never retry a wrong answer or count either probe answer as a scored success', async () => {
+  for(const probe of [true,false]) {
+    const good=await fixture({reasoningReviewer:true,holdouts:true,probe});
+    assert.equal(good.report.correctCases,10); assert.equal(good.report.status,'reviewer-controls-passed');
+    assert.deepEqual(good.report.cases.at(-1),{caseId:'P02',valid:true,scored:false,passed:null,meaningPreserved:probe});
+    for(const overrideMeaning of [true,false]) {
+      const bad=await fixture({reasoningReviewer:true,holdouts:true,probe,overrideMeaning});
+      assert.equal(bad.report.code,'GRAMMAR_REVIEW_MISCLASSIFIED'); assert.equal(bad.report.correctCases,5);
+      assert.equal(bad.report.completedCases,11); assert.equal(bad.report.modelRequests,11);
+    }
+  }
+});
+
+test('fresh holdouts stop on malformed, truncated, quota, network or provenance failures, even for the probe', async () => {
+  for(const at of [0,5,10]) for(const variant of [
+    {formatFailure:'length'}, {formatFailure:'empty'}, {formatFailure:'json'}, {status:429},
+    {corrupt:p=>{p.reviewSha256='0'.repeat(64);}}, {mutateResult:r=>({...r,model:DEFAULT_CLOUDFLARE_AI_MODEL})},
+  ]) {
+    const r=await fixture({reasoningReviewer:true,holdouts:true,at,...variant});
+    assert.equal(r.report.status,'failed'); assert.equal(r.report.completedCases,at);
+    assert.equal(r.report.modelRequests,at+1);
+  }
+  for(const attack of ['endpoint','old-model-endpoint','body','method','redirect','repeat','skip']) {
+    const r=await fixture({reasoningReviewer:true,holdouts:true,attack});
+    assert.equal(r.report.code,'GRAMMAR_REVIEW_NETWORK'); assert.equal(r.report.modelRequests,1);
+    assert.equal(r.report.networkRequests,attack==='repeat'?1:0);
+  }
+  const r=await fixture({reasoningReviewer:true,holdouts:true});
+  await assert.rejects(r.model[0].fetchImpl(r.network[0].url,r.network[0].init),/GRAMMAR_REVIEW_NETWORK/);
+  assert.equal(r.network.length,11);
+});
+
+test('fresh holdout entrypoint rejects article inputs and nonfixed profiles before inference', async () => {
+  const nextMode='grammar-reasoning-holdouts';
+  assert.equal(resolvePrivateWriterDiagnosticMode(nextMode),nextMode);
+  for(const override of [{frozenBaselineB64:'unexpected'},{savedFinalReviewB64:'unexpected'}]) {
+    await assert.rejects(diagnoseOneWriter({...base,mode:nextMode,...override,
+      aiRequestImpl:()=>assert.fail('No model call'),researchImpl:()=>assert.fail('No research')}),/DIAGNOSTIC_UNEXPECTED/);
+  }
+  for(const holdouts of [null,'true',1,{},[]]) await assert.rejects(diagnoseGrammarPreservation({
+    ...base,reasoningReviewer:true,holdouts,aiRequestImpl:()=>assert.fail('Invalid profile')}),/GRAMMAR_REVIEW_PROFILE/);
+  await assert.rejects(diagnoseGrammarPreservation({...base,holdouts:true,reasoningReviewer:false,
+    aiRequestImpl:()=>assert.fail('No Llama holdout mode')}),/GRAMMAR_REVIEW_PROFILE/);
+  const workflow=await readFile(new URL('../.github/workflows/private-writer-diagnostic.yml',import.meta.url),'utf8');
+  assert.match(workflow,/- grammar-reasoning-holdouts/);
+  assert.doesNotMatch(workflow,/grammar-reasoning-holdouts[^\n]*secrets\./);
+  assert.ok(workflow.indexOf('tests/meaning-holdout-cases.test.mjs')<workflow.indexOf('secrets.CLOUDFLARE_AI_API_TOKEN'));
 });

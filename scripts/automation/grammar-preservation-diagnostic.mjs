@@ -2,6 +2,8 @@
 import { createHash } from 'node:crypto';
 import { GRAMMAR_PRESERVATION_CONTROLS, GRAMMAR_PRESERVATION_PROBES,
   GRAMMAR_CONTRAST_SHA256, buildGrammarPreservationViews } from './experiments/grammar-preservation-cases.mjs';
+import { MEANING_HOLDOUT_CONTROLS, MEANING_HOLDOUT_PROBES,
+  MEANING_HOLDOUT_SHA256, buildMeaningHoldoutViews } from './experiments/meaning-holdout-cases.mjs';
 import { validateDefinitionPreservationReview } from './experiments/definition-preservation.mjs';
 import { DEFAULT_CLOUDFLARE_AI_MODEL, FREE_REASONING_WRITER_MODEL,
   buildWorkersAiRequest, workersAiFailureDiagnostic, workersAiRunUrl } from './free/workers-ai.mjs';
@@ -12,15 +14,18 @@ const CAP = 11, TOKENS = 600;
 const ownCodes = new Set(['GRAMMAR_REVIEW_NETWORK', 'GRAMMAR_REVIEW_PROVENANCE', 'GRAMMAR_REVIEW_MALFORMED']);
 
 export async function diagnoseGrammarPreservation({ publicKey, accountId, apiToken, now,
-  aiRequestImpl, fetchImpl, endpoint, sealDiagnostic, reasoningReviewer = false }) {
-  if (typeof reasoningReviewer !== 'boolean') throw failure('GRAMMAR_REVIEW_PROFILE');
+  aiRequestImpl, fetchImpl, endpoint, sealDiagnostic, reasoningReviewer = false, holdouts = false }) {
+  if (typeof reasoningReviewer !== 'boolean' || typeof holdouts !== 'boolean' ||
+      (holdouts && !reasoningReviewer)) throw failure('GRAMMAR_REVIEW_PROFILE');
   // Model-only opt-in, never a fallback or a production reviewer replacement.
   const model = reasoningReviewer ? FREE_REASONING_WRITER_MODEL : DEFAULT_CLOUDFLARE_AI_MODEL;
   const requestEndpoint = reasoningReviewer ? workersAiRunUrl(accountId, model) : endpoint;
-  const controls = [...GRAMMAR_PRESERVATION_CONTROLS, ...GRAMMAR_PRESERVATION_PROBES];
-  const views = buildGrammarPreservationViews(), calls = [], results = [];
+  const controls = holdouts ? [...MEANING_HOLDOUT_CONTROLS, ...MEANING_HOLDOUT_PROBES]
+    : [...GRAMMAR_PRESERVATION_CONTROLS, ...GRAMMAR_PRESERVATION_PROBES];
+  const views = holdouts ? buildMeaningHoldoutViews() : buildGrammarPreservationViews();
+  const calls = [], results = [];
   let modelRequests = 0, networkRequests = 0, code = null;
-  // Only the fixed model-only profile can vary; no caller-selected model or cases.
+  // Only fixed registered profiles can vary; no caller-selected model or cases.
   for (const [index, { caseId, view }] of views.entries()) {
     const control = controls[index];
     const prompt = `${view.prompt}\nJSON schema: ${JSON.stringify(view.schema)}`;
@@ -76,10 +81,11 @@ export async function diagnoseGrammarPreservation({ publicKey, accountId, apiTok
   const scoredResults = results.filter(r => r.scored);
   const passed = !code && results.length === CAP && scoredResults.length === 10 && scoredResults.every(r => r.passed);
   if (!passed && !code) code = 'GRAMMAR_REVIEW_MISCLASSIFIED';
-  const report = { mode: reasoningReviewer ? 'grammar-reasoning-controls-not-an-edition' : 'grammar-preservation-controls-not-an-edition',
+  const report = { mode: holdouts ? 'grammar-reasoning-holdouts-not-an-edition'
+    : reasoningReviewer ? 'grammar-reasoning-controls-not-an-edition' : 'grammar-preservation-controls-not-an-edition',
     ...(reasoningReviewer ? { reviewerModel: model } : {}),
     status: passed ? 'reviewer-controls-passed' : 'failed', code,
-    caseSetSha256: GRAMMAR_CONTRAST_SHA256,
+    caseSetSha256: holdouts ? MEANING_HOLDOUT_SHA256 : GRAMMAR_CONTRAST_SHA256,
     reviewerPromptSha256: hash(views[0].view.prompt),
     glossaryBinding: views[0].view.data.glossaryBinding,
     totalCases: CAP, totalScoredCases: 10, totalUnscoredProbes: 1,
