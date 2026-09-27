@@ -81,7 +81,7 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
   const copyeditPrompt = editorialVocabulary ? EDITORIAL_VOCABULARY_PROMPT : definitionPreservation ? DEFINITION_COMPOSITION_PROMPT
     : sentenceLanguageRewrite ? SENTENCE_REWRITE_PROMPT : PLAIN_LANGUAGE_COPYEDIT_PROMPT;
   const maxRequests = polishEnabled ? 9 : frozenMode ? 8 : sentenceLanguageRewrite ? 9 : plainLanguageCopyedit ? 7 : 5;
-  const maxOutputBudget = polishEnabled ? 6600 : frozenMode ? 5400 : sentenceLanguageRewrite ? 6600 : plainLanguageCopyedit ? 5400 : claimwise ? 3600 : 2800;
+  const maxOutputBudget = polishEnabled || reasoningEditor ? 6600 : frozenMode ? 5400 : sentenceLanguageRewrite ? 6600 : plainLanguageCopyedit ? 5400 : claimwise ? 3600 : 2800;
   const publisher = generic ? 'MIT' : 'Anthropic';
   const sourceUrl = generic ? 'https://news.mit.edu/2026/new-method-enables-ai-safety-critical-situations-0914'
     : 'https://www.anthropic.com/institute/measuring-pace-of-ai-development';
@@ -226,8 +226,11 @@ The article is one company's account. No tables or appendix are available. No ou
         : { catalog: catalog.data, limits: SINGLE_PHRASE_COPYEDIT_LIMITS,
           protectedWords: PHRASE_COPYEDIT_PROTECTED_WORDS, attribution: sheet.attribution, facts: sheet.facts };
       // Validate the new rewrite's strict shape before cloning or capturing it.
+      // The isolated reasoning editor gets more response space, not more article
+      // words or attempts. All other editors and final reviewers keep their caps.
       const result = await request(copyeditPrompt,
-        editData, catalog.schema, 1200, { deferCapture: sentenceLanguageRewrite, metadata: { stage: 'copyedit' } });
+        editData, catalog.schema, reasoningEditor ? 2400 : 1200,
+        { deferCapture: sentenceLanguageRewrite, metadata: { stage: 'copyedit' } });
       const proposal = sentenceLanguageRewrite ? result.payload : result;
       if (!sentenceLanguageRewrite) capture.rawCopyedit = structuredClone(proposal);
       let applied;

@@ -2083,3 +2083,53 @@ requests and their earlier meaning veto, and made no provider request. Vocabular
 and polish captures also replayed exactly under the new runtime. Thirteen shared
 adapter/model/policy/legacy/qualification files stayed byte-identical. These checks
 do not establish account quota or approve the eventual article.
+
+### Model-only editor live result — output cap reached (September 26 Eastern)
+
+Carlos explicitly approved automatic editing of the original saved MIT draft and
+source excerpts through the existing GitHub secret and Cloudflare provider.
+[Run 36281188522](https://github.com/itworksinprod/first-fold/actions/runs/36281188522)
+used trusted main `908e7e3fe0d8ffadaa0b6bdc413ef9872ba29f15`, owner/manual/attempt
+one. It failed at “Inspect the selected bounded diagnostic without delivery”:
+`WORKERS_AI_EDITORIAL_FORMAT_INVALID`, `OUTPUT_TOKEN_LIMIT`, with 1,200 reported
+completion tokens against the 1,200 requested cap. This is an output-limit failure,
+not a reported free-quota denial or a factual/meaning rejection.
+
+Only one editor/network request ran. No parsed editor response, final draft or
+reviewer verdict was retained; no email, discovery or daily-delivery change occurred.
+Artifact `10919175662` ZIP SHA-256 matched GitHub metadata:
+`64b1a5d7ba560972d6c477e793bb930697ca7a2734c144f785002e10c13a9b2b`.
+The decrypted capture remains private. Its request matches the earlier composition
+request except model identity, and a synthetic length-limited response reproduces
+the recorded failure state offline. This is **not** a replay of the original raw
+response, which was not retained, nor evidence about the unfinished draft's quality.
+All 98 focused adapter/frozen-diagnostic tests pass. Do not rerun unchanged or
+disable the truncation guard; any further experiment must state its new bounded
+output budget and retain the article-length and independent-review requirements.
+
+Independent inspection confirmed HOLD with no plumbing fault and no basis to
+judge unseen prose or attribute the token split to reasoning. The proposed next
+single-variable trial is an editor cap of 2,400 instead of 1,200 tokens (maximum
+eight requests / 6,600 requested tokens overall), with all other inputs, settings
+and review gates unchanged. This proposal is not implemented or dispatched.
+
+### Editor response-budget-only adjustment — implementation checkpoint
+
+Carlos approved the next single-variable trial. Only the opt-in
+`frozen-reasoning-language` editor cap changes from 1,200 to 2,400. Its maximum
+combined requested output becomes 6,600 tokens across at most eight one-attempt
+requests; each final reviewer remains capped at 600. All other modes retain
+their previous limits. The model, prompt, schema, source data, glossary, timeout,
+temperature and exact final review gates are unchanged. Article length remains
+110–225 body words; extra response space does not relax that requirement.
+No retries, truncated-output recovery, email or daily-workflow changes are added.
+The old request and failure are preserved by their trusted commit/capture hashes.
+Implementation and live verification for this budget-only change follow separately.
+
+Preflight passed all 1,498 build/unit tests. Independent inspection passed 27
+focused tests and found no blocker for the one authorized no-email trial. The
+actual-input offline comparison proves the 10,502-byte request is identical to
+run 36281188522 after restoring only `max_tokens` to 1,200; 25 historical reviewer
+requests and the prior meaning veto remain unchanged. No provider calls occurred
+during preflight. Completion, readable prose and factual/meaning acceptance are
+not established by setup checks.

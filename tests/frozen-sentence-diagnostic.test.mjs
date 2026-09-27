@@ -84,7 +84,7 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
       const index = requests.length; requests.push(request);
       assert.equal(request.model, reasoning && index === 0 ? FREE_REASONING_WRITER_MODEL : DEFAULT_CLOUDFLARE_AI_MODEL);
       assert.equal(request.maxAttempts, 1);
-      assert.equal(request.maxTokens, index === 0 || (polishEnabled && index === 1) ? 1200 : 600);
+      assert.equal(request.maxTokens, reasoning && index === 0 ? 2400 : index === 0 || (polishEnabled && index === 1) ? 1200 : 600);
       assert.equal(request.timeoutMs, index === 0 || (polishEnabled && index === 1) ? 90000 : 30000);
       assert.equal(request.temperature, 0.1);
       const { body } = buildWorkersAiRequest(request);
@@ -156,7 +156,7 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
     } });
   assert.equal(result.report.modelRequests, requests.length);
   assert.equal(result.report.networkRequests, network.length);
-  assert.ok(requests.length <= (polishEnabled ? 9 : 8) && result.report.outputBudget <= (polishEnabled ? 6600 : 5400));
+  assert.ok(requests.length <= (polishEnabled ? 9 : 8) && result.report.outputBudget <= (polishEnabled || reasoning ? 6600 : 5400));
   assert.equal(result.report.emailSent, false); assert.equal(result.report.searchQueries, 0);
   assert.doesNotMatch(JSON.stringify(result.report), /PRIVATE_|Private synthetic/);
   return { ...result, requests, network, f, after };
@@ -435,13 +435,13 @@ test('vocabulary mode rejects changed private baselines and forged glossaries be
   assert.equal(mismatch.report.code,'DEFINITION_GLOSSARY_BINDING');assert.equal(mismatch.requests.length,0);
 });
 
-test('reasoning experiment changes only editor model, with qualified Llama reviews and original composition input', async () => {
+test('reasoning experiment keeps its model and input with a 2400-token editor and unchanged qualified reviews', async () => {
   const r = await run({ definition: true, reasoning: true });
   assert.equal(r.report.status, 'draft-awaiting-manual-review');
   assert.equal(r.report.mode, 'frozen-reasoning-language-rewrite-awaiting-manual-review');
   assert.equal(r.sealed.copyeditStrategy, 'cloudflare-reasoning-editor-v1');
   assert.equal(r.sealed.copyeditPromptSha256, sha(DEFINITION_COMPOSITION_PROMPT));
-  assert.equal(r.report.modelRequests, 8); assert.equal(r.report.outputBudget, 5400);
+  assert.equal(r.report.modelRequests, 8); assert.equal(r.report.outputBudget, 6600);
   assert.equal(r.sealed.polishPromptSha256, undefined); assert.equal(r.sealed.intermediateCopyedit, undefined);
   assert.deepEqual(r.sealed.reviewerQualification, DEFINITION_REVIEW_QUALIFICATION);
   assert.equal(r.sealed.calls[0].model, FREE_REASONING_WRITER_MODEL);
@@ -464,11 +464,27 @@ test('reasoning editor and every reviewer have non-interchangeable endpoints and
     profile: 'mit-generalization', claimwise: true, sentenceLanguageRewrite: true, frozenBaselineText: fixture().text,
     definitionPreservation: true, reasoningEditor: true }), /FACT_SUMMARY_NETWORK/);
 });
+test('larger reasoning-editor allowance leaves reviewer requests and article word limits unchanged', async () => {
+  const larger = await run({ definition: true, reasoning: true });
+  const existing = await run({ definition: true, vocabulary: true });
+  assert.equal(larger.network[0].body.max_tokens, 2400);
+  assert.equal(existing.network[0].body.max_tokens, 1200);
+  assert.deepEqual(larger.network.slice(1), existing.network.slice(1));
+  const overlong = await run({ definition: true, reasoning: true, mutateProposal: p => {
+    for (const [i, sentence] of p.sentences.entries()) {
+      sentence.text = `MIT ${Array.from({length:45}, (_,j) => `term${i}${j}`).join(' ')}.`;
+    }
+  } });
+  assert.equal(overlong.report.code, 'FACT_SUMMARY_LENGTH');
+  assert.equal(overlong.requests.length, 1);
+  assert.equal(overlong.report.outputBudget, 2400);
+  assert.deepEqual(overlong.sealed.fieldReviews, []);
+});
 test('reasoning-only, truncated, unsupported format and quota responses stop without fallback or review', async () => {
   for (const rejection of ['reasoning-only', 'truncated', 'unsupported-format', 'quota']) {
     const r = await run({ definition: true, reasoning: true, rejection, rejectAt: 0 });
     assert.equal(r.report.status, 'failed'); assert.equal(r.requests.length, 1);
-    assert.equal(r.report.outputBudget, 1200); assert.deepEqual(r.sealed.fieldReviews, []);
+    assert.equal(r.report.outputBudget, 2400); assert.deepEqual(r.sealed.fieldReviews, []);
     if (rejection === 'truncated') assert.equal(r.report.failure.formatReason, 'OUTPUT_TOKEN_LIMIT');
   }
 });
