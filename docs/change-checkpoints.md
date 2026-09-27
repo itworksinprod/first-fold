@@ -2372,3 +2372,13 @@ without literal definition pasting. Sampling, models, private packet, word
 limits, locks and review requirements are unchanged. All 1,556 tests and scoped
 independent implementation review pass. See the
 [receipt and review limitations](checkpoints/direct-definition-editor.md).
+
+### Name-preserving editor — live automated pass
+
+Run 36289375100 on `a853a60` produced a 149-word saved-article candidate. All
+source and meaning fields passed within eight calls / 6,600 requested tokens.
+Artifact digest verification and exact offline capture replay passed. This is
+not yet readability approval or proof of production/unseen-article quality.
+The [receipt](checkpoints/direct-definition-editor.md) preserves hashes and
+the remaining full-text-review permission boundary. No daily settings, email
+recipient, billing configuration or editorial threshold changed.

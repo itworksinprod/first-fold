@@ -1,6 +1,6 @@
 # Direct-definition editor checkpoint
 
-Status: both live direct-edit runs held; name-preserving composition repair in preflight.
+Status: name-preserving live run passed automated checks; full readability review pending.
 
 Carlos requested continued implementation and verification without continuation
 prompts. The previous context-assisted trial passed factual/meaning checks but
@@ -124,3 +124,25 @@ name-losing output before review and preserves all original editor input except
 the derived name anchors. Request size: 9,140 bytes; system prompt/schema SHA-256
 `3707f8e0ac1769f90da50665e36cf6f3a7fff3d849513993bf809044e9b2de52`.
 This authorizes no quality claim: the next live candidate remains unqualified.
+
+## Name-preserving live result: automated pass, final review pending
+
+[Run 36289375100](https://github.com/itworksinprod/first-fold/actions/runs/36289375100)
+used trusted main `a853a6037052d22e66df8882f8d51cff44102373`. Its 149-word body
+passed the containment gate, all four source checks and all required meaning
+checks. Eight single-attempt calls used at most 6,600 requested output tokens;
+there was no truncation, retry, search, email or production promotion.
+
+The encrypted artifact's digest was verified before local decryption. Exact
+offline request/parsed-response replay reproduced every captured result with
+zero actual network calls. These results establish an automated pass on this
+saved article, not independent readability approval or unseen-article success.
+Explicit permission for full local draft/source inspection has been requested
+because the independent reviewing agent's privacy boundary blocked that step.
+
+Artifact `10922125038`, 80,363 bytes; ZIP SHA-256
+`def0c0e0a51c4db1b0173f8afaa2f047036ca9da55a75f85dd9199f1b35ff0c4`.
+Capture SHA-256
+`fada8d01580821cc7a8a3836c836a7daed39a63a7822ecb38988cebebf30c343`.
+Final draft SHA-256
+`af75d19d28c412cbea76a2402e4d1f596c6983d485aefbe91f07264fe7b4b123`.
