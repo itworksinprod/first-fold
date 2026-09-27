@@ -1,7 +1,7 @@
 # Fresh meaning-review holdouts
 
-Status: expected answers independently adjudicated before inference; runtime
-preflight complete. No live result is claimed by this preparation.
+Status: the single live holdout test passed all ten scored cases. Independent
+outcome review is recorded below; article and production approval remain separate.
 
 The [model-only comparison](grammar-review-contrast.md) passed its ten known
 scored examples. Carlos requested proceeding to unfamiliar examples. This new
@@ -90,3 +90,47 @@ no-email test on that draft with unchanged factual and readability checks.
 Production reviewer, daily delivery, source policy and qualification records
 must not change automatically. A failed or incomplete set remains visible; it
 does not permit rerunning until a favorable result appears.
+
+## Live result — September 26, 2026 Eastern
+
+[Run 36285348148](https://github.com/itworksinprod/first-fold/actions/runs/36285348148)
+used trusted main `02fb69e6287210ef7514f553f2b7af0d5e4a4dad`, owner/manual/attempt
+one, mode `grammar-reasoning-holdouts`. All workflow steps succeeded. All eleven
+replies were structurally valid and correctly bound to their requests. The ten
+scored labels were correct; P02 was accepted and remains unscored.
+
+The explanations identified the retained actor/objects/timing (H01), possibility
+versus certainty (H02), retained eligibility (H03), swapped actors (H04), retained
+operating days (H05), expanded scope (H06), retained obligation/count/reset (H07),
+added causality (H08), retained attribution/caveat (H09), and changed quantity
+(H10). P02's explanation asserts equivalence, but that does not resolve its
+predeclared ambiguity or make it an eleventh correct answer.
+
+The run made eleven model/network requests at the unchanged maximum requested
+output budget of 6,600 tokens. No provider/format/quota errors, retries, research,
+article inputs or email occurred. No labels, prompt, limits, production policy,
+billing configuration or qualification record changed after seeing the result.
+
+Artifact `10920805058` was 62,122 bytes. Its downloaded ZIP matched GitHub SHA-256
+`c0bbed7780084d667fa9469bc2392dab69c97aa61514748c6c5335b1852db8ef`.
+The decrypted private capture SHA-256 is
+`d8af9f8c59f15c2d5da69d975926ad0e0c5270d70bd7534dd60a792ac6559f37`.
+Offline replay reproduced all eleven exact requests, parsed replies, validation,
+scoring and the full capture without network access. Raw response envelopes are
+not retained, so their hashes still cannot be independently recomputed.
+
+This is 10/10 on one small, predeclared ordinary-language holdout set, not an
+estimate of general accuracy. Together with the prior known-set pass it supports
+testing the held draft separately, but neither result establishes factual source
+support, useful prose, unfamiliar glossary handling or successful news delivery.
+No article/editor run, additional inference or production promotion was part of
+this checkpoint.
+
+Independent outcome review confirmed the capture hash and 0600 permissions,
+exact zero-network replay, fixed inputs/limits, all ten scored explanations and
+the unscored ambiguity. It found no blocker to closing this small holdout step.
+It recommended a separate **review-only, no-email** test on the exact held
+157-word candidate, without a new editor call. All mandatory source checks and
+a distinct final manual readability review must remain. The candidate's prior
+readability regression remains relevant even if its meaning checks pass; the
+holdout result cannot clear the article or replace those checks.

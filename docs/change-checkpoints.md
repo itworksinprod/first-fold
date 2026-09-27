@@ -2287,3 +2287,25 @@ review passed 51 focused/legacy tests after correcting one legacy timeout
 assertion to include the new mode, with limits unchanged. Both old live captures
 replay exactly. This clears one bounded live test, not an article or production
 reviewer change.
+
+### Fresh meaning holdouts — live pass
+
+[Run 36285348148](https://github.com/itworksinprod/first-fold/actions/runs/36285348148)
+on trusted main `02fb69e6287210ef7514f553f2b7af0d5e4a4dad` completed all eleven
+single-attempt requests with ten of ten scored labels correct. P02 remains
+unscored. Explanations identify the actual equivalences and differences; the
+[receipt](checkpoints/meaning-review-holdouts.md) records exact artifact/capture
+hashes and complete parsed-response/request replay without network access.
+The 6,600-token maximum requested output was unchanged. There were no retries,
+provider errors, article inputs, research, email or post-result label changes.
+
+This completes the live portion of the small holdout checkpoint, not a source
+audit, general reviewer qualification or article approval. A separate no-email
+held-draft test with factual and readability checks is the next possible step.
+
+Independent outcome review verified the capture/replay, frozen labels, limits
+and all ten scored rationales, closing this bounded holdout checkpoint. Its next
+proposal is review-only on the exact held 157-word candidate, with no new editor
+call, no email, all source checks and a distinct manual readability review.
+That candidate remains on HOLD; its earlier readability regression is not
+removed by correct synthetic meaning judgments.
