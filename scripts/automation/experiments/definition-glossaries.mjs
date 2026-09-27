@@ -18,6 +18,13 @@ export const SYNTHETIC_DEFINITION_SOURCE = [
   'On Monday, Mira checked exactly two routes; Niko checked none.',
 ].join('\n');
 
+// Fictional printshop vocabulary for isolated meaning-review controls only.
+// Definitions do not establish that a tool performs its intended function.
+export const PRINTSHOP_DEFINITION_SOURCE = [
+  'In this fictional printshop, a counted batch is a group of exactly twelve sheets.',
+  'Counted batches are groups of exactly twelve sheets each.',
+].join('\n');
+
 const mitDefinitions = [
   { term: 'hard constraints', definition: 'requirements that must be met', sense: 'Requirements on generated outputs.' },
   { term: 'hard constraint', definition: 'a requirement that must be met', sense: 'A requirement on a generated output.' },
@@ -44,6 +51,11 @@ const manifests = freeze([
     definitions: mitDefinitions, evidence: [{ term: 'hard constraints', passageIds: ['P2'] },
       { term: 'hard constraint', passageIds: ['P2'] }, { term: 'intermediate samples', passageIds: ['P12'] },
       { term: 'intermediate sample', passageIds: ['P12'] }] },
+  { id: 'synthetic-printshop-definitions-v1', sourceSha256: sha(PRINTSHOP_DEFINITION_SOURCE),
+    definitions: [
+      { term: 'counted batch', definition: 'a group of exactly twelve sheets', sense: 'A sheet group in the fictional printshop.' },
+      { term: 'counted batches', definition: 'groups of exactly twelve sheets each', sense: 'Sheet groups in the fictional printshop.' },
+    ], evidence: [{ term: 'counted batch', passageIds: ['P1'] }, { term: 'counted batches', passageIds: ['P2'] }] },
 ]);
 const issued = new WeakSet();
 

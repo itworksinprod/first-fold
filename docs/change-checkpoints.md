@@ -2166,3 +2166,19 @@ contrasts equivalent grammatical rewrites and definitions with actual scope or
 obligation changes. Do not adjust reviewer policy, salvage this draft, or rerun
 the article to bypass the veto. The response-cap fix is verified; general
 automatic editing and end-to-end article acceptance remain unqualified.
+
+### Grammar-versus-meaning controls — offline checkpoint complete
+
+The [frozen synthetic contrast set](checkpoints/grammar-review-contrast.md) now
+contains ten scored examples and one deliberately unscored purpose/function
+probe. Independent adjudication corrected two fixture ambiguities before any
+model calls, then cleared the labels and offline plumbing. Expected labels and
+rationales remain outside review inputs; the existing meaning prompt, schema,
+strict bindings, veto behavior and prior qualification records are unchanged.
+
+All 1,505 build/unit tests pass, including seven new tests; independent review
+also passed 19 focused/regression tests. Mocked verdicts test isolation and
+validation, not model competence. No live mode, provider call, private article
+input, email, research, billing, or daily-delivery change was introduced. The
+next separate checkpoint is the bounded synthetic reviewer diagnostic described
+in that document. The held article is not approved by this offline result.
