@@ -2204,3 +2204,27 @@ It confirmed unchanged labels and reviewer inputs, eleven real calls including
 identity, an unscored but structurally required probe, no retry after wrong
 answers, and no article-input or delivery path. This clears only the isolated
 setup and one bounded synthetic trial, not the held article or general use.
+
+### Synthetic grammar reviewer — live classification failure
+
+After Carlos explicitly approved publishing and one test,
+[run 36283997090](https://github.com/itworksinprod/first-fold/actions/runs/36283997090)
+on main `51992c6082454f1012bd669c6850a0ff29a98e07` completed all eleven synthetic
+requests. Seven of ten scored labels were correct; the ambiguous probe remains
+unscored. R02–R04 incorrectly rejected harmless grammar and/or the exact supplied
+definition. All six negative labels were correct, although R10's explanation
+reversed the change direction. Failure was `GRAMMAR_REVIEW_MISCLASSIFIED`, not
+a provider, quota or formatting error. Maximum requested output was 6,600 tokens.
+
+The [checkpoint receipt](checkpoints/grammar-review-contrast.md) records the
+verified encrypted artifact hash and exact offline replay of all eleven parsed
+responses/request bodies and final report. Nothing was rerun, relabeled or
+automatically approved. No article, email, daily-delivery or billing changes
+occurred. The evidence narrows the next fix to unreliable equivalence judgments;
+it does not establish the held draft's overall correctness or readiness.
+
+Independent outcome audit confirmed the replay and false rejections, retaining
+HOLD. Its recommended next isolated checkpoint is a reviewer-model-only
+comparison with unchanged synthetic views, prompt/schema, labels and budget,
+prepared offline before seeking new live authorization. The current result is
+preserved; no unchanged rerun, veto bypass or production reviewer change follows.

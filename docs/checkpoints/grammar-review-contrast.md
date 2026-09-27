@@ -1,7 +1,7 @@
 # Grammar versus meaning — bounded contrast diagnostic
 
-Status: independently adjudicated controls and isolated live runner implemented;
-no model calls yet.
+Status: one authorized live diagnostic completed; seven of ten scored cases
+correct. Reviewer remains unqualified for this grammatical-edit use case.
 
 Run 36282585253 produced a complete draft but the meaning reviewer rejected a
 grammatical change. The explanation may be a false positive; that does not
@@ -106,3 +106,53 @@ Pins (must change visibly if independent adjudication changes a fixture):
 - Reviewer prompt: `b0711232aac6664bf9ff040aa4edb61a8e2c3bac199949adea8132db299c9785`.
 - Cases and probe: `481ef7c7343d959e9970f6d423b83a3888d7600172a38e83bf8c8b8186fe44a8`.
 - Synthetic glossary: `caee6e7494fa292d08ea32a53b9c11527fb567e15c2f6217f92ec493ff2310b2`.
+
+## Live result — September 26, 2026 Eastern
+
+Carlos explicitly approved publishing the isolated setup and one bounded test.
+[Run 36283997090](https://github.com/itworksinprod/first-fold/actions/runs/36283997090)
+used trusted main `51992c6082454f1012bd669c6850a0ff29a98e07`, owner/manual/attempt
+one. All eleven requests returned structurally valid, bound verdicts. The failing
+step was **Inspect the selected bounded diagnostic without delivery**, code
+`GRAMMAR_REVIEW_MISCLASSIFIED`. There was no transport, format or quota failure.
+The run used eleven model/network requests and a 6,600-token requested-output
+budget, without retries, research, article input, email or billing changes.
+
+| Cases | Result |
+| --- | --- |
+| R01 identity | Correctly accepted |
+| R02 harmless grammatical rewrite | Incorrectly rejected; explanation cited the added word “that” |
+| R03 exact registered definition | Incorrectly rejected; explanation cited the definition's added words |
+| R04 grammar plus exact definition | Incorrectly rejected; explanation again cited “that” |
+| R05–R10 actual meaning changes | All correctly rejected by label |
+| P01 ambiguous construction | Accepted, still unscored |
+
+R10's label was correct, but its explanation reversed the edit direction: it
+described “designed to” as added when the final sentence removed it. Correct
+classification is therefore not evidence that every rationale was sound. The
+7/10 score describes only these frozen, known examples, not general accuracy.
+
+The encrypted ZIP (artifact `10919568347`, 64,731 bytes) matched GitHub SHA-256
+`48cb375cec12c8e00ce43f113af948f6d4dfa70ed1a13f2e3577ea2c3d7fd95d`.
+The local decrypted capture SHA-256 is
+`cab61c4a347155d536bf0a99c762a90d1975f5021b391ab0a5451b1ba30821ab`.
+Offline replay reproduced all eleven exact requests, parsed replies, validations,
+scores and the complete capture without network access. The original provider
+envelopes were not retained, so their hashes are not independently recomputable.
+
+This result supports the earlier false-positive hypothesis: the current reviewer
+can mistake harmless wording/definition changes for new assertions. It does not
+clear the held article, prove its source support/readability, or authorize a veto
+bypass. No labels, reviewer prompts, prior qualification records or production
+policies were changed after seeing the result. Independent outcome review
+confirmed the exact replay, three false rejections, R10's rationale error and
+continued HOLD. This supports a false-positive diagnosis, not a universal claim
+that the model only compares characters.
+
+Next proposed checkpoint: offline-preflight a separate model-only meaning-review
+comparison using these unchanged synthetic inputs, labels, prompt, schema and
+600-token settings. Any unsupported or truncated response must still fail closed;
+do not silently increase the budget or substitute another model mid-run. Seek
+authorization before this new inference. A bounded pass plus later fresh holdouts
+would be needed before considering qualification; no production replacement,
+article input, prompt change or second inference is authorized by this receipt.
