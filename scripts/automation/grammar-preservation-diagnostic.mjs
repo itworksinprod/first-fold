@@ -3,7 +3,8 @@ import { createHash } from 'node:crypto';
 import { GRAMMAR_PRESERVATION_CONTROLS, GRAMMAR_PRESERVATION_PROBES,
   GRAMMAR_CONTRAST_SHA256, buildGrammarPreservationViews } from './experiments/grammar-preservation-cases.mjs';
 import { validateDefinitionPreservationReview } from './experiments/definition-preservation.mjs';
-import { DEFAULT_CLOUDFLARE_AI_MODEL, buildWorkersAiRequest, workersAiFailureDiagnostic } from './free/workers-ai.mjs';
+import { DEFAULT_CLOUDFLARE_AI_MODEL, FREE_REASONING_WRITER_MODEL,
+  buildWorkersAiRequest, workersAiFailureDiagnostic, workersAiRunUrl } from './free/workers-ai.mjs';
 
 const hash = text => createHash('sha256').update(text).digest('hex');
 const failure = code => Object.assign(new Error(code), { code });
@@ -11,20 +12,24 @@ const CAP = 11, TOKENS = 600;
 const ownCodes = new Set(['GRAMMAR_REVIEW_NETWORK', 'GRAMMAR_REVIEW_PROVENANCE', 'GRAMMAR_REVIEW_MALFORMED']);
 
 export async function diagnoseGrammarPreservation({ publicKey, accountId, apiToken, now,
-  aiRequestImpl, fetchImpl, endpoint, sealDiagnostic }) {
+  aiRequestImpl, fetchImpl, endpoint, sealDiagnostic, reasoningReviewer = false }) {
+  if (typeof reasoningReviewer !== 'boolean') throw failure('GRAMMAR_REVIEW_PROFILE');
+  // Model-only opt-in, never a fallback or a production reviewer replacement.
+  const model = reasoningReviewer ? FREE_REASONING_WRITER_MODEL : DEFAULT_CLOUDFLARE_AI_MODEL;
+  const requestEndpoint = reasoningReviewer ? workersAiRunUrl(accountId, model) : endpoint;
   const controls = [...GRAMMAR_PRESERVATION_CONTROLS, ...GRAMMAR_PRESERVATION_PROBES];
   const views = buildGrammarPreservationViews(), calls = [], results = [];
   let modelRequests = 0, networkRequests = 0, code = null;
-  // No configurable cases, labels, model, prompt, budget, retries or identity bypass.
+  // Only the fixed model-only profile can vary; no caller-selected model or cases.
   for (const [index, { caseId, view }] of views.entries()) {
     const control = controls[index];
     const prompt = `${view.prompt}\nJSON schema: ${JSON.stringify(view.schema)}`;
-    const options = { model: DEFAULT_CLOUDFLARE_AI_MODEL,
+    const options = { model,
       messages: [{ role: 'system', content: prompt }, { role: 'user', content: JSON.stringify(view.data) }],
       schema: view.schema, responseFormat: 'json_object', maxTokens: TOKENS, maxAttempts: 1,
       temperature: 0.1, timeoutMs: 30000, maxRequestBytes: 70000, maxResponseBytes: 100000 };
     const { body } = buildWorkersAiRequest(options), bodyText = JSON.stringify(body);
-    const requestSha256 = hash(JSON.stringify({ provider: 'cloudflare-workers-ai', model: DEFAULT_CLOUDFLARE_AI_MODEL, body }));
+    const requestSha256 = hash(JSON.stringify({ provider: 'cloudflare-workers-ai', model, body }));
     const call = { caseId, dimension: 'meaning', request: view.data, prompt, schema: view.schema,
       requestSha256, promptSha256: hash(prompt), requestBytes: Buffer.byteLength(bodyText) };
     calls.push(call);
@@ -35,7 +40,7 @@ export async function diagnoseGrammarPreservation({ publicKey, accountId, apiTok
       const result = await aiRequestImpl({ ...options, accountId, apiToken,
         validatePayload: value => Boolean(value && typeof value === 'object' && !Array.isArray(value)),
         fetchImpl: async (url, init) => {
-          if (!active || networkViolation || url !== endpoint || init?.method !== 'POST' || init?.redirect !== 'error' ||
+          if (!active || networkViolation || url !== requestEndpoint || init?.method !== 'POST' || init?.redirect !== 'error' ||
               init.body !== bodyText || requests >= 1 || networkRequests >= CAP) {
             networkViolation = true;
             throw failure('GRAMMAR_REVIEW_NETWORK');
@@ -45,7 +50,7 @@ export async function diagnoseGrammarPreservation({ publicKey, accountId, apiTok
         } });
       active = false;
       if (networkViolation || requests !== 1) throw failure('GRAMMAR_REVIEW_NETWORK');
-      if (result.provider !== 'cloudflare-workers-ai' || result.model !== DEFAULT_CLOUDFLARE_AI_MODEL ||
+      if (result.provider !== 'cloudflare-workers-ai' || result.model !== model ||
           result.requestSha256 !== requestSha256 || !/^[a-f0-9]{64}$/u.test(result.responseSha256 ?? '') ||
           result.attemptCount !== 1) throw failure('GRAMMAR_REVIEW_PROVENANCE');
       // Strict validation precedes cloning so accessors/extras cannot be erased.
@@ -71,7 +76,8 @@ export async function diagnoseGrammarPreservation({ publicKey, accountId, apiTok
   const scoredResults = results.filter(r => r.scored);
   const passed = !code && results.length === CAP && scoredResults.length === 10 && scoredResults.every(r => r.passed);
   if (!passed && !code) code = 'GRAMMAR_REVIEW_MISCLASSIFIED';
-  const report = { mode: 'grammar-preservation-controls-not-an-edition',
+  const report = { mode: reasoningReviewer ? 'grammar-reasoning-controls-not-an-edition' : 'grammar-preservation-controls-not-an-edition',
+    ...(reasoningReviewer ? { reviewerModel: model } : {}),
     status: passed ? 'reviewer-controls-passed' : 'failed', code,
     caseSetSha256: GRAMMAR_CONTRAST_SHA256,
     reviewerPromptSha256: hash(views[0].view.prompt),

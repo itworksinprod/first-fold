@@ -178,7 +178,7 @@ test('CLI mode retains owner/manual authority and encrypts all prompts and respo
 test('workflow tests definition mode before credentials and scopes unrelated saved inputs away from it', async () => {
   const workflow = await readFile(new URL('../.github/workflows/private-writer-diagnostic.yml', import.meta.url), 'utf8');
   assert.match(workflow, /- definition-preservation-controls/);
-  assert.match(workflow, /timeout-minutes: \$\{\{ inputs.mode == 'definition-preservation-controls' && 15 \|\| inputs.mode == 'grammar-preservation-controls' && 10 \|\| 8 \}\}/);
+  assert.match(workflow, /timeout-minutes: \$\{\{ inputs.mode == 'definition-preservation-controls' && 15 \|\| \(inputs.mode == 'grammar-preservation-controls' \|\| inputs.mode == 'grammar-reasoning-controls'\) && 10 \|\| 8 \}\}/);
   assert.ok(22 * 30 + 180 < 15 * 60, 'Per-call worst case leaves setup/artifact time');
   assert.ok(workflow.indexOf('Test definition-aware reviewer boundaries') < workflow.indexOf('secrets.CLOUDFLARE_AI_API_TOKEN'));
   assert.match(workflow, /node --test tests\/definition-preservation.test.mjs tests\/definition-preservation-diagnostic.test.mjs/);

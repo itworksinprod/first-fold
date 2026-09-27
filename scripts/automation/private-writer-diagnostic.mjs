@@ -65,7 +65,7 @@ export function assertDiagnosticAuthority(env) {
 }
 
 export function resolvePrivateWriterDiagnosticMode(value = "source") {
-  if (value === 'grammar-preservation-controls') return value;
+  if (['grammar-preservation-controls', 'grammar-reasoning-controls'].includes(value)) return value;
   if (value === 'saved-final-review') return value;
   if (value === 'definition-preservation-controls') return value;
   if (['sentence-language-second-article', 'frozen-sentence-language', 'frozen-definition-language', 'frozen-vocabulary-language', 'frozen-reasoning-language'].includes(value)) return value;
@@ -169,10 +169,10 @@ export async function diagnoseOneWriter({ publicKey, accountId, apiToken, now = 
   const savedFinalPlan = await prepareSavedFinalDiagnostic(mode, savedFinalReviewB64);
   const endpoint = workersAiRunUrl(accountId, DEFAULT_CLOUDFLARE_AI_MODEL);
   if (typeof apiToken !== "string" || !apiToken.trim()) throw failure("DIAGNOSTIC_CONFIGURATION_INVALID");
-  if (mode === 'grammar-preservation-controls') {
+  if (['grammar-preservation-controls', 'grammar-reasoning-controls'].includes(mode)) {
     const { diagnoseGrammarPreservation } = await import('./grammar-preservation-diagnostic.mjs');
     return diagnoseGrammarPreservation({ publicKey, accountId, apiToken, now,
-      aiRequestImpl, fetchImpl, endpoint, sealDiagnostic });
+      aiRequestImpl, fetchImpl, endpoint, sealDiagnostic, reasoningReviewer: mode === 'grammar-reasoning-controls' });
   }
   if (mode === 'saved-final-review') {
     const {runSavedFinalReviews} = await import('./saved-final-review-diagnostic.mjs');

@@ -2228,3 +2228,19 @@ HOLD. Its recommended next isolated checkpoint is a reviewer-model-only
 comparison with unchanged synthetic views, prompt/schema, labels and budget,
 prepared offline before seeking new live authorization. The current result is
 preserved; no unchanged rerun, veto bypass or production reviewer change follows.
+
+### Reviewer-model-only comparison — offline preflight complete
+
+The isolated `grammar-reasoning-controls` mode selects Cloudflare GPT-OSS-120B
+instead of Llama, retaining the exact eleven synthetic request bodies, labels,
+reviewer prompts/schema, temperature, one-attempt/600-token/30-second limits and
+maximum 6,600-token request budget. No reasoning-effort override, fallback,
+article inputs, qualification update or production replacement is included.
+
+All 1,517 build/unit tests passed. Independent review passed 42 focused/legacy
+tests and found no blocker. The previous live Llama artifact still replays
+exactly with its 7/10 failure; a separate offline preflight compared every
+proposed request body with that artifact and preserved its verdicts. Neither
+check made a network call or established the alternative model's competence.
+Explicit approval is requested before publishing and one live comparison.
+Truncation would be an incomplete experiment, never an automatic budget increase.

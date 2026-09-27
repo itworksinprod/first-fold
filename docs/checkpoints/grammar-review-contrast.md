@@ -156,3 +156,42 @@ do not silently increase the budget or substitute another model mid-run. Seek
 authorization before this new inference. A bounded pass plus later fresh holdouts
 would be needed before considering qualification; no production replacement,
 article input, prompt change or second inference is authorized by this receipt.
+
+## Model-only comparison — offline preflight
+
+The separate `grammar-reasoning-controls` mode selects only Cloudflare-hosted
+`@cf/openai/gpt-oss-120b`. It is not a production reviewer replacement or an
+automatic fallback. The existing Llama mode and qualification record remain
+unchanged. These are different models at the same provider, not independent
+providers or evidence of independent factual verification.
+
+All eleven serialized provider bodies, aligned sentence pairs, definitions,
+labels, prompts and schemas are unchanged. Only model identity, its fixed native
+endpoint and diagnostic-mode metadata differ. The test keeps 600 requested output
+tokens, 30 seconds and one attempt per call; at most eleven calls / 6,600 tokens.
+No reasoning-effort override is added. An empty, truncated, malformed or unsupported
+response, quota denial or network/provenance failure stops the comparison. No
+budget increase, model fallback, repeated trial or salvaged partial verdict is
+permitted automatically. A truncation would make the experiment incomplete; it
+would not establish the alternative model's semantic accuracy.
+
+The [Cloudflare model page](https://developers.cloudflare.com/workers-ai/models/gpt-oss-120b/)
+documents the native endpoint and max-token/response-format parameters. The
+[pricing page](https://developers.cloudflare.com/workers-ai/platform/pricing/)
+does not list this model as paid-only; Workers Free rejects excess daily usage.
+This comparison enables no billing. Published documentation and an allowlisted
+model are not proof of the account's current quota or plan.
+
+Local build/unit verification passed 1,517/1,517 tests, including five new tests
+for exact-body identity, wrong-label scoring, truncated/malformed/quota responses,
+endpoint and provenance substitution, and article-secret exclusion. Independent
+preflight passed 42 focused/regression tests with no blocker. Offline replay of
+the original Llama artifact remains exact, and the model-only preflight compared
+all eleven bodies with the live capture while retaining its three false
+rejections. That preflight reused old verdicts and made zero network calls; it
+does not predict GPT-OSS's answers.
+
+The same 10/10 scored-label criterion and structurally valid unscored probe apply.
+Passing would still require independent result review and later fresh holdouts
+before any qualification proposal. Publication and one live comparison await
+explicit approval; no new inference, article, email or production change has run.

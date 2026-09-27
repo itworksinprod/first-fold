@@ -149,3 +149,12 @@ a valid verdict for the diagnostic to be complete. The existing encryption,
 owner/main/manual/first-attempt gates and one-day retention remain in force.
 Passing these known controls is not a held-article approval or a general reviewer
 qualification, and nothing updates production policy automatically.
+
+The separate `grammar-reasoning-controls` comparison changes only the fixed
+model/endpoint to Cloudflare-hosted GPT-OSS-120B. It preserves the same eleven
+inputs, prompt/schema, labels, 600-token cap, 30-second deadline and one-attempt
+limits. The previous Llama mode remains available without any default change.
+No private article secrets are made available to either mode. A truncated
+response is an incomplete failed comparison, not permission to raise the cap,
+switch models or retry. See the checkpoint's model-only preflight for evidence
+and authorization status; a mock local pass is not live reviewer qualification.

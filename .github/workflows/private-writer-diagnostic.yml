@@ -39,6 +39,7 @@ on:
           - text-preservation-paraphrase
           - definition-preservation-controls
           - grammar-preservation-controls
+          - grammar-reasoning-controls
       public_key:
         description: Ephemeral RSA-3072 public key in base64 DER format (never a private key)
         required: true
@@ -52,9 +53,9 @@ jobs:
     if: github.repository == 'itworksinprod/first-fold' && github.ref == 'refs/heads/main' && github.actor == 'itworksinprod' && github.run_attempt == 1
     runs-on: ubuntu-latest
     # The 22-call definition control set allows 30 seconds per request plus
-    # credential-free setup and artifact upload. The 11-call grammar set gets 10
+    # credential-free setup and artifact upload. Both 11-call grammar modes get 10
     # minutes; all other modes retain their existing 8-minute limit.
-    timeout-minutes: ${{ inputs.mode == 'definition-preservation-controls' && 15 || inputs.mode == 'grammar-preservation-controls' && 10 || 8 }}
+    timeout-minutes: ${{ inputs.mode == 'definition-preservation-controls' && 15 || (inputs.mode == 'grammar-preservation-controls' || inputs.mode == 'grammar-reasoning-controls') && 10 || 8 }}
     permissions:
       contents: read
     steps:
