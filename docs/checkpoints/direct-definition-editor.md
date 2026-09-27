@@ -146,3 +146,10 @@ Capture SHA-256
 `fada8d01580821cc7a8a3836c836a7daed39a63a7822ecb38988cebebf30c343`.
 Final draft SHA-256
 `af75d19d28c412cbea76a2402e4d1f596c6983d485aefbe91f07264fe7b4b123`.
+
+Independent permitted structural/integrity review also passed: exact capture
+replay and hashes, 149 words, only U1/U3/U6 changed, headline/order/locks exact,
+names retained and no new parentheses. Seven source judgments and three changed
+unit meaning judgments passed; four unchanged claims received identity checks.
+Local capture permissions are 0600. No private prose was printed or reconstructed
+by that reviewer; readability and citation-adequacy certification remain pending.
