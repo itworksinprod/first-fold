@@ -187,7 +187,7 @@ test('workflow tests definition mode before credentials and scopes unrelated sav
   assert.doesNotMatch(workflow, /RESEND|OPENAI_API_KEY|schedule:|contents: write|pull-requests: write/);
   const secrets = [...workflow.matchAll(/secrets\.([A-Z0-9_]+)/gu)].map(m => m[1]);
   assert.deepEqual([...new Set(secrets)].sort(), ['CLOUDFLARE_AI_API_TOKEN', 'FIRST_FOLD_CONTEXT_EDITOR_PACKET_B64', 'FIRST_FOLD_FINAL_REVIEW_PACKET_B64', 'FIRST_FOLD_FROZEN_BASELINE_B64', 'FIRST_FOLD_SENTENCE_REPAIR_B64']);
-  assert.equal((workflow.match(/\(inputs.mode == 'context-two-unit-repair' \|\| inputs.mode == 'context-two-unit-plain-repair' \|\| inputs.mode == 'context-complete-repair'\) && secrets.FIRST_FOLD_SENTENCE_REPAIR_B64 \|\| ''/gu)??[]).length,2);
+  assert.equal((workflow.match(/\(inputs.mode == 'context-two-unit-repair' \|\| inputs.mode == 'context-two-unit-plain-repair' \|\| inputs.mode == 'context-complete-repair' \|\| inputs.mode == 'context-span-repair'\) && secrets.FIRST_FOLD_SENTENCE_REPAIR_B64 \|\| ''/gu)??[]).length,2);
   assert.equal((workflow.match(/inputs.mode == 'saved-final-review' && secrets.FIRST_FOLD_FINAL_REVIEW_PACKET_B64 \|\| ''/gu) ?? []).length, 2);
   assert.equal((workflow.match(/\(inputs.mode == 'frozen-sentence-language' \|\| inputs.mode == 'frozen-definition-language' \|\| inputs.mode == 'frozen-vocabulary-language' \|\| inputs.mode == 'frozen-reasoning-language'\) && secrets.FIRST_FOLD_FROZEN_BASELINE_B64/gu) ?? []).length, 2);
 });

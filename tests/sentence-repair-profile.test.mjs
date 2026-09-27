@@ -19,8 +19,10 @@ test('repair input is confined to its one explicit no-email mode',async()=>{
   await assert.rejects(prepareSentenceRepair('context-two-unit-repair',''),/SENTENCE_REPAIR_PACKET_INVALID/);
   await assert.rejects(prepareSentenceRepair('context-two-unit-plain-repair',''),/SENTENCE_REPAIR_PACKET_INVALID/);
   await assert.rejects(prepareSentenceRepair('context-complete-repair',''),/SENTENCE_REPAIR_PACKET_INVALID/);
+  await assert.rejects(prepareSentenceRepair('context-span-repair',''),/SENTENCE_REPAIR_PACKET_INVALID/);
   await assert.rejects(diagnoseFactSummary({plainRepair:true}),/FACT_SUMMARY_MODE/);
   await assert.rejects(diagnoseFactSummary({completeRepair:true}),/FACT_SUMMARY_MODE/);
+  await assert.rejects(diagnoseFactSummary({spanRepair:true}),/FACT_SUMMARY_MODE/);
   await assert.rejects(diagnoseFactSummary({repairPacketText:'private'}),/FACT_SUMMARY_MODE/);
 });
 test('repair instructions preserve full definitions without article-specific replacement answers',()=>{

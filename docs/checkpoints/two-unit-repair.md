@@ -1,7 +1,7 @@
 # Review-guided two-unit repair
 
-Status: two live repairs held, including an automated pass rejected by full-text
-review. Complete-task refinement passes preflight; its live prose is unqualified.
+Status: three live repairs held, including automated passes rejected by full-text
+review. A defect-span refinement is under preflight; its live prose is unqualified.
 
 This is a manually scoped repair experiment on saved research. It is not proof
 of an unassisted general writer, source discovery, daily reliability or paid-model
@@ -152,3 +152,48 @@ with U6 unchanged and zero provider/reviewer calls. Its old mode still replays
 exactly. Actual-packet preflight request: 11,784 bytes; prompt/schema SHA-256:
 `61ab4de87962dbed81c15801e6c7cbbc573586cdd6465893771b257f37478433`.
 Independent review clears one bounded trial, not the resulting prose.
+
+## Complete-task outcome — changed sentences, unrepaired defects
+
+[Run 36359045029](https://github.com/itworksinprod/first-fold/actions/runs/36359045029)
+on `7d26c9b76d7134fb2790338309b7279f1a5eca53` passed automated reviews and exact
+offline replay within eight calls / 6,600 requested tokens. Its 151-word output
+changed both target sentences, but both full-text reviewers retained HOLD.
+U1 changed an unrelated clause while retaining the redundant phrase. U6 retained
+the incomplete concept, and changed the deployment-evidence caveat to a different
+implementation claim. The meaning reviewer incorrectly called the remainder
+identical. A completed edit is not proof that its defect was repaired.
+
+Artifact `10944249387`, 84,872 bytes, ZIP SHA-256:
+`e7391b67d2ef1680cf256f50ec02ea81014c20e21d1af7b9829e72c513d88237`.
+Capture SHA-256:
+`38c177c7cf85c9aeb124d92977c3cc4e56ca548d6fd911ba385858f12c937309`.
+Draft SHA-256:
+`e95331d40b5c738502b1cdd73a55d531b7eccc3dcd2ee3752dcdafe6d42366b2`.
+No email, production change or semantic qualification occurred.
+
+## Reviewed defect-span contract
+
+`context-span-repair` narrows the permitted edit locations inside the same two
+sentences. Manually reviewed offsets and substring hashes bind to the exact
+unapproved seed; they supply locations, not replacement text. The defective span
+itself must change, while its prefix and suffix remain byte-exact. In particular,
+the original deployment caveat and predicate cannot be changed. Full proposal
+validation, other-unit locks, 110–225 words, all original-to-final reviews and
+independent semantic/readability review remain required.
+
+This is a manual-scoping experiment, not a newly relaxed general phrase editor.
+The old modes remain unchanged. It uses the same saved private packets, providers,
+temperatures, one-attempt behavior and eight-call/6,600-token ceiling. No new secret
+or replacement example is added. A phrase may satisfy the boundary but still fail
+meaning or readability; the contract does not claim to solve reviewer accuracy.
+
+All 1,574 tests pass. Actual-input preflight verifies both exact defect locations
+and locked clauses with zero network calls. Request size: 12,008 bytes;
+prompt/schema SHA-256:
+`da9d610d7d620f3aad1227c3fb9995e660e1db2d7af0ebbcc6b828802531168d`.
+Offline regression rejects both recent captured candidates, and separately the
+deployment-to-implementation substitution without another failure masking it.
+The old complete-task mode still replays exactly. Independent preflight checked
+the actual private span boundaries/hashes and all regressions, and passed 114
+focused/legacy tests. It clears one bounded trial, not final prose approval.

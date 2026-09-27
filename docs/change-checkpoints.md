@@ -2413,3 +2413,12 @@ original/seed/full definitions under concise guidance. All 1,569 tests, exact
 previous-capture rejection and 109-test independent preflight pass. No meaning
 gate, daily setting, provider, cost ceiling or recipient changed. See the
 [receipt](checkpoints/two-unit-repair.md); new live prose is still unqualified.
+
+### Complete-task repair — defect locations must change
+
+Run 36359045029 passed automated checks but failed independent full-text review:
+the defects persisted and a deployment caveat changed meaning. The next isolated
+contract requires edits to the reviewed defect spans themselves and locks all
+surrounding text. Both captured failures are rejected offline; 1,574 tests and
+actual-input preflight pass. This is manual edit scoping, not automatic semantic
+approval or a production change. See the [receipt](checkpoints/two-unit-repair.md).
