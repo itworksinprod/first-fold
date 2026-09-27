@@ -38,6 +38,7 @@ on:
           - text-preservation-holdouts
           - text-preservation-paraphrase
           - definition-preservation-controls
+          - grammar-preservation-controls
       public_key:
         description: Ephemeral RSA-3072 public key in base64 DER format (never a private key)
         required: true
@@ -51,8 +52,9 @@ jobs:
     if: github.repository == 'itworksinprod/first-fold' && github.ref == 'refs/heads/main' && github.actor == 'itworksinprod' && github.run_attempt == 1
     runs-on: ubuntu-latest
     # The 22-call definition control set allows 30 seconds per request plus
-    # credential-free setup and artifact upload. All earlier modes stay at 8.
-    timeout-minutes: ${{ inputs.mode == 'definition-preservation-controls' && 15 || 8 }}
+    # credential-free setup and artifact upload. The 11-call grammar set gets 10
+    # minutes; all other modes retain their existing 8-minute limit.
+    timeout-minutes: ${{ inputs.mode == 'definition-preservation-controls' && 15 || inputs.mode == 'grammar-preservation-controls' && 10 || 8 }}
     permissions:
       contents: read
     steps:
@@ -70,6 +72,8 @@ jobs:
         run: node --test tests/isolated-preservation-review.test.mjs tests/isolated-preservation-diagnostic.test.mjs tests/text-preservation-review.test.mjs tests/text-preservation-diagnostic.test.mjs
       - name: Test definition-aware reviewer boundaries before credentials
         run: node --test tests/definition-preservation.test.mjs tests/definition-preservation-diagnostic.test.mjs
+      - name: Test synthetic grammar reviewer boundaries before credentials
+        run: node --test tests/grammar-preservation-cases.test.mjs tests/grammar-preservation-diagnostic.test.mjs
       - name: Test isolated sentence rewriting before credentials
         run: node --test tests/sentence-language-rewrite.test.mjs tests/sentence-language-diagnostic.test.mjs
       - name: Test frozen-baseline boundaries before credentials

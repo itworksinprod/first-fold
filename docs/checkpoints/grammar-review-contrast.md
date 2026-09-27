@@ -1,6 +1,7 @@
-# Grammar versus meaning — offline contrast preparation
+# Grammar versus meaning — bounded contrast diagnostic
 
-Status: independently adjudicated offline controls; no model calls or live mode.
+Status: independently adjudicated controls and isolated live runner implemented;
+no model calls yet.
 
 Run 36282585253 produced a complete draft but the meaning reviewer rejected a
 grammatical change. The explanation may be a false positive; that does not
@@ -58,16 +59,17 @@ This completes only offline preparation. The next separate checkpoint is a
 bounded live diagnostic using these frozen cases and the existing meaning
 reviewer, not another article run. The previous draft remains on hold.
 
-## Boundaries and any future run
+## Live-run boundaries
 
 Only aligned sentences and relevant definitions enter the unchanged review view.
 Case IDs, expected labels and rationales remain outside it. The existing prompt,
 schema, strict binding and veto behavior do not change. No private article input,
-provider credentials, inference, research, email or daily changes are added here.
+research, email or daily changes are added here. The opt-in diagnostic uses the
+existing Cloudflare credential only for these synthetic reviewer requests.
 The unit tests use invented verdicts to test data isolation and validation, not
 to claim that the model knows the correct answers.
 
-Any separately prepared live diagnostic should make one meaning request per case
+The separate live diagnostic makes one meaning request per case
 and probe, at most 11 single-attempt requests of 600 requested output tokens each
 (6,600 maximum). No identity shortcut, source-review call, retry, repair, model
 switch or article run is part of this contrast. A valid but incorrect answer is
@@ -77,8 +79,27 @@ ten scored answers correct for this bounded set's criterion to be met. Report
 the unscored probe separately. Passing must not clear the held article, update
 prior qualification records, or relax production gates.
 
-There is currently **no executable provider path or workflow mode** for this set.
-No live test or publication decision is implied by a passing local test suite.
+The owner/main/manual/first-attempt workflow mode is
+`grammar-preservation-controls`. Its runner is
+`scripts/automation/grammar-preservation-diagnostic.mjs`. All case and runner
+tests execute before the provider secret is made available. The job has ten
+minutes for at most eleven 30-second requests plus setup and encrypted artifact
+upload; existing modes keep their original deadlines. Article input secrets
+remain unavailable to this mode. Exact parsed verdicts, prompts and request hashes
+are encrypted through the existing one-day artifact; public output includes only
+case IDs, boolean results, counts and sanitized errors. Provider envelopes and
+reasoning are not retained, so response-envelope hashes cannot be independently
+recomputed from this capture.
+
+The model remains `@cf/meta/llama-3.3-70b-instruct-fp8-fast` with the existing
+temperature, JSON schema and request assembly. The [model reference](https://developers.cloudflare.com/workers-ai/models/llama-3.3-70b-instruct-fp8-fast/)
+documents the native endpoint and response cap. [Cloudflare's pricing documentation](https://developers.cloudflare.com/workers-ai/platform/pricing/)
+states that Workers Free rejects usage beyond its daily allowance. This runner
+does not upgrade the account, configure billing or switch providers; the docs
+alone do not establish the account's live plan or remaining quota.
+
+Implementation passed all 1,512 build/unit tests, including seven new runner
+tests. No live result or publication decision is implied by that local result.
 
 Pins (must change visibly if independent adjudication changes a fixture):
 

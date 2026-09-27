@@ -136,3 +136,16 @@ hashes are not independently recomputable from parsed replies.
 The standard build/test command passed 1,497 tests. All automatic publication and
 email flags remain false. Do not rerun the frozen sample to manufacture broader
 confidence, or transfer its bounded pass to a new article or daily production.
+
+## Synthetic grammar/meaning contrast
+
+The opt-in `grammar-preservation-controls` mode isolates the existing meaning
+reviewer using [ten frozen scored examples and one unscored probe](checkpoints/grammar-review-contrast.md).
+It performs no research, writing, factual review or delivery and accepts no saved
+article input. At most eleven single-attempt 600-token reviewer requests run.
+Wrong but well-formed answers are recorded; malformed replies or provider errors
+stop the run. The ambiguous probe is never scored as a success, but must return
+a valid verdict for the diagnostic to be complete. The existing encryption,
+owner/main/manual/first-attempt gates and one-day retention remain in force.
+Passing these known controls is not a held-article approval or a general reviewer
+qualification, and nothing updates production policy automatically.

@@ -1,4 +1,4 @@
-// OFFLINE ONLY: labels independently adjudicated before any model inference.
+// Fixed controls: labels independently adjudicated before any model inference.
 // No provider, delivery, article input, reviewer-policy change or auto-approval.
 import {createHash} from 'node:crypto';
 import {loadDefinitionGlossary, PRINTSHOP_DEFINITION_SOURCE} from './definition-glossaries.mjs';
@@ -51,7 +51,7 @@ export const GRAMMAR_PRESERVATION_PROBES = freeze(probes);
 export const GRAMMAR_CONTRAST_SHA256 = createHash('sha256')
   .update(JSON.stringify({controls,probes})).digest('hex');
 
-// A later caller must send ONLY view.prompt/view.data/view.schema. Case IDs,
+// The diagnostic must send ONLY view.prompt/view.data/view.schema. Case IDs,
 // labels and explanations are local evaluation metadata, not reviewer input.
 export function buildGrammarPreservationViews() {
   const glossary = loadDefinitionGlossary('synthetic-printshop-definitions-v1', PRINTSHOP_DEFINITION_SOURCE);

@@ -2182,3 +2182,25 @@ validation, not model competence. No live mode, provider call, private article
 input, email, research, billing, or daily-delivery change was introduced. The
 next separate checkpoint is the bounded synthetic reviewer diagnostic described
 in that document. The held article is not approved by this offline result.
+
+### Synthetic grammar reviewer — live-run implementation checkpoint
+
+The opt-in `grammar-preservation-controls` mode now wires the adjudicated controls
+to the existing meaning reviewer, with no article inputs, source reviews or
+editor calls. All eleven cases (including identity and the unscored probe) get at
+most one request, 600 output tokens each; at most 6,600 requested tokens overall.
+Wrong valid answers complete the fixed set without retries. Malformed responses,
+network/provenance errors and provider/quota denial stop and remain failures.
+The probe never counts as a scored success. Labels stay outside provider input.
+
+All 1,512 build/unit tests passed, including exact-message, budget, malformed,
+network, encrypted-capture and workflow-scope regressions. Existing reviewer
+prompts, case labels, prior qualification records and production policies are
+unchanged. Independent preflight and any live result are recorded separately;
+there is no implication that local mock tests establish reviewer competence.
+
+Independent preflight found no blocker and passed 37 focused/regression tests.
+It confirmed unchanged labels and reviewer inputs, eleven real calls including
+identity, an unscored but structurally required probe, no retry after wrong
+answers, and no article-input or delivery path. This clears only the isolated
+setup and one bounded synthetic trial, not the held article or general use.

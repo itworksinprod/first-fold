@@ -6,7 +6,6 @@ import {GRAMMAR_PRESERVATION_CONTROLS as controls, GRAMMAR_PRESERVATION_PROBES a
   GRAMMAR_CONTRAST_SHA256, buildGrammarPreservationViews} from '../scripts/automation/experiments/grammar-preservation-cases.mjs';
 import {PRINTSHOP_DEFINITION_SOURCE, SYNTHETIC_DEFINITION_SOURCE, loadDefinitionGlossary} from '../scripts/automation/experiments/definition-glossaries.mjs';
 import {validateDefinitionPreservationReview as validate} from '../scripts/automation/experiments/definition-preservation.mjs';
-import {resolvePrivateWriterDiagnosticMode} from '../scripts/automation/private-writer-diagnostic.mjs';
 
 const sha = text => createHash('sha256').update(text).digest('hex');
 const invalid = {valid:false,supported:false};
@@ -99,9 +98,7 @@ test('cross-case hashes, malformed verdicts and extra approval fields cannot byp
   }
 });
 
-test('offline controls have no live diagnostic mode or workflow dispatch integration', async () => {
-  assert.throws(()=>resolvePrivateWriterDiagnosticMode('grammar-preservation-controls'),/DIAGNOSTIC_MODE_INVALID/);
-  const workflow=await readFile(new URL('../.github/workflows/private-writer-diagnostic.yml',import.meta.url),'utf8');
-  const entry=await readFile(new URL('../scripts/automation/private-writer-diagnostic.mjs',import.meta.url),'utf8');
-  assert.doesNotMatch(workflow,/grammar-preservation/); assert.doesNotMatch(entry,/grammar-preservation/);
+test('fixed fixture itself has no inference, network, delivery or approval implementation', async () => {
+  const fixture=await readFile(new URL('../scripts/automation/experiments/grammar-preservation-cases.mjs',import.meta.url),'utf8');
+  assert.doesNotMatch(fixture,/fetch\(|requestWorkersAiEditorial|process\.env|sendEmail|approved:\s*true/);
 });
