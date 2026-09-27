@@ -1,7 +1,8 @@
 # Grammar versus meaning — bounded contrast diagnostic
 
-Status: one authorized live diagnostic completed; seven of ten scored cases
-correct. Reviewer remains unqualified for this grammatical-edit use case.
+Status: the authorized model-only comparison passed all ten scored cases after
+the original reviewer passed seven. This completes the known-control comparison,
+not general reviewer qualification or approval of the held article.
 
 Run 36282585253 produced a complete draft but the meaning reviewer rejected a
 grammatical change. The explanation may be a false positive; that does not
@@ -192,6 +193,54 @@ rejections. That preflight reused old verdicts and made zero network calls; it
 does not predict GPT-OSS's answers.
 
 The same 10/10 scored-label criterion and structurally valid unscored probe apply.
-Passing would still require independent result review and later fresh holdouts
-before any qualification proposal. Publication and one live comparison await
-explicit approval; no new inference, article, email or production change has run.
+Passing still requires independent result review and later fresh holdouts before
+any qualification proposal. Carlos subsequently approved publication and one
+live comparison; its result follows. No article, email or production change was
+authorized by this comparison.
+
+## Model-only comparison — live result, September 26, 2026 Eastern
+
+[Run 36284565286](https://github.com/itworksinprod/first-fold/actions/runs/36284565286)
+used trusted main `eca84bbb8f69c0f2518bf9a76008d99c6de6c7fb`, owner/manual/attempt
+one, in `grammar-reasoning-controls` mode. Every workflow step completed
+successfully. Cloudflare-hosted GPT-OSS-120B returned eleven structurally valid,
+bound verdicts: **10/10 scored cases correct**, with P01 accepted but still
+unscored. There were eleven model/network requests, at most 6,600 requested
+output tokens, no retries and no transport, truncation, formatting or quota error.
+
+| Cases | GPT-OSS result compared with the original Llama run |
+| --- | --- |
+| R01 identity | Correct acceptance retained |
+| R02 grammatical rewrite | Correctly accepted; function unchanged |
+| R03 exact registered definition | Correctly accepted; supplied meaning retained |
+| R04 grammar plus exact definition | Correctly accepted; supplied meaning retained |
+| R05–R09 meaning changes | All correct rejections retained |
+| R10 intended versus asserted capability | Correct rejection retained; explanation now correctly identifies the removed qualification |
+| P01 ambiguous construction | Accepted, still unscored and not evidence of correctness |
+
+The encrypted ZIP (artifact `10920555382`, 65,272 bytes) matched GitHub SHA-256
+`fdd7ca4dce2124e5238205492eeb4ed1af5c04590a37c5e110db2296347106ff`.
+The private decrypted capture SHA-256 is
+`dd1aee1aaa485eca24030988aaca168f6378bfc55544c63c2081d107114dd485`.
+Offline replay reproduced all eleven exact serialized requests, parsed replies,
+validations, scores and the entire capture with zero network calls. The original
+provider envelopes and reasoning were not retained; their hashes cannot be
+independently recomputed. The comparison changed only model/endpoint identity
+and diagnostic metadata, not cases, expected labels, prompt/schema or limits.
+
+This is a useful result on a small known diagnostic set, not a claim of 100%
+general accuracy or proof of article quality. The held MIT draft, source review,
+readability, daily delivery and prior qualification records remain unchanged.
+No article input, research, email, paid fallback or billing change occurred.
+
+Independent outcome review found no blocker to completing this bounded
+comparison. It verified the capture hash/0600 permissions, exact zero-network
+replay, model-only body comparison and substantive rationales. R04's rationale
+is abbreviated but not materially wrong; P01 stays unscored. The reviewer
+explicitly retained HOLD on the actual article and production qualification.
+
+The next proposed checkpoint is a fresh meaning-only holdout set, independently
+adjudicated and frozen before inference, with varied domains/syntax and both
+equivalent edits and subtle scope, actor and quantity changes. It is not a
+production switch or another article/email run. No further inference or
+increased budget follows automatically from this result.

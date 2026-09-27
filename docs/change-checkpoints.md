@@ -2244,3 +2244,25 @@ proposed request body with that artifact and preserved its verdicts. Neither
 check made a network call or established the alternative model's competence.
 Explicit approval is requested before publishing and one live comparison.
 Truncation would be an incomplete experiment, never an automatic budget increase.
+
+### Reviewer-model-only comparison — known controls passed
+
+After Carlos approved publication and one bounded comparison,
+[run 36284565286](https://github.com/itworksinprod/first-fold/actions/runs/36284565286)
+on main `eca84bbb8f69c0f2518bf9a76008d99c6de6c7fb` completed all eleven requests
+and passed all ten scored cases. P01 remains an unscored probe. GPT-OSS correctly
+accepted the harmless grammar/definition changes that Llama rejected, retained
+the six correct negative labels, and correctly explained the intended-versus-
+asserted capability change. No budget increase or retry was needed.
+
+The [checkpoint receipt](checkpoints/grammar-review-contrast.md) records the
+verified artifact/capture hashes and exact offline replay of the requests,
+parsed verdicts, scoring and complete capture. The maximum requested output was
+6,600 tokens. This known-control pass is not general reviewer qualification,
+approval of the held article, or evidence of daily delivery. No research,
+article input, email, paid fallback, production change or second run occurred.
+Independent outcome review confirmed exact replay, model-only isolation and
+substantively sound scored rationales, with no blocker to this checkpoint.
+The actual article remains on HOLD. Next is offline preparation/adjudication of
+fresh meaning-only holdouts, followed by separately approved inference before
+considering broader use; do not promote automatically.
