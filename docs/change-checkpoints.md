@@ -2309,3 +2309,15 @@ proposal is review-only on the exact held 157-word candidate, with no new editor
 call, no email, all source checks and a distinct manual readability review.
 That candidate remains on HOLD; its earlier readability regression is not
 removed by correct synthetic meaning judgments.
+
+### Context-assisted editor — narrow next experiment
+
+Independent inspection confirmed that reviewing the held 157-word candidate
+as-is cannot clear readability. The next isolated experiment instead uses the
+original baseline plus previously reviewed terminology context, generic
+fluency guidance, and the separately tested GPT-OSS meaning reviewer. The
+[checkpoint](checkpoints/context-assisted-editor.md) pins inputs, changed
+variables, the eight-call/6,600-token maximum, and acceptance criteria.
+All 1,535 tests and offline transport/replay checks pass; live prose quality
+and independent outcome review remain pending. Nothing is emailed or promoted
+to daily delivery by this preparation.

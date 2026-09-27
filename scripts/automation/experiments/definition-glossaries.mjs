@@ -59,6 +59,20 @@ const manifests = freeze([
 ]);
 const issued = new WeakSet();
 
+// Private capsule of the already independently reviewed news + authors' term
+// evidence. Not an alternate arbitrary registry or a qualification update.
+export const CONTEXT_EDITOR_PACKET_SHA256='b0040624abca91f1ab059a9e374a4e40ea39b26c1e6ea6d10cec9c302d5b7f1a';
+export function loadContextDefinitionGlossary(packetText,excerpt){
+  if(typeof packetText!=='string'||Buffer.byteLength(packetText)>75_000||
+    sha(packetText)!==CONTEXT_EDITOR_PACKET_SHA256||typeof excerpt!=='string'||
+    sha(excerpt)!=='081196aa0f2c507e6b75f5a7018a594af882468006401c1b1428f96e4eb74801')
+    throw new Error('DEFINITION_GLOSSARY_BINDING');
+  const packet=JSON.parse(packetText);
+  const glossary=freeze({id:'mit-hardflow-context-definitions-v2-local',sourceSha256:sha(excerpt),
+    manifestSha256:packet.supplementaryGlossarySha256,definitions:packet.definitions});
+  issued.add(glossary);return glossary;
+}
+
 export function loadDefinitionGlossary(id, capturedSource) {
   const manifest = manifests.find(item => item.id === id);
   if (!manifest || typeof capturedSource !== 'string' || capturedSource.length > 100_000 ||

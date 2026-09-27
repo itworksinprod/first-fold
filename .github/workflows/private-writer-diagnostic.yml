@@ -41,6 +41,7 @@ on:
           - grammar-preservation-controls
           - grammar-reasoning-controls
           - grammar-reasoning-holdouts
+          - context-assisted-language
       public_key:
         description: Ephemeral RSA-3072 public key in base64 DER format (never a private key)
         required: true
@@ -82,8 +83,11 @@ jobs:
         run: node --test tests/frozen-fact-baseline.test.mjs tests/frozen-sentence-diagnostic.test.mjs tests/qualified-definition-review.test.mjs tests/definition-fluency-prompt.test.mjs tests/definition-context.test.mjs tests/definition-integration-prompt.test.mjs tests/definition-composition-prompt.test.mjs tests/definition-polish-prompt.test.mjs tests/editorial-vocabulary.test.mjs
       - name: Test saved final-review boundaries before credentials
         run: node --test tests/saved-final-review-diagnostic.test.mjs
+      - name: Test context editor boundaries before credentials
+        run: node --test tests/context-editor-profile.test.mjs tests/frozen-sentence-diagnostic.test.mjs
       - name: Validate diagnostic mode and encryption before credentials
         env:
+          FIRST_FOLD_CONTEXT_EDITOR_PACKET_B64: ${{ inputs.mode == 'context-assisted-language' && secrets.FIRST_FOLD_CONTEXT_EDITOR_PACKET_B64 || '' }}
           DIAGNOSTIC_PUBLIC_KEY: ${{ inputs.public_key }}
           PRIVATE_WRITER_DIAGNOSTIC_MODE: ${{ inputs.mode || 'source' }}
           FIRST_FOLD_FROZEN_BASELINE_B64: ${{ (inputs.mode == 'frozen-sentence-language' || inputs.mode == 'frozen-definition-language' || inputs.mode == 'frozen-vocabulary-language' || inputs.mode == 'frozen-reasoning-language') && secrets.FIRST_FOLD_FROZEN_BASELINE_B64 || '' }}
@@ -91,6 +95,7 @@ jobs:
         run: node scripts/automation/private-writer-diagnostic.mjs validate
       - name: Inspect the selected bounded diagnostic without delivery
         env:
+          FIRST_FOLD_CONTEXT_EDITOR_PACKET_B64: ${{ inputs.mode == 'context-assisted-language' && secrets.FIRST_FOLD_CONTEXT_EDITOR_PACKET_B64 || '' }}
           DIAGNOSTIC_PUBLIC_KEY: ${{ inputs.public_key }}
           PRIVATE_WRITER_DIAGNOSTIC_MODE: ${{ inputs.mode || 'source' }}
           FIRST_FOLD_FROZEN_BASELINE_B64: ${{ (inputs.mode == 'frozen-sentence-language' || inputs.mode == 'frozen-definition-language' || inputs.mode == 'frozen-vocabulary-language' || inputs.mode == 'frozen-reasoning-language') && secrets.FIRST_FOLD_FROZEN_BASELINE_B64 || '' }}

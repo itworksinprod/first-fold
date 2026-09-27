@@ -16,6 +16,7 @@ import { DEFINITION_COMPOSITION_PROMPT } from '../scripts/automation/experiments
 import { DEFINITION_POLISH_PROMPT } from '../scripts/automation/experiments/definition-polish-prompt.mjs';
 import { EDITORIAL_VOCABULARY_PROMPT, buildEditorialVocabulary } from '../scripts/automation/experiments/editorial-vocabulary.mjs';
 import { buildDefinitionContext } from '../scripts/automation/experiments/definition-context.mjs';
+import { CONTEXT_EDITOR_PROMPT } from '../scripts/automation/experiments/context-editor-profile.mjs';
 import { requestWorkersAiEditorial, buildWorkersAiRequest, DEFAULT_CLOUDFLARE_AI_MODEL, FREE_REASONING_WRITER_MODEL, workersAiRunUrl } from '../scripts/automation/free/workers-ai.mjs';
 import { prepareFrozenDiagnosticBaseline, resolvePrivateWriterDiagnosticMode, diagnoseOneWriter } from '../scripts/automation/private-writer-diagnostic.mjs';
 
@@ -50,10 +51,17 @@ function fixture(definition = false) {
   return { raw, before, excerpt, pins, text: freezeFactBaseline(JSON.stringify(diagnostic), JSON.stringify(sheet), pins) };
 }
 async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal, changedFields = fields.slice(1),
-  definition = false, glossaryLoader, sourceMismatch = false, mutatePolish, vocabulary = false, reasoning = false } = {}) {
+  definition = false, glossaryLoader, sourceMismatch = false, mutatePolish, vocabulary = false, reasoning = false,
+  context = false, mutateContext } = {}) {
+  if (context) { definition = true; reasoning = true; }
   const polishEnabled = definition && !vocabulary && !reasoning;
   const f = fixture(definition && !sourceMismatch), requests = [], network = [];
   const glossary = definition ? loadDefinitionGlossary('synthetic-generation-definitions-v1', SYNTHETIC_DEFINITION_SOURCE) : null;
+  const supplementSource = { publisher: 'Synthetic terminology context only',
+    passages: [{ evidenceId: 'S2P1', text: 'PRIVATE_CONTEXT: This is invented terminology evidence for plumbing tests.' }] };
+  const contextData = { baselineText: f.text, glossary, supplementSource,
+    packetSha256: '1'.repeat(64), supplementCaptureSha256: '2'.repeat(64), supplementUrl: 'https://example.org/context' };
+  if (mutateContext) mutateContext(contextData);
   const catalog = buildSentenceRewriteView(f.before.units);
   const rawAfter = structuredClone(f.raw);
   for (const field of changedFields) {
@@ -77,12 +85,14 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
     definitionPreservation: definition,
     editorialVocabulary: vocabulary,
     reasoningEditor: reasoning,
+    ...(context ? { contextPacketText: 'PRIVATE_SYNTHETIC_PACKET', contextLoader: async () => contextData } : {}),
     ...(definition ? { definitionGlossaryLoader: glossaryLoader ?? (() => glossary) } : {}),
     articleFetcher: () => assert.fail('Frozen trials must not fetch a fresh article'),
     sheetLoader: () => assert.fail('Frozen trials must use pinned fact context'), sealDiagnostic: v => v,
     aiRequestImpl: async request => {
       const index = requests.length; requests.push(request);
-      assert.equal(request.model, reasoning && index === 0 ? FREE_REASONING_WRITER_MODEL : DEFAULT_CLOUDFLARE_AI_MODEL);
+      const meaningCall = context && JSON.parse(request.messages[1].content).policy === 'definition-preservation-offline-v1';
+      assert.equal(request.model, reasoning && index === 0 || meaningCall ? FREE_REASONING_WRITER_MODEL : DEFAULT_CLOUDFLARE_AI_MODEL);
       assert.equal(request.maxAttempts, 1);
       assert.equal(request.maxTokens, reasoning && index === 0 ? 2400 : index === 0 || (polishEnabled && index === 1) ? 1200 : 600);
       assert.equal(request.timeoutMs, index === 0 || (polishEnabled && index === 1) ? 90000 : 30000);
@@ -106,7 +116,7 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
     },
     fetchImpl: async (url, init) => {
       const index = requests.length - 1, request = requests[index], body = JSON.parse(init.body);
-      assert.equal(url, workersAiRunUrl(accountId, reasoning && index === 0 ? FREE_REASONING_WRITER_MODEL : DEFAULT_CLOUDFLARE_AI_MODEL));
+      assert.equal(url, workersAiRunUrl(accountId, request.model));
       assert.equal(init.redirect, 'error');
       const data = JSON.parse(body.messages[1].content);
       network.push({ url, body });
@@ -120,7 +130,7 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
         { headers: { 'content-type': 'application/json' } });
       let payload;
       if (index === 0) {
-        assert.equal(request.messages[0].content, `${vocabulary ? EDITORIAL_VOCABULARY_PROMPT : definition ? DEFINITION_COMPOSITION_PROMPT : SENTENCE_REWRITE_PROMPT}\nJSON schema: ${JSON.stringify(catalog.schema)}`);
+        assert.equal(request.messages[0].content, `${context ? CONTEXT_EDITOR_PROMPT : vocabulary ? EDITORIAL_VOCABULARY_PROMPT : definition ? DEFINITION_COMPOSITION_PROMPT : SENTENCE_REWRITE_PROMPT}\nJSON schema: ${JSON.stringify(catalog.schema)}`);
         assert.deepEqual(data, { catalog: catalog.data, attribution: 'Private synthetic fact context', facts: [],
           ...(definition ? buildDefinitionContext(catalog.data.units.map(unit => unit.text), glossary) : {}),
           ...(vocabulary ? buildEditorialVocabulary(catalog.data.units.map(unit => unit.text), glossary) : {}) });
@@ -139,7 +149,8 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
           ? buildDefinitionPreservationReview({ claims: after.units[field], previousClaims: f.before.units[field] }, glossary)
           : buildTextPreservationReview({ claims: after.units[field], previousClaims: f.before.units[field] }))
           : buildIsolatedPreservationReview({ text: after.draft[field], claims: after.units[field],
-            sources: [{ publisher: 'MIT', passages: f.excerpt.split('\n').map((text, i) => ({ evidenceId: `S1P${i + 1}`, text })) }] }, 'source');
+            sources: [{ publisher: 'MIT', passages: f.excerpt.split('\n').map((text, i) => ({ evidenceId: `S1P${i + 1}`, text })) },
+              ...(context && ['whatHappened', 'whatToWatch'].includes(field) ? [supplementSource] : [])] }, 'source');
         assert.deepEqual(data, view.data);
         assert.equal(request.messages[0].content, `${view.prompt}\nJSON schema: ${JSON.stringify(view.schema)}`);
         if (meaning) assert.equal(Object.hasOwn(data, 'passages'), false);
@@ -149,7 +160,7 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
           [meaning ? 'meaningPreserved' : 'sourceSupported']: !(index === rejectAt && rejection === 'false') })) };
         if (index === rejectAt && rejection === 'malformed') payload.judgments.pop();
       }
-      return new Response(JSON.stringify({ success: true, result: reasoning && index === 0
+      return new Response(JSON.stringify({ success: true, result: request.model === FREE_REASONING_WRITER_MODEL
         ? { choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: JSON.stringify(payload) } }] }
         : { response: JSON.stringify(payload) }, errors: [] }),
         { headers: { 'content-type': 'application/json' } });
@@ -162,6 +173,48 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
   return { ...result, requests, network, f, after };
 }
 
+test('context-assisted editor routes independent checks without inheriting old qualification', async () => {
+  const r = await run({ context: true });
+  assert.equal(r.report.status, 'draft-awaiting-manual-review');
+  assert.equal(r.report.mode, 'context-assisted-language-awaiting-manual-review');
+  assert.equal(r.report.modelRequests, 8);
+  assert.equal(r.report.outputBudget, 6600);
+  assert.equal(r.sealed.copyeditPromptSha256, sha(CONTEXT_EDITOR_PROMPT));
+  assert.equal(r.sealed.reviewerQualification.status, 'new-context-experiment-not-qualified');
+  assert.equal(r.sealed.reviewerQualification.inheritedFinalApproval, false);
+  assert.deepEqual(r.sealed.beforeCopyedit.draft, r.f.before.draft);
+  assert.deepEqual(r.sealed.draft, r.after.draft);
+  assert.equal(r.sealed.draft.headline, r.f.raw.headline);
+  for (const c of r.sealed.calls) {
+    assert.equal(c.model, c.stage === 'copyedit' || c.dimension === 'meaning' ? FREE_REASONING_WRITER_MODEL : DEFAULT_CLOUDFLARE_AI_MODEL);
+    assert.equal(JSON.stringify(c.request).includes('PRIVATE_CONTEXT'), c.dimension === 'source' && ['whatHappened', 'whatToWatch'].includes(c.field));
+  }
+  assert.deepEqual(r.sealed.localReviews.map(v => v.field), ['headline']);
+});
+test('context-assisted identity fields still receive every source check', async () => {
+  const r = await run({ context: true, changedFields: ['whatHappened'] });
+  assert.equal(r.report.status, 'draft-awaiting-manual-review');
+  assert.equal(r.report.modelRequests, 6);
+  assert.equal(r.report.outputBudget, 5400);
+  assert.equal(r.sealed.calls.filter(c => c.dimension === 'source').length, 4);
+  assert.deepEqual(r.sealed.localReviews.map(v => v.field), ['headline', 'whyItMatters', 'whatToWatch']);
+});
+test('context-assisted source or meaning rejection never becomes approval', async () => {
+  for (const rejection of ['false', 'malformed']) for (const rejectAt of [1, 2, 3, 4, 5, 6, 7]) {
+    const r = await run({ context: true, rejectAt, rejection });
+    assert.equal(r.report.code, 'FACT_SUMMARY_REVIEW_REJECTED');
+    assert.equal(r.sealed.fieldReviews.at(-1).verdict.supported, false);
+    assert.equal(r.requests.length, rejectAt + 1 + Number(rejection === 'false' && [2, 4, 6].includes(rejectAt)));
+  }
+});
+test('context-assisted quota, truncation, provenance and extra-network failures stop with no fallback', async () => {
+  for (const rejectAt of [0, 2, 3]) for (const rejection of ['quota', 'truncated', 'provenance', 'extra-network', 'retry']) {
+    const r = await run({ context: true, rejectAt, rejection });
+    assert.equal(r.report.status, 'failed');
+    assert.equal(r.requests.length, rejectAt + 1);
+    assert.equal(r.network.length, rejectAt + Number(rejection !== 'extra-network'));
+  }
+});
 test('frozen trial skips writing and discovery, with eight bound requests and all final review gates', async () => {
   const r = await run();
   assert.equal(r.report.status, 'draft-awaiting-manual-review');

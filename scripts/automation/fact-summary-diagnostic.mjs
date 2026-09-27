@@ -20,6 +20,7 @@ import { DEFINITION_COMPOSITION_PROMPT } from './experiments/definition-composit
 import { DEFINITION_POLISH_PROMPT } from './experiments/definition-polish-prompt.mjs';
 import { EDITORIAL_VOCABULARY_PROMPT, buildEditorialVocabulary } from './experiments/editorial-vocabulary.mjs';
 import { buildDefinitionContext } from './experiments/definition-context.mjs';
+import { CONTEXT_EDITOR_PROMPT,loadContextEditorPacketText } from './experiments/context-editor-profile.mjs';
 
 const fields = ['headline', 'whatHappened', 'whyItMatters', 'whatToWatch'];
 const hash = text => createHash('sha256').update(text).digest('hex');
@@ -63,7 +64,7 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
   claimwise = false, profile = 'anthropic', plainLanguageCopyedit = false, sentenceLanguageRewrite = false,
   articleFetcher = fetchReviewedArticle, sheetLoader, frozenBaselineText, qualificationLoader,
   definitionPreservation = false, definitionGlossaryLoader = loadQualifiedMitGlossary, editorialVocabulary = false,
-  reasoningEditor = false }) {
+  reasoningEditor = false, contextPacketText, contextLoader = loadContextEditorPacketText }) {
   if (typeof claimwise !== 'boolean') throw fail('FACT_SUMMARY_MODE');
   const generic = profile === 'mit-generalization';
   if (typeof plainLanguageCopyedit !== 'boolean' || (plainLanguageCopyedit && (!generic || !claimwise))) throw fail('FACT_SUMMARY_MODE');
@@ -74,11 +75,15 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
   if (typeof definitionPreservation !== 'boolean' || (definitionPreservation && !frozenMode)) throw fail('FACT_SUMMARY_MODE');
   if (typeof editorialVocabulary !== 'boolean' || (editorialVocabulary && !definitionPreservation)) throw fail('FACT_SUMMARY_MODE');
   if (typeof reasoningEditor !== 'boolean' || (reasoningEditor && (!definitionPreservation || editorialVocabulary))) throw fail('FACT_SUMMARY_MODE');
+  const contextMode=contextPacketText!==undefined;
+  if(contextMode&&(!reasoningEditor||typeof contextPacketText!=='string'))throw fail('FACT_SUMMARY_MODE');
+  const context=contextMode?await contextLoader(contextPacketText):null;
+  if(contextMode&&context.baselineText!==frozenBaselineText)throw fail('CONTEXT_EDITOR_BASELINE_CHANGED');
   if (reasoningEditor && endpoint !== workersAiRunUrl(accountId, DEFAULT_CLOUDFLARE_AI_MODEL)) throw fail('FACT_SUMMARY_NETWORK');
   if (!['anthropic', 'mit-generalization'].includes(profile) || (profile === 'mit-generalization' && !claimwise)) throw fail('FACT_SUMMARY_PROFILE');
   const editedReviewPath = plainLanguageCopyedit || sentenceLanguageRewrite;
   const polishEnabled = definitionPreservation && !editorialVocabulary && !reasoningEditor;
-  const copyeditPrompt = editorialVocabulary ? EDITORIAL_VOCABULARY_PROMPT : definitionPreservation ? DEFINITION_COMPOSITION_PROMPT
+  const copyeditPrompt = contextMode ? CONTEXT_EDITOR_PROMPT : editorialVocabulary ? EDITORIAL_VOCABULARY_PROMPT : definitionPreservation ? DEFINITION_COMPOSITION_PROMPT
     : sentenceLanguageRewrite ? SENTENCE_REWRITE_PROMPT : PLAIN_LANGUAGE_COPYEDIT_PROMPT;
   const maxRequests = polishEnabled ? 9 : frozenMode ? 8 : sentenceLanguageRewrite ? 9 : plainLanguageCopyedit ? 7 : 5;
   const maxOutputBudget = polishEnabled || reasoningEditor ? 6600 : frozenMode ? 5400 : sentenceLanguageRewrite ? 6600 : plainLanguageCopyedit ? 5400 : claimwise ? 3600 : 2800;
@@ -86,7 +91,7 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
   const sourceUrl = generic ? 'https://news.mit.edu/2026/new-method-enables-ai-safety-critical-situations-0914'
     : 'https://www.anthropic.com/institute/measuring-pace-of-ai-development';
   const publisherKey = generic ? 'mit' : 'anthropic';
-  const capture = { purpose: reasoningEditor ? 'frozen-reasoning-language-rewrite-awaiting-manual-review' : editorialVocabulary ? 'frozen-vocabulary-language-rewrite-awaiting-manual-review' : definitionPreservation ? 'frozen-definition-language-rewrite-awaiting-manual-review' : frozenMode ? 'frozen-sentence-language-rewrite-awaiting-manual-review' : sentenceLanguageRewrite ? 'sentence-language-rewrite-awaiting-manual-review' : plainLanguageCopyedit ? 'plain-language-copyedit-awaiting-manual-review' : generic ? 'generic-second-article-awaiting-manual-review' : claimwise ? 'claimwise-fact-summary-awaiting-manual-review' : 'reviewed-fact-summary-awaiting-manual-review',
+  const capture = { purpose: contextMode ? 'context-assisted-language-awaiting-manual-review' : reasoningEditor ? 'frozen-reasoning-language-rewrite-awaiting-manual-review' : editorialVocabulary ? 'frozen-vocabulary-language-rewrite-awaiting-manual-review' : definitionPreservation ? 'frozen-definition-language-rewrite-awaiting-manual-review' : frozenMode ? 'frozen-sentence-language-rewrite-awaiting-manual-review' : sentenceLanguageRewrite ? 'sentence-language-rewrite-awaiting-manual-review' : plainLanguageCopyedit ? 'plain-language-copyedit-awaiting-manual-review' : generic ? 'generic-second-article-awaiting-manual-review' : claimwise ? 'claimwise-fact-summary-awaiting-manual-review' : 'reviewed-fact-summary-awaiting-manual-review',
     ...(generic ? { ...(frozenMode ? { writerSkipped: true } : { promptSha256: hash(GENERIC_FACT_SUMMARY_PROMPT) }), factSelection: 'manual' } : {}), calls: [], fieldReviews: [], emailSent: false };
   if (editedReviewPath) {
     capture.copyeditStrategy = reasoningEditor ? 'cloudflare-reasoning-editor-v1' : editorialVocabulary ? 'reviewed-editor-vocabulary-v1' : definitionPreservation ? 'sentence-definition-polish-v1'
@@ -96,14 +101,21 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
     capture.reviewStrategy = definitionPreservation ? 'isolated-source-plus-qualified-definition-preservation-v1' : 'isolated-source-plus-text-preservation-v1';
     capture.localReviews = [];
   }
+  if(contextMode){
+    capture.copyeditStrategy='context-assisted-reasoning-editor-v1';
+    capture.reviewStrategy='isolated-llama-source-plus-gptoss-meaning-experimental';
+    capture.context={packetSha256:context.packetSha256,supplementCaptureSha256:context.supplementCaptureSha256,
+      supplementUrl:context.supplementUrl,supplementSource:context.supplementSource};
+  }
   let modelRequests = 0, networkRequests = 0, outputBudget = 0, code = null;
   const request = async (prompt, data, schema, maxTokens,
     { timeoutMs = 90000, deferCapture = false, metadata = null } = {}) => {
-    // The opt-in comparison changes ONLY the first editor. Every review keeps
-    // the qualified model. This is not an either-model endpoint allowlist.
+    // Legacy comparison changes only the editor. The separate context experiment
+    // also fixes meaning reviews to GPT-OSS; source checks remain Llama.
     const alternateEditor = reasoningEditor && metadata?.stage === 'copyedit';
     if (alternateEditor && modelRequests !== 0) throw fail('FACT_SUMMARY_NETWORK');
-    const model = alternateEditor ? FREE_REASONING_WRITER_MODEL : DEFAULT_CLOUDFLARE_AI_MODEL;
+    const alternateMeaning=contextMode&&metadata?.stage==='review'&&metadata?.dimension==='meaning';
+    const model = alternateEditor||alternateMeaning ? FREE_REASONING_WRITER_MODEL : DEFAULT_CLOUDFLARE_AI_MODEL;
     const requestEndpoint = reasoningEditor ? workersAiRunUrl(accountId, model) : endpoint;
     const systemPrompt = `${prompt}\nJSON schema: ${JSON.stringify(schema)}`;
     const options = { model,
@@ -167,10 +179,15 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
     if (hash(excerpt) !== sheet.excerptSha256) throw fail('FACT_SUMMARY_EVIDENCE_CHANGED');
     let glossary;
     if (definitionPreservation) {
-      capture.reviewerQualification = assertQualifiedDefinitionReviewer();
+      const legacyQualification = assertQualifiedDefinitionReviewer();
+      capture.reviewerQualification = contextMode ? {
+        status: 'new-context-experiment-not-qualified',
+        legacyControlsReference: legacyQualification,
+        inheritedFinalApproval: false,
+      } : legacyQualification;
       // Trusted dependency injection for synthetic tests only. The CLI always
       // uses the fixed MIT loader and cannot accept a glossary or override pins.
-      glossary = definitionGlossaryLoader(excerpt);
+      glossary = contextMode ? context.glossary : definitionGlossaryLoader(excerpt);
       assertDefinitionGlossary(glossary);
       if (glossary.sourceSha256 !== hash(excerpt)) throw fail('DEFINITION_GLOSSARY_BINDING');
       capture.glossaryBinding = { id: glossary.id, sourceSha256: glossary.sourceSha256,
@@ -295,7 +312,9 @@ The article is one company's account. No tables or appendix are available. No ou
     const source = { publisher, passages: excerpt.split('\n').map((text, i) => ({ evidenceId: `S1P${i + 1}`, text })) };
     for (const field of fields) {
       if (editedReviewPath) {
-        const sourceView = buildIsolatedPreservationReview({ text: draft[field], sources: [source],
+        const reviewSources=contextMode&&['whatHappened','whatToWatch'].includes(field)
+          ?[source,context.supplementSource]:[source];
+        const sourceView = buildIsolatedPreservationReview({ text: draft[field], sources: reviewSources,
           claims: normalized.units[field] }, 'source');
         const sourceResult = await request(sourceView.prompt, sourceView.data, sourceView.schema, 600,
           { timeoutMs: 30000, deferCapture: true, metadata: { stage: 'review', field, dimension: 'source' } });
