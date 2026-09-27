@@ -65,7 +65,7 @@ export function assertDiagnosticAuthority(env) {
 }
 
 export function resolvePrivateWriterDiagnosticMode(value = "source") {
-  if(['context-assisted-language','context-direct-language','context-direct-unit-language','context-named-unit-language','context-two-unit-repair','context-two-unit-plain-repair'].includes(value))return value;
+  if(['context-assisted-language','context-direct-language','context-direct-unit-language','context-named-unit-language','context-two-unit-repair','context-two-unit-plain-repair','context-complete-repair'].includes(value))return value;
   if (['grammar-preservation-controls', 'grammar-reasoning-controls', 'grammar-reasoning-holdouts'].includes(value)) return value;
   if (value === 'saved-final-review') return value;
   if (value === 'definition-preservation-controls') return value;
@@ -113,7 +113,7 @@ export async function prepareSavedFinalDiagnostic(mode, encoded) {
 }
 
 export async function prepareContextDiagnostic(mode,encoded){
-  if(!['context-assisted-language','context-direct-language','context-direct-unit-language','context-named-unit-language','context-two-unit-repair','context-two-unit-plain-repair'].includes(mode)){
+  if(!['context-assisted-language','context-direct-language','context-direct-unit-language','context-named-unit-language','context-two-unit-repair','context-two-unit-plain-repair','context-complete-repair'].includes(mode)){
     if(encoded!==undefined&&encoded!=='')throw failure('DIAGNOSTIC_UNEXPECTED_CONTEXT_PACKET');
     return undefined;
   }
@@ -124,7 +124,7 @@ export async function prepareContextDiagnostic(mode,encoded){
 }
 
 export async function prepareSentenceRepair(mode,encoded){
-  if(!['context-two-unit-repair','context-two-unit-plain-repair'].includes(mode)){
+  if(!['context-two-unit-repair','context-two-unit-plain-repair','context-complete-repair'].includes(mode)){
     if(encoded!==undefined&&encoded!=='')throw failure('DIAGNOSTIC_UNEXPECTED_REPAIR_PACKET');
     return undefined;
   }
@@ -192,16 +192,16 @@ export async function diagnoseOneWriter({ publicKey, accountId, apiToken, now = 
   const repairPacketText=await prepareSentenceRepair(mode,sentenceRepairB64);
   const endpoint = workersAiRunUrl(accountId, DEFAULT_CLOUDFLARE_AI_MODEL);
   if (typeof apiToken !== "string" || !apiToken.trim()) throw failure("DIAGNOSTIC_CONFIGURATION_INVALID");
-  if(['context-assisted-language','context-direct-language','context-direct-unit-language','context-named-unit-language','context-two-unit-repair','context-two-unit-plain-repair'].includes(mode)){
+  if(['context-assisted-language','context-direct-language','context-direct-unit-language','context-named-unit-language','context-two-unit-repair','context-two-unit-plain-repair','context-complete-repair'].includes(mode)){
     const {loadContextEditorPacketText}=await import('./experiments/context-editor-profile.mjs');
     const context=await loadContextEditorPacketText(contextPacketText);
     const {diagnoseFactSummary}=await import('./fact-summary-diagnostic.mjs');
     return diagnoseFactSummary({publicKey,accountId,apiToken,now,aiRequestImpl,fetchImpl,endpoint,sealDiagnostic,
       claimwise:true,profile:'mit-generalization',sentenceLanguageRewrite:true,definitionPreservation:true,
       reasoningEditor:true,frozenBaselineText:context.baselineText,contextPacketText,
-      directDefinitions:mode!=='context-assisted-language',unitMeaning:['context-direct-unit-language','context-named-unit-language','context-two-unit-repair','context-two-unit-plain-repair'].includes(mode),
-      namedComposition:['context-named-unit-language','context-two-unit-repair','context-two-unit-plain-repair'].includes(mode),repairPacketText,
-      plainRepair:mode==='context-two-unit-plain-repair'});
+      directDefinitions:mode!=='context-assisted-language',unitMeaning:['context-direct-unit-language','context-named-unit-language','context-two-unit-repair','context-two-unit-plain-repair','context-complete-repair'].includes(mode),
+      namedComposition:['context-named-unit-language','context-two-unit-repair','context-two-unit-plain-repair','context-complete-repair'].includes(mode),repairPacketText,
+      plainRepair:['context-two-unit-plain-repair','context-complete-repair'].includes(mode),completeRepair:mode==='context-complete-repair'});
   }
   if (['grammar-preservation-controls', 'grammar-reasoning-controls', 'grammar-reasoning-holdouts'].includes(mode)) {
     const { diagnoseGrammarPreservation } = await import('./grammar-preservation-diagnostic.mjs');

@@ -2402,3 +2402,14 @@ explicit full-meaning/label-avoidance guidance and bounded encrypted rejection
 metadata. Original source/meaning gates, baselines, free providers and ceilings
 are unchanged. All 1,567 tests and actual-input offline preflight pass. See the
 [receipt](checkpoints/two-unit-repair.md); live prose remains unqualified.
+
+### Plain repair — automated pass is not editorial approval
+
+Run 36358574378 produced 146 words and passed automated checks, but both full-text
+reviewers held it: one flagged sentence was unchanged and incompletely translated.
+The repeated definition-review false positive remains documented. A separate
+complete-task mode rejects skipped repairs before review and groups each task's
+original/seed/full definitions under concise guidance. All 1,569 tests, exact
+previous-capture rejection and 109-test independent preflight pass. No meaning
+gate, daily setting, provider, cost ceiling or recipient changed. See the
+[receipt](checkpoints/two-unit-repair.md); new live prose is still unqualified.

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {gzipSync} from 'node:zlib';
 import {execFileSync} from 'node:child_process';
-import {decodeSentenceRepairPacket,loadSentenceRepairPacketText,SENTENCE_REPAIR_PROMPT,PLAIN_SENTENCE_REPAIR_PROMPT} from '../scripts/automation/experiments/sentence-repair-profile.mjs';
+import {decodeSentenceRepairPacket,loadSentenceRepairPacketText,SENTENCE_REPAIR_PROMPT,PLAIN_SENTENCE_REPAIR_PROMPT,COMPLETE_SENTENCE_REPAIR_PROMPT} from '../scripts/automation/experiments/sentence-repair-profile.mjs';
 import {NAMED_COMPOSITION_PROMPT} from '../scripts/automation/experiments/direct-definition-editor.mjs';
 import {prepareSentenceRepair} from '../scripts/automation/private-writer-diagnostic.mjs';
 import {diagnoseFactSummary} from '../scripts/automation/fact-summary-diagnostic.mjs';
@@ -18,7 +18,9 @@ test('repair input is confined to its one explicit no-email mode',async()=>{
   }
   await assert.rejects(prepareSentenceRepair('context-two-unit-repair',''),/SENTENCE_REPAIR_PACKET_INVALID/);
   await assert.rejects(prepareSentenceRepair('context-two-unit-plain-repair',''),/SENTENCE_REPAIR_PACKET_INVALID/);
+  await assert.rejects(prepareSentenceRepair('context-complete-repair',''),/SENTENCE_REPAIR_PACKET_INVALID/);
   await assert.rejects(diagnoseFactSummary({plainRepair:true}),/FACT_SUMMARY_MODE/);
+  await assert.rejects(diagnoseFactSummary({completeRepair:true}),/FACT_SUMMARY_MODE/);
   await assert.rejects(diagnoseFactSummary({repairPacketText:'private'}),/FACT_SUMMARY_MODE/);
 });
 test('repair instructions preserve full definitions without article-specific replacement answers',()=>{
@@ -29,6 +31,8 @@ test('repair instructions preserve full definitions without article-specific rep
   assert.ok(PLAIN_SENTENCE_REPAIR_PROMPT.startsWith(SENTENCE_REPAIR_PROMPT));
   assert.match(PLAIN_SENTENCE_REPAIR_PROMPT,/Preserve required names/);
   assert.match(PLAIN_SENTENCE_REPAIR_PROMPT,/Never drop meaning just to avoid a label/);
+  for(const instruction of ['ALL sentences','originalText','FULL reviewed definitions','every component and relationship','byte-for-byte unchanged','110 and 225','independent full-text'])assert.ok(COMPLETE_SENTENCE_REPAIR_PROMPT.includes(instruction));
+  assert.doesNotMatch(COMPLETE_SENTENCE_REPAIR_PROMPT,/HardFlow|MIT|robot|optimization formulation|mathematical statement/u);
 });
 test('repair profile and CLI can import in cold processes without an initialization cycle',()=>{
   for(const name of ['sentence-repair-profile','context-editor-profile']){

@@ -18,7 +18,7 @@ import { EDITORIAL_VOCABULARY_PROMPT, buildEditorialVocabulary } from '../script
 import { buildDefinitionContext } from '../scripts/automation/experiments/definition-context.mjs';
 import { CONTEXT_EDITOR_PROMPT } from '../scripts/automation/experiments/context-editor-profile.mjs';
 import { DIRECT_DEFINITION_PROMPT, COMPACT_DIRECT_DEFINITION_PROMPT, NAMED_COMPOSITION_PROMPT, buildDirectDefinitionPlan } from '../scripts/automation/experiments/direct-definition-editor.mjs';
-import {SENTENCE_REPAIR_PROMPT,PLAIN_SENTENCE_REPAIR_PROMPT} from '../scripts/automation/experiments/sentence-repair-profile.mjs';
+import {SENTENCE_REPAIR_PROMPT,PLAIN_SENTENCE_REPAIR_PROMPT,COMPLETE_SENTENCE_REPAIR_PROMPT} from '../scripts/automation/experiments/sentence-repair-profile.mjs';
 import { requestWorkersAiEditorial, buildWorkersAiRequest, DEFAULT_CLOUDFLARE_AI_MODEL, FREE_REASONING_WRITER_MODEL, workersAiRunUrl } from '../scripts/automation/free/workers-ai.mjs';
 import { prepareFrozenDiagnosticBaseline, resolvePrivateWriterDiagnosticMode, diagnoseOneWriter } from '../scripts/automation/private-writer-diagnostic.mjs';
 
@@ -61,7 +61,8 @@ function fixture(definition = false, termUnitCount = 1) {
 async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal, changedFields = fields.slice(1),
   definition = false, glossaryLoader, sourceMismatch = false, mutatePolish, vocabulary = false, reasoning = false,
   context = false, mutateContext, direct = false, unitMeaning = false, namedComposition = false, termUnitCount = 1,
-  repairMode=false,mutateRepair,plainRepair=false } = {}) {
+  repairMode=false,mutateRepair,plainRepair=false,completeRepair=false } = {}) {
+  if(completeRepair)plainRepair=true;
   if(plainRepair)repairMode=true;
   if(repairMode){namedComposition=true;termUnitCount=3;}
   if(namedComposition)unitMeaning=true;
@@ -111,6 +112,7 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
     unitMeaning,
     namedComposition,
     plainRepair,
+    completeRepair,
     ...(repairMode?{repairPacketText:'PRIVATE_SYNTHETIC_REPAIR',repairLoader:()=>repair}:{}),
     ...(context ? { contextPacketText: 'PRIVATE_SYNTHETIC_PACKET', contextLoader: async () => contextData } : {}),
     ...(definition ? { definitionGlossaryLoader: glossaryLoader ?? (() => glossary) } : {}),
@@ -157,14 +159,18 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
         { headers: { 'content-type': 'application/json' } });
       let payload;
       if (index === 0) {
-        assert.equal(request.messages[0].content, `${plainRepair ? PLAIN_SENTENCE_REPAIR_PROMPT : repairMode ? SENTENCE_REPAIR_PROMPT : namedComposition ? NAMED_COMPOSITION_PROMPT : unitMeaning ? COMPACT_DIRECT_DEFINITION_PROMPT : direct ? DIRECT_DEFINITION_PROMPT : context ? CONTEXT_EDITOR_PROMPT : vocabulary ? EDITORIAL_VOCABULARY_PROMPT : definition ? DEFINITION_COMPOSITION_PROMPT : SENTENCE_REWRITE_PROMPT}\nJSON schema: ${JSON.stringify(catalog.schema)}`);
+        assert.equal(request.messages[0].content, `${completeRepair ? COMPLETE_SENTENCE_REPAIR_PROMPT : plainRepair ? PLAIN_SENTENCE_REPAIR_PROMPT : repairMode ? SENTENCE_REPAIR_PROMPT : namedComposition ? NAMED_COMPOSITION_PROMPT : unitMeaning ? COMPACT_DIRECT_DEFINITION_PROMPT : direct ? DIRECT_DEFINITION_PROMPT : context ? CONTEXT_EDITOR_PROMPT : vocabulary ? EDITORIAL_VOCABULARY_PROMPT : definition ? DEFINITION_COMPOSITION_PROMPT : SENTENCE_REWRITE_PROMPT}\nJSON schema: ${JSON.stringify(catalog.schema)}`);
         assert.deepEqual(data, { catalog: catalog.data, attribution: 'Private synthetic fact context', facts: [],
           ...(definition ? buildDefinitionContext(originalCatalog.data.units.map(unit => unit.text), glossary) : {}),
           ...(plainRepair?{forbiddenTechnicalLabels:glossary.definitions.map(item=>item.term)}:{}),
           ...(vocabulary ? buildEditorialVocabulary(catalog.data.units.map(unit => unit.text), glossary) : {}),
           ...(direct ? {directEditPlan:buildDirectDefinitionPlan(catalog,glossary,{protectNames:namedComposition,
             ...(repairMode?{repairScope:{originalCatalog,unitIds:repair.feedback.map(f=>f.unitId)}}:{})})} : {}),
-          ...(repairMode?{repairReferences:repair.feedback.map(({unitId,code})=>({unitId,code,originalText:originalCatalog.data.units.find(u=>u.unitId===unitId).text}))}:{}) });
+          ...(repairMode?{repairReferences:repair.feedback.map(({unitId,code})=>({unitId,code,originalText:originalCatalog.data.units.find(u=>u.unitId===unitId).text}))}:{}),
+          ...(completeRepair?{repairTasks:repair.feedback.map(({unitId,code})=>({unitId,code,
+            originalText:originalCatalog.data.units.find(u=>u.unitId===unitId).text,
+            seedText:catalog.data.units.find(u=>u.unitId===unitId).text,
+            definitions:buildDefinitionContext([originalCatalog.data.units.find(u=>u.unitId===unitId).text],glossary).definitions}))}:{}) });
         payload = proposal;
       } else if (polishEnabled && index === 1) {
         assert.equal(request.messages[0].content, `${DEFINITION_POLISH_PROMPT}\nJSON schema: ${JSON.stringify(catalog.schema)}`);
@@ -208,6 +214,32 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
   return { ...result, requests, network, f, after };
 }
 
+test('complete repair requires every flagged seed unit to change before review',async()=>{
+  const old=await run({plainRepair:true}),r=await run({completeRepair:true});
+  assert.equal(r.report.status,'draft-awaiting-manual-review');
+  assert.equal(r.report.mode,'context-complete-repair-awaiting-manual-review');
+  assert.equal(r.report.modelRequests,8);assert.equal(r.report.outputBudget,6600);
+  assert.deepEqual(r.sealed.calls.slice(1),old.sealed.calls.slice(1));
+  const {repairTasks,...data}=r.sealed.calls[0].request;
+  assert.deepEqual(data,old.sealed.calls[0].request);
+  assert.deepEqual(repairTasks.map(t=>t.unitId),['U1','U3']);
+  const held=await run({completeRepair:true,mutateProposal:p=>{
+    p.sentences[2].text=p.sentences[2].text.replace('nonoptional requirements','requirements');
+  }});
+  assert.equal(held.report.code,'FACT_SUMMARY_INCOMPLETE_REPAIR');
+  assert.equal(held.requests.length,1);assert.equal(held.sealed.calls[0].response,undefined);
+  assert.equal(held.sealed.rawCopyedit,undefined);
+  assert.deepEqual(held.sealed.calls[0].incompleteRepairUnits,['U3']);
+  assert.doesNotMatch(JSON.stringify(held.report),/U3|incompleteRepairUnits|seedText/);
+});
+test('complete repair retains source, meaning, provider and locking vetoes',async()=>{
+  for(const [rejectAt,rejection] of [[0,'quota'],[0,'truncated'],[0,'extra-network'],[1,'false'],[3,'false'],[7,'malformed']]){
+    const r=await run({completeRepair:true,rejectAt,rejection});
+    assert.notEqual(r.report.status,'draft-awaiting-manual-review');
+  }
+  const locked=await run({completeRepair:true,mutateProposal:p=>{p.sentences[1].text=p.sentences[1].text.replace('report','account');}});
+  assert.equal(locked.report.code,'DIRECT_DEFINITION_LOCKED_UNIT');assert.equal(locked.requests.length,1);
+});
 test('plain repair supplies exact guard vocabulary, with unchanged review requests and ceilings',async()=>{
   const old=await run({repairMode:true}),r=await run({plainRepair:true});
   assert.equal(r.report.status,'draft-awaiting-manual-review');

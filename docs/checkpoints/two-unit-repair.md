@@ -1,7 +1,7 @@
 # Review-guided two-unit repair
 
-Status: first live repair held; distinct plain-language refinement passes local
-tests and offline preflight but its live prose is not yet qualified.
+Status: two live repairs held, including an automated pass rejected by full-text
+review. Complete-task refinement passes preflight; its live prose is unqualified.
 
 This is a manually scoped repair experiment on saved research. It is not proof
 of an unassisted general writer, source discovery, daily reliability or paid-model
@@ -104,3 +104,51 @@ Independent preflight found a mismatch between the five selected definitions and
 seven labels checked by the guard. The complete canonical label list and exact-set
 regression address it, and the actual private-input preflight confirms all seven
 labels. Live exact-output review remains required.
+
+Independent scoped re-review cleared that fix and passed 107 focused/legacy
+tests. Run 36358574378 was dispatched once on
+`c225937abe77d28c07f1b3669c2a6c92206df5dd`. This is permission to test, not a
+candidate approval; no result is inferred from setup success.
+
+## Plain-repair live outcome — automated pass, manual HOLD
+
+[Run 36358574378](https://github.com/itworksinprod/first-fold/actions/runs/36358574378)
+passed all four source fields and three changed-unit meaning checks within eight
+calls / 6,600 requested tokens. Its 146-word draft and immutable capture replayed
+exactly offline. This did **not** complete the saved-article checkpoint.
+
+Both full-text reviewers retained HOLD: U6 was byte-identical to the rejected
+seed, still missing defining requirements/quality-goal relationships. The meaning
+reviewer again quoted only the opening part of the supplied definition. U1 removed
+the repeated obligation clause but left an awkward category/example construction.
+The source material is sufficient; the model's selected citation list is not a
+complete evidence map. These repeated reviewer false positives preclude automatic
+qualification based on this sample. No email occurred.
+
+Artifact `10945100629`, 81,685 bytes, ZIP SHA-256:
+`98e15bf2f78e96cd335cc87c7ff95f92747fb22c7aea498f258c11b6cf3128d0`.
+Capture SHA-256:
+`3d9eaf46b907e81146d694ba606a53a078b2146ee11004fedf2d3165d5eba9ca`.
+Draft SHA-256:
+`dab5d23978f5261d288f1ac0fe38a9654d97f9e722ca66b30d7ed2b23e6ed6ae`.
+
+## Complete-task repair refinement
+
+`context-complete-repair` refuses a rewrite if **any** explicitly flagged seed
+unit remains unchanged, before spending requests on factual or meaning review.
+It still permits honest whole-seed abstention (which cannot approve a candidate).
+Changing a sentence is only a prerequisite, never proof of semantic completion.
+
+The new concise editor prompt replaces the stack of earlier editor instructions
+only in this mode. It requires all repairs or abstention, complete definitions,
+compatible category/example grammar, name/qualifier preservation and plain prose.
+Per-task original text, seed text and matched full definitions are grouped together;
+they are derived from the same approved inputs, not added evidence or replacement
+answers. Original reviewer prompts, budgets, sources and all old modes stay exact.
+
+All 1,569 tests pass; independent preflight passed 109 focused/legacy tests. The
+exact previous live output is rejected offline as `FACT_SUMMARY_INCOMPLETE_REPAIR`
+with U6 unchanged and zero provider/reviewer calls. Its old mode still replays
+exactly. Actual-packet preflight request: 11,784 bytes; prompt/schema SHA-256:
+`61ab4de87962dbed81c15801e6c7cbbc573586cdd6465893771b257f37478433`.
+Independent review clears one bounded trial, not the resulting prose.
