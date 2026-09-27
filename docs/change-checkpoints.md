@@ -2321,3 +2321,19 @@ variables, the eight-call/6,600-token maximum, and acceptance criteria.
 All 1,535 tests and offline transport/replay checks pass; live prose quality
 and independent outcome review remain pending. Nothing is emailed or promoted
 to daily delivery by this preparation.
+
+### Context-assisted editor — live technical pass, readability held
+
+Carlos explicitly approved the expanded private context. The single
+[run 36287679788](https://github.com/itworksinprod/first-fold/actions/runs/36287679788)
+passed all automated source/meaning checks on trusted main `d2594e9`, using
+eight single-attempt requests and 6,600 requested output tokens. Exact offline
+capture replay and independent mechanical review passed; the
+[receipt](checkpoints/context-assisted-editor.md) records immutable hashes.
+
+The 186-word output still adds crowded definitions and reintroduces jargon.
+It therefore remains on readability HOLD; this is not article approval or
+production readiness. Independent clarity checks support that hold, with the
+full semantic-review limitation documented. No second inference run or email
+occurred. The next proposal narrows eligible edits and requires direct plain
+phrasing, without weakening factual or meaning checks.
