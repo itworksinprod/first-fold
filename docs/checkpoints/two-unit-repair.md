@@ -1,6 +1,7 @@
 # Review-guided two-unit repair
 
-Status: implementation and offline preflight passed; live result unqualified.
+Status: first live repair held; distinct plain-language refinement passes local
+tests and offline preflight but its live prose is not yet qualified.
 
 This is a manually scoped repair experiment on saved research. It is not proof
 of an unassisted general writer, source discovery, daily reliability or paid-model
@@ -28,8 +29,8 @@ unchanged. No hand-written replacement sentence is supplied. Generic editing
 guidance requests concise mandatory force and complete defining components and
 relationships rather than a broad category or a definition's opening clause.
 
-The mode `context-two-unit-repair` is owner/main/manual-only. Its separate secret
-is exposed only to this mode's validation and execution steps. Plaintext remains
+The repair modes are owner/main/manual-only. Their separate secret
+is exposed only to those modes' validation and execution steps. Plaintext remains
 outside the public repository. The original modes remain unchanged/replayable.
 
 ## Acceptance and ceilings
@@ -62,3 +63,44 @@ the actual private seed and original bindings. Its suggested abstention wording
 was clarified: returning an unchanged result means the seed catalog, not the
 original reference sentences. Full tests and private preflight passed again.
 A live outcome remains unqualified until exact-output review.
+
+## First live repair — style rejection
+
+[Run 36357685405](https://github.com/itworksinprod/first-fold/actions/runs/36357685405)
+used main revision `9e1035965f3484f96b5cc4a7d0737f628dc83106` and failed in
+“Inspect the selected bounded diagnostic without delivery” with
+`DIRECT_DEFINITION_RETAINED_LABEL`. It stopped after one editor call / 2,400
+requested output tokens, before factual or meaning review. No email was sent.
+The rejected response was deliberately not captured, so its offending term and
+unit are unknown. This is not a complete response replay or a semantic verdict.
+
+Artifact: `10944343937`, 25,414 bytes. ZIP SHA-256:
+`fde2e634bdb4f486512917d2f5ab665d304bdea7cb0580bfb4d8c3ea8cb4cc41`.
+Decrypted capture SHA-256:
+`5741620748e2725f08edbc5eacd10668d407e4847b1595a28ebf93ce68ac3899`.
+
+## Distinct plain-repair refinement
+
+`context-two-unit-plain-repair` retains the same input, original meaning baseline,
+locks, models, sampling, ceilings, source/meaning reviewer prompts and acceptance
+gates. The editor guidance treats technical labels as reference vocabulary and
+requests their full meaning in ordinary words without dropping components or
+relationships. A new mode-only input lists every canonical label checked by the
+guard, including explicit singular/plural forms; it adds no definitions or source
+facts. Old modes and prompts remain unchanged.
+
+For this mode only, a retained-label rejection adds bounded encrypted metadata:
+the issued unit ID and hashes of matching canonical glossary terms. No arbitrary
+model text or rejected response is retained, and no such metadata reaches the
+public report. This aids diagnosis without pretending a rejected response can
+be replayed or approved.
+
+All 1,567 automated tests pass. Actual-packet offline preflight verifies the same
+two editable/four locked sentences and unchanged source material, with zero
+network requests. New request size: 12,139 bytes. System prompt/schema SHA-256:
+`68e8c5dd0dad46e74e46917921fdf4b0435dc883390a410ecb385995c9177049`.
+The original repair preflight still matches its 11,059-byte request and hash.
+Independent preflight found a mismatch between the five selected definitions and
+seven labels checked by the guard. The complete canonical label list and exact-set
+regression address it, and the actual private-input preflight confirms all seven
+labels. Live exact-output review remains required.

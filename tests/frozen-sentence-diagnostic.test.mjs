@@ -18,7 +18,7 @@ import { EDITORIAL_VOCABULARY_PROMPT, buildEditorialVocabulary } from '../script
 import { buildDefinitionContext } from '../scripts/automation/experiments/definition-context.mjs';
 import { CONTEXT_EDITOR_PROMPT } from '../scripts/automation/experiments/context-editor-profile.mjs';
 import { DIRECT_DEFINITION_PROMPT, COMPACT_DIRECT_DEFINITION_PROMPT, NAMED_COMPOSITION_PROMPT, buildDirectDefinitionPlan } from '../scripts/automation/experiments/direct-definition-editor.mjs';
-import {SENTENCE_REPAIR_PROMPT} from '../scripts/automation/experiments/sentence-repair-profile.mjs';
+import {SENTENCE_REPAIR_PROMPT,PLAIN_SENTENCE_REPAIR_PROMPT} from '../scripts/automation/experiments/sentence-repair-profile.mjs';
 import { requestWorkersAiEditorial, buildWorkersAiRequest, DEFAULT_CLOUDFLARE_AI_MODEL, FREE_REASONING_WRITER_MODEL, workersAiRunUrl } from '../scripts/automation/free/workers-ai.mjs';
 import { prepareFrozenDiagnosticBaseline, resolvePrivateWriterDiagnosticMode, diagnoseOneWriter } from '../scripts/automation/private-writer-diagnostic.mjs';
 
@@ -61,7 +61,8 @@ function fixture(definition = false, termUnitCount = 1) {
 async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal, changedFields = fields.slice(1),
   definition = false, glossaryLoader, sourceMismatch = false, mutatePolish, vocabulary = false, reasoning = false,
   context = false, mutateContext, direct = false, unitMeaning = false, namedComposition = false, termUnitCount = 1,
-  repairMode=false,mutateRepair } = {}) {
+  repairMode=false,mutateRepair,plainRepair=false } = {}) {
+  if(plainRepair)repairMode=true;
   if(repairMode){namedComposition=true;termUnitCount=3;}
   if(namedComposition)unitMeaning=true;
   if(unitMeaning)direct=true;
@@ -109,6 +110,7 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
     directDefinitions: direct,
     unitMeaning,
     namedComposition,
+    plainRepair,
     ...(repairMode?{repairPacketText:'PRIVATE_SYNTHETIC_REPAIR',repairLoader:()=>repair}:{}),
     ...(context ? { contextPacketText: 'PRIVATE_SYNTHETIC_PACKET', contextLoader: async () => contextData } : {}),
     ...(definition ? { definitionGlossaryLoader: glossaryLoader ?? (() => glossary) } : {}),
@@ -155,9 +157,10 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
         { headers: { 'content-type': 'application/json' } });
       let payload;
       if (index === 0) {
-        assert.equal(request.messages[0].content, `${repairMode ? SENTENCE_REPAIR_PROMPT : namedComposition ? NAMED_COMPOSITION_PROMPT : unitMeaning ? COMPACT_DIRECT_DEFINITION_PROMPT : direct ? DIRECT_DEFINITION_PROMPT : context ? CONTEXT_EDITOR_PROMPT : vocabulary ? EDITORIAL_VOCABULARY_PROMPT : definition ? DEFINITION_COMPOSITION_PROMPT : SENTENCE_REWRITE_PROMPT}\nJSON schema: ${JSON.stringify(catalog.schema)}`);
+        assert.equal(request.messages[0].content, `${plainRepair ? PLAIN_SENTENCE_REPAIR_PROMPT : repairMode ? SENTENCE_REPAIR_PROMPT : namedComposition ? NAMED_COMPOSITION_PROMPT : unitMeaning ? COMPACT_DIRECT_DEFINITION_PROMPT : direct ? DIRECT_DEFINITION_PROMPT : context ? CONTEXT_EDITOR_PROMPT : vocabulary ? EDITORIAL_VOCABULARY_PROMPT : definition ? DEFINITION_COMPOSITION_PROMPT : SENTENCE_REWRITE_PROMPT}\nJSON schema: ${JSON.stringify(catalog.schema)}`);
         assert.deepEqual(data, { catalog: catalog.data, attribution: 'Private synthetic fact context', facts: [],
           ...(definition ? buildDefinitionContext(originalCatalog.data.units.map(unit => unit.text), glossary) : {}),
+          ...(plainRepair?{forbiddenTechnicalLabels:glossary.definitions.map(item=>item.term)}:{}),
           ...(vocabulary ? buildEditorialVocabulary(catalog.data.units.map(unit => unit.text), glossary) : {}),
           ...(direct ? {directEditPlan:buildDirectDefinitionPlan(catalog,glossary,{protectNames:namedComposition,
             ...(repairMode?{repairScope:{originalCatalog,unitIds:repair.feedback.map(f=>f.unitId)}}:{})})} : {}),
@@ -205,6 +208,25 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
   return { ...result, requests, network, f, after };
 }
 
+test('plain repair supplies exact guard vocabulary, with unchanged review requests and ceilings',async()=>{
+  const old=await run({repairMode:true}),r=await run({plainRepair:true});
+  assert.equal(r.report.status,'draft-awaiting-manual-review');
+  assert.equal(r.report.mode,'context-two-unit-plain-repair-awaiting-manual-review');
+  assert.equal(r.report.modelRequests,8);assert.equal(r.report.outputBudget,6600);
+  assert.deepEqual(r.sealed.calls.slice(1),old.sealed.calls.slice(1));
+  const {forbiddenTechnicalLabels,...unchangedData}=r.sealed.calls[0].request;
+  assert.deepEqual(unchangedData,old.sealed.calls[0].request);
+  assert.deepEqual(forbiddenTechnicalLabels,['binding rules','binding rule','draft candidates','draft candidate']);
+  assert.ok(forbiddenTechnicalLabels.length>r.sealed.calls[0].request.definitions.length);
+  const mutateProposal=p=>{p.sentences[0].text=p.sentences[0].text.replace('nonoptional requirements','binding rules');};
+  const held=await run({plainRepair:true,mutateProposal});
+  assert.equal(held.report.code,'DIRECT_DEFINITION_RETAINED_LABEL');assert.equal(held.requests.length,1);
+  assert.equal(held.sealed.calls[0].response,undefined);
+  assert.equal(held.sealed.rawCopyedit,undefined);
+  assert.deepEqual(held.sealed.calls[0].styleRejection,{unitId:'U1',rule:'retained-definition-label',termSha256:[sha('binding rules')]});
+  assert.equal(held.report.styleRejection,undefined);assert.doesNotMatch(JSON.stringify(held.report),/binding|U1|termSha256/);
+  const legacyHeld=await run({repairMode:true,mutateProposal});assert.equal(legacyHeld.sealed.calls[0].styleRejection,undefined);
+});
 test('review-guided repair edits only two seed units but compares all final meaning to original',async()=>{
   const r=await run({repairMode:true});
   assert.equal(r.report.status,'draft-awaiting-manual-review');

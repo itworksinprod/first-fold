@@ -26,6 +26,7 @@ test('context input is required only for its opt-in mode and rejected elsewhere'
   assert.equal(resolvePrivateWriterDiagnosticMode('context-direct-unit-language'), 'context-direct-unit-language');
   assert.equal(resolvePrivateWriterDiagnosticMode('context-named-unit-language'), 'context-named-unit-language');
   assert.equal(resolvePrivateWriterDiagnosticMode('context-two-unit-repair'), 'context-two-unit-repair');
+  assert.equal(resolvePrivateWriterDiagnosticMode('context-two-unit-plain-repair'), 'context-two-unit-plain-repair');
   for (const mode of ['source', 'frozen-reasoning-language', 'saved-final-review', 'grammar-reasoning-holdouts']) {
     assert.equal(await prepareContextDiagnostic(mode, ''), undefined);
     await assert.rejects(prepareContextDiagnostic(mode, 'private'), /UNEXPECTED_CONTEXT_PACKET/);
@@ -35,6 +36,7 @@ test('context input is required only for its opt-in mode and rejected elsewhere'
   await assert.rejects(prepareContextDiagnostic('context-direct-unit-language', ''), /CONTEXT_EDITOR_PACKET_INVALID/);
   await assert.rejects(prepareContextDiagnostic('context-named-unit-language', ''), /CONTEXT_EDITOR_PACKET_INVALID/);
   await assert.rejects(prepareContextDiagnostic('context-two-unit-repair', ''), /CONTEXT_EDITOR_PACKET_INVALID/);
+  await assert.rejects(prepareContextDiagnostic('context-two-unit-plain-repair', ''), /CONTEXT_EDITOR_PACKET_INVALID/);
 });
 
 test('new generic fluency guidance retains all existing composition safeguards', () => {
@@ -61,8 +63,8 @@ test('bad context combinations, pins and baseline mismatch fail before inference
 
 test('workflow scopes private context to two opt-in steps and tests before credentials', async () => {
   const workflow = await readFile(new URL('../.github/workflows/private-writer-diagnostic.yml', import.meta.url), 'utf8');
-  assert.equal((workflow.match(/\(inputs.mode == 'context-assisted-language' \|\| inputs.mode == 'context-direct-language' \|\| inputs.mode == 'context-direct-unit-language' \|\| inputs.mode == 'context-named-unit-language' \|\| inputs.mode == 'context-two-unit-repair'\) && secrets.FIRST_FOLD_CONTEXT_EDITOR_PACKET_B64 \|\| ''/gu) ?? []).length, 2);
-  assert.equal((workflow.match(/inputs.mode == 'context-two-unit-repair' && secrets.FIRST_FOLD_SENTENCE_REPAIR_B64 \|\| ''/gu)??[]).length,2);
+  assert.equal((workflow.match(/\(inputs.mode == 'context-assisted-language' \|\| inputs.mode == 'context-direct-language' \|\| inputs.mode == 'context-direct-unit-language' \|\| inputs.mode == 'context-named-unit-language' \|\| inputs.mode == 'context-two-unit-repair' \|\| inputs.mode == 'context-two-unit-plain-repair'\) && secrets.FIRST_FOLD_CONTEXT_EDITOR_PACKET_B64 \|\| ''/gu) ?? []).length, 2);
+  assert.equal((workflow.match(/\(inputs.mode == 'context-two-unit-repair' \|\| inputs.mode == 'context-two-unit-plain-repair'\) && secrets.FIRST_FOLD_SENTENCE_REPAIR_B64 \|\| ''/gu)??[]).length,2);
   assert.ok(workflow.indexOf('tests/context-editor-profile.test.mjs') < workflow.indexOf('secrets.CLOUDFLARE_AI_API_TOKEN'));
   assert.match(workflow, /contents: read/);
   assert.match(workflow, /retention-days: 1/);

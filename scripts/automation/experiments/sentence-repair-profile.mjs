@@ -13,6 +13,9 @@ For each repair, preserve the complete originalText meaning using the FULL revie
 DUPLICATE_OBLIGATION: express the mandatory force once using a compact natural modifier, rather than adding a relative clause that repeats an obligation already expressed by the verb. Do not weaken a mandatory condition to a preference.
 INCOMPLETE_DEFINITION_COMPONENTS: restore every defining component and relationship omitted by the seed, using direct ordinary wording. A broad category or the opening clause of a definition is not equivalent to its full meaning. Do not paste an entire glossary sentence or add claims beyond the original concept.
 The feedback is not proof that a repair is correct. Source, original-to-final meaning and independent full-text checks still apply. If a safe repair is uncertain, abstain; do not improve unrelated sentences.`;
+export const PLAIN_SENTENCE_REPAIR_PROMPT=SENTENCE_REPAIR_PROMPT+`
+The technical labels in definitions and originalText are reference vocabulary, NOT phrases to copy into a repaired sentence. forbiddenTechnicalLabels is the complete canonical list checked by the style guard, including explicit singular/plural forms; it is vocabulary, not additional source facts. No changed sentence may contain any label in that list, including a term associated with a different unit. Preserve required names, but express every technical concept fully in ordinary language instead of restoring its label.
+Before returning JSON, check both repaired sentences against forbiddenTechnicalLabels. If a label remains, replace it with a concise natural expression of its FULL meaning, including its defining components and relationships. Never drop meaning just to avoid a label. If you cannot satisfy both requirements, abstain with the unchanged seed catalog.`;
 
 export function loadSentenceRepairPacketText(text){
   if(typeof text!=='string'||Buffer.byteLength(text)>12000||sha(text)!==SENTENCE_REPAIR_PACKET_SHA256)throw fail();

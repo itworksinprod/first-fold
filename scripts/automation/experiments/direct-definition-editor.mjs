@@ -81,7 +81,9 @@ export function validateDirectDefinitionEdits(proposal, catalog, plan) {
     for (const delimiter of ['(', ')', '[', ']']) {
       if (after.text.split(delimiter).length > before.text.split(delimiter).length) throw fail('ADDED_ASIDE');
     }
-    if (buildDefinitionContext([after.text], bound.glossary).definitions.length) throw fail('RETAINED_LABEL');
+    const retained=buildDefinitionContext([after.text], bound.glossary).definitions;
+    if (retained.length) throw Object.assign(fail('RETAINED_LABEL'),{styleRejection:{unitId:before.unitId,
+      rule:'retained-definition-label',termSha256:retained.map(item=>createHash('sha256').update(item.term).digest('hex'))}});
   }
   return true;
 }

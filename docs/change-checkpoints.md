@@ -2392,3 +2392,13 @@ The [two-unit repair](checkpoints/two-unit-repair.md) pins that unapproved outpu
 as an editor seed, locks its other sentences, and preserves the original draft
 for all final meaning checks. All 1,566 tests and actual-input offline preflight
 pass; new prose has not yet been qualified. No daily-delivery or email change.
+
+### Two-unit repair — first live style rejection
+
+Run 36357685405 stopped after its single editor call because a technical label
+remained. No factual/meaning review or email occurred; the intentionally redacted
+response means the precise term is unknown. A separate plain-repair mode adds
+explicit full-meaning/label-avoidance guidance and bounded encrypted rejection
+metadata. Original source/meaning gates, baselines, free providers and ceilings
+are unchanged. All 1,567 tests and actual-input offline preflight pass. See the
+[receipt](checkpoints/two-unit-repair.md); live prose remains unqualified.
