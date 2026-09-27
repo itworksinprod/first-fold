@@ -17,6 +17,7 @@ import { DEFINITION_POLISH_PROMPT } from '../scripts/automation/experiments/defi
 import { EDITORIAL_VOCABULARY_PROMPT, buildEditorialVocabulary } from '../scripts/automation/experiments/editorial-vocabulary.mjs';
 import { buildDefinitionContext } from '../scripts/automation/experiments/definition-context.mjs';
 import { CONTEXT_EDITOR_PROMPT } from '../scripts/automation/experiments/context-editor-profile.mjs';
+import { DIRECT_DEFINITION_PROMPT, buildDirectDefinitionPlan } from '../scripts/automation/experiments/direct-definition-editor.mjs';
 import { requestWorkersAiEditorial, buildWorkersAiRequest, DEFAULT_CLOUDFLARE_AI_MODEL, FREE_REASONING_WRITER_MODEL, workersAiRunUrl } from '../scripts/automation/free/workers-ai.mjs';
 import { prepareFrozenDiagnosticBaseline, resolvePrivateWriterDiagnosticMode, diagnoseOneWriter } from '../scripts/automation/private-writer-diagnostic.mjs';
 
@@ -52,7 +53,8 @@ function fixture(definition = false) {
 }
 async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal, changedFields = fields.slice(1),
   definition = false, glossaryLoader, sourceMismatch = false, mutatePolish, vocabulary = false, reasoning = false,
-  context = false, mutateContext } = {}) {
+  context = false, mutateContext, direct = false } = {}) {
+  if(direct)context=true;
   if (context) { definition = true; reasoning = true; }
   const polishEnabled = definition && !vocabulary && !reasoning;
   const f = fixture(definition && !sourceMismatch), requests = [], network = [];
@@ -64,10 +66,11 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
   if (mutateContext) mutateContext(contextData);
   const catalog = buildSentenceRewriteView(f.before.units);
   const rawAfter = structuredClone(f.raw);
-  for (const field of changedFields) {
+  for (const field of direct ? [] : changedFields) {
     const pair = { whatHappened: ['research method', 'research approach'], whyItMatters: ['discuss', 'describe'], whatToWatch: ['explain', 'describe'] }[field];
     rawAfter[field][0] = rawAfter[field][0].replace(...pair);
   }
+  if(direct)rawAfter.whatHappened[0]=rawAfter.whatHappened[0].replace('binding rules','nonoptional requirements');
   const after = normalizeClaimwiseSummary(rawAfter, f.excerpt, 'MIT');
   const finalProposal = { baselineSha256: catalog.data.baselineSha256, decision: 'rewrite',
     sentences: catalog.data.units.map(u => ({ unitId: u.unitId, text: after.units[u.field][u.unitIndex] })) };
@@ -85,6 +88,7 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
     definitionPreservation: definition,
     editorialVocabulary: vocabulary,
     reasoningEditor: reasoning,
+    directDefinitions: direct,
     ...(context ? { contextPacketText: 'PRIVATE_SYNTHETIC_PACKET', contextLoader: async () => contextData } : {}),
     ...(definition ? { definitionGlossaryLoader: glossaryLoader ?? (() => glossary) } : {}),
     articleFetcher: () => assert.fail('Frozen trials must not fetch a fresh article'),
@@ -130,10 +134,11 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
         { headers: { 'content-type': 'application/json' } });
       let payload;
       if (index === 0) {
-        assert.equal(request.messages[0].content, `${context ? CONTEXT_EDITOR_PROMPT : vocabulary ? EDITORIAL_VOCABULARY_PROMPT : definition ? DEFINITION_COMPOSITION_PROMPT : SENTENCE_REWRITE_PROMPT}\nJSON schema: ${JSON.stringify(catalog.schema)}`);
+        assert.equal(request.messages[0].content, `${direct ? DIRECT_DEFINITION_PROMPT : context ? CONTEXT_EDITOR_PROMPT : vocabulary ? EDITORIAL_VOCABULARY_PROMPT : definition ? DEFINITION_COMPOSITION_PROMPT : SENTENCE_REWRITE_PROMPT}\nJSON schema: ${JSON.stringify(catalog.schema)}`);
         assert.deepEqual(data, { catalog: catalog.data, attribution: 'Private synthetic fact context', facts: [],
           ...(definition ? buildDefinitionContext(catalog.data.units.map(unit => unit.text), glossary) : {}),
-          ...(vocabulary ? buildEditorialVocabulary(catalog.data.units.map(unit => unit.text), glossary) : {}) });
+          ...(vocabulary ? buildEditorialVocabulary(catalog.data.units.map(unit => unit.text), glossary) : {}),
+          ...(direct ? {directEditPlan:buildDirectDefinitionPlan(catalog,glossary)} : {}) });
         payload = proposal;
       } else if (polishEnabled && index === 1) {
         assert.equal(request.messages[0].content, `${DEFINITION_POLISH_PROMPT}\nJSON schema: ${JSON.stringify(catalog.schema)}`);
@@ -173,6 +178,29 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
   return { ...result, requests, network, f, after };
 }
 
+test('direct editor locks plain units and still reviews every final field',async()=>{
+  const r=await run({direct:true});
+  assert.equal(r.report.status,'draft-awaiting-manual-review');
+  assert.equal(r.report.mode,'context-direct-language-awaiting-manual-review');
+  assert.equal(r.report.modelRequests,6);assert.equal(r.report.outputBudget,5400);
+  assert.deepEqual(r.sealed.directEditPlan.lockedUnitIds,['U2','U3','U4','U5']);
+  assert.equal(r.sealed.calls.filter(c=>c.dimension==='source').length,4);
+  assert.deepEqual(r.sealed.localReviews.map(v=>v.field),['headline','whyItMatters','whatToWatch']);
+});
+test('direct editor clarity violations stop before any review',async()=>{
+  for(const mutateProposal of [p=>{p.sentences[1].text=p.sentences[1].text.replace('report','account');},
+    p=>{p.sentences[0].text=p.sentences[0].text.replace('nonoptional requirements','binding rules (nonoptional requirements)');}]){
+    const r=await run({direct:true,mutateProposal});
+    assert.equal(r.report.status,'failed');assert.match(r.report.code,/DIRECT_DEFINITION_/);
+    assert.equal(r.requests.length,1);assert.equal(r.sealed.fieldReviews.length,0);
+  }
+});
+test('direct editor cannot waive source, meaning, provider or provenance failure',async()=>{
+  for(const rejectAt of [1,2,3,4,5])for(const rejection of ['false','malformed','quota','truncated','provenance','retry']){
+    const r=await run({direct:true,rejectAt,rejection});assert.equal(r.report.status,'failed');
+    assert.ok(r.requests.length<=rejectAt+2);assert.equal(r.report.emailSent,false);
+  }
+});
 test('context-assisted editor routes independent checks without inheriting old qualification', async () => {
   const r = await run({ context: true });
   assert.equal(r.report.status, 'draft-awaiting-manual-review');

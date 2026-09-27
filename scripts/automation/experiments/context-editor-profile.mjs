@@ -2,7 +2,6 @@
 import {createHash} from 'node:crypto';
 import {gunzipSync} from 'node:zlib';
 import {CONTEXT_EDITOR_PACKET_SHA256,loadContextDefinitionGlossary} from './definition-glossaries.mjs';
-import {loadPinnedFrozenFactBaseline} from '../free/frozen-fact-baseline.mjs';
 import {DEFINITION_COMPOSITION_PROMPT} from './definition-composition-prompt.mjs';
 const fail=()=>Object.assign(new Error('CONTEXT_EDITOR_PACKET_INVALID'),{code:'CONTEXT_EDITOR_PACKET_INVALID'});
 const sha=t=>createHash('sha256').update(t).digest('hex');
@@ -20,6 +19,9 @@ export function decodeContextEditorPacket(encoded){
 export async function loadContextEditorPacketText(text){
   if(typeof text!=='string'||Buffer.byteLength(text)>75_000||sha(text)!==CONTEXT_EDITOR_PACKET_SHA256)throw fail();
   const packet=JSON.parse(text);
+  // The baseline validator uses fact-summary validation. Defer this import so
+  // prompt-only consumers and cold CLI imports cannot form an ESM init cycle.
+  const {loadPinnedFrozenFactBaseline}=await import('../free/frozen-fact-baseline.mjs');
   const baseline=await loadPinnedFrozenFactBaseline(packet.baselineText);
   return freeze({baselineText:packet.baselineText,
     glossary:loadContextDefinitionGlossary(text,baseline.source.excerpt),

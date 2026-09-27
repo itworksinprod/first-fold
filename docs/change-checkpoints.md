@@ -2337,3 +2337,13 @@ production readiness. Independent clarity checks support that hold, with the
 full semantic-review limitation documented. No second inference run or email
 occurred. The next proposal narrows eligible edits and requires direct plain
 phrasing, without weakening factual or meaning checks.
+
+### Direct-definition editor — narrow readability repair
+
+The [new isolated checkpoint](checkpoints/direct-definition-editor.md) locks
+already-plain units and requires changed technical units to use direct wording.
+It retains the approved private input and all factual/meaning gates. A cold
+import bug found in preflight was fixed and regression-tested. All 1,545 tests
+and independent implementation review pass. Prior live output replays exactly
+in its original mode and is rejected by the new style gate. Live prose quality
+remains unproven until the next bounded no-email test and outcome inspection.

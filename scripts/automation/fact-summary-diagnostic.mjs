@@ -21,6 +21,7 @@ import { DEFINITION_POLISH_PROMPT } from './experiments/definition-polish-prompt
 import { EDITORIAL_VOCABULARY_PROMPT, buildEditorialVocabulary } from './experiments/editorial-vocabulary.mjs';
 import { buildDefinitionContext } from './experiments/definition-context.mjs';
 import { CONTEXT_EDITOR_PROMPT,loadContextEditorPacketText } from './experiments/context-editor-profile.mjs';
+import {DIRECT_DEFINITION_PROMPT, buildDirectDefinitionPlan, validateDirectDefinitionEdits} from './experiments/direct-definition-editor.mjs';
 
 const fields = ['headline', 'whatHappened', 'whyItMatters', 'whatToWatch'];
 const hash = text => createHash('sha256').update(text).digest('hex');
@@ -64,7 +65,7 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
   claimwise = false, profile = 'anthropic', plainLanguageCopyedit = false, sentenceLanguageRewrite = false,
   articleFetcher = fetchReviewedArticle, sheetLoader, frozenBaselineText, qualificationLoader,
   definitionPreservation = false, definitionGlossaryLoader = loadQualifiedMitGlossary, editorialVocabulary = false,
-  reasoningEditor = false, contextPacketText, contextLoader = loadContextEditorPacketText }) {
+  reasoningEditor = false, contextPacketText, contextLoader = loadContextEditorPacketText, directDefinitions = false }) {
   if (typeof claimwise !== 'boolean') throw fail('FACT_SUMMARY_MODE');
   const generic = profile === 'mit-generalization';
   if (typeof plainLanguageCopyedit !== 'boolean' || (plainLanguageCopyedit && (!generic || !claimwise))) throw fail('FACT_SUMMARY_MODE');
@@ -76,6 +77,7 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
   if (typeof editorialVocabulary !== 'boolean' || (editorialVocabulary && !definitionPreservation)) throw fail('FACT_SUMMARY_MODE');
   if (typeof reasoningEditor !== 'boolean' || (reasoningEditor && (!definitionPreservation || editorialVocabulary))) throw fail('FACT_SUMMARY_MODE');
   const contextMode=contextPacketText!==undefined;
+  if(typeof directDefinitions!=='boolean'||(directDefinitions&&!contextMode))throw fail('FACT_SUMMARY_MODE');
   if(contextMode&&(!reasoningEditor||typeof contextPacketText!=='string'))throw fail('FACT_SUMMARY_MODE');
   const context=contextMode?await contextLoader(contextPacketText):null;
   if(contextMode&&context.baselineText!==frozenBaselineText)throw fail('CONTEXT_EDITOR_BASELINE_CHANGED');
@@ -83,7 +85,7 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
   if (!['anthropic', 'mit-generalization'].includes(profile) || (profile === 'mit-generalization' && !claimwise)) throw fail('FACT_SUMMARY_PROFILE');
   const editedReviewPath = plainLanguageCopyedit || sentenceLanguageRewrite;
   const polishEnabled = definitionPreservation && !editorialVocabulary && !reasoningEditor;
-  const copyeditPrompt = contextMode ? CONTEXT_EDITOR_PROMPT : editorialVocabulary ? EDITORIAL_VOCABULARY_PROMPT : definitionPreservation ? DEFINITION_COMPOSITION_PROMPT
+  const copyeditPrompt = directDefinitions ? DIRECT_DEFINITION_PROMPT : contextMode ? CONTEXT_EDITOR_PROMPT : editorialVocabulary ? EDITORIAL_VOCABULARY_PROMPT : definitionPreservation ? DEFINITION_COMPOSITION_PROMPT
     : sentenceLanguageRewrite ? SENTENCE_REWRITE_PROMPT : PLAIN_LANGUAGE_COPYEDIT_PROMPT;
   const maxRequests = polishEnabled ? 9 : frozenMode ? 8 : sentenceLanguageRewrite ? 9 : plainLanguageCopyedit ? 7 : 5;
   const maxOutputBudget = polishEnabled || reasoningEditor ? 6600 : frozenMode ? 5400 : sentenceLanguageRewrite ? 6600 : plainLanguageCopyedit ? 5400 : claimwise ? 3600 : 2800;
@@ -102,7 +104,9 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
     capture.localReviews = [];
   }
   if(contextMode){
+    if(directDefinitions)capture.purpose='context-direct-language-awaiting-manual-review';
     capture.copyeditStrategy='context-assisted-reasoning-editor-v1';
+    if(directDefinitions)capture.copyeditStrategy='context-direct-definitions-editor-v1';
     capture.reviewStrategy='isolated-llama-source-plus-gptoss-meaning-experimental';
     capture.context={packetSha256:context.packetSha256,supplementCaptureSha256:context.supplementCaptureSha256,
       supplementUrl:context.supplementUrl,supplementSource:context.supplementSource};
@@ -236,10 +240,13 @@ The article is one company's account. No tables or appendix are available. No ou
         draftSha256: hash(JSON.stringify(normalized.draft)), unitsSha256: phraseCopyeditUnitsHash(normalized.units) };
       const catalog = sentenceLanguageRewrite ? buildSentenceRewriteView(normalized.units) : buildSinglePhraseCopyeditView(normalized.units);
       capture.copyeditCatalog = catalog.data;
+      const directEditPlan = directDefinitions ? buildDirectDefinitionPlan(catalog, glossary) : null;
+      if(directEditPlan)capture.directEditPlan=directEditPlan;
       const editData = sentenceLanguageRewrite
         ? { catalog: catalog.data, attribution: sheet.attribution, facts: sheet.facts,
           ...(definitionPreservation ? buildDefinitionContext(catalog.data.units.map(unit => unit.text), glossary) : {}),
-          ...(editorialVocabulary ? buildEditorialVocabulary(catalog.data.units.map(unit => unit.text), glossary) : {}) }
+          ...(editorialVocabulary ? buildEditorialVocabulary(catalog.data.units.map(unit => unit.text), glossary) : {}),
+          ...(directEditPlan ? {directEditPlan} : {}) }
         : { catalog: catalog.data, limits: SINGLE_PHRASE_COPYEDIT_LIMITS,
           protectedWords: PHRASE_COPYEDIT_PROTECTED_WORDS, attribution: sheet.attribution, facts: sheet.facts };
       // Validate the new rewrite's strict shape before cloning or capturing it.
@@ -254,6 +261,7 @@ The article is one company's account. No tables or appendix are available. No ou
       try {
         applied = sentenceLanguageRewrite ? applySentenceRewrite(normalized.units, proposal, catalog)
           : applySinglePhraseCopyedit(normalized.units, proposal, catalog);
+        if(directEditPlan)validateDirectDefinitionEdits(proposal,catalog,directEditPlan);
       } catch (error) {
         if (sentenceLanguageRewrite) result.call.responseRejectedBeforeCapture = true;
         throw error;
