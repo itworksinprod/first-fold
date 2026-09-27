@@ -2347,3 +2347,18 @@ import bug found in preflight was fixed and regression-tested. All 1,545 tests
 and independent implementation review pass. Prior live output replays exactly
 in its original mode and is rejected by the new style gate. Live prose quality
 remains unproven until the next bounded no-email test and outcome inspection.
+
+### Direct editor — one truncated review, bounded repair
+
+Run 36288316471 stopped on its first changed-field meaning review reaching the
+600-token output limit. Its edited draft remains on HOLD; source support alone
+does not resolve a missing meaning verdict or awkward prose. The
+[checkpoint receipt](checkpoints/direct-definition-editor.md) records the run
+and artifact hashes. No retry or cap increase occurred.
+
+A separate compact-editor/per-changed-unit mode retains the approved private
+payload, models, source and meaning prompts and total eight-call/6,600-token
+maximum. Exact binding, complete coverage, three-changed-unit cap and legacy
+replay tests pass. Full suite: 1,553 tests. Independent implementation preflight
+found no blocker. This changes two aspects and does not retroactively approve
+the held candidate or assert live quality for the next attempt.

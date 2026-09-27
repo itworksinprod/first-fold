@@ -21,7 +21,8 @@ import { DEFINITION_POLISH_PROMPT } from './experiments/definition-polish-prompt
 import { EDITORIAL_VOCABULARY_PROMPT, buildEditorialVocabulary } from './experiments/editorial-vocabulary.mjs';
 import { buildDefinitionContext } from './experiments/definition-context.mjs';
 import { CONTEXT_EDITOR_PROMPT,loadContextEditorPacketText } from './experiments/context-editor-profile.mjs';
-import {DIRECT_DEFINITION_PROMPT, buildDirectDefinitionPlan, validateDirectDefinitionEdits} from './experiments/direct-definition-editor.mjs';
+import {DIRECT_DEFINITION_PROMPT, COMPACT_DIRECT_DEFINITION_PROMPT, buildDirectDefinitionPlan, validateDirectDefinitionEdits} from './experiments/direct-definition-editor.mjs';
+import {buildUnitMeaningPlan,validateUnitMeaningResponses} from './experiments/unit-meaning-review.mjs';
 
 const fields = ['headline', 'whatHappened', 'whyItMatters', 'whatToWatch'];
 const hash = text => createHash('sha256').update(text).digest('hex');
@@ -65,7 +66,7 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
   claimwise = false, profile = 'anthropic', plainLanguageCopyedit = false, sentenceLanguageRewrite = false,
   articleFetcher = fetchReviewedArticle, sheetLoader, frozenBaselineText, qualificationLoader,
   definitionPreservation = false, definitionGlossaryLoader = loadQualifiedMitGlossary, editorialVocabulary = false,
-  reasoningEditor = false, contextPacketText, contextLoader = loadContextEditorPacketText, directDefinitions = false }) {
+  reasoningEditor = false, contextPacketText, contextLoader = loadContextEditorPacketText, directDefinitions = false, unitMeaning = false }) {
   if (typeof claimwise !== 'boolean') throw fail('FACT_SUMMARY_MODE');
   const generic = profile === 'mit-generalization';
   if (typeof plainLanguageCopyedit !== 'boolean' || (plainLanguageCopyedit && (!generic || !claimwise))) throw fail('FACT_SUMMARY_MODE');
@@ -78,6 +79,7 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
   if (typeof reasoningEditor !== 'boolean' || (reasoningEditor && (!definitionPreservation || editorialVocabulary))) throw fail('FACT_SUMMARY_MODE');
   const contextMode=contextPacketText!==undefined;
   if(typeof directDefinitions!=='boolean'||(directDefinitions&&!contextMode))throw fail('FACT_SUMMARY_MODE');
+  if(typeof unitMeaning!=='boolean'||(unitMeaning&&!directDefinitions))throw fail('FACT_SUMMARY_MODE');
   if(contextMode&&(!reasoningEditor||typeof contextPacketText!=='string'))throw fail('FACT_SUMMARY_MODE');
   const context=contextMode?await contextLoader(contextPacketText):null;
   if(contextMode&&context.baselineText!==frozenBaselineText)throw fail('CONTEXT_EDITOR_BASELINE_CHANGED');
@@ -85,7 +87,7 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
   if (!['anthropic', 'mit-generalization'].includes(profile) || (profile === 'mit-generalization' && !claimwise)) throw fail('FACT_SUMMARY_PROFILE');
   const editedReviewPath = plainLanguageCopyedit || sentenceLanguageRewrite;
   const polishEnabled = definitionPreservation && !editorialVocabulary && !reasoningEditor;
-  const copyeditPrompt = directDefinitions ? DIRECT_DEFINITION_PROMPT : contextMode ? CONTEXT_EDITOR_PROMPT : editorialVocabulary ? EDITORIAL_VOCABULARY_PROMPT : definitionPreservation ? DEFINITION_COMPOSITION_PROMPT
+  const copyeditPrompt = unitMeaning ? COMPACT_DIRECT_DEFINITION_PROMPT : directDefinitions ? DIRECT_DEFINITION_PROMPT : contextMode ? CONTEXT_EDITOR_PROMPT : editorialVocabulary ? EDITORIAL_VOCABULARY_PROMPT : definitionPreservation ? DEFINITION_COMPOSITION_PROMPT
     : sentenceLanguageRewrite ? SENTENCE_REWRITE_PROMPT : PLAIN_LANGUAGE_COPYEDIT_PROMPT;
   const maxRequests = polishEnabled ? 9 : frozenMode ? 8 : sentenceLanguageRewrite ? 9 : plainLanguageCopyedit ? 7 : 5;
   const maxOutputBudget = polishEnabled || reasoningEditor ? 6600 : frozenMode ? 5400 : sentenceLanguageRewrite ? 6600 : plainLanguageCopyedit ? 5400 : claimwise ? 3600 : 2800;
@@ -107,6 +109,7 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
     if(directDefinitions)capture.purpose='context-direct-language-awaiting-manual-review';
     capture.copyeditStrategy='context-assisted-reasoning-editor-v1';
     if(directDefinitions)capture.copyeditStrategy='context-direct-definitions-editor-v1';
+    if(unitMeaning){capture.purpose='context-direct-unit-language-awaiting-manual-review';capture.copyeditStrategy='compact-direct-definitions-editor-v1';capture.meaningGranularity='changed-unit-v1';}
     capture.reviewStrategy='isolated-llama-source-plus-gptoss-meaning-experimental';
     capture.context={packetSha256:context.packetSha256,supplementCaptureSha256:context.supplementCaptureSha256,
       supplementUrl:context.supplementUrl,supplementSource:context.supplementSource};
@@ -262,6 +265,7 @@ The article is one company's account. No tables or appendix are available. No ou
         applied = sentenceLanguageRewrite ? applySentenceRewrite(normalized.units, proposal, catalog)
           : applySinglePhraseCopyedit(normalized.units, proposal, catalog);
         if(directEditPlan)validateDirectDefinitionEdits(proposal,catalog,directEditPlan);
+        if(unitMeaning&&applied.editsApplied?.length>3)throw fail('FACT_SUMMARY_UNIT_REVIEW_BUDGET');
       } catch (error) {
         if (sentenceLanguageRewrite) result.call.responseRejectedBeforeCapture = true;
         throw error;
@@ -349,6 +353,26 @@ The article is one company's account. No tables or appendix are available. No ou
             verdict: structuredClone(identityVerdict) };
           capture.localReviews.push(localReview);
           meaningReview = { local: true, verdict: identityVerdict };
+        } else if(unitMeaning){
+          const plan=buildUnitMeaningPlan(meaningInput,glossary),unitReviews=[];
+          for(const entry of plan){
+            const {unitIndex,view,identity}=entry;
+            if(identity){
+              capture.localReviews.push({field,unitIndex,dimension:'meaning',request:view.data,verdict:identity});
+              unitReviews.push({unitIndex,local:true,verdict:identity});
+              continue;
+            }
+            const unitResult=await request(view.prompt,view.data,view.schema,600,
+              {timeoutMs:30000,deferCapture:true,metadata:{stage:'review',field,unitIndex,dimension:'meaning'}});
+            const unitVerdict=validateDefinitionPreservationReview(unitResult.payload,view);
+            if(unitVerdict.valid)unitResult.call.response=structuredClone(unitResult.payload);
+            else unitResult.call.responseRejectedBeforeCapture=true;
+            unitReviews.push({unitIndex,response:unitVerdict.valid?structuredClone(unitResult.payload):null,
+              verdict:unitVerdict,...(!unitVerdict.valid?{responseRejectedBeforeCapture:true}:{})});
+            if(!unitVerdict.valid||!unitVerdict.supported)break;
+          }
+          meaningVerdict=validateUnitMeaningResponses(plan,unitReviews);
+          meaningReview={granularity:'changed-unit-v1',units:unitReviews,verdict:meaningVerdict};
         } else {
           const meaningView = definitionPreservation ? buildDefinitionPreservationReview(meaningInput, glossary) : textView;
           const meaningResult = await request(meaningView.prompt, meaningView.data, meaningView.schema, 600,

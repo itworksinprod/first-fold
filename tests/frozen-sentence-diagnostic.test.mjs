@@ -17,7 +17,7 @@ import { DEFINITION_POLISH_PROMPT } from '../scripts/automation/experiments/defi
 import { EDITORIAL_VOCABULARY_PROMPT, buildEditorialVocabulary } from '../scripts/automation/experiments/editorial-vocabulary.mjs';
 import { buildDefinitionContext } from '../scripts/automation/experiments/definition-context.mjs';
 import { CONTEXT_EDITOR_PROMPT } from '../scripts/automation/experiments/context-editor-profile.mjs';
-import { DIRECT_DEFINITION_PROMPT, buildDirectDefinitionPlan } from '../scripts/automation/experiments/direct-definition-editor.mjs';
+import { DIRECT_DEFINITION_PROMPT, COMPACT_DIRECT_DEFINITION_PROMPT, buildDirectDefinitionPlan } from '../scripts/automation/experiments/direct-definition-editor.mjs';
 import { requestWorkersAiEditorial, buildWorkersAiRequest, DEFAULT_CLOUDFLARE_AI_MODEL, FREE_REASONING_WRITER_MODEL, workersAiRunUrl } from '../scripts/automation/free/workers-ai.mjs';
 import { prepareFrozenDiagnosticBaseline, resolvePrivateWriterDiagnosticMode, diagnoseOneWriter } from '../scripts/automation/private-writer-diagnostic.mjs';
 
@@ -27,7 +27,7 @@ const fields = ['headline', 'whatHappened', 'whyItMatters', 'whatToWatch'];
 const accountId = '0'.repeat(32);
 const endpoint = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${DEFAULT_CLOUDFLARE_AI_MODEL}`;
 // Mock support judgments and invented facts test the plumbing only.
-function fixture(definition = false) {
+function fixture(definition = false, termUnitCount = 1) {
   const raw = { headline: 'MIT describes a research method',
     whatHappened: ['MIT described a research method for studying how a model responds to a fixed collection of tasks under conditions specified by the researchers.',
       'The report explains the procedure and its limits, while separating observations made during the experiment from claims that would require additional testing in other settings.'],
@@ -35,6 +35,12 @@ function fixture(definition = false) {
       'A reader would need comparable definitions and a matching evaluation procedure before drawing conclusions from differences between this report and measurements published by another team.'],
     whatToWatch: ['Future reports could explain whether the researchers keep the same task definitions and how any changes affect the interpretation of measurements collected during later evaluations.'] };
   if (definition) raw.whatHappened[0] = raw.whatHappened[0].replace('fixed collection of tasks', 'set of binding rules');
+  if(definition&&termUnitCount>1){
+    let n=0;
+    for(const field of fields.slice(1))raw[field]=raw[field].map(text=>{
+      n++;return n>1&&n<=termUnitCount?text.replace(/\.$/u,' under binding rules.'):text;
+    });
+  }
   const excerpt = definition ? SYNTHETIC_DEFINITION_SOURCE : 'PRIVATE_SYNTHETIC_EVIDENCE: source placeholder for request testing.\nSecond synthetic passage.';
   const before = normalizeClaimwiseSummary(raw, excerpt, 'MIT');
   const sheet = { sourceUrl: 'https://news.mit.edu/2026/new-method-enables-ai-safety-critical-situations-0914',
@@ -53,11 +59,12 @@ function fixture(definition = false) {
 }
 async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal, changedFields = fields.slice(1),
   definition = false, glossaryLoader, sourceMismatch = false, mutatePolish, vocabulary = false, reasoning = false,
-  context = false, mutateContext, direct = false } = {}) {
+  context = false, mutateContext, direct = false, unitMeaning = false, termUnitCount = 1 } = {}) {
+  if(unitMeaning)direct=true;
   if(direct)context=true;
   if (context) { definition = true; reasoning = true; }
   const polishEnabled = definition && !vocabulary && !reasoning;
-  const f = fixture(definition && !sourceMismatch), requests = [], network = [];
+  const f = fixture(definition && !sourceMismatch,termUnitCount), requests = [], network = [];
   const glossary = definition ? loadDefinitionGlossary('synthetic-generation-definitions-v1', SYNTHETIC_DEFINITION_SOURCE) : null;
   const supplementSource = { publisher: 'Synthetic terminology context only',
     passages: [{ evidenceId: 'S2P1', text: 'PRIVATE_CONTEXT: This is invented terminology evidence for plumbing tests.' }] };
@@ -70,7 +77,7 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
     const pair = { whatHappened: ['research method', 'research approach'], whyItMatters: ['discuss', 'describe'], whatToWatch: ['explain', 'describe'] }[field];
     rawAfter[field][0] = rawAfter[field][0].replace(...pair);
   }
-  if(direct)rawAfter.whatHappened[0]=rawAfter.whatHappened[0].replace('binding rules','nonoptional requirements');
+  if(direct)for(const field of fields.slice(1))rawAfter[field]=rawAfter[field].map(t=>t.replaceAll('binding rules','nonoptional requirements'));
   const after = normalizeClaimwiseSummary(rawAfter, f.excerpt, 'MIT');
   const finalProposal = { baselineSha256: catalog.data.baselineSha256, decision: 'rewrite',
     sentences: catalog.data.units.map(u => ({ unitId: u.unitId, text: after.units[u.field][u.unitIndex] })) };
@@ -89,6 +96,7 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
     editorialVocabulary: vocabulary,
     reasoningEditor: reasoning,
     directDefinitions: direct,
+    unitMeaning,
     ...(context ? { contextPacketText: 'PRIVATE_SYNTHETIC_PACKET', contextLoader: async () => contextData } : {}),
     ...(definition ? { definitionGlossaryLoader: glossaryLoader ?? (() => glossary) } : {}),
     articleFetcher: () => assert.fail('Frozen trials must not fetch a fresh article'),
@@ -134,7 +142,7 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
         { headers: { 'content-type': 'application/json' } });
       let payload;
       if (index === 0) {
-        assert.equal(request.messages[0].content, `${direct ? DIRECT_DEFINITION_PROMPT : context ? CONTEXT_EDITOR_PROMPT : vocabulary ? EDITORIAL_VOCABULARY_PROMPT : definition ? DEFINITION_COMPOSITION_PROMPT : SENTENCE_REWRITE_PROMPT}\nJSON schema: ${JSON.stringify(catalog.schema)}`);
+        assert.equal(request.messages[0].content, `${unitMeaning ? COMPACT_DIRECT_DEFINITION_PROMPT : direct ? DIRECT_DEFINITION_PROMPT : context ? CONTEXT_EDITOR_PROMPT : vocabulary ? EDITORIAL_VOCABULARY_PROMPT : definition ? DEFINITION_COMPOSITION_PROMPT : SENTENCE_REWRITE_PROMPT}\nJSON schema: ${JSON.stringify(catalog.schema)}`);
         assert.deepEqual(data, { catalog: catalog.data, attribution: 'Private synthetic fact context', facts: [],
           ...(definition ? buildDefinitionContext(catalog.data.units.map(unit => unit.text), glossary) : {}),
           ...(vocabulary ? buildEditorialVocabulary(catalog.data.units.map(unit => unit.text), glossary) : {}),
@@ -148,10 +156,14 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
         payload = finalProposal;
       } else {
         const meaning = ['text-only-preservation-v1', 'definition-preservation-offline-v1'].includes(data.policy);
-        const field = fields.find(k => JSON.stringify(after.units[k]) === JSON.stringify(data.claims.map(c => c.text)));
+        const field = fields.find(k => unitMeaning && meaning ? after.units[k].includes(data.claims[0].text)
+          : JSON.stringify(after.units[k]) === JSON.stringify(data.claims.map(c => c.text)));
         assert.ok(field);
+        const unitIndex=unitMeaning&&meaning?after.units[field].indexOf(data.claims[0].text):null;
+        const meaningInput=unitMeaning&&meaning?{claims:[after.units[field][unitIndex]],previousClaims:[f.before.units[field][unitIndex]]}
+          :{claims:after.units[field],previousClaims:f.before.units[field]};
         const view = meaning ? (definition
-          ? buildDefinitionPreservationReview({ claims: after.units[field], previousClaims: f.before.units[field] }, glossary)
+          ? buildDefinitionPreservationReview(meaningInput, glossary)
           : buildTextPreservationReview({ claims: after.units[field], previousClaims: f.before.units[field] }))
           : buildIsolatedPreservationReview({ text: after.draft[field], claims: after.units[field],
             sources: [{ publisher: 'MIT', passages: f.excerpt.split('\n').map((text, i) => ({ evidenceId: `S1P${i + 1}`, text })) },
@@ -178,6 +190,33 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
   return { ...result, requests, network, f, after };
 }
 
+test('unit-wise meaning compares changed units only and binds original field/index',async()=>{
+  const r=await run({unitMeaning:true});
+  assert.equal(r.report.status,'draft-awaiting-manual-review');
+  assert.equal(r.report.mode,'context-direct-unit-language-awaiting-manual-review');
+  assert.equal(r.report.modelRequests,6);assert.equal(r.report.outputBudget,5400);
+  const calls=r.sealed.calls.filter(c=>c.dimension==='meaning');
+  assert.equal(calls.length,1);assert.equal(calls[0].field,'whatHappened');assert.equal(calls[0].unitIndex,0);
+  assert.equal(calls[0].request.claims.length,1);
+  assert.equal(r.sealed.fieldReviews[1].meaning.units[1].local,true);
+  assert.equal(r.sealed.calls.filter(c=>c.dimension==='source').length,4);
+});
+test('unit-wise failures and invalid outputs stop without field-review fallback',async()=>{
+  for(const rejectAt of [1,2,3,4,5])for(const rejection of ['false','malformed','quota','truncated','provenance','retry']){
+    const r=await run({unitMeaning:true,rejectAt,rejection});assert.equal(r.report.status,'failed');
+    assert.ok(r.requests.length<=rejectAt+2);assert.equal(r.report.emailSent,false);
+  }
+});
+test('three changed-unit reviews fit the original ceiling and a fourth is held before reviews',async()=>{
+  const r=await run({unitMeaning:true,termUnitCount:3});
+  assert.equal(r.report.status,'draft-awaiting-manual-review');
+  assert.equal(r.report.modelRequests,8);assert.equal(r.report.outputBudget,6600);
+  assert.deepEqual(r.sealed.calls.filter(c=>c.dimension==='meaning').map(c=>[c.field,c.unitIndex]),
+    [['whatHappened',0],['whatHappened',1],['whyItMatters',0]]);
+  const over=await run({unitMeaning:true,termUnitCount:4});
+  assert.equal(over.report.code,'FACT_SUMMARY_UNIT_REVIEW_BUDGET');
+  assert.equal(over.report.modelRequests,1);assert.equal(over.sealed.fieldReviews.length,0);
+});
 test('direct editor locks plain units and still reviews every final field',async()=>{
   const r=await run({direct:true});
   assert.equal(r.report.status,'draft-awaiting-manual-review');

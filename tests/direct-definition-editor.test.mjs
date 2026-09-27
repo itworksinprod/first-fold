@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
-import {DIRECT_DEFINITION_PROMPT, buildDirectDefinitionPlan, validateDirectDefinitionEdits} from '../scripts/automation/experiments/direct-definition-editor.mjs';
+import {DIRECT_DEFINITION_PROMPT, COMPACT_DIRECT_DEFINITION_PROMPT, buildDirectDefinitionPlan, validateDirectDefinitionEdits} from '../scripts/automation/experiments/direct-definition-editor.mjs';
 import {CONTEXT_EDITOR_PROMPT} from '../scripts/automation/experiments/context-editor-profile.mjs';
 import {loadDefinitionGlossary, SYNTHETIC_DEFINITION_SOURCE} from '../scripts/automation/experiments/definition-glossaries.mjs';
 import {buildSentenceRewriteView, applySentenceRewrite} from '../scripts/automation/free/sentence-rewrite.mjs';
@@ -77,4 +77,10 @@ test('style pass is expressly not factual or semantic approval',()=>{
   assert.ok(DIRECT_DEFINITION_PROMPT.startsWith(CONTEXT_EDITOR_PROMPT));
   assert.match(DIRECT_DEFINITION_PROMPT,/all source and meaning checks and independent readability review/);
   assert.doesNotMatch(DIRECT_DEFINITION_PROMPT.slice(CONTEXT_EDITOR_PROMPT.length),/HardFlow|MIT|deployment|optimization/u);
+});
+test('compact prompt retains scope, alignment, length, abstention and role separation',()=>{
+  for(const text of ['byte-for-byte unchanged','110 and 225','one complete sentence per unit','grammatical role',
+    'actor, attribution','original order','timing','uncertainty','negation','only JSON','Source support, meaning and readability are checked separately'])assert.ok(COMPACT_DIRECT_DEFINITION_PROMPT.includes(text));
+  assert.ok(COMPACT_DIRECT_DEFINITION_PROMPT.length<DIRECT_DEFINITION_PROMPT.length);
+  assert.doesNotMatch(COMPACT_DIRECT_DEFINITION_PROMPT,/MIT|HardFlow|robot|physics|safety-critical/u);
 });
