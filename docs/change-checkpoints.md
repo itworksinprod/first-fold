@@ -2382,3 +2382,13 @@ not yet readability approval or proof of production/unseen-article quality.
 The [receipt](checkpoints/direct-definition-editor.md) preserves hashes and
 the remaining full-text-review permission boundary. No daily settings, email
 recipient, billing configuration or editorial threshold changed.
+
+### Full review completed — targeted repair prepared
+
+After explicit local full-text permission, both reviewers inspected the actual
+149-word candidate and retained HOLD for redundant obligation wording and an
+incomplete concept translation. Source support alone did not settle equivalence.
+The [two-unit repair](checkpoints/two-unit-repair.md) pins that unapproved output
+as an editor seed, locks its other sentences, and preserves the original draft
+for all final meaning checks. All 1,566 tests and actual-input offline preflight
+pass; new prose has not yet been qualified. No daily-delivery or email change.

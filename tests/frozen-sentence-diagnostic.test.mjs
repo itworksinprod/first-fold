@@ -18,6 +18,7 @@ import { EDITORIAL_VOCABULARY_PROMPT, buildEditorialVocabulary } from '../script
 import { buildDefinitionContext } from '../scripts/automation/experiments/definition-context.mjs';
 import { CONTEXT_EDITOR_PROMPT } from '../scripts/automation/experiments/context-editor-profile.mjs';
 import { DIRECT_DEFINITION_PROMPT, COMPACT_DIRECT_DEFINITION_PROMPT, NAMED_COMPOSITION_PROMPT, buildDirectDefinitionPlan } from '../scripts/automation/experiments/direct-definition-editor.mjs';
+import {SENTENCE_REPAIR_PROMPT} from '../scripts/automation/experiments/sentence-repair-profile.mjs';
 import { requestWorkersAiEditorial, buildWorkersAiRequest, DEFAULT_CLOUDFLARE_AI_MODEL, FREE_REASONING_WRITER_MODEL, workersAiRunUrl } from '../scripts/automation/free/workers-ai.mjs';
 import { prepareFrozenDiagnosticBaseline, resolvePrivateWriterDiagnosticMode, diagnoseOneWriter } from '../scripts/automation/private-writer-diagnostic.mjs';
 
@@ -59,7 +60,9 @@ function fixture(definition = false, termUnitCount = 1) {
 }
 async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal, changedFields = fields.slice(1),
   definition = false, glossaryLoader, sourceMismatch = false, mutatePolish, vocabulary = false, reasoning = false,
-  context = false, mutateContext, direct = false, unitMeaning = false, namedComposition = false, termUnitCount = 1 } = {}) {
+  context = false, mutateContext, direct = false, unitMeaning = false, namedComposition = false, termUnitCount = 1,
+  repairMode=false,mutateRepair } = {}) {
+  if(repairMode){namedComposition=true;termUnitCount=3;}
   if(namedComposition)unitMeaning=true;
   if(unitMeaning)direct=true;
   if(direct)context=true;
@@ -72,7 +75,7 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
   const contextData = { baselineText: f.text, glossary, supplementSource,
     packetSha256: '1'.repeat(64), supplementCaptureSha256: '2'.repeat(64), supplementUrl: 'https://example.org/context' };
   if (mutateContext) mutateContext(contextData);
-  const catalog = buildSentenceRewriteView(f.before.units);
+  const originalCatalog = buildSentenceRewriteView(f.before.units);
   const rawAfter = structuredClone(f.raw);
   for (const field of direct ? [] : changedFields) {
     const pair = { whatHappened: ['research method', 'research approach'], whyItMatters: ['discuss', 'describe'], whatToWatch: ['explain', 'describe'] }[field];
@@ -80,6 +83,13 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
   }
   if(direct)for(const field of fields.slice(1))rawAfter[field]=rawAfter[field].map(t=>t.replaceAll('binding rules','nonoptional requirements'));
   const after = normalizeClaimwiseSummary(rawAfter, f.excerpt, 'MIT');
+  const seedUnits=structuredClone(after.units);
+  seedUnits.whatHappened[0]=seedUnits.whatHappened[0].replace('nonoptional requirements','requirements that must be met');
+  seedUnits.whyItMatters[0]=seedUnits.whyItMatters[0].replace('nonoptional requirements','requirements');
+  const repair={packetSha256:'a'.repeat(64),sourceCaptureSha256:'b'.repeat(64),originalUnitsSha256:originalCatalog.data.baselineSha256,
+    seedUnits,seedUnitsSha256:hash(seedUnits),feedback:[{unitId:'U1',code:'DUPLICATE_OBLIGATION'},{unitId:'U3',code:'INCOMPLETE_DEFINITION_COMPONENTS'}]};
+  if(mutateRepair)mutateRepair(repair);
+  const catalog=repairMode?buildSentenceRewriteView(seedUnits):originalCatalog;
   const finalProposal = { baselineSha256: catalog.data.baselineSha256, decision: 'rewrite',
     sentences: catalog.data.units.map(u => ({ unitId: u.unitId, text: after.units[u.field][u.unitIndex] })) };
   const proposal = structuredClone(finalProposal);
@@ -99,6 +109,7 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
     directDefinitions: direct,
     unitMeaning,
     namedComposition,
+    ...(repairMode?{repairPacketText:'PRIVATE_SYNTHETIC_REPAIR',repairLoader:()=>repair}:{}),
     ...(context ? { contextPacketText: 'PRIVATE_SYNTHETIC_PACKET', contextLoader: async () => contextData } : {}),
     ...(definition ? { definitionGlossaryLoader: glossaryLoader ?? (() => glossary) } : {}),
     articleFetcher: () => assert.fail('Frozen trials must not fetch a fresh article'),
@@ -144,11 +155,13 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
         { headers: { 'content-type': 'application/json' } });
       let payload;
       if (index === 0) {
-        assert.equal(request.messages[0].content, `${namedComposition ? NAMED_COMPOSITION_PROMPT : unitMeaning ? COMPACT_DIRECT_DEFINITION_PROMPT : direct ? DIRECT_DEFINITION_PROMPT : context ? CONTEXT_EDITOR_PROMPT : vocabulary ? EDITORIAL_VOCABULARY_PROMPT : definition ? DEFINITION_COMPOSITION_PROMPT : SENTENCE_REWRITE_PROMPT}\nJSON schema: ${JSON.stringify(catalog.schema)}`);
+        assert.equal(request.messages[0].content, `${repairMode ? SENTENCE_REPAIR_PROMPT : namedComposition ? NAMED_COMPOSITION_PROMPT : unitMeaning ? COMPACT_DIRECT_DEFINITION_PROMPT : direct ? DIRECT_DEFINITION_PROMPT : context ? CONTEXT_EDITOR_PROMPT : vocabulary ? EDITORIAL_VOCABULARY_PROMPT : definition ? DEFINITION_COMPOSITION_PROMPT : SENTENCE_REWRITE_PROMPT}\nJSON schema: ${JSON.stringify(catalog.schema)}`);
         assert.deepEqual(data, { catalog: catalog.data, attribution: 'Private synthetic fact context', facts: [],
-          ...(definition ? buildDefinitionContext(catalog.data.units.map(unit => unit.text), glossary) : {}),
+          ...(definition ? buildDefinitionContext(originalCatalog.data.units.map(unit => unit.text), glossary) : {}),
           ...(vocabulary ? buildEditorialVocabulary(catalog.data.units.map(unit => unit.text), glossary) : {}),
-          ...(direct ? {directEditPlan:buildDirectDefinitionPlan(catalog,glossary,{protectNames:namedComposition})} : {}) });
+          ...(direct ? {directEditPlan:buildDirectDefinitionPlan(catalog,glossary,{protectNames:namedComposition,
+            ...(repairMode?{repairScope:{originalCatalog,unitIds:repair.feedback.map(f=>f.unitId)}}:{})})} : {}),
+          ...(repairMode?{repairReferences:repair.feedback.map(({unitId,code})=>({unitId,code,originalText:originalCatalog.data.units.find(u=>u.unitId===unitId).text}))}:{}) });
         payload = proposal;
       } else if (polishEnabled && index === 1) {
         assert.equal(request.messages[0].content, `${DEFINITION_POLISH_PROMPT}\nJSON schema: ${JSON.stringify(catalog.schema)}`);
@@ -192,6 +205,51 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
   return { ...result, requests, network, f, after };
 }
 
+test('review-guided repair edits only two seed units but compares all final meaning to original',async()=>{
+  const r=await run({repairMode:true});
+  assert.equal(r.report.status,'draft-awaiting-manual-review');
+  assert.equal(r.report.mode,'context-two-unit-repair-awaiting-manual-review');
+  assert.equal(r.report.modelRequests,8);assert.equal(r.report.outputBudget,6600);
+  assert.deepEqual(r.sealed.editsApplied.map(e=>e.unitId),['U1','U3']);
+  assert.deepEqual(r.sealed.directEditPlan.lockedUnitIds,['U2','U4','U5']);
+  assert.deepEqual(r.sealed.beforeCopyedit.units,r.f.before.units);
+  const lockedReview=r.sealed.calls.find(c=>c.dimension==='meaning'&&c.field==='whatHappened'&&c.unitIndex===1);
+  assert.equal(lockedReview.request.previousClaims[0].text,r.f.before.units.whatHappened[1]);
+  assert.notEqual(lockedReview.request.previousClaims[0].text,r.sealed.editorSeed.units.whatHappened[1]);
+  assert.equal(lockedReview.request.claims[0].text,r.sealed.editorSeed.units.whatHappened[1]);
+  assert.equal(r.sealed.calls.filter(c=>c.dimension==='source').length,4);
+});
+test('repair cannot alter a locked seed sentence or inherit approval after abstaining',async()=>{
+  const locked=await run({repairMode:true,mutateProposal:p=>{p.sentences[1].text=p.sentences[1].text.replace('report','account');}});
+  assert.equal(locked.report.code,'DIRECT_DEFINITION_LOCKED_UNIT');assert.equal(locked.requests.length,1);
+  const abstained=await run({repairMode:true,mutateProposal:p=>{
+    p.decision='abstain';p.sentences[0].text=p.sentences[0].text.replace('nonoptional requirements','requirements that must be met');
+    p.sentences[2].text=p.sentences[2].text.replace('nonoptional requirements','requirements');
+  }});
+  assert.equal(abstained.report.code,'FACT_SUMMARY_COPYEDIT_ABSTAINED');assert.equal(abstained.requests.length,1);
+});
+test('repair rejects changed original binding, seed digest, headline or cardinality before inference',async()=>{
+  for(const mutateRepair of [r=>{r.originalUnitsSha256='0'.repeat(64);},r=>{r.seedUnitsSha256='0'.repeat(64);},
+    r=>{r.seedUnits.headline[0]='Another headline';r.seedUnitsSha256=hash(r.seedUnits);},
+    r=>{r.seedUnits.whatHappened.pop();r.seedUnitsSha256=hash(r.seedUnits);}]){
+    const result=await run({repairMode:true,mutateRepair});assert.equal(result.report.code,'FACT_SUMMARY_REPAIR_BASELINE');
+    assert.equal(result.requests.length,0);
+  }
+});
+test('repair counts original-to-final changes even where seed sentences are locked',async()=>{
+  const r=await run({repairMode:true,mutateRepair:r=>{
+    r.seedUnits.whyItMatters[1]=r.seedUnits.whyItMatters[1].replace('reader','scientist');r.seedUnitsSha256=hash(r.seedUnits);
+  },mutateProposal:p=>{p.sentences[3].text=p.sentences[3].text.replace('reader','scientist');}});
+  assert.equal(r.report.code,'FACT_SUMMARY_UNIT_REVIEW_BUDGET');assert.equal(r.requests.length,1);
+});
+test('repair has no fallback after source, meaning, truncation, quota or transport rejection',async()=>{
+  for(const rejectAt of [1,2,3,4,5,6,7])for(const rejection of ['false','malformed','quota','truncated','provenance','retry']){
+    const r=await run({repairMode:true,rejectAt,rejection});assert.equal(r.report.status,'failed');
+    // The unchanged runner completes aligned meaning checks for the current
+    // field after a valid negative source verdict; it never retries a request.
+    assert.ok(r.requests.length<=Math.min(8,rejectAt+3));assert.equal(r.report.emailSent,false);
+  }
+});
 test('named composition guards references before review without changing providers, sampling or limits',async()=>{
   const r=await run({namedComposition:true,termUnitCount:3});
   assert.equal(r.report.status,'draft-awaiting-manual-review');

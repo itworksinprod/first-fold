@@ -1,6 +1,6 @@
 # Direct-definition editor checkpoint
 
-Status: name-preserving live run passed automated checks; full readability review pending.
+Status: full local review of the name-preserving candidate is complete; two issues remain on HOLD.
 
 Carlos requested continued implementation and verification without continuation
 prompts. The previous context-assisted trial passed factual/meaning checks but
@@ -153,3 +153,20 @@ names retained and no new parentheses. Seven source judgments and three changed
 unit meaning judgments passed; four unchanged claims received identity checks.
 Local capture permissions are 0600. No private prose was printed or reconstructed
 by that reviewer; readability and citation-adequacy certification remain pending.
+
+## Full local outcome review — September 27
+
+Carlos explicitly approved local inspection of the original/final draft and
+saved sources after the privacy blocker was explained. Both the primary agent
+and independent reviewer read the permitted fields without credentials. The
+149-word candidate remains HOLD: its first sentence retains redundant obligation
+wording, and its last sentence's conceptual translation omits part of the full
+reviewed definition. The meaning model's positive verdict cited only a shortened
+definition; it is not proof of full equivalence. Saved factual support exists,
+but selected automated citation IDs do not fully cover all clauses.
+
+The method's ownership, generation-time attachment, partial-result distinction,
+potentiality and deployment-evidence caveat are improved and must remain intact.
+The privacy blocker is resolved; quality is now the blocker. The next bounded
+step is [review-guided two-unit repair](two-unit-repair.md), not automatic approval
+or a new daily edition.

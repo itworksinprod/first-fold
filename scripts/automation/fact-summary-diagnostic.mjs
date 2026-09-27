@@ -23,6 +23,7 @@ import { buildDefinitionContext } from './experiments/definition-context.mjs';
 import { CONTEXT_EDITOR_PROMPT,loadContextEditorPacketText } from './experiments/context-editor-profile.mjs';
 import {DIRECT_DEFINITION_PROMPT, COMPACT_DIRECT_DEFINITION_PROMPT, NAMED_COMPOSITION_PROMPT, buildDirectDefinitionPlan, validateDirectDefinitionEdits} from './experiments/direct-definition-editor.mjs';
 import {buildUnitMeaningPlan,validateUnitMeaningResponses} from './experiments/unit-meaning-review.mjs';
+import {SENTENCE_REPAIR_PROMPT,loadSentenceRepairPacketText} from './experiments/sentence-repair-profile.mjs';
 
 const fields = ['headline', 'whatHappened', 'whyItMatters', 'whatToWatch'];
 const hash = text => createHash('sha256').update(text).digest('hex');
@@ -66,7 +67,8 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
   claimwise = false, profile = 'anthropic', plainLanguageCopyedit = false, sentenceLanguageRewrite = false,
   articleFetcher = fetchReviewedArticle, sheetLoader, frozenBaselineText, qualificationLoader,
   definitionPreservation = false, definitionGlossaryLoader = loadQualifiedMitGlossary, editorialVocabulary = false,
-  reasoningEditor = false, contextPacketText, contextLoader = loadContextEditorPacketText, directDefinitions = false, unitMeaning = false, namedComposition = false }) {
+  reasoningEditor = false, contextPacketText, contextLoader = loadContextEditorPacketText, directDefinitions = false, unitMeaning = false, namedComposition = false,
+  repairPacketText,repairLoader=loadSentenceRepairPacketText }) {
   if (typeof claimwise !== 'boolean') throw fail('FACT_SUMMARY_MODE');
   const generic = profile === 'mit-generalization';
   if (typeof plainLanguageCopyedit !== 'boolean' || (plainLanguageCopyedit && (!generic || !claimwise))) throw fail('FACT_SUMMARY_MODE');
@@ -81,14 +83,17 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
   if(typeof directDefinitions!=='boolean'||(directDefinitions&&!contextMode))throw fail('FACT_SUMMARY_MODE');
   if(typeof unitMeaning!=='boolean'||(unitMeaning&&!directDefinitions))throw fail('FACT_SUMMARY_MODE');
   if(typeof namedComposition!=='boolean'||(namedComposition&&!unitMeaning))throw fail('FACT_SUMMARY_MODE');
+  const repairMode=repairPacketText!==undefined;
+  if(repairMode&&(!namedComposition||typeof repairPacketText!=='string'))throw fail('FACT_SUMMARY_MODE');
   if(contextMode&&(!reasoningEditor||typeof contextPacketText!=='string'))throw fail('FACT_SUMMARY_MODE');
   const context=contextMode?await contextLoader(contextPacketText):null;
+  const repair=repairMode?repairLoader(repairPacketText):null;
   if(contextMode&&context.baselineText!==frozenBaselineText)throw fail('CONTEXT_EDITOR_BASELINE_CHANGED');
   if (reasoningEditor && endpoint !== workersAiRunUrl(accountId, DEFAULT_CLOUDFLARE_AI_MODEL)) throw fail('FACT_SUMMARY_NETWORK');
   if (!['anthropic', 'mit-generalization'].includes(profile) || (profile === 'mit-generalization' && !claimwise)) throw fail('FACT_SUMMARY_PROFILE');
   const editedReviewPath = plainLanguageCopyedit || sentenceLanguageRewrite;
   const polishEnabled = definitionPreservation && !editorialVocabulary && !reasoningEditor;
-  const copyeditPrompt = namedComposition ? NAMED_COMPOSITION_PROMPT : unitMeaning ? COMPACT_DIRECT_DEFINITION_PROMPT : directDefinitions ? DIRECT_DEFINITION_PROMPT : contextMode ? CONTEXT_EDITOR_PROMPT : editorialVocabulary ? EDITORIAL_VOCABULARY_PROMPT : definitionPreservation ? DEFINITION_COMPOSITION_PROMPT
+  const copyeditPrompt = repairMode ? SENTENCE_REPAIR_PROMPT : namedComposition ? NAMED_COMPOSITION_PROMPT : unitMeaning ? COMPACT_DIRECT_DEFINITION_PROMPT : directDefinitions ? DIRECT_DEFINITION_PROMPT : contextMode ? CONTEXT_EDITOR_PROMPT : editorialVocabulary ? EDITORIAL_VOCABULARY_PROMPT : definitionPreservation ? DEFINITION_COMPOSITION_PROMPT
     : sentenceLanguageRewrite ? SENTENCE_REWRITE_PROMPT : PLAIN_LANGUAGE_COPYEDIT_PROMPT;
   const maxRequests = polishEnabled ? 9 : frozenMode ? 8 : sentenceLanguageRewrite ? 9 : plainLanguageCopyedit ? 7 : 5;
   const maxOutputBudget = polishEnabled || reasoningEditor ? 6600 : frozenMode ? 5400 : sentenceLanguageRewrite ? 6600 : plainLanguageCopyedit ? 5400 : claimwise ? 3600 : 2800;
@@ -112,6 +117,8 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
     if(directDefinitions)capture.copyeditStrategy='context-direct-definitions-editor-v1';
     if(unitMeaning){capture.purpose='context-direct-unit-language-awaiting-manual-review';capture.copyeditStrategy='compact-direct-definitions-editor-v1';capture.meaningGranularity='changed-unit-v1';}
     if(namedComposition){capture.purpose='context-named-unit-language-awaiting-manual-review';capture.copyeditStrategy='named-natural-composition-v1';}
+    if(repairMode){capture.purpose='context-two-unit-repair-awaiting-manual-review';capture.copyeditStrategy='targeted-full-definition-repair-v1';
+      capture.repair={packetSha256:repair.packetSha256,sourceCaptureSha256:repair.sourceCaptureSha256,seedUnitsSha256:repair.seedUnitsSha256,status:'unapproved-seed-not-evidence'};}
     capture.reviewStrategy='isolated-llama-source-plus-gptoss-meaning-experimental';
     capture.context={packetSha256:context.packetSha256,supplementCaptureSha256:context.supplementCaptureSha256,
       supplementUrl:context.supplementUrl,supplementSource:context.supplementSource};
@@ -243,15 +250,30 @@ The article is one company's account. No tables or appendix are available. No ou
     if (editedReviewPath) {
       capture.beforeCopyedit = { draft: structuredClone(normalized.draft), units: structuredClone(normalized.units),
         draftSha256: hash(JSON.stringify(normalized.draft)), unitsSha256: phraseCopyeditUnitsHash(normalized.units) };
-      const catalog = sentenceLanguageRewrite ? buildSentenceRewriteView(normalized.units) : buildSinglePhraseCopyeditView(normalized.units);
+      const originalCatalog=sentenceLanguageRewrite?buildSentenceRewriteView(normalized.units):null;
+      let editorUnits=normalized.units,repairReferences;
+      if(repairMode){
+        if(repair.originalUnitsSha256!==originalCatalog.data.baselineSha256)throw fail('FACT_SUMMARY_REPAIR_BASELINE');
+        const seed=repair.seedUnits;
+        if(seed.headline?.[0]!==normalized.units.headline[0])throw fail('FACT_SUMMARY_REPAIR_BASELINE');
+        const seedCatalog=buildSentenceRewriteView(seed);
+        if(seedCatalog.data.baselineSha256!==repair.seedUnitsSha256||seedCatalog.data.units.length!==originalCatalog.data.units.length||
+          seedCatalog.data.units.some((u,i)=>u.field!==originalCatalog.data.units[i].field||u.unitIndex!==originalCatalog.data.units[i].unitIndex))throw fail('FACT_SUMMARY_REPAIR_BASELINE');
+        normalizeClaimwiseSummary({headline:seed.headline[0],...Object.fromEntries(fields.slice(1).map(f=>[f,seed[f]]))},excerpt,publisher);
+        editorUnits=seed;
+        repairReferences=repair.feedback.map(({unitId,code})=>({unitId,code,originalText:originalCatalog.data.units.find(u=>u.unitId===unitId)?.text}));
+        capture.editorSeed={units:structuredClone(seed),unitsSha256:repair.seedUnitsSha256};
+      }
+      const catalog = sentenceLanguageRewrite ? buildSentenceRewriteView(editorUnits) : buildSinglePhraseCopyeditView(editorUnits);
       capture.copyeditCatalog = catalog.data;
-      const directEditPlan = directDefinitions ? buildDirectDefinitionPlan(catalog, glossary,{protectNames:namedComposition}) : null;
+      const directEditPlan = directDefinitions ? buildDirectDefinitionPlan(catalog, glossary,{protectNames:namedComposition,
+        ...(repairMode?{repairScope:{originalCatalog,unitIds:repair.feedback.map(f=>f.unitId)}}:{})}) : null;
       if(directEditPlan)capture.directEditPlan=directEditPlan;
       const editData = sentenceLanguageRewrite
         ? { catalog: catalog.data, attribution: sheet.attribution, facts: sheet.facts,
-          ...(definitionPreservation ? buildDefinitionContext(catalog.data.units.map(unit => unit.text), glossary) : {}),
+          ...(definitionPreservation ? buildDefinitionContext((repairMode?originalCatalog:catalog).data.units.map(unit => unit.text), glossary) : {}),
           ...(editorialVocabulary ? buildEditorialVocabulary(catalog.data.units.map(unit => unit.text), glossary) : {}),
-          ...(directEditPlan ? {directEditPlan} : {}) }
+          ...(directEditPlan ? {directEditPlan} : {}),...(repairMode?{repairReferences}: {}) }
         : { catalog: catalog.data, limits: SINGLE_PHRASE_COPYEDIT_LIMITS,
           protectedWords: PHRASE_COPYEDIT_PROTECTED_WORDS, attribution: sheet.attribution, facts: sheet.facts };
       // Validate the new rewrite's strict shape before cloning or capturing it.
@@ -264,10 +286,11 @@ The article is one company's account. No tables or appendix are available. No ou
       if (!sentenceLanguageRewrite) capture.rawCopyedit = structuredClone(proposal);
       let applied;
       try {
-        applied = sentenceLanguageRewrite ? applySentenceRewrite(normalized.units, proposal, catalog)
+        applied = sentenceLanguageRewrite ? applySentenceRewrite(editorUnits, proposal, catalog)
           : applySinglePhraseCopyedit(normalized.units, proposal, catalog);
         if(directEditPlan)validateDirectDefinitionEdits(proposal,catalog,directEditPlan);
         if(unitMeaning&&applied.editsApplied?.length>3)throw fail('FACT_SUMMARY_UNIT_REVIEW_BUDGET');
+        if(repairMode&&applied.units&&originalCatalog.data.units.filter(u=>applied.units[u.field][u.unitIndex]!==u.text).length>3)throw fail('FACT_SUMMARY_UNIT_REVIEW_BUDGET');
       } catch (error) {
         if (sentenceLanguageRewrite) result.call.responseRejectedBeforeCapture = true;
         throw error;

@@ -65,7 +65,7 @@ export function assertDiagnosticAuthority(env) {
 }
 
 export function resolvePrivateWriterDiagnosticMode(value = "source") {
-  if(['context-assisted-language','context-direct-language','context-direct-unit-language','context-named-unit-language'].includes(value))return value;
+  if(['context-assisted-language','context-direct-language','context-direct-unit-language','context-named-unit-language','context-two-unit-repair'].includes(value))return value;
   if (['grammar-preservation-controls', 'grammar-reasoning-controls', 'grammar-reasoning-holdouts'].includes(value)) return value;
   if (value === 'saved-final-review') return value;
   if (value === 'definition-preservation-controls') return value;
@@ -113,7 +113,7 @@ export async function prepareSavedFinalDiagnostic(mode, encoded) {
 }
 
 export async function prepareContextDiagnostic(mode,encoded){
-  if(!['context-assisted-language','context-direct-language','context-direct-unit-language','context-named-unit-language'].includes(mode)){
+  if(!['context-assisted-language','context-direct-language','context-direct-unit-language','context-named-unit-language','context-two-unit-repair'].includes(mode)){
     if(encoded!==undefined&&encoded!=='')throw failure('DIAGNOSTIC_UNEXPECTED_CONTEXT_PACKET');
     return undefined;
   }
@@ -121,6 +121,15 @@ export async function prepareContextDiagnostic(mode,encoded){
   const text=decodeContextEditorPacket(encoded);
   await loadContextEditorPacketText(text); // Exact baseline/context checks before credentials.
   return text;
+}
+
+export async function prepareSentenceRepair(mode,encoded){
+  if(mode!=='context-two-unit-repair'){
+    if(encoded!==undefined&&encoded!=='')throw failure('DIAGNOSTIC_UNEXPECTED_REPAIR_PACKET');
+    return undefined;
+  }
+  const {decodeSentenceRepairPacket}=await import('./experiments/sentence-repair-profile.mjs');
+  return decodeSentenceRepairPacket(encoded);
 }
 
 async function diagnoseProvider({ publicKey, accountId, apiToken, now, aiRequestImpl, fetchImpl, endpoint }) {
@@ -171,7 +180,7 @@ async function diagnoseProvider({ publicKey, accountId, apiToken, now, aiRequest
 }
 
 export async function diagnoseOneWriter({ publicKey, accountId, apiToken, now = new Date(),
-  mode = "source", frozenBaselineB64, savedFinalReviewB64, contextEditorB64,
+  mode = "source", frozenBaselineB64, savedFinalReviewB64, contextEditorB64, sentenceRepairB64,
   researchImpl = collectFreeResearchSnapshot, aiRequestImpl = requestWorkersAiEditorial,
   fetchImpl = globalThis.fetch } = {}) {
   // Check encryption and credentials before research or inference, not afterwards.
@@ -180,17 +189,18 @@ export async function diagnoseOneWriter({ publicKey, accountId, apiToken, now = 
   const frozenBaselineText = await prepareFrozenDiagnosticBaseline(mode, frozenBaselineB64);
   const savedFinalPlan = await prepareSavedFinalDiagnostic(mode, savedFinalReviewB64);
   const contextPacketText=await prepareContextDiagnostic(mode,contextEditorB64);
+  const repairPacketText=await prepareSentenceRepair(mode,sentenceRepairB64);
   const endpoint = workersAiRunUrl(accountId, DEFAULT_CLOUDFLARE_AI_MODEL);
   if (typeof apiToken !== "string" || !apiToken.trim()) throw failure("DIAGNOSTIC_CONFIGURATION_INVALID");
-  if(['context-assisted-language','context-direct-language','context-direct-unit-language','context-named-unit-language'].includes(mode)){
+  if(['context-assisted-language','context-direct-language','context-direct-unit-language','context-named-unit-language','context-two-unit-repair'].includes(mode)){
     const {loadContextEditorPacketText}=await import('./experiments/context-editor-profile.mjs');
     const context=await loadContextEditorPacketText(contextPacketText);
     const {diagnoseFactSummary}=await import('./fact-summary-diagnostic.mjs');
     return diagnoseFactSummary({publicKey,accountId,apiToken,now,aiRequestImpl,fetchImpl,endpoint,sealDiagnostic,
       claimwise:true,profile:'mit-generalization',sentenceLanguageRewrite:true,definitionPreservation:true,
       reasoningEditor:true,frozenBaselineText:context.baselineText,contextPacketText,
-      directDefinitions:mode!=='context-assisted-language',unitMeaning:['context-direct-unit-language','context-named-unit-language'].includes(mode),
-      namedComposition:mode==='context-named-unit-language'});
+      directDefinitions:mode!=='context-assisted-language',unitMeaning:['context-direct-unit-language','context-named-unit-language','context-two-unit-repair'].includes(mode),
+      namedComposition:['context-named-unit-language','context-two-unit-repair'].includes(mode),repairPacketText});
   }
   if (['grammar-preservation-controls', 'grammar-reasoning-controls', 'grammar-reasoning-holdouts'].includes(mode)) {
     const { diagnoseGrammarPreservation } = await import('./grammar-preservation-diagnostic.mjs');
@@ -359,12 +369,14 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
       await prepareFrozenDiagnosticBaseline(mode, process.env.FIRST_FOLD_FROZEN_BASELINE_B64);
       await prepareSavedFinalDiagnostic(mode, process.env.FIRST_FOLD_FINAL_REVIEW_PACKET_B64);
       await prepareContextDiagnostic(mode,process.env.FIRST_FOLD_CONTEXT_EDITOR_PACKET_B64);
+      await prepareSentenceRepair(mode,process.env.FIRST_FOLD_SENTENCE_REPAIR_B64);
     } else if (command === "run" && args.length === 1) {
       const mode = validatePrivateWriterDiagnosticOptions(process.env);
       const { sealed, report } = await diagnoseOneWriter({ publicKey: process.env.DIAGNOSTIC_PUBLIC_KEY,
         mode, frozenBaselineB64: process.env.FIRST_FOLD_FROZEN_BASELINE_B64,
         savedFinalReviewB64: process.env.FIRST_FOLD_FINAL_REVIEW_PACKET_B64,
         contextEditorB64:process.env.FIRST_FOLD_CONTEXT_EDITOR_PACKET_B64,
+        sentenceRepairB64:process.env.FIRST_FOLD_SENTENCE_REPAIR_B64,
         accountId: process.env.CLOUDFLARE_ACCOUNT_ID, apiToken: process.env.CLOUDFLARE_AI_API_TOKEN });
       await writeFile(args[0], JSON.stringify(sealed), { mode: 0o600, flag: "wx" });
       console.info(`::notice title=One-story diagnostic::${JSON.stringify(report)}`);

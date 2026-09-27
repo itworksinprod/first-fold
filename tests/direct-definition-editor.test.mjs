@@ -113,3 +113,23 @@ test('named composition prompt adds generic reference-preservation and compositi
   assert.match(NAMED_COMPOSITION_PROMPT,/original role and ownership/);
   assert.doesNotMatch(NAMED_COMPOSITION_PROMPT,/MIT|HardFlow|BioFlow|robot|physics/u);
 });
+test('targeted repair uses seed locks but original definitions and original name anchors',()=>{
+  const f=fixture(),original=structuredClone(f.units);
+  original.whatHappened[0]='ABC says BioFlow follows binding rules while generating an answer.';
+  const originalCatalog=buildSentenceRewriteView(original),seed=structuredClone(original);
+  seed.whatHappened[0]='The method follows requirements while generating an answer.';
+  seed.whatToWatch[0]='Its early answers do not establish a completed answer.';
+  const catalog=buildSentenceRewriteView(seed),repairScope={originalCatalog,unitIds:['U1','U4']};
+  const plan=buildDirectDefinitionPlan(catalog,f.glossary,{protectNames:true,repairScope});
+  assert.deepEqual(plan.editableUnits,[{unitId:'U1',terms:['binding rules']},{unitId:'U4',terms:['draft candidates']}]);
+  assert.deepEqual(plan.lockedUnitIds,['U2','U3']);
+  assert.deepEqual(plan.nameAnchors[0].names,['ABC','BioFlow']);
+  const proposal={baselineSha256:catalog.data.baselineSha256,decision:'rewrite',sentences:catalog.data.units.map(u=>({unitId:u.unitId,text:u.text}))};
+  proposal.sentences[0].text='ABC says BioFlow follows mandatory rules while generating an answer.';
+  proposal.sentences[3].text='Its partial answers made before a final answer do not establish a completed answer.';
+  assert.equal(validateDirectDefinitionEdits(proposal,catalog,plan),true);
+  proposal.sentences[1].text='The experiment covered three routes.';
+  assert.throws(()=>validateDirectDefinitionEdits(proposal,catalog,plan),/LOCKED_UNIT/);
+  for(const unitIds of [['U1'],['U1','U1'],['U1','U7'],['U1','U2']])assert.throws(()=>buildDirectDefinitionPlan(catalog,f.glossary,{protectNames:true,repairScope:{originalCatalog,unitIds}}),/INPUT/);
+  assert.throws(()=>buildDirectDefinitionPlan(catalog,f.glossary,{repairScope}),/INPUT/);
+});

@@ -31,19 +31,26 @@ For a changed editable unit, directly express every listed technical concept in 
 Preserve the entire sentence's facts, grammatical relationships, qualifications and scope while integrating the plain expression. Do not add any glossary label absent from the original unit.
 If no direct equivalent preserves complete meaning and reads naturally, keep that original unit unchanged. A style-boundary pass is not approval: all source and meaning checks and independent readability review still apply.`;
 
-export function buildDirectDefinitionPlan(catalog, glossary, {protectNames=false}={}) {
+export function buildDirectDefinitionPlan(catalog, glossary, {protectNames=false,repairScope=null}={}) {
   if(typeof protectNames!=='boolean')throw fail('INPUT');
   const units = catalog?.data?.units;
   if (!Array.isArray(units) || !units.length || !/^[a-f0-9]{64}$/u.test(catalog.data.baselineSha256 ?? '')) throw fail('INPUT');
+  const originalUnits=repairScope?.originalCatalog?.data?.units??units;
+  if(repairScope&&(!protectNames||!Array.isArray(repairScope.unitIds)||repairScope.unitIds.length!==2||
+    new Set(repairScope.unitIds).size!==2||!Array.isArray(originalUnits)||originalUnits.length!==units.length||
+    originalUnits.some((u,i)=>u.unitId!==units[i].unitId||u.field!==units[i].field||u.unitIndex!==units[i].unitIndex)||
+    repairScope.unitIds.some(id=>!units.some(u=>u.unitId===id))))throw fail('INPUT');
   const editableUnits = [], lockedUnitIds = [];
-  for (const unit of units) {
-    const definitions = buildDefinitionContext([unit.text], glossary).definitions;
-    if (definitions.length) editableUnits.push({unitId: unit.unitId, terms: definitions.map(d => d.term)});
+  for (const [i,unit] of units.entries()) {
+    const definitions = buildDefinitionContext([originalUnits[i].text], glossary).definitions;
+    const editable=repairScope?repairScope.unitIds.includes(unit.unitId):definitions.length>0;
+    if(editable&&!definitions.length)throw fail('INPUT');
+    if (editable) editableUnits.push({unitId: unit.unitId, terms: definitions.map(d => d.term)});
     else lockedUnitIds.push(unit.unitId);
   }
   // Deliberately limited lexical anchors, not general named-entity recognition.
-  const nameAnchors=units.map(unit=>({unitId:unit.unitId,names:[...new Set(unit.text.match(/\b(?:[A-Z][a-z]+[A-Z][A-Za-z]*|[A-Z]{2,}[A-Za-z0-9]*)\b/gu)??[])]}));
-  const plan = freeze({policy: protectNames?'direct-definitions-names-v1':'direct-definitions-v1', baselineSha256: catalog.data.baselineSha256,
+  const nameAnchors=originalUnits.map(unit=>({unitId:unit.unitId,names:[...new Set(unit.text.match(/\b(?:[A-Z][a-z]+[A-Z][A-Za-z]*|[A-Z]{2,}[A-Za-z0-9]*)\b/gu)??[])]}));
+  const plan = freeze({policy: repairScope?'direct-definitions-repair-v1':protectNames?'direct-definitions-names-v1':'direct-definitions-v1', baselineSha256: catalog.data.baselineSha256,
     editableUnits, lockedUnitIds,...(protectNames?{nameAnchors}:{})});
   issued.set(plan, {catalogHash: sha(catalog.data), glossary, units: structuredClone(units)});
   return plan;
