@@ -2133,3 +2133,36 @@ run 36281188522 after restoring only `max_tokens` to 1,200; 25 historical review
 requests and the prior meaning veto remain unchanged. No provider calls occurred
 during preflight. Completion, readable prose and factual/meaning acceptance are
 not established by setup checks.
+
+### 2,400-token live result — complete draft, meaning veto
+
+After explicit approval for the second test,
+[run 36282585253](https://github.com/itworksinprod/first-fold/actions/runs/36282585253)
+used trusted main `b170c6334d0b7fe27e4cbda2fb79fc5ef13f30f5`, owner/manual/attempt
+one. The editor returned a complete, structurally valid 157-word draft with two
+sentence edits. The output-limit failure did not recur. The run stopped after
+four provider requests / 4,200 requested output tokens at
+`FACT_SUMMARY_REVIEW_REJECTED`: the opening section passed source review but its
+first unit received a negative meaning verdict. Only the headline fully passed;
+the remaining sections were not reviewed. No email, search or daily change occurred.
+
+The encrypted artifact ZIP matched GitHub SHA-256
+`ffb11c57a06c21453adc5472484498e79938c3485824c1fd7f17f4d57f11112c`.
+Exact offline replay matched all four request bodies, parsed replies, gates and
+the full decrypted capture. Raw provider envelopes are not retained, so their
+hashes cannot independently be recomputed from the parsed replies. The meaning
+veto is not overridden; independent outcome/readability inspection is separate.
+
+The bounded independent audit retained HOLD. It confirmed exact replay and found
+the stated grammar-change rationale likely to be a false positive, but did not
+override the veto or give the whole article a readability pass. That semantic
+assessment used supplied edit descriptions and non-disclosing equality checks;
+it was not a fresh unrestricted inspection of all private prose. The opening is
+longer, another edit reintroduces jargon, and later fields remain unreviewed.
+Selected opening citations also omit definition/partial-versus-final context.
+
+Next proposed step: prepare a small unrelated-domain reviewer control set that
+contrasts equivalent grammatical rewrites and definitions with actual scope or
+obligation changes. Do not adjust reviewer policy, salvage this draft, or rerun
+the article to bypass the veto. The response-cap fix is verified; general
+automatic editing and end-to-end article acceptance remain unqualified.
