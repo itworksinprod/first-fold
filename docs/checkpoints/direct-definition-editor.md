@@ -1,6 +1,6 @@
 # Direct-definition editor checkpoint
 
-Status: first live run held; bounded sentence-level repair preflight passed.
+Status: both live direct-edit runs held; name-preserving composition repair in preflight.
 
 Carlos requested continued implementation and verification without continuation
 prompts. The previous context-assisted trial passed factual/meaning checks but
@@ -81,5 +81,46 @@ capture replay is unchanged. Exact private-packet preflight passed without
 network and confirms the same editor data/plan, with an 8,225-byte request.
 New system-prompt/schema SHA-256:
 `f8e4a71d8289b249fb8ac050105392fccf120b109c15e19f0da0a7abd9d37354`.
-Independent implementation review found no blocker; live outcome and final
-article approval remain pending.
+Independent implementation review found no blocker before this live run.
+
+## Second live result: a real meaning veto
+
+[Run 36288808906](https://github.com/itworksinprod/first-fold/actions/runs/36288808906)
+on main `ad7d6576e081b3ed1da55f36403bf09d67d03d43` completed eight calls within
+the same 6,600 requested-token ceiling without truncation. The last meaning
+check rejected a lost named-method reference in U6. All source checks passed,
+but source support cannot substitute for preservation of the original meaning.
+The 172-word candidate remains HOLD, with `FACT_SUMMARY_REVIEW_REJECTED`.
+Exact request/response replay preserves that failed verdict. No email was sent.
+
+Artifact `10921022365`, 80,727 bytes; ZIP SHA-256
+`201c1b854b34dd2131c6fed3b42b206ff79f300043cd5cd394d0cc706905d79b`.
+Capture SHA-256
+`402fa33617f1a5be6771f69686a14844cc024dc725cb801ddda64724493f739d`.
+
+## Next bounded repair: preserve names and compose naturally
+
+`context-named-unit-language` derives conservative camel-case/all-capital name
+anchors from each original sentence and rejects their deletion, renaming or
+movement before any model review. This is deliberately limited lexical
+recognition, not general named-entity detection. Name presence does not prove
+ownership or semantic equivalence: all existing source and meaning checks stay.
+
+The generic editor guidance now explicitly treats definitions as references for
+natural composition rather than literal replacement strings. No custom article
+answer is supplied. Original baseline, private packet, locked units, headline,
+order, 110–225-word gate, models, temperature 0.1, single-attempt budgets and
+review prompts remain unchanged. The previous modes remain replayable.
+
+Independent full-prose inspection through the reviewing agent's tool channel was
+denied by the privacy boundary. That reviewer can assess implementation and
+redacted structural checks, not certify the candidate's complete semantics or
+readability. Do not present those limited checks as a full editorial approval.
+
+Preflight: build and all 1,556 tests passed; independent implementation review
+passed 96 focused/legacy tests with no blocker. Both complete previous captures
+replay exactly. The actual private-packet offline check rejects the held
+name-losing output before review and preserves all original editor input except
+the derived name anchors. Request size: 9,140 bytes; system prompt/schema SHA-256
+`3707f8e0ac1769f90da50665e36cf6f3a7fff3d849513993bf809044e9b2de52`.
+This authorizes no quality claim: the next live candidate remains unqualified.

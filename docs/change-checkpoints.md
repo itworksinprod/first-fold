@@ -2362,3 +2362,13 @@ maximum. Exact binding, complete coverage, three-changed-unit cap and legacy
 replay tests pass. Full suite: 1,553 tests. Independent implementation preflight
 found no blocker. This changes two aspects and does not retroactively approve
 the held candidate or assert live quality for the next attempt.
+
+### Direct editor — name preservation before review
+
+Run 36288808906 completed within all caps but correctly failed its last meaning
+check: a method reference was lost. No email or approval occurred. A new isolated
+mode derives original-sentence name anchors and instructs natural composition
+without literal definition pasting. Sampling, models, private packet, word
+limits, locks and review requirements are unchanged. All 1,556 tests and scoped
+independent implementation review pass. See the
+[receipt and review limitations](checkpoints/direct-definition-editor.md).

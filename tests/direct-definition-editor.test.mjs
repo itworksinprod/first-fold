@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
-import {DIRECT_DEFINITION_PROMPT, COMPACT_DIRECT_DEFINITION_PROMPT, buildDirectDefinitionPlan, validateDirectDefinitionEdits} from '../scripts/automation/experiments/direct-definition-editor.mjs';
+import {DIRECT_DEFINITION_PROMPT, COMPACT_DIRECT_DEFINITION_PROMPT, NAMED_COMPOSITION_PROMPT, buildDirectDefinitionPlan, validateDirectDefinitionEdits} from '../scripts/automation/experiments/direct-definition-editor.mjs';
 import {CONTEXT_EDITOR_PROMPT} from '../scripts/automation/experiments/context-editor-profile.mjs';
 import {loadDefinitionGlossary, SYNTHETIC_DEFINITION_SOURCE} from '../scripts/automation/experiments/definition-glossaries.mjs';
 import {buildSentenceRewriteView, applySentenceRewrite} from '../scripts/automation/free/sentence-rewrite.mjs';
@@ -83,4 +83,33 @@ test('compact prompt retains scope, alignment, length, abstention and role separ
     'actor, attribution','original order','timing','uncertainty','negation','only JSON','Source support, meaning and readability are checked separately'])assert.ok(COMPACT_DIRECT_DEFINITION_PROMPT.includes(text));
   assert.ok(COMPACT_DIRECT_DEFINITION_PROMPT.length<DIRECT_DEFINITION_PROMPT.length);
   assert.doesNotMatch(COMPACT_DIRECT_DEFINITION_PROMPT,/MIT|HardFlow|robot|physics|safety-critical/u);
+});
+test('opt-in name anchors are derived from original units, frozen, and keep legacy plans unchanged',()=>{
+  const f=fixture();
+  const units=structuredClone(f.units);units.whatHappened[0]='ABC says BioFlow follows binding rules while generating an answer.';
+  const catalog=buildSentenceRewriteView(units);
+  const plan=buildDirectDefinitionPlan(catalog,f.glossary,{protectNames:true});
+  assert.deepEqual(plan.nameAnchors[0],{unitId:'U1',names:['ABC','BioFlow']});
+  assert.ok(Object.isFrozen(plan.nameAnchors[0].names));
+  assert.equal(plan.policy,'direct-definitions-names-v1');
+  assert.equal(Object.hasOwn(f.plan,'nameAnchors'),false);
+  assert.throws(()=>buildDirectDefinitionPlan(catalog,f.glossary,{protectNames:'true'}),/INPUT/);
+  const proposal={baselineSha256:catalog.data.baselineSha256,decision:'rewrite',sentences:catalog.data.units.map(u=>({unitId:u.unitId,text:u.text}))};
+  proposal.sentences[0].text='ABC says BioFlow follows nonoptional requirements while generating an answer.';
+  assert.equal(validateDirectDefinitionEdits(proposal,catalog,plan),true);
+  for(const replacement of ['the method','BioFlows','bioFlow','NewBioFlow','BioFlow2','BioFlow_2','BioFlowé']){
+    const changed=structuredClone(proposal);changed.sentences[0].text=changed.sentences[0].text.replace('BioFlow',replacement);
+    assert.throws(()=>validateDirectDefinitionEdits(changed,catalog,plan),/NAME_LOST/);
+  }
+  const moved=structuredClone(proposal);moved.sentences[0].text=moved.sentences[0].text.replace('BioFlow','the method');
+  moved.sentences[3].text='BioFlow has partial answers before a final answer.';
+  assert.throws(()=>validateDirectDefinitionEdits(moved,catalog,plan),/NAME_LOST/);
+  proposal.sentences[0].text="BioFlow says ABC follows nonoptional requirements while generating an answer.";
+  assert.equal(validateDirectDefinitionEdits(proposal,catalog,plan),true,'Name presence alone cannot certify actor/ownership relationships; meaning review remains mandatory');
+});
+test('named composition prompt adds generic reference-preservation and composition guidance, not article answers',()=>{
+  assert.ok(NAMED_COMPOSITION_PROMPT.startsWith(COMPACT_DIRECT_DEFINITION_PROMPT));
+  assert.match(NAMED_COMPOSITION_PROMPT,/not replacement strings/);
+  assert.match(NAMED_COMPOSITION_PROMPT,/original role and ownership/);
+  assert.doesNotMatch(NAMED_COMPOSITION_PROMPT,/MIT|HardFlow|BioFlow|robot|physics/u);
 });

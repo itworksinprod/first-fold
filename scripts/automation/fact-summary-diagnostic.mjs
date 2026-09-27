@@ -21,7 +21,7 @@ import { DEFINITION_POLISH_PROMPT } from './experiments/definition-polish-prompt
 import { EDITORIAL_VOCABULARY_PROMPT, buildEditorialVocabulary } from './experiments/editorial-vocabulary.mjs';
 import { buildDefinitionContext } from './experiments/definition-context.mjs';
 import { CONTEXT_EDITOR_PROMPT,loadContextEditorPacketText } from './experiments/context-editor-profile.mjs';
-import {DIRECT_DEFINITION_PROMPT, COMPACT_DIRECT_DEFINITION_PROMPT, buildDirectDefinitionPlan, validateDirectDefinitionEdits} from './experiments/direct-definition-editor.mjs';
+import {DIRECT_DEFINITION_PROMPT, COMPACT_DIRECT_DEFINITION_PROMPT, NAMED_COMPOSITION_PROMPT, buildDirectDefinitionPlan, validateDirectDefinitionEdits} from './experiments/direct-definition-editor.mjs';
 import {buildUnitMeaningPlan,validateUnitMeaningResponses} from './experiments/unit-meaning-review.mjs';
 
 const fields = ['headline', 'whatHappened', 'whyItMatters', 'whatToWatch'];
@@ -66,7 +66,7 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
   claimwise = false, profile = 'anthropic', plainLanguageCopyedit = false, sentenceLanguageRewrite = false,
   articleFetcher = fetchReviewedArticle, sheetLoader, frozenBaselineText, qualificationLoader,
   definitionPreservation = false, definitionGlossaryLoader = loadQualifiedMitGlossary, editorialVocabulary = false,
-  reasoningEditor = false, contextPacketText, contextLoader = loadContextEditorPacketText, directDefinitions = false, unitMeaning = false }) {
+  reasoningEditor = false, contextPacketText, contextLoader = loadContextEditorPacketText, directDefinitions = false, unitMeaning = false, namedComposition = false }) {
   if (typeof claimwise !== 'boolean') throw fail('FACT_SUMMARY_MODE');
   const generic = profile === 'mit-generalization';
   if (typeof plainLanguageCopyedit !== 'boolean' || (plainLanguageCopyedit && (!generic || !claimwise))) throw fail('FACT_SUMMARY_MODE');
@@ -80,6 +80,7 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
   const contextMode=contextPacketText!==undefined;
   if(typeof directDefinitions!=='boolean'||(directDefinitions&&!contextMode))throw fail('FACT_SUMMARY_MODE');
   if(typeof unitMeaning!=='boolean'||(unitMeaning&&!directDefinitions))throw fail('FACT_SUMMARY_MODE');
+  if(typeof namedComposition!=='boolean'||(namedComposition&&!unitMeaning))throw fail('FACT_SUMMARY_MODE');
   if(contextMode&&(!reasoningEditor||typeof contextPacketText!=='string'))throw fail('FACT_SUMMARY_MODE');
   const context=contextMode?await contextLoader(contextPacketText):null;
   if(contextMode&&context.baselineText!==frozenBaselineText)throw fail('CONTEXT_EDITOR_BASELINE_CHANGED');
@@ -87,7 +88,7 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
   if (!['anthropic', 'mit-generalization'].includes(profile) || (profile === 'mit-generalization' && !claimwise)) throw fail('FACT_SUMMARY_PROFILE');
   const editedReviewPath = plainLanguageCopyedit || sentenceLanguageRewrite;
   const polishEnabled = definitionPreservation && !editorialVocabulary && !reasoningEditor;
-  const copyeditPrompt = unitMeaning ? COMPACT_DIRECT_DEFINITION_PROMPT : directDefinitions ? DIRECT_DEFINITION_PROMPT : contextMode ? CONTEXT_EDITOR_PROMPT : editorialVocabulary ? EDITORIAL_VOCABULARY_PROMPT : definitionPreservation ? DEFINITION_COMPOSITION_PROMPT
+  const copyeditPrompt = namedComposition ? NAMED_COMPOSITION_PROMPT : unitMeaning ? COMPACT_DIRECT_DEFINITION_PROMPT : directDefinitions ? DIRECT_DEFINITION_PROMPT : contextMode ? CONTEXT_EDITOR_PROMPT : editorialVocabulary ? EDITORIAL_VOCABULARY_PROMPT : definitionPreservation ? DEFINITION_COMPOSITION_PROMPT
     : sentenceLanguageRewrite ? SENTENCE_REWRITE_PROMPT : PLAIN_LANGUAGE_COPYEDIT_PROMPT;
   const maxRequests = polishEnabled ? 9 : frozenMode ? 8 : sentenceLanguageRewrite ? 9 : plainLanguageCopyedit ? 7 : 5;
   const maxOutputBudget = polishEnabled || reasoningEditor ? 6600 : frozenMode ? 5400 : sentenceLanguageRewrite ? 6600 : plainLanguageCopyedit ? 5400 : claimwise ? 3600 : 2800;
@@ -110,6 +111,7 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
     capture.copyeditStrategy='context-assisted-reasoning-editor-v1';
     if(directDefinitions)capture.copyeditStrategy='context-direct-definitions-editor-v1';
     if(unitMeaning){capture.purpose='context-direct-unit-language-awaiting-manual-review';capture.copyeditStrategy='compact-direct-definitions-editor-v1';capture.meaningGranularity='changed-unit-v1';}
+    if(namedComposition){capture.purpose='context-named-unit-language-awaiting-manual-review';capture.copyeditStrategy='named-natural-composition-v1';}
     capture.reviewStrategy='isolated-llama-source-plus-gptoss-meaning-experimental';
     capture.context={packetSha256:context.packetSha256,supplementCaptureSha256:context.supplementCaptureSha256,
       supplementUrl:context.supplementUrl,supplementSource:context.supplementSource};
@@ -243,7 +245,7 @@ The article is one company's account. No tables or appendix are available. No ou
         draftSha256: hash(JSON.stringify(normalized.draft)), unitsSha256: phraseCopyeditUnitsHash(normalized.units) };
       const catalog = sentenceLanguageRewrite ? buildSentenceRewriteView(normalized.units) : buildSinglePhraseCopyeditView(normalized.units);
       capture.copyeditCatalog = catalog.data;
-      const directEditPlan = directDefinitions ? buildDirectDefinitionPlan(catalog, glossary) : null;
+      const directEditPlan = directDefinitions ? buildDirectDefinitionPlan(catalog, glossary,{protectNames:namedComposition}) : null;
       if(directEditPlan)capture.directEditPlan=directEditPlan;
       const editData = sentenceLanguageRewrite
         ? { catalog: catalog.data, attribution: sheet.attribution, facts: sheet.facts,

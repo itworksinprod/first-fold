@@ -17,7 +17,7 @@ import { DEFINITION_POLISH_PROMPT } from '../scripts/automation/experiments/defi
 import { EDITORIAL_VOCABULARY_PROMPT, buildEditorialVocabulary } from '../scripts/automation/experiments/editorial-vocabulary.mjs';
 import { buildDefinitionContext } from '../scripts/automation/experiments/definition-context.mjs';
 import { CONTEXT_EDITOR_PROMPT } from '../scripts/automation/experiments/context-editor-profile.mjs';
-import { DIRECT_DEFINITION_PROMPT, COMPACT_DIRECT_DEFINITION_PROMPT, buildDirectDefinitionPlan } from '../scripts/automation/experiments/direct-definition-editor.mjs';
+import { DIRECT_DEFINITION_PROMPT, COMPACT_DIRECT_DEFINITION_PROMPT, NAMED_COMPOSITION_PROMPT, buildDirectDefinitionPlan } from '../scripts/automation/experiments/direct-definition-editor.mjs';
 import { requestWorkersAiEditorial, buildWorkersAiRequest, DEFAULT_CLOUDFLARE_AI_MODEL, FREE_REASONING_WRITER_MODEL, workersAiRunUrl } from '../scripts/automation/free/workers-ai.mjs';
 import { prepareFrozenDiagnosticBaseline, resolvePrivateWriterDiagnosticMode, diagnoseOneWriter } from '../scripts/automation/private-writer-diagnostic.mjs';
 
@@ -59,7 +59,8 @@ function fixture(definition = false, termUnitCount = 1) {
 }
 async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal, changedFields = fields.slice(1),
   definition = false, glossaryLoader, sourceMismatch = false, mutatePolish, vocabulary = false, reasoning = false,
-  context = false, mutateContext, direct = false, unitMeaning = false, termUnitCount = 1 } = {}) {
+  context = false, mutateContext, direct = false, unitMeaning = false, namedComposition = false, termUnitCount = 1 } = {}) {
+  if(namedComposition)unitMeaning=true;
   if(unitMeaning)direct=true;
   if(direct)context=true;
   if (context) { definition = true; reasoning = true; }
@@ -97,6 +98,7 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
     reasoningEditor: reasoning,
     directDefinitions: direct,
     unitMeaning,
+    namedComposition,
     ...(context ? { contextPacketText: 'PRIVATE_SYNTHETIC_PACKET', contextLoader: async () => contextData } : {}),
     ...(definition ? { definitionGlossaryLoader: glossaryLoader ?? (() => glossary) } : {}),
     articleFetcher: () => assert.fail('Frozen trials must not fetch a fresh article'),
@@ -142,11 +144,11 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
         { headers: { 'content-type': 'application/json' } });
       let payload;
       if (index === 0) {
-        assert.equal(request.messages[0].content, `${unitMeaning ? COMPACT_DIRECT_DEFINITION_PROMPT : direct ? DIRECT_DEFINITION_PROMPT : context ? CONTEXT_EDITOR_PROMPT : vocabulary ? EDITORIAL_VOCABULARY_PROMPT : definition ? DEFINITION_COMPOSITION_PROMPT : SENTENCE_REWRITE_PROMPT}\nJSON schema: ${JSON.stringify(catalog.schema)}`);
+        assert.equal(request.messages[0].content, `${namedComposition ? NAMED_COMPOSITION_PROMPT : unitMeaning ? COMPACT_DIRECT_DEFINITION_PROMPT : direct ? DIRECT_DEFINITION_PROMPT : context ? CONTEXT_EDITOR_PROMPT : vocabulary ? EDITORIAL_VOCABULARY_PROMPT : definition ? DEFINITION_COMPOSITION_PROMPT : SENTENCE_REWRITE_PROMPT}\nJSON schema: ${JSON.stringify(catalog.schema)}`);
         assert.deepEqual(data, { catalog: catalog.data, attribution: 'Private synthetic fact context', facts: [],
           ...(definition ? buildDefinitionContext(catalog.data.units.map(unit => unit.text), glossary) : {}),
           ...(vocabulary ? buildEditorialVocabulary(catalog.data.units.map(unit => unit.text), glossary) : {}),
-          ...(direct ? {directEditPlan:buildDirectDefinitionPlan(catalog,glossary)} : {}) });
+          ...(direct ? {directEditPlan:buildDirectDefinitionPlan(catalog,glossary,{protectNames:namedComposition})} : {}) });
         payload = proposal;
       } else if (polishEnabled && index === 1) {
         assert.equal(request.messages[0].content, `${DEFINITION_POLISH_PROMPT}\nJSON schema: ${JSON.stringify(catalog.schema)}`);
@@ -190,6 +192,19 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
   return { ...result, requests, network, f, after };
 }
 
+test('named composition guards references before review without changing providers, sampling or limits',async()=>{
+  const r=await run({namedComposition:true,termUnitCount:3});
+  assert.equal(r.report.status,'draft-awaiting-manual-review');
+  assert.equal(r.report.mode,'context-named-unit-language-awaiting-manual-review');
+  assert.equal(r.report.modelRequests,8);assert.equal(r.report.outputBudget,6600);
+  assert.deepEqual(r.sealed.directEditPlan.nameAnchors[0],{unitId:'U1',names:['MIT']});
+  assert.equal(r.sealed.calls.filter(c=>c.dimension==='source').length,4);
+  const held=await run({namedComposition:true,mutateProposal:p=>{p.sentences[0].text=p.sentences[0].text.replace('MIT','The publisher');}});
+  assert.equal(held.report.code,'DIRECT_DEFINITION_NAME_LOST');
+  assert.equal(held.requests.length,1);assert.equal(held.sealed.fieldReviews.length,0);
+  const rejected=await run({namedComposition:true,rejectAt:3,rejection:'false'});
+  assert.equal(rejected.report.status,'failed');
+});
 test('unit-wise meaning compares changed units only and binds original field/index',async()=>{
   const r=await run({unitMeaning:true});
   assert.equal(r.report.status,'draft-awaiting-manual-review');

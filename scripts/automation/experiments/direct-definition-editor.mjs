@@ -21,13 +21,18 @@ Do not add, remove, fact-check or repair an assertion. Definitions clarify exist
 Return exactly baselineSha256, decision, sentences. Copy catalog.baselineSha256. Return every catalog unit once, in its original order, as {unitId,text}; keep one complete sentence per unit and do not move information between units or fields.
 Keep each sentence within 1,000 characters and the combined body between 110 and 225 words. Do not return the headline or commentary.
 Set decision to rewrite only if at least one eligible unit is genuinely clearer; otherwise use abstain and return all original units. Return only JSON. Source support, meaning and readability are checked separately.`;
+export const NAMED_COMPOSITION_PROMPT = COMPACT_DIRECT_DEFINITION_PROMPT + `
+Every nameAnchor in directEditPlan must remain in its original sentence, with its original role and ownership. Do not replace a named method's formulation with an unnamed generic formulation.
+Definitions explain meaning; they are not replacement strings. Compose the whole eligible sentence naturally in your own words rather than pasting definition text into the old grammar.
+Use ordinary adjectives and verbs to express the same force without repeated relative clauses. Keep a timing phrase next to the action it qualifies, not next to a different action in a nearby definition. Never sacrifice a factual distinction for fluency.`;
 export const DIRECT_DEFINITION_PROMPT = CONTEXT_EDITOR_PROMPT + `
 The directEditPlan is a fixed edit boundary: return each locked unit byte-for-byte unchanged. Only units listed in editableUnits may change.
 For a changed editable unit, directly express every listed technical concept in ordinary language using its reviewed definition and sense. Do not retain the technical label and append a definition, in either order. Do not introduce a parenthetical or bracketed aside.
 Preserve the entire sentence's facts, grammatical relationships, qualifications and scope while integrating the plain expression. Do not add any glossary label absent from the original unit.
 If no direct equivalent preserves complete meaning and reads naturally, keep that original unit unchanged. A style-boundary pass is not approval: all source and meaning checks and independent readability review still apply.`;
 
-export function buildDirectDefinitionPlan(catalog, glossary) {
+export function buildDirectDefinitionPlan(catalog, glossary, {protectNames=false}={}) {
+  if(typeof protectNames!=='boolean')throw fail('INPUT');
   const units = catalog?.data?.units;
   if (!Array.isArray(units) || !units.length || !/^[a-f0-9]{64}$/u.test(catalog.data.baselineSha256 ?? '')) throw fail('INPUT');
   const editableUnits = [], lockedUnitIds = [];
@@ -36,8 +41,10 @@ export function buildDirectDefinitionPlan(catalog, glossary) {
     if (definitions.length) editableUnits.push({unitId: unit.unitId, terms: definitions.map(d => d.term)});
     else lockedUnitIds.push(unit.unitId);
   }
-  const plan = freeze({policy: 'direct-definitions-v1', baselineSha256: catalog.data.baselineSha256,
-    editableUnits, lockedUnitIds});
+  // Deliberately limited lexical anchors, not general named-entity recognition.
+  const nameAnchors=units.map(unit=>({unitId:unit.unitId,names:[...new Set(unit.text.match(/\b(?:[A-Z][a-z]+[A-Z][A-Za-z]*|[A-Z]{2,}[A-Za-z0-9]*)\b/gu)??[])]}));
+  const plan = freeze({policy: protectNames?'direct-definitions-names-v1':'direct-definitions-v1', baselineSha256: catalog.data.baselineSha256,
+    editableUnits, lockedUnitIds,...(protectNames?{nameAnchors}:{})});
   issued.set(plan, {catalogHash: sha(catalog.data), glossary, units: structuredClone(units)});
   return plan;
 }
@@ -52,6 +59,10 @@ export function validateDirectDefinitionEdits(proposal, catalog, plan) {
     if (after?.unitId !== before.unitId || typeof after.text !== 'string') throw fail('SHAPE');
     if (after.text === before.text) continue;
     if (plan.lockedUnitIds.includes(before.unitId)) throw fail('LOCKED_UNIT');
+    for(const name of plan.nameAnchors?.[index]?.names??[]){
+      const escaped=name.replace(/[.*+?^${}()|[\]\\]/gu,'\\$&');
+      if(!new RegExp(`(?<![\\p{L}\\p{N}_])${escaped}(?![\\p{L}\\p{N}_])`,'u').test(after.text))throw fail('NAME_LOST');
+    }
     const asides = text => text.match(/\([^)]*\)|\[[^\]]*\]/gu) ?? [];
     const oldAsides = asides(before.text);
     for (const aside of asides(after.text)) {
