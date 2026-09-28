@@ -24,7 +24,7 @@ import { CONTEXT_EDITOR_PROMPT,loadContextEditorPacketText } from './experiments
 import {DIRECT_DEFINITION_PROMPT, COMPACT_DIRECT_DEFINITION_PROMPT, NAMED_COMPOSITION_PROMPT, buildDirectDefinitionPlan, validateDirectDefinitionEdits} from './experiments/direct-definition-editor.mjs';
 import {buildUnitMeaningPlan,validateUnitMeaningResponses} from './experiments/unit-meaning-review.mjs';
 import {SENTENCE_REPAIR_PROMPT,PLAIN_SENTENCE_REPAIR_PROMPT,COMPLETE_SENTENCE_REPAIR_PROMPT,loadSentenceRepairPacketText} from './experiments/sentence-repair-profile.mjs';
-import {SPAN_REPAIR_PROMPT,buildRepairSpanContract,validateRepairSpanEdits} from './experiments/repair-span-contract.mjs';
+import {SPAN_REPAIR_PROMPT,FINAL_PHRASE_REPAIR_PROMPT,buildRepairSpanContract,validateRepairSpanEdits} from './experiments/repair-span-contract.mjs';
 
 const fields = ['headline', 'whatHappened', 'whyItMatters', 'whatToWatch'];
 const hash = text => createHash('sha256').update(text).digest('hex');
@@ -70,7 +70,7 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
   definitionPreservation = false, definitionGlossaryLoader = loadQualifiedMitGlossary, editorialVocabulary = false,
   reasoningEditor = false, contextPacketText, contextLoader = loadContextEditorPacketText, directDefinitions = false, unitMeaning = false, namedComposition = false,
   repairPacketText,repairLoader=loadSentenceRepairPacketText,plainRepair=false,completeRepair=false,
-  spanRepair=false,spanContractBuilder=buildRepairSpanContract }) {
+  spanRepair=false,spanContractBuilder=buildRepairSpanContract,finalPhraseRepair=false }) {
   if (typeof claimwise !== 'boolean') throw fail('FACT_SUMMARY_MODE');
   const generic = profile === 'mit-generalization';
   if (typeof plainLanguageCopyedit !== 'boolean' || (plainLanguageCopyedit && (!generic || !claimwise))) throw fail('FACT_SUMMARY_MODE');
@@ -90,6 +90,7 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
   if(typeof plainRepair!=='boolean'||(plainRepair&&!repairMode))throw fail('FACT_SUMMARY_MODE');
   if(typeof completeRepair!=='boolean'||(completeRepair&&!plainRepair))throw fail('FACT_SUMMARY_MODE');
   if(typeof spanRepair!=='boolean'||(spanRepair&&!completeRepair))throw fail('FACT_SUMMARY_MODE');
+  if(typeof finalPhraseRepair!=='boolean'||(finalPhraseRepair&&!spanRepair))throw fail('FACT_SUMMARY_MODE');
   if(contextMode&&(!reasoningEditor||typeof contextPacketText!=='string'))throw fail('FACT_SUMMARY_MODE');
   const context=contextMode?await contextLoader(contextPacketText):null;
   const repair=repairMode?repairLoader(repairPacketText):null;
@@ -98,7 +99,7 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
   if (!['anthropic', 'mit-generalization'].includes(profile) || (profile === 'mit-generalization' && !claimwise)) throw fail('FACT_SUMMARY_PROFILE');
   const editedReviewPath = plainLanguageCopyedit || sentenceLanguageRewrite;
   const polishEnabled = definitionPreservation && !editorialVocabulary && !reasoningEditor;
-  const copyeditPrompt = spanRepair ? SPAN_REPAIR_PROMPT : completeRepair ? COMPLETE_SENTENCE_REPAIR_PROMPT : plainRepair ? PLAIN_SENTENCE_REPAIR_PROMPT : repairMode ? SENTENCE_REPAIR_PROMPT : namedComposition ? NAMED_COMPOSITION_PROMPT : unitMeaning ? COMPACT_DIRECT_DEFINITION_PROMPT : directDefinitions ? DIRECT_DEFINITION_PROMPT : contextMode ? CONTEXT_EDITOR_PROMPT : editorialVocabulary ? EDITORIAL_VOCABULARY_PROMPT : definitionPreservation ? DEFINITION_COMPOSITION_PROMPT
+  const copyeditPrompt = finalPhraseRepair ? FINAL_PHRASE_REPAIR_PROMPT : spanRepair ? SPAN_REPAIR_PROMPT : completeRepair ? COMPLETE_SENTENCE_REPAIR_PROMPT : plainRepair ? PLAIN_SENTENCE_REPAIR_PROMPT : repairMode ? SENTENCE_REPAIR_PROMPT : namedComposition ? NAMED_COMPOSITION_PROMPT : unitMeaning ? COMPACT_DIRECT_DEFINITION_PROMPT : directDefinitions ? DIRECT_DEFINITION_PROMPT : contextMode ? CONTEXT_EDITOR_PROMPT : editorialVocabulary ? EDITORIAL_VOCABULARY_PROMPT : definitionPreservation ? DEFINITION_COMPOSITION_PROMPT
     : sentenceLanguageRewrite ? SENTENCE_REWRITE_PROMPT : PLAIN_LANGUAGE_COPYEDIT_PROMPT;
   const maxRequests = polishEnabled ? 9 : frozenMode ? 8 : sentenceLanguageRewrite ? 9 : plainLanguageCopyedit ? 7 : 5;
   const maxOutputBudget = polishEnabled || reasoningEditor ? 6600 : frozenMode ? 5400 : sentenceLanguageRewrite ? 6600 : plainLanguageCopyedit ? 5400 : claimwise ? 3600 : 2800;
@@ -127,6 +128,7 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
     if(plainRepair){capture.purpose='context-two-unit-plain-repair-awaiting-manual-review';capture.copyeditStrategy='targeted-label-free-repair-v2';}
     if(completeRepair){capture.purpose='context-complete-repair-awaiting-manual-review';capture.copyeditStrategy='complete-task-repair-v3';}
     if(spanRepair){capture.purpose='context-span-repair-awaiting-manual-review';capture.copyeditStrategy='defect-span-repair-v4';}
+    if(finalPhraseRepair){capture.purpose='context-final-phrase-repair-awaiting-manual-review';capture.copyeditStrategy='final-phrase-repair-v5';}
     capture.reviewStrategy='isolated-llama-source-plus-gptoss-meaning-experimental';
     capture.context={packetSha256:context.packetSha256,supplementCaptureSha256:context.supplementCaptureSha256,
       supplementUrl:context.supplementUrl,supplementSource:context.supplementSource};

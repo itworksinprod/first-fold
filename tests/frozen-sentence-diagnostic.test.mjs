@@ -19,7 +19,7 @@ import { buildDefinitionContext } from '../scripts/automation/experiments/defini
 import { CONTEXT_EDITOR_PROMPT } from '../scripts/automation/experiments/context-editor-profile.mjs';
 import { DIRECT_DEFINITION_PROMPT, COMPACT_DIRECT_DEFINITION_PROMPT, NAMED_COMPOSITION_PROMPT, buildDirectDefinitionPlan } from '../scripts/automation/experiments/direct-definition-editor.mjs';
 import {SENTENCE_REPAIR_PROMPT,PLAIN_SENTENCE_REPAIR_PROMPT,COMPLETE_SENTENCE_REPAIR_PROMPT} from '../scripts/automation/experiments/sentence-repair-profile.mjs';
-import {SPAN_REPAIR_PROMPT,buildRepairSpanContract} from '../scripts/automation/experiments/repair-span-contract.mjs';
+import {SPAN_REPAIR_PROMPT,FINAL_PHRASE_REPAIR_PROMPT,buildRepairSpanContract} from '../scripts/automation/experiments/repair-span-contract.mjs';
 import { requestWorkersAiEditorial, buildWorkersAiRequest, DEFAULT_CLOUDFLARE_AI_MODEL, FREE_REASONING_WRITER_MODEL, workersAiRunUrl } from '../scripts/automation/free/workers-ai.mjs';
 import { prepareFrozenDiagnosticBaseline, resolvePrivateWriterDiagnosticMode, diagnoseOneWriter } from '../scripts/automation/private-writer-diagnostic.mjs';
 
@@ -62,7 +62,8 @@ function fixture(definition = false, termUnitCount = 1) {
 async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal, changedFields = fields.slice(1),
   definition = false, glossaryLoader, sourceMismatch = false, mutatePolish, vocabulary = false, reasoning = false,
   context = false, mutateContext, direct = false, unitMeaning = false, namedComposition = false, termUnitCount = 1,
-  repairMode=false,mutateRepair,plainRepair=false,completeRepair=false,spanRepair=false } = {}) {
+  repairMode=false,mutateRepair,plainRepair=false,completeRepair=false,spanRepair=false,finalPhraseRepair=false } = {}) {
+  if(finalPhraseRepair)spanRepair=true;
   if(spanRepair)completeRepair=true;
   if(completeRepair)plainRepair=true;
   if(plainRepair)repairMode=true;
@@ -90,13 +91,15 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
   const seedUnits=structuredClone(after.units);
   seedUnits.whatHappened[0]=seedUnits.whatHappened[0].replace('nonoptional requirements','requirements that must be met');
   seedUnits.whyItMatters[0]=seedUnits.whyItMatters[0].replace('nonoptional requirements','requirements');
+  if(finalPhraseRepair)seedUnits.whatHappened=structuredClone(after.units.whatHappened);
   const repair={packetSha256:'a'.repeat(64),sourceCaptureSha256:'b'.repeat(64),originalUnitsSha256:originalCatalog.data.baselineSha256,
     seedUnits,seedUnitsSha256:hash(seedUnits),feedback:[{unitId:'U1',code:'DUPLICATE_OBLIGATION'},{unitId:'U3',code:'INCOMPLETE_DEFINITION_COMPONENTS'}]};
+  if(finalPhraseRepair)repair.feedback=[{unitId:'U3',code:'COMPACT_DEFINITION_COMPONENTS'}];
   if(mutateRepair)mutateRepair(repair);
   const catalog=repairMode?buildSentenceRewriteView(seedUnits):originalCatalog;
-  const spanBuilder=view=>buildRepairSpanContract(view,[['U1','requirements that must be met'],['U3','requirements']].map(([unitId,text])=>{
+  const spanBuilder=view=>buildRepairSpanContract(view,(finalPhraseRepair?[['U3','requirements']]:[['U1','requirements that must be met'],['U3','requirements']]).map(([unitId,text])=>{
     const start=view.data.units.find(u=>u.unitId===unitId).text.indexOf(text);
-    return {unitId,start,end:start+text.length,spanSha256:sha(text)};
+    return {unitId,start,end:start+text.length,spanSha256:sha(text),...(finalPhraseRepair?{maxReplacementWords:14}:{})};
   }),view.data.baselineSha256);
   const finalProposal = { baselineSha256: catalog.data.baselineSha256, decision: 'rewrite',
     sentences: catalog.data.units.map(u => ({ unitId: u.unitId, text: after.units[u.field][u.unitIndex] })) };
@@ -120,6 +123,7 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
     plainRepair,
     completeRepair,
     spanRepair,spanContractBuilder:spanBuilder,
+    finalPhraseRepair,
     ...(repairMode?{repairPacketText:'PRIVATE_SYNTHETIC_REPAIR',repairLoader:()=>repair}:{}),
     ...(context ? { contextPacketText: 'PRIVATE_SYNTHETIC_PACKET', contextLoader: async () => contextData } : {}),
     ...(definition ? { definitionGlossaryLoader: glossaryLoader ?? (() => glossary) } : {}),
@@ -166,7 +170,7 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
         { headers: { 'content-type': 'application/json' } });
       let payload;
       if (index === 0) {
-        assert.equal(request.messages[0].content, `${spanRepair ? SPAN_REPAIR_PROMPT : completeRepair ? COMPLETE_SENTENCE_REPAIR_PROMPT : plainRepair ? PLAIN_SENTENCE_REPAIR_PROMPT : repairMode ? SENTENCE_REPAIR_PROMPT : namedComposition ? NAMED_COMPOSITION_PROMPT : unitMeaning ? COMPACT_DIRECT_DEFINITION_PROMPT : direct ? DIRECT_DEFINITION_PROMPT : context ? CONTEXT_EDITOR_PROMPT : vocabulary ? EDITORIAL_VOCABULARY_PROMPT : definition ? DEFINITION_COMPOSITION_PROMPT : SENTENCE_REWRITE_PROMPT}\nJSON schema: ${JSON.stringify(catalog.schema)}`);
+        assert.equal(request.messages[0].content, `${finalPhraseRepair ? FINAL_PHRASE_REPAIR_PROMPT : spanRepair ? SPAN_REPAIR_PROMPT : completeRepair ? COMPLETE_SENTENCE_REPAIR_PROMPT : plainRepair ? PLAIN_SENTENCE_REPAIR_PROMPT : repairMode ? SENTENCE_REPAIR_PROMPT : namedComposition ? NAMED_COMPOSITION_PROMPT : unitMeaning ? COMPACT_DIRECT_DEFINITION_PROMPT : direct ? DIRECT_DEFINITION_PROMPT : context ? CONTEXT_EDITOR_PROMPT : vocabulary ? EDITORIAL_VOCABULARY_PROMPT : definition ? DEFINITION_COMPOSITION_PROMPT : SENTENCE_REWRITE_PROMPT}\nJSON schema: ${JSON.stringify(catalog.schema)}`);
         assert.deepEqual(data, { catalog: catalog.data, attribution: 'Private synthetic fact context', facts: [],
           ...(definition ? buildDefinitionContext(originalCatalog.data.units.map(unit => unit.text), glossary) : {}),
           ...(plainRepair?{forbiddenTechnicalLabels:glossary.definitions.map(item=>item.term)}:{}),
@@ -222,6 +226,17 @@ async function run({ rejectAt = -1, rejection = '', mutateInput, mutateProposal,
   return { ...result, requests, network, f, after };
 }
 
+test('final phrase repair freezes accepted sentences but reviews all original changes',async()=>{
+  const old=await run({spanRepair:true}),r=await run({finalPhraseRepair:true});
+  assert.equal(r.report.status,'draft-awaiting-manual-review');
+  assert.equal(r.report.mode,'context-final-phrase-repair-awaiting-manual-review');
+  assert.deepEqual(r.sealed.calls.slice(1),old.sealed.calls.slice(1));
+  assert.deepEqual(r.sealed.editsApplied.map(e=>e.unitId),['U3']);
+  assert.deepEqual(r.sealed.directEditPlan.lockedUnitIds,['U1','U2','U4','U5']);
+  assert.equal(r.report.modelRequests,8);assert.equal(r.report.outputBudget,6600);
+  const held=await run({finalPhraseRepair:true,mutateProposal:p=>{p.sentences[0].text=p.sentences[0].text.replace('researchers','scientists');}});
+  assert.equal(held.report.code,'DIRECT_DEFINITION_LOCKED_UNIT');assert.equal(held.requests.length,1);
+});
 test('span repair locks surrounding meaning and keeps all original-to-final reviews',async()=>{
   const previous=await run({completeRepair:true}),r=await run({spanRepair:true});
   assert.equal(r.report.status,'draft-awaiting-manual-review');

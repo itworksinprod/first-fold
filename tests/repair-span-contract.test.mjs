@@ -36,13 +36,19 @@ test('unchanged defect and unrelated clause edits cannot masquerade as completed
 test('span binding rejects wrong seed, range, digest, duplicate targets and cloned contract',()=>{
   const f=fixture();
   assert.throws(()=>buildRepairSpanContract(f.view,f.spec),/BINDING/);
-  for(const spec of [f.spec.slice(0,1),[f.spec[0],f.spec[0]],f.spec.map(s=>({...s,spanSha256:'0'.repeat(64)})),
+  for(const spec of [[],[f.spec[0],f.spec[0]],f.spec.map(s=>({...s,spanSha256:'0'.repeat(64)})),
     f.spec.map(s=>({...s,start:-1})),f.spec.map(s=>({...s,end:10000}))]){
     assert.throws(()=>buildRepairSpanContract(f.view,spec,f.view.data.baselineSha256),/REPAIR_SPAN_/);
   }
   assert.throws(()=>validateRepairSpanEdits(f.proposal,f.view,structuredClone(f.contract)),/BINDING/);
   const forged={data:{...f.view.data,units:[]}};
   assert.throws(()=>validateRepairSpanEdits(f.proposal,forged,f.contract),/BINDING/);
+});
+test('single compacted phrase has a hard word cap without unlocking the remainder',()=>{
+  const f=fixture();
+  const contract=buildRepairSpanContract(f.view,[{...f.spec[1],maxReplacementWords:5}],f.view.data.baselineSha256);
+  assert.throws(()=>validateRepairSpanEdits(f.proposal,f.view,contract),/WORD_LIMIT/);
+  for(const maxReplacementWords of [0,21,1.5,'5'])assert.throws(()=>buildRepairSpanContract(f.view,[{...f.spec[1],maxReplacementWords}],f.view.data.baselineSha256),/SPEC/);
 });
 test('abstention is permitted only through existing decision validation, not approval',()=>{
   const f=fixture(),proposal={baselineSha256:f.view.data.baselineSha256,decision:'abstain',sentences:f.view.data.units.map(u=>({unitId:u.unitId,text:u.text}))};

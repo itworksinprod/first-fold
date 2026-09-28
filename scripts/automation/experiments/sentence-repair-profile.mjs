@@ -7,6 +7,7 @@ const sha=t=>createHash('sha256').update(t).digest('hex');
 const fail=()=>Object.assign(new Error('SENTENCE_REPAIR_PACKET_INVALID'),{code:'SENTENCE_REPAIR_PACKET_INVALID'});
 const freeze=v=>{if(v&&typeof v==='object'){Object.values(v).forEach(freeze);Object.freeze(v);}return v;};
 export const SENTENCE_REPAIR_PACKET_SHA256='37c21351754b87a32c9251a8a7cde4c60f2c3d046b3b9bd6b4fb367b6868f60a';
+export const FINAL_PHRASE_REPAIR_PACKET_SHA256='0c437ff98f21992a2fdbe5cef3c4e64b6f99e03e84d1f76fb6164a60906513d5';
 export const SENTENCE_REPAIR_PROMPT=NAMED_COMPOSITION_PROMPT+`
 This is a targeted repair of an unapproved seed, not a fresh rewrite. Change only the units with repairReferences; all other seed sentences must remain byte-for-byte unchanged. On abstention, return every seed catalog unit unchanged, not the originalText references.
 For each repair, preserve the complete originalText meaning using the FULL reviewed definition and its stated sense, not the seed's incomplete paraphrase. Preserve all defining components and their relationships, not just a definition's opening category or general description.
@@ -25,16 +26,20 @@ Use ordinary words instead of every label in forbiddenTechnicalLabels, including
 Return all catalog units in the original order as {unitId,text}. Only repairTasks units may change; every other unit must remain byte-for-byte unchanged. Keep one complete sentence per unit and information in its original unit/field. Headline is immutable and excluded from the response.
 Return exactly baselineSha256, decision, sentences. Copy catalog.baselineSha256. Decision rewrite requires ALL tasks repaired; otherwise abstain with unchanged seed units. Keep each sentence within 1,000 characters and the combined body between 110 and 225 words. JSON only. Separate factual, original-to-final meaning and independent full-text reviews follow; completing edits is not approval.`;
 
-export function loadSentenceRepairPacketText(text){
-  if(typeof text!=='string'||Buffer.byteLength(text)>12000||sha(text)!==SENTENCE_REPAIR_PACKET_SHA256)throw fail();
+function loadPacket(text,expectedSha){
+  if(typeof text!=='string'||Buffer.byteLength(text)>12000||sha(text)!==expectedSha)throw fail();
   const packet=JSON.parse(text);
   const catalog=buildSentenceRewriteView(packet.seedUnits);
   if(catalog.data.baselineSha256!==packet.seedUnitsSha256)throw fail();
-  return freeze({...packet,packetSha256:SENTENCE_REPAIR_PACKET_SHA256});
+  return freeze({...packet,packetSha256:expectedSha});
 }
-export function decodeSentenceRepairPacket(encoded){
+export const loadSentenceRepairPacketText=text=>loadPacket(text,SENTENCE_REPAIR_PACKET_SHA256);
+export const loadFinalPhraseRepairPacketText=text=>loadPacket(text,FINAL_PHRASE_REPAIR_PACKET_SHA256);
+function decodePacket(encoded,loader){
   if(typeof encoded!=='string'||!encoded||encoded.length>16000||!/^[A-Za-z0-9+/]+={0,2}$/u.test(encoded))throw fail();
   const bytes=Buffer.from(encoded,'base64');if(bytes.toString('base64')!==encoded)throw fail();
   let text;try{text=gunzipSync(bytes,{maxOutputLength:12000}).toString('utf8');}catch{throw fail();}
-  loadSentenceRepairPacketText(text);return text;
+  loader(text);return text;
 }
+export const decodeSentenceRepairPacket=encoded=>decodePacket(encoded,loadSentenceRepairPacketText);
+export const decodeFinalPhraseRepairPacket=encoded=>decodePacket(encoded,loadFinalPhraseRepairPacketText);

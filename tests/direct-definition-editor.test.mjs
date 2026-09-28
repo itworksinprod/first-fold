@@ -130,6 +130,8 @@ test('targeted repair uses seed locks but original definitions and original name
   assert.equal(validateDirectDefinitionEdits(proposal,catalog,plan),true);
   proposal.sentences[1].text='The experiment covered three routes.';
   assert.throws(()=>validateDirectDefinitionEdits(proposal,catalog,plan),/LOCKED_UNIT/);
-  for(const unitIds of [['U1'],['U1','U1'],['U1','U7'],['U1','U2']])assert.throws(()=>buildDirectDefinitionPlan(catalog,f.glossary,{protectNames:true,repairScope:{originalCatalog,unitIds}}),/INPUT/);
+  const single=buildDirectDefinitionPlan(catalog,f.glossary,{protectNames:true,repairScope:{originalCatalog,unitIds:['U4']}});
+  assert.deepEqual(single.editableUnits,[{unitId:'U4',terms:['draft candidates']}]);assert.deepEqual(single.lockedUnitIds,['U1','U2','U3']);
+  for(const unitIds of [[],['U1','U4','U3'],['U1','U1'],['U1','U7'],['U1','U2']])assert.throws(()=>buildDirectDefinitionPlan(catalog,f.glossary,{protectNames:true,repairScope:{originalCatalog,unitIds}}),/INPUT/);
   assert.throws(()=>buildDirectDefinitionPlan(catalog,f.glossary,{repairScope}),/INPUT/);
 });

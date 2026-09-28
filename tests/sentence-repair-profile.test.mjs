@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {gzipSync} from 'node:zlib';
 import {execFileSync} from 'node:child_process';
-import {decodeSentenceRepairPacket,loadSentenceRepairPacketText,SENTENCE_REPAIR_PROMPT,PLAIN_SENTENCE_REPAIR_PROMPT,COMPLETE_SENTENCE_REPAIR_PROMPT} from '../scripts/automation/experiments/sentence-repair-profile.mjs';
+import {decodeSentenceRepairPacket,decodeFinalPhraseRepairPacket,loadSentenceRepairPacketText,loadFinalPhraseRepairPacketText,SENTENCE_REPAIR_PROMPT,PLAIN_SENTENCE_REPAIR_PROMPT,COMPLETE_SENTENCE_REPAIR_PROMPT} from '../scripts/automation/experiments/sentence-repair-profile.mjs';
 import {NAMED_COMPOSITION_PROMPT} from '../scripts/automation/experiments/direct-definition-editor.mjs';
 import {prepareSentenceRepair} from '../scripts/automation/private-writer-diagnostic.mjs';
 import {diagnoseFactSummary} from '../scripts/automation/fact-summary-diagnostic.mjs';
@@ -20,9 +20,13 @@ test('repair input is confined to its one explicit no-email mode',async()=>{
   await assert.rejects(prepareSentenceRepair('context-two-unit-plain-repair',''),/SENTENCE_REPAIR_PACKET_INVALID/);
   await assert.rejects(prepareSentenceRepair('context-complete-repair',''),/SENTENCE_REPAIR_PACKET_INVALID/);
   await assert.rejects(prepareSentenceRepair('context-span-repair',''),/SENTENCE_REPAIR_PACKET_INVALID/);
+  await assert.rejects(prepareSentenceRepair('context-final-phrase-repair',''),/SENTENCE_REPAIR_PACKET_INVALID/);
+  for(const text of ['', '{}', 'x'.repeat(12001)])assert.throws(()=>loadFinalPhraseRepairPacketText(text),/SENTENCE_REPAIR_PACKET_INVALID/);
+  assert.throws(()=>decodeFinalPhraseRepairPacket(gzipSync('{}').toString('base64')),/SENTENCE_REPAIR_PACKET_INVALID/);
   await assert.rejects(diagnoseFactSummary({plainRepair:true}),/FACT_SUMMARY_MODE/);
   await assert.rejects(diagnoseFactSummary({completeRepair:true}),/FACT_SUMMARY_MODE/);
   await assert.rejects(diagnoseFactSummary({spanRepair:true}),/FACT_SUMMARY_MODE/);
+  await assert.rejects(diagnoseFactSummary({finalPhraseRepair:true}),/FACT_SUMMARY_MODE/);
   await assert.rejects(diagnoseFactSummary({repairPacketText:'private'}),/FACT_SUMMARY_MODE/);
 });
 test('repair instructions preserve full definitions without article-specific replacement answers',()=>{

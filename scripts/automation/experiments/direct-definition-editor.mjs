@@ -36,8 +36,8 @@ export function buildDirectDefinitionPlan(catalog, glossary, {protectNames=false
   const units = catalog?.data?.units;
   if (!Array.isArray(units) || !units.length || !/^[a-f0-9]{64}$/u.test(catalog.data.baselineSha256 ?? '')) throw fail('INPUT');
   const originalUnits=repairScope?.originalCatalog?.data?.units??units;
-  if(repairScope&&(!protectNames||!Array.isArray(repairScope.unitIds)||repairScope.unitIds.length!==2||
-    new Set(repairScope.unitIds).size!==2||!Array.isArray(originalUnits)||originalUnits.length!==units.length||
+  if(repairScope&&(!protectNames||!Array.isArray(repairScope.unitIds)||repairScope.unitIds.length<1||repairScope.unitIds.length>2||
+    new Set(repairScope.unitIds).size!==repairScope.unitIds.length||!Array.isArray(originalUnits)||originalUnits.length!==units.length||
     originalUnits.some((u,i)=>u.unitId!==units[i].unitId||u.field!==units[i].field||u.unitIndex!==units[i].unitIndex)||
     repairScope.unitIds.some(id=>!units.some(u=>u.unitId===id))))throw fail('INPUT');
   const editableUnits = [], lockedUnitIds = [];

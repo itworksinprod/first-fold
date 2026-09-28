@@ -197,3 +197,47 @@ deployment-to-implementation substitution without another failure masking it.
 The old complete-task mode still replays exactly. Independent preflight checked
 the actual private span boundaries/hashes and all regressions, and passed 114
 focused/legacy tests. It clears one bounded trial, not final prose approval.
+
+## Span-repair outcome — meaning retained, final phrase held
+
+[Run 36359643581](https://github.com/itworksinprod/first-fold/actions/runs/36359643581)
+on `95b744bb7c3c7bab03a3e733f89dfd6f9653b4ef` produced 156 words, passed the
+automated source/meaning checks, and replayed exactly offline within eight calls /
+6,600 requested tokens. Independent full-text review accepts the repaired opening
+and complete meaning, including the deployment caveat. It still holds the final
+introductory phrase for cumbersome wording and repetition. This is not final
+editorial approval and no email occurred.
+
+Artifact `10944853420`, 85,964 bytes; ZIP SHA-256:
+`e46477c79176cc19a0b539e01d16f038e5b6d0a7282ed805bdcba30bdf1426a7`.
+Capture SHA-256:
+`76802e2abd9246ef2e4c76ef032b5b39516e460be373b0a06ff22eeb085ca800`.
+Draft SHA-256:
+`996f460663aeb966ff53a7dda53473c6c4716b04e51fb892e5a32c1922ea3c75`.
+
+## Final-phrase repair preflight
+
+`context-final-phrase-repair` uses that exact unapproved 156-word result as its
+seed and locks U1–U5. Only the reviewed 15-word introductory phrase in U6 may
+change, to at most ten words; its prefix, predicate and deployment caveat remain
+byte-exact. This is a style bound, not proof of preserved meaning or readability.
+If complete meaning cannot fit, the editor must abstain. No replacement answer
+is supplied. All final meaning checks still compare against the original
+148-word baseline, including previously accepted edits.
+
+The separate private packet SHA-256 is
+`0c437ff98f21992a2fdbe5cef3c4e64b6f99e03e84d1f76fb6164a60906513d5`;
+seed units SHA-256 is
+`79d5781f4422e8143eb48c4966357c38140898236385086988eea8bbb2100002`.
+It uses `FIRST_FOLD_FINAL_PHRASE_REPAIR_B64` only in this isolated mode; existing
+packets and modes are unchanged and reject cross-mode inputs. Article text stays
+private. Providers, original factual/meaning reviews, 110–225 body words,
+one-attempt behavior and eight-call/6,600-token ceiling remain unchanged.
+
+All 1,576 tests pass. Actual-packet offline preflight verifies the single edit
+location, five locked units and original meaning baseline, with zero network
+calls. Request size: 11,180 bytes; prompt/schema SHA-256:
+`0e9750cb2809c05c533ee7cfd195663301175105a50f87f058b95bd5723b7238`.
+Independent preflight passed 116 focused/legacy tests. Full-text review of the
+next live result is still required; source-review citation gaps and earlier
+meaning-review false positives remain unresolved for unattended use.

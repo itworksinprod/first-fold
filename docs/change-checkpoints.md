@@ -2422,3 +2422,14 @@ contract requires edits to the reviewed defect spans themselves and locks all
 surrounding text. Both captured failures are rejected offline; 1,574 tests and
 actual-input preflight pass. This is manual edit scoping, not automatic semantic
 approval or a production change. See the [receipt](checkpoints/two-unit-repair.md).
+
+### Span repair — meaning passes; one phrase remains
+
+Run 36359643581 passed automated checks and independent meaning review. Its
+156-word draft still has a cumbersome final introductory phrase. A separately
+pinned final-phrase mode locks the accepted text and permits only that phrase
+to become shorter, without dropping its defining relationship. Original-to-final
+meaning checks, source checks, 110–225 words and final independent readability
+review remain mandatory. All 1,576 tests and actual-input offline preflight pass.
+This is a saved-article no-email experiment, not daily-delivery qualification.
+See the [receipt](checkpoints/two-unit-repair.md).
