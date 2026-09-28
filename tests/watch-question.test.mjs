@@ -63,10 +63,13 @@ test('known risky presuppositions and new numbers are vetoed without claiming a 
   assert.match(WATCH_PROMPT, /not a statement of the publisher's plans/);
   assert.match(WATCH_PROMPT, /Do not recast a demonstrated result as an unresolved question/);
   assert.match(WATCH_PROMPT, /ONLY allowedContext/);
-  assert.match(WATCH_PROMPT, /Frame additional evidence as hypothetical/);
+  assert.match(WATCH_PROMPT, /Frame the possible output itself as hypothetical/);
   assert.match(WATCH_PROMPT, /Do not assume that a comparison has been conducted or that it must show improvement/);
   assert.match(WATCH_PROMPT, /concrete output metric to observe alongside checks of those requirements/);
   assert.match(WATCH_PROMPT, /Use explicit hypothetical wording with would or could/);
+  assert.match(WATCH_PROMPT, /whether that SAME output meets the source-named requirements/);
+  assert.match(WATCH_PROMPT, /Do not refer to studies, tests, future measurements or further research/);
+  assert.doesNotMatch(WATCH_PROMPT, /A concrete unanswered comparison|prefer a hypothetical comparison|Ask what hypothetical measurements would show/);
 });
 
 test('all four fields reviewed, added question premises scoped only to two saved passages', () => {

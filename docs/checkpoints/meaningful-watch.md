@@ -359,3 +359,29 @@ alongside required-condition checks, explicitly hypothetically, without an
 existing study/comparison, assumed improvement or unreported baseline. Reviewer
 prompt/schema, sources, immutable prior text, vetoes and five-call/6,600 budget
 remain unchanged. This is not a relabeled rejection or relaxed factual standard.
+
+### Second typed article result — extraneous research framing
+
+[Run 36371291160](https://github.com/itworksinprod/first-fold/actions/runs/36371291160)
+on `f0db3ef98fa28ba9f246bb25bd7b2362126a5309` again held C2 only, with the
+other claims passing. All 1,646 tests and 49 independent focused tests passed
+before publication. Five calls / 6,600 requested output-token cap; 207 body words,
+all old text unchanged, exact offline replay passed. No email.
+Artifact 10949356797, 57,185 bytes, ZIP SHA-256
+`d4668cbeb9dd025d0cee8e77bc3ed3ad5c81f79d38ee84b03c82dd63a49b3c6c`.
+Capture SHA-256:
+`a5e819dbb4b99aa0d20b60b52d06f5266d383a672bee1a5ebf501609f950b200`.
+Held draft SHA-256:
+`28471b67397941b3e7ccdd26a49f6624847152f3f8e99136ba8d81c049e868f3`.
+
+The question refers to future measurements and standard-method comparison. The
+audit accepts the comparative capability but rejects inferred feasibility of
+future measurements and meaningfulness of the evaluation. This does not prove
+those inferred premises are genuinely asserted or that the comparative capability
+is established for that particular metric. The failed result stays held.
+
+The next writer-only task is narrower: ask directly about a source-named output
+measure and whether that same hypothetical output meets the named requirement.
+Avoid meta-level research/evaluation questions and unreported benchmark or
+baseline setups. No prewritten article answer is supplied. Reviewer, gold labels,
+allowed evidence, existing text, vetoes and resource limits remain unchanged.
