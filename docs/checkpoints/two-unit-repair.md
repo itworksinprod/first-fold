@@ -319,3 +319,39 @@ and settings remain unchanged.
 All 1,578 tests pass, including example/caveat-lock regressions. Actual-input
 preflight: zero network calls; 11,262 request bytes; prompt/schema SHA-256:
 `8fe8f3b20894a0b8326e531d8c596e60c81b499efdc039ac139f366e195d989e`.
+
+### Opening-clause outcome — observed repetition remains
+
+[Run 36361503231](https://github.com/itworksinprod/first-fold/actions/runs/36361503231)
+on `8b6ce9b49d2796b09d27d48ed0f38614f9b75a5b` produced 153 words and passed
+automated checks and exact offline replay. Independent review retained HOLD for
+repeated wording and awkward subject/verb agency. Ownership, task context,
+requirements, possibility, additionality, example and deployment caveat remain
+intact. Factual support does not make the sentence fluent. Eight calls / 6,600
+requested tokens; no email or daily change.
+
+Artifact `10946290188`, 84,143 bytes; ZIP SHA-256:
+`ad429c70c5eb64599025cb893b96b0d8e39d62c2f5192273cf892a9f8d8e308b`.
+Capture SHA-256:
+`392356b3e1cbcc5c65d867d76c75b9bcbf133e6f44e7d6023b5e4c2c24a6a205`.
+Draft SHA-256:
+`636229b30b3ce27568fdb42554320f9666a54d8e9482ca50b7de15e4779f6024`.
+
+### Repetition contract
+
+The same mode's `final-opening-clause-repair-v8` adds one manually reviewed
+at-most-once content phrase, bound by offsets 101–114 and substring hash to the
+unchanged seed. Only that occurrence constraint is supplied to the editor, not a
+replacement or required synonym. The assembled sentence is checked using
+case-insensitive word tokens; punctuation and hyphens cannot disguise a repeat.
+Its concept and component roles must remain; removing meaning to satisfy a style
+rule still fails the unchanged original-to-final reviews.
+
+All three captured repeated outputs are rejected offline as
+`REPAIR_SPAN_REPEATED_PHRASE`, before any reviewer call. This proves rejection of
+the observed defect, not general fluency: synonym-swapped repetition or awkward
+agency still requires independent full-sentence review. All 1,579 tests pass.
+The span, 20-word cap, other-unit locks, sources, reviewers, providers and 8/6,600
+ceiling remain unchanged. Actual preflight is offline: 11,837 request bytes;
+prompt/schema SHA-256:
+`30affb91b54b64f90f9fb2e07c76a08cb5bc1ff35926e5d4508c4b76a26f2cda`.

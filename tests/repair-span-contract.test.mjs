@@ -72,3 +72,28 @@ test('abstention is permitted only through existing decision validation, not app
   assert.match(SPAN_REPAIR_PROMPT,/independent full-text review remain mandatory/);
   assert.doesNotMatch(SPAN_REPAIR_PROMPT,/HardFlow|MIT|optimization formulation|mathematical statement/);
 });
+test('reviewed repeated phrase is checked across the assembled sentence, with word boundaries',()=>{
+  const text='Mira allows extra objectives while extra objectives stay provisional, such as saving energy.';
+  const units={headline:['Synthetic headline'],whatHappened:['Mira completed the trial.'],
+    whyItMatters:['The measured result remains limited.'],whatToWatch:[text]};
+  const view=buildSentenceRewriteView(units),end=text.indexOf(', such as'),start=text.indexOf('extra objectives');
+  const spec={unitId:'U3',start:0,end,spanSha256:sha(text.slice(0,end)),maxReplacementWords:20,
+    uniquePhraseSpan:{start,end:start+16,sha256:sha('extra objectives')}};
+  const contract=buildRepairSpanContract(view,[spec],view.data.baselineSha256);
+  assert.deepEqual(contract.spans[0].uniquePhrases,['extra objectives']);
+  const proposal=opening=>({baselineSha256:view.data.baselineSha256,decision:'rewrite',sentences:view.data.units.map(u=>({unitId:u.unitId,text:u.unitId==='U3'?opening+text.slice(end):u.text}))});
+  for(const phrase of ['extra objectives','EXTRA OBJECTIVES','extra-objectives','extra, objectives']){
+    assert.throws(()=>validateRepairSpanEdits(proposal(`Mira permits extra objectives and ${phrase} remain possible`),view,contract),/REPEATED_PHRASE/);
+  }
+  validateRepairSpanEdits(proposal('Mira may include extra objectives'),view,contract);
+  // These near matches must not be treated as identical phrases; semantics remain a separate check.
+  validateRepairSpanEdits(proposal('Mira may include extra objectives and extra objectivesX'),view,contract);
+  const invalid=[{...spec.uniquePhraseSpan,sha256:'0'.repeat(64)},{...spec.uniquePhraseSpan,start:-1},
+    {...spec.uniquePhraseSpan,end:10000},{start:0,end:4,sha256:sha('Mira')}];
+  for(const uniquePhraseSpan of invalid)assert.throws(()=>buildRepairSpanContract(view,[{...spec,uniquePhraseSpan}],view.data.baselineSha256),/REPAIR_SPAN_/);
+  // A repetition spanning a byte-locked prefix is also rejected.
+  const cut=text.indexOf('while '),prefixSpec={...spec,start:cut,spanSha256:sha(text.slice(cut,end)),uniquePhraseSpan:{start:text.lastIndexOf('extra objectives'),end:text.lastIndexOf('extra objectives')+16,sha256:sha('extra objectives')}};
+  const crossing=buildRepairSpanContract(view,[prefixSpec],view.data.baselineSha256);
+  const p=proposal(text.slice(0,cut)+'while EXTRA OBJECTIVES remain optional');
+  assert.throws(()=>validateRepairSpanEdits(p,view,crossing),/REPEATED_PHRASE/);
+});

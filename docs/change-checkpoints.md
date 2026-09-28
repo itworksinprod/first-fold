@@ -2453,3 +2453,12 @@ fixed. All other sentences, headline and original-to-final checks remain unchang
 The independent reviewer recommended this boundary adjustment over another synonym
 instruction. All 1,578 tests and actual-packet preflight pass; no live prose approval
 or daily integration is implied. See the [receipt](checkpoints/two-unit-repair.md).
+
+### Repeated wording — explicit rejection before review
+
+Run 36361503231 retained the observed repetition and failed independent readability
+review despite automated passes. A seed-bound at-most-once phrase constraint now
+rejects all three captured repetitions offline before further provider calls.
+No replacement wording is supplied and no meaning gate is relaxed. All 1,579 tests
+pass. The next live result still requires exact full-text review; this guard alone
+does not complete step 1. See the [receipt](checkpoints/two-unit-repair.md).
