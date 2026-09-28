@@ -114,7 +114,7 @@ test('abstention and invalid edit proposals stop before source calls', async () 
 });
 
 test('a bound plaintext question stopped only by the premise guard remains encrypted-only diagnostic evidence', async () => {
-  const text = 'Will upcoming studies compare the results?';
+  const text = 'Could upcoming studies compare the results?';
   const {result, requests} = await run({changeProposal: p => {p.question = text;}});
   assert.equal(requests.length, 1); assert.equal(result.report.code, 'WATCH_UNSUPPORTED_PRESUPPOSITION');
   assert.equal(result.sealed.draft, undefined); assert.equal(result.report.emailSent, false);
@@ -122,6 +122,15 @@ test('a bound plaintext question stopped only by the premise guard remains encry
   assert.ok(!JSON.stringify(result.report).includes(text));
   assert.equal(result.sealed.calls[0].responseRejected, true);
   assert.equal(result.sealed.calls[0].response, undefined);
+});
+
+test('non-hypothetical question is held and retained only as rejected encrypted diagnostic evidence', async () => {
+  const text = 'What is the shortest path length achieved by HardFlow while remaining collision‑free?';
+  const {result, requests} = await run({changeProposal: p => {p.question = text;}});
+  assert.equal(requests.length, 1); assert.equal(result.report.code, 'WATCH_QUESTION_NOT_HYPOTHETICAL');
+  assert.equal(result.sealed.draft, undefined);
+  assert.deepEqual(result.sealed.rejectedQuestion, {text, code: result.report.code, accepted: false});
+  assert.ok(!JSON.stringify(result.report).includes(text)); assert.equal(result.report.emailSent, false);
 });
 
 test('malformed or misbound questions never enter rejected-question capture', async () => {

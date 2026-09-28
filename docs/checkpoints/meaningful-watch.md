@@ -385,3 +385,27 @@ measure and whether that same hypothetical output meets the named requirement.
 Avoid meta-level research/evaluation questions and unreported benchmark or
 baseline setups. No prewritten article answer is supplied. Reviewer, gold labels,
 allowed evidence, existing text, vetoes and resource limits remain unchanged.
+
+### Third typed article result — achieved-result presupposition
+
+[Run 36371672463](https://github.com/itworksinprod/first-fold/actions/runs/36371672463)
+on `28546c44eba8ecbb833a49398beec7ae3e5d1d5e` held the question after five
+calls / 6,600-token cap. Its wording asks about an already-achieved shortest path
+length rather than explicitly hypothetical output, contrary to the writer's
+existing instructions. The source audit flags the unestablished achieved metric.
+All earlier text remains identical; body 195 words; exact replay passed. No email.
+All 1,646 tests and 49 independent focused tests passed before publication.
+Artifact 10949144812, 56,308 bytes, ZIP SHA-256
+`b1815eaf1a2642f2c728c59d905570949bca378323b6c7b2a8237162c40eedf6`.
+Capture SHA-256:
+`6a1328cf7106273331994946f9303158f5ae1d3261bb694e5967852fb82904c7`.
+Held draft SHA-256:
+`7b33588620735c5a2935bdbf1344625fe3b49d69923c01d53269b3e19d0ac1fe`.
+
+The next repair enforces the existing would/could form requirement before any
+source calls. This is only a form gate, not proof of hypothetical meaning or
+factual support; all semantic checks remain required. A bound, shape-valid,
+plaintext rejected question is retained only inside encrypted diagnostics, using
+the same bounded path as the existing premise-word veto. Wrong-shape or misbound
+responses remain excluded. Sources, previous prose, reviewers and limits stay
+unchanged; no outcome is relabeled or manually substituted.

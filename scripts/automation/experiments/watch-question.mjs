@@ -35,6 +35,7 @@ Do not refer to studies, tests, future measurements or further research. No such
 Do not assert that no evidence exists outside the supplied excerpt. Do not invent figures, dates or product versions.
 Avoid generic what-happens-next questions, promotional phrasing, practical deployment advice, new jargon and repetition of the existing watch sentence.
 Use one natural, direct question, ending with a question mark, at most 36 words. No introductory label, explanation or quoted source wording.
+The question MUST contain the word would or could, expressing a hypothetical output, not an already-achieved result. The local gate rejects questions without this form; passing it does not replace premise checking.
 Use everyday wording, such as requirements and quality goals; avoid jargon such as empirical studies, objectives and domains. A concrete unknown output value or property is more useful than repeating a list of research fields.
 When the source names an optional quality goal and required conditions, identify the concrete output metric to observe alongside checks of those requirements. Use explicit hypothetical wording with would or could. Ask about the unknown output value or property, not what evidence would show or how meaningful an evaluation would be. Avoid broad quality wording when the source supplies a concrete metric. Do not assume that a comparison has been conducted or that it must show improvement, and do not introduce a baseline, benchmark or comparison to other methods.
 The local acceptance gate forbids these words and their inflections even in a hypothetical question: guarantee, ensure, prevent, eliminate, scheduled, announced, upcoming, forthcoming, planned, expected, launch, release, deploy, rollout. Do not use any numbers. Express required conditions without assurance verbs.
@@ -73,7 +74,7 @@ export function buildWatchPlan(packet, packetSha256 = null) {
     publisher: 'MIT', allowedContext, maximumQuestionWords: 36, maximumBodyWords: 225};
   const schema = {type: 'object', additionalProperties: false, required: ['baselineSha256', 'decision', 'question'], properties: {
     baselineSha256: {type: 'string', enum: [baselineSha256]}, decision: {type: 'string', enum: ['add', 'abstain']},
-    question: {type: 'string', maxLength: 600},
+    question: {type: 'string', maxLength: 600, description: 'For add, include the standalone word would or could and end with a question mark; for abstain, use an empty string.'},
   }};
   const plan = freeze({packetSha256, originRunId: packet.originRunId, originCaptureSha256: packet.originCaptureSha256,
     baseline, source, sourceRecord: structuredClone(packet.source), supplementSource: structuredClone(packet.supplementSource),
@@ -96,6 +97,8 @@ export function applyWatchQuestion(plan, proposal) {
       /[{}<>`:]|[\p{Cc}\p{Cf}]|["“”]\s*[,]/u.test(text) || !/\?$/u.test(text) || (text.match(/\?/gu) ?? []).length !== 1 ||
       !/^(?:Can|Could|Do|Does|Would|Will|How|Which|What|Is|Are)\b/u.test(text) ||
       /[.!?]\s+\p{Ll}/u.test(text) || [...new Intl.Segmenter('en', {granularity: 'sentence'}).segment(text)].length !== 1) throw fail('WATCH_RESPONSE_TEXT');
+  // Form requirement only: a modal cannot prove that every premise is supported.
+  if (!/(?<![\p{L}\p{M}\p{N}_])(?:would|could)(?![\p{L}\p{M}\p{N}_])/iu.test(text)) throw fail('WATCH_QUESTION_NOT_HYPOTHETICAL');
   // Deliberately conservative vetoes for this no-roadmap, no-outcome-promise
   // context. Passing these is not factuality or proof of a useful question.
   if (/\b(?:guarantee\w*|ensur\w*|prevent\w*|eliminat\w*|scheduled|announced|upcoming|forthcoming|planned|expected|launch\w*|releas\w*|deploy\w*|rollout\w*)\b|\p{N}/iu.test(text.normalize('NFKC'))) throw fail('WATCH_UNSUPPORTED_PRESUPPOSITION');

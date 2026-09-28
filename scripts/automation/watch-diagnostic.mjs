@@ -55,7 +55,7 @@ export async function diagnoseWatch({plan, publicKey, accountId, apiToken, now,
     let applied;
     try { applied = applyWatchQuestion(plan, editor.payload); }
     catch (error) {
-      if (error?.code === 'WATCH_UNSUPPORTED_PRESUPPOSITION') {
+      if (['WATCH_UNSUPPORTED_PRESUPPOSITION', 'WATCH_QUESTION_NOT_HYPOTHETICAL'].includes(error?.code)) {
         // This exact gate runs only after the bound shape, length and plaintext
         // checks. Retain the rejected question only inside the sealed capture,
         // never in the report/log, so a hold can be diagnosed rather than guessed.

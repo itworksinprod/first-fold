@@ -72,6 +72,19 @@ test('known risky presuppositions and new numbers are vetoed without claiming a 
   assert.doesNotMatch(WATCH_PROMPT, /A concrete unanswered comparison|prefer a hypothetical comparison|Ask what hypothetical measurements would show/);
 });
 
+test('observed achieved-result question fails the hypothetical form requirement before factual review', () => {
+  const {plan, proposal} = watchFixture();
+  for (const question of ['What is the shortest path length achieved by HardFlow while remaining collision‑free?',
+    'What result wouldbe shown?', 'Does it measure what it couldhave achieved?',
+    'What couldé be observed?', 'What éwould be observed?', 'What could\u0301 be observed?', 'What _could be observed?']) {
+    assert.throws(() => applyWatchQuestion(plan, {...proposal, question}), /WATCH_QUESTION_NOT_HYPOTHETICAL/);
+  }
+  assert.match(WATCH_PROMPT, /MUST contain the word would or could/);
+  // Even a form-valid question can invent a result: the semantic review is still required.
+  const possible = applyWatchQuestion(plan, {...proposal, question: 'Could the observed result change?'});
+  assert.equal(possible.decision, 'add');
+});
+
 test('all four fields reviewed, added question premises scoped only to two saved passages', () => {
   const {plan, proposal} = watchFixture(), result = applyWatchQuestion(plan, proposal);
   for (const field of ['headline', 'whatHappened', 'whyItMatters', 'whatToWatch']) {
