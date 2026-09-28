@@ -99,3 +99,24 @@ instruction now makes that presupposition explicit; plain wording is requested.
 Baseline, allowed passages, source schema, per-run budget and independent review
 requirements are unchanged. The exact rejected response is locally vetoed;
 synthetic variants and the transport stop are tested. No email or daily change.
+
+## Second live trial — guard stopped before review
+
+[Run 36367789152](https://github.com/itworksinprod/first-fold/actions/runs/36367789152)
+on `4562c4d924a55b4ec94cb90ee71bc844091f2bc3` stopped after one request with
+`WATCH_UNSUPPORTED_PRESUPPOSITION`. No draft or source review was produced.
+The then-current rejection path did not retain rejected text, so neither the
+triggering word nor its semantic context can be determined. Do not claim this
+trial repeated the previous exact defect or that the hold was a false positive.
+Artifact 10947124920, 12,092 bytes, ZIP SHA-256
+`339cb670bc37248321895a0a462aa64864e1bafd791588af045fb28416946be6`.
+Capture SHA-256:
+`efb898ee4cfef33d1870b98683ec6828b8caa87c57830810f3894d26ee0204d2`.
+
+The next repair exposes the existing word/number veto explicitly in the editor
+instructions, including hypothetical uses, rather than changing the veto. For
+diagnosability, only a baseline-bound, shape/length/plaintext-valid question
+stopped by that exact gate is retained as rejected evidence inside the encrypted
+capture. It is never a draft, report/log field or approved output. Malformed,
+misbound or unknown-shaped responses remain excluded. Tests cover both paths;
+all prior substantive criteria and transport budgets remain unchanged.

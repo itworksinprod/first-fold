@@ -54,7 +54,16 @@ export async function diagnoseWatch({plan, publicKey, accountId, apiToken, now,
     const editor = await request(plan, 'question');
     let applied;
     try { applied = applyWatchQuestion(plan, editor.payload); }
-    catch (error) { editor.call.responseRejectedBeforeCapture = true; throw error; }
+    catch (error) {
+      if (error?.code === 'WATCH_UNSUPPORTED_PRESUPPOSITION') {
+        // This exact gate runs only after the bound shape, length and plaintext
+        // checks. Retain the rejected question only inside the sealed capture,
+        // never in the report/log, so a hold can be diagnosed rather than guessed.
+        editor.call.responseRejected = true;
+        capture.rejectedQuestion = {text: editor.payload.question, code: error.code, accepted: false};
+      } else editor.call.responseRejectedBeforeCapture = true;
+      throw error;
+    }
     editor.call.response = structuredClone(editor.payload);
     if (applied.decision === 'abstain') throw fail('WATCH_EDITOR_ABSTAINED');
     capture.draft = applied.draft; capture.reviewUnits = applied.units;

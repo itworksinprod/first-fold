@@ -36,6 +36,7 @@ Do not assert that no evidence exists outside the supplied excerpt. Do not inven
 Avoid generic what-happens-next questions, promotional phrasing, practical deployment advice, new jargon and repetition of the existing watch sentence.
 Use one natural, direct question, ending with a question mark, at most 36 words. No introductory label, explanation or quoted source wording.
 Use everyday wording, such as requirements and quality goals; avoid jargon such as empirical studies, objectives and domains. A concrete unanswered comparison is more useful than repeating a list of research fields.
+The local acceptance gate forbids these words and their inflections even in a hypothetical question: guarantee, ensure, prevent, eliminate, scheduled, announced, upcoming, forthcoming, planned, expected, launch, release, deploy, rollout. Do not use any numbers. Express required conditions without assurance verbs.
 Return baselineSha256 unchanged and decision add with question, or abstain with an empty question if no supported useful question is possible.
 The assembled body must remain 110–225 words, headline excluded.`;
 

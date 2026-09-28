@@ -92,3 +92,26 @@ test('abstention and invalid edit proposals stop before source calls', async () 
     assert.ok(!JSON.stringify(result).includes('PRIVATE_UNEXPECTED_RESPONSE'));
   }
 });
+
+test('a bound plaintext question stopped only by the premise guard remains encrypted-only diagnostic evidence', async () => {
+  const text = 'Will upcoming studies compare the results?';
+  const {result, requests} = await run({changeProposal: p => {p.question = text;}});
+  assert.equal(requests.length, 1); assert.equal(result.report.code, 'WATCH_UNSUPPORTED_PRESUPPOSITION');
+  assert.equal(result.sealed.draft, undefined); assert.equal(result.report.emailSent, false);
+  assert.deepEqual(result.sealed.rejectedQuestion, {text, code: 'WATCH_UNSUPPORTED_PRESUPPOSITION', accepted: false});
+  assert.ok(!JSON.stringify(result.report).includes(text));
+  assert.equal(result.sealed.calls[0].responseRejected, true);
+  assert.equal(result.sealed.calls[0].response, undefined);
+});
+
+test('malformed or misbound questions never enter rejected-question capture', async () => {
+  for (const changeProposal of [p => {p.question = 'Will upcoming <script> tests work?';},
+    p => {p.baselineSha256 = '0'.repeat(64); p.question = 'Will upcoming tests work?';},
+    p => {p.extra = 'untrusted'; p.question = 'Will upcoming tests work?';},
+    p => {p.question = 'Will upcoming ' + 'tests '.repeat(40) + 'work?';}]) {
+    const {result} = await run({changeProposal});
+    assert.equal(result.sealed.rejectedQuestion, undefined);
+    assert.equal(result.sealed.calls[0].responseRejectedBeforeCapture, true);
+    assert.equal(result.sealed.calls[0].response, undefined);
+  }
+});
