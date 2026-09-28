@@ -4,7 +4,7 @@ import {gzipSync} from 'node:zlib';
 import {readFile} from 'node:fs/promises';
 import {significanceFixture, sha} from './fixtures/significance-fixture.mjs';
 import {buildSignificancePlan, decodeSignificancePacket, loadSignificancePlan, applySignificanceIntroduction,
-  buildSignificanceFieldReview, SIGNIFICANCE_PROMPT, SIGNIFICANCE_PASSAGES} from '../scripts/automation/experiments/significance-introduction.mjs';
+  buildSignificanceFieldReview, significanceSourceRequest, SIGNIFICANCE_PROMPT, SIGNIFICANCE_PASSAGES} from '../scripts/automation/experiments/significance-introduction.mjs';
 import {prepareSignificanceDiagnostic, resolvePrivateWriterDiagnosticMode, diagnoseOneWriter} from '../scripts/automation/private-writer-diagnostic.mjs';
 
 test('one addition preserves every accepted unit, order and headline byte-for-byte', () => {
@@ -58,6 +58,14 @@ test('unchanged four-field source review policy and supplementary-source scope a
     assert.equal(view.data.claims.length, result.units[field].length);
     assert.equal(view.data.passages.some(p => p.evidenceId === 'S2P1'), ['whatHappened', 'whatToWatch'].includes(field));
     assert.ok(!Object.hasOwn(view.data, 'previousClaims'));
+    const request = significanceSourceRequest(view, field);
+    assert.deepEqual(request.data, view.data);
+    assert.deepEqual(request.schema, view.schema);
+    if (field === 'whyItMatters') {
+      assert.ok(request.prompt.startsWith(view.prompt));
+      assert.match(request.prompt, /For C1 only, use exclusively S1P2, S1P6, S1P10, S1P11/);
+      assert.match(request.prompt, /return sourceSupported false/);
+    } else assert.equal(request, view);
   }
   const altered = structuredClone(result); altered.draft.headline = 'Changed';
   assert.throws(() => buildSignificanceFieldReview(plan, altered, 'headline'), /BASELINE_CHANGED/);
@@ -83,4 +91,6 @@ test('workflow gates new secret to two no-email steps and keeps production uncha
   assert.doesNotMatch(workflow, /RESEND|OPENAI_API|schedule:|pull_request:/);
   assert.match(SIGNIFICANCE_PROMPT, /ONLY allowedContext/);
   assert.match(SIGNIFICANCE_PROMPT, /Keep hypothetical examples hypothetical/);
+  assert.match(SIGNIFICANCE_PROMPT, /do not merely repeat constraint compliance/);
+  assert.match(SIGNIFICANCE_PROMPT, /Do not invent a named stakeholder/);
 });

@@ -55,3 +55,28 @@ A green automated result remains `draft-awaiting-manual-review`. The source
 reviewer is experimental, not generally qualified. This manually scoped saved
 sample does not demonstrate fresh discovery or an unseen automatic writer.
 Step 3 (meaningful watch guidance), daily production and delivery stay separate.
+
+## First live trial — held, not accepted
+
+[Run 36365028473](https://github.com/itworksinprod/first-fold/actions/runs/36365028473)
+on `d0d5850dc218c29988d8322651c3d232a545be05` stopped with
+`SIGNIFICANCE_SCOPE_REJECTED`. The source reviewer approved the added sentence
+but cited S1P1 and S1P5 alongside S1P10, outside the predeclared inventory.
+The gate correctly stopped after four calls (4,200 requested output tokens);
+Why it matters is absent from passed fields. No email or accepted addition.
+Artifact ID 10947126512, 43,254 bytes, ZIP SHA-256
+`c499a0b50495eb0238090adde654eab083588030487200919ed531660cd70fb9`.
+Local capture SHA-256
+`c93fdef64747959d8e2a9aa04b8d21b2ca9ea4132911b4e894fd09c2dc2594f6`.
+Independent exact-text review also held the addition: it repeated compliance
+rather than explaining concrete stakes, attributed an inferred beneficiary to
+the source, and risked conflating a generated plan with physical safety.
+The accepted 150-word baseline remains unchanged; this 170-word trial is rejected.
+
+The follow-up tightens instructions: Why's first claim is explicitly restricted
+to the same four passages, while retained claims keep their existing evidence.
+The complete provider request hash binds this instruction. Source schema,
+underlying support policy, post-check and call/token ceilings are unchanged.
+The editor is also told not to turn potential usefulness into a promise of safe
+real-world actions, to use the source's hypothetical stakes, and not to invent
+a named beneficiary. This changes neither allowed evidence nor acceptance criteria.

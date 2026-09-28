@@ -4,7 +4,7 @@ import {buildWorkersAiRequest, workersAiRunUrl, workersAiFailureDiagnostic,
   DEFAULT_CLOUDFLARE_AI_MODEL, FREE_REASONING_WRITER_MODEL} from './free/workers-ai.mjs';
 import {validateIsolatedPreservationReview} from './free/isolated-preservation-review.mjs';
 import {assertSignificancePlan, applySignificanceIntroduction, buildSignificanceFieldReview,
-  SIGNIFICANCE_PASSAGES} from './experiments/significance-introduction.mjs';
+  SIGNIFICANCE_PASSAGES, significanceSourceRequest} from './experiments/significance-introduction.mjs';
 const fields = ['headline', 'whatHappened', 'whyItMatters', 'whatToWatch'];
 const sha = text => createHash('sha256').update(text).digest('hex');
 const fail = code => Object.assign(new Error(code), {code});
@@ -64,7 +64,7 @@ export async function diagnoseSignificance({plan, publicKey, accountId, apiToken
     // No equivalence claim is made for the new proposition. All older text is identical.
     for (const field of fields) {
       const view = buildSignificanceFieldReview(plan, applied, field);
-      const response = await request(view, 'review', field);
+      const response = await request(significanceSourceRequest(view, field), 'review', field);
       const verdict = validateIsolatedPreservationReview(response.payload, view);
       if (!verdict.valid) response.call.responseRejectedBeforeCapture = true;
       else response.call.response = structuredClone(response.payload);
