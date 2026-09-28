@@ -37,7 +37,10 @@ async function run({failure, at = 0, changeProposal} = {}) {
         errors: [{code: 3036, message: 'PRIVATE_QUOTA_DETAIL'}]}), {status: 429});
       const payload = index === 0 ? proposal : {reviewSha256: data.reviewSha256,
         judgments: data.claims.map((claim, i) => ({claimId: claim.claimId, comparison: 'Synthetic mock judgment.',
-          evidenceIds: [index === 4 && i === data.claims.length - 1 ? failure === 'scope' ? 'S1P6' : 'S1P5' : 'S1P1'], sourceSupported: !(index === at && failure === 'unsupported')}))};
+          evidenceIds: index === 4 && i === data.claims.length - 1 && failure === 'question-unsupported' ? [] :
+            [index === 4 && i === data.claims.length - 1 ? failure === 'scope' ? 'S1P6' : 'S1P5' : 'S1P1'],
+          sourceSupported: !(index === at && failure === 'unsupported') &&
+            !(index === 4 && i === data.claims.length - 1 && failure === 'question-unsupported')}))};
       if (index === at && failure === 'malformed-review') payload.extra = 'PRIVATE_UNEXPECTED_RESPONSE';
       return new Response(JSON.stringify({success: true, result: {response: JSON.stringify(payload)}, errors: []}),
         {headers: {'content-type': 'application/json'}});
@@ -68,7 +71,7 @@ for (const failure of ['quota', 'wrong-endpoint', 'retry', 'no-network', 'proven
     assert.equal(result.sealed.draft, undefined);
   });
 }
-for (const failure of ['unsupported', 'malformed-review', 'scope']) {
+for (const failure of ['unsupported', 'malformed-review', 'scope', 'question-unsupported']) {
   test(`${failure} review holds without sending or accepting an addition`, async () => {
     const {result, requests} = await run({failure, at: 4});
     assert.equal(result.report.status, 'failed'); assert.equal(requests.length, 5);
@@ -80,6 +83,11 @@ for (const failure of ['unsupported', 'malformed-review', 'scope']) {
       assert.equal(review.verdict.supported, false);
     }
     if (failure === 'malformed-review') assert.ok(!JSON.stringify(result).includes('PRIVATE_UNEXPECTED_RESPONSE'));
+    if (failure === 'question-unsupported') {
+      const verdict = result.sealed.fieldReviews.at(-1).verdict;
+      assert.equal(verdict.valid, true);
+      assert.deepEqual(verdict.claims.map(c => c.sourceSupported), [true, false]);
+    }
   });
 }
 test('abstention and invalid edit proposals stop before source calls', async () => {

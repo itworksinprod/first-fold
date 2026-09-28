@@ -120,3 +120,52 @@ stopped by that exact gate is retained as rejected evidence inside the encrypted
 capture. It is never a draft, report/log field or approved output. Malformed,
 misbound or unknown-shaped responses remain excluded. Tests cover both paths;
 all prior substantive criteria and transport budgets remain unchanged.
+
+## Third live trial — source-check hold, reason not established
+
+[Run 36368052801](https://github.com/itworksinprod/first-fold/actions/runs/36368052801)
+on `8d350607a131ddc0855def6c277a823a178157cf` passed the lexical gate but failed
+`WATCH_SOURCE_REJECTED` at the added question. The retained watch unit passed;
+the new question received a valid false judgment with no citations and only a
+"No evidence" explanation. Five calls, 205 words, no email. Exact request/payload
+replay and baseline identity passed, reproducing the hold rather than overriding
+it. Artifact 10947774321, 55,641 bytes, ZIP SHA-256
+`f0571d26f0b868c4614aa2e712df07ec823099731fc9d07a5831d2e445694d8c`.
+Capture SHA-256:
+`075acc7a5adf02e5cfbf6657c0557bdd0ef2b9715c861d2b87edc573094cdf5e`.
+Held draft SHA-256:
+`9e03ed4a216867e3d655afeae6952a8946302cf68a630bbcf66e976d22c67baf`.
+
+Primary and independent review find weak usefulness: a broad reliability
+question repeats the capability instead of identifying a concrete comparison.
+However, the question does not assert forthcoming studies or a proven answer;
+the terse source rejection does not identify an unsupported premise. Reviewer
+confusion between supported premises and an unknown answer is plausible, not
+proved. Keep the hold without declaring either automatic verdict correct.
+
+## Predeclared synthetic premise-check contrast
+
+Before another article generation, opt-in `watch-premise-controls` tests the
+unchanged `watchSourceRequest` contract against four frozen fictional cases.
+All use the same two passages and supported retained C1; all expected C1 labels
+are true. A asks a conditional question about an added quality goal; B explicitly
+leaves shortening, unchanged length and lengthening open. Their C2 premises are
+supported (true), not their outcomes. C invents announced trials next month; D
+invents a universal real-world guarantee. Both C2 labels are false.
+
+Independent pre-results adjudication accepted these labels after B was revised
+to avoid presupposing any positive reduction. No model result informed these
+labels. This is synthetic calibration, not an article-generation retry or
+approval of the held MIT question. Score all eight judgments; malformed output
+stops, while valid wrong verdicts finish the fixed four cases and fail the run.
+
+Exactly four single-attempt Llama source-review calls, 600 maximum requested
+output tokens each (2,400 total); no editor, real article inputs, research or
+email. Expected labels/case IDs are stored only in the encrypted audit, not
+provider request data. The same endpoint/body/provenance/retry boundaries apply.
+Both the exact explanations and all labels must be checked after a live pass;
+even that result would only qualify these four cases, not unseen questions.
+
+Preflight: all 1,634 repository tests passed. Independent code review ran 76
+focused/legacy tests and found no blocker for one fixed no-email calibration.
+Neither preflight nor mock outcomes are live reviewer qualification.

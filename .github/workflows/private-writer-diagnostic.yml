@@ -52,6 +52,7 @@ on:
           - context-final-phrase-repair
           - saved-useful-significance
           - saved-meaningful-watch
+          - watch-premise-controls
       public_key:
         description: Ephemeral RSA-3072 public key in base64 DER format (never a private key)
         required: true
@@ -98,7 +99,7 @@ jobs:
       - name: Test one-sentence significance boundaries before credentials
         run: node --test tests/significance-introduction.test.mjs tests/significance-diagnostic.test.mjs
       - name: Test editorial watch-question boundaries before credentials
-        run: node --test tests/watch-question.test.mjs tests/watch-diagnostic.test.mjs
+        run: node --test tests/watch-question.test.mjs tests/watch-diagnostic.test.mjs tests/watch-premise-controls.test.mjs
       - name: Validate diagnostic mode and encryption before credentials
         env:
           FIRST_FOLD_WATCH_BASELINE_B64: ${{ inputs.mode == 'saved-meaningful-watch' && secrets.FIRST_FOLD_WATCH_BASELINE_B64 || '' }}
