@@ -69,3 +69,33 @@ The source reviewer is experimental and has documented false positives in Step
 editing or daily production. Keep any failed trial as evidence; do not carry an
 old approval over to modified prose. Production/email/generalization remain
 separate checkpoints.
+
+## First live trial — automated pass, independent rejection
+
+[Run 36367522476](https://github.com/itworksinprod/first-fold/actions/runs/36367522476)
+ran revision `cfc77d69733b7a5b9c60eba630c8037064a9fe15`: five requests, all four
+automated source-premise checks passed, 208 body words. Artifact 10947684019,
+55,969 bytes, ZIP SHA-256
+`273e1cb1a4c87543675c55523f0b3165adebc70ff7845e222af1472fef1260a9`.
+Capture SHA-256:
+`70987313a44c2463054c52a54cd3c87f958848b8baa169ae98e66de88ed0cc8f`.
+Rejected draft SHA-256:
+`b8ba81ff66daec9e658d1c78b678e556b9ab4c75bb130265a698bb4d251e8ca2`.
+
+Exact request/payload replay passed against that revision, with all earlier text
+unchanged. Primary and independent full-text review nevertheless **reject** the
+question: it presupposes forthcoming studies, not established in P5/P20, and
+adds unnecessary jargon. Correct citation IDs did not prevent another source
+reviewer false positive. This is not editorial approval or an accepted sample.
+The underlying added-goals comparison is not necessarily answered by the reported
+whole-method experiments; the decisive blocker is the invented future-work
+premise, not an assumed answer to that comparison.
+
+The next narrow repair explicitly requires hypothetical additional evidence,
+without planned/expected research. A conservative known-regression veto catches
+upcoming/forthcoming/planned/expected wording, including Unicode compatibility
+forms, before source calls. It is not a complete premise classifier. The source
+instruction now makes that presupposition explicit; plain wording is requested.
+Baseline, allowed passages, source schema, per-run budget and independent review
+requirements are unchanged. The exact rejected response is locally vetoed;
+synthetic variants and the transport stop are tested. No email or daily change.

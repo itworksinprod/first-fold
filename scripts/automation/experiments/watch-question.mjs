@@ -31,9 +31,11 @@ Identify concrete observable evidence worth watching about the documented relati
 Keep the distinction between results demonstrated in the reported experiments and possible additional quality goals.
 Do not recast a demonstrated result as an unresolved question. A question about whether a reported result generalizes must clearly be about further evidence or other conditions, without announcing that tests exist or are planned.
 Do not imply an announced roadmap, scheduled test, future release, deployment, safety guarantee, adoption or a promised outcome.
+Do not refer to upcoming, forthcoming, planned or expected studies: no such plans are in allowedContext. Frame additional evidence as hypothetical, without presupposing that anyone will produce it.
 Do not assert that no evidence exists outside the supplied excerpt. Do not invent figures, dates or product versions.
 Avoid generic what-happens-next questions, promotional phrasing, practical deployment advice, new jargon and repetition of the existing watch sentence.
 Use one natural, direct question, ending with a question mark, at most 36 words. No introductory label, explanation or quoted source wording.
+Use everyday wording, such as requirements and quality goals; avoid jargon such as empirical studies, objectives and domains. A concrete unanswered comparison is more useful than repeating a list of research fields.
 Return baselineSha256 unchanged and decision add with question, or abstain with an empty question if no supported useful question is possible.
 The assembled body must remain 110–225 words, headline excluded.`;
 
@@ -94,7 +96,7 @@ export function applyWatchQuestion(plan, proposal) {
       /[.!?]\s+\p{Ll}/u.test(text) || [...new Intl.Segmenter('en', {granularity: 'sentence'}).segment(text)].length !== 1) throw fail('WATCH_RESPONSE_TEXT');
   // Deliberately conservative vetoes for this no-roadmap, no-outcome-promise
   // context. Passing these is not factuality or proof of a useful question.
-  if (/\b(?:guarantee\w*|ensur\w*|prevent\w*|eliminat\w*|scheduled|announced|launch\w*|releas\w*|deploy\w*|rollout\w*)\b|\p{N}/iu.test(text.normalize('NFKC'))) throw fail('WATCH_UNSUPPORTED_PRESUPPOSITION');
+  if (/\b(?:guarantee\w*|ensur\w*|prevent\w*|eliminat\w*|scheduled|announced|upcoming|forthcoming|planned|expected|launch\w*|releas\w*|deploy\w*|rollout\w*)\b|\p{N}/iu.test(text.normalize('NFKC'))) throw fail('WATCH_UNSUPPORTED_PRESUPPOSITION');
   const units = structuredClone(plan.baseline.units);
   if (fields.some(field => units[field].includes(text))) throw fail('WATCH_RESPONSE_DUPLICATE');
   units.whatToWatch.push(WATCH_LABEL + text);
@@ -122,6 +124,7 @@ export function watchSourceRequest(view, field) {
 ${view.data.claims.at(-1).claimId} is explicitly First Fold's editorial watch question, not a reported plan or an answered result.
 For that question, check EVERY factual presupposition and implication using ONLY ${WATCH_PASSAGES.join(', ')}.
 Do not treat question form as an exemption from source support. Reject invented scheduled tests, method guarantees, asserted missing evidence, deployment assumptions or unreported results even if phrased as a question.
+References to upcoming, forthcoming or expected studies presuppose such studies will occur; these need explicit source support. A merely hypothetical question about further evidence does not assert a plan.
 The question itself need not have been asked by the publisher, but its factual premises must be supported; the uncertain outcome must remain genuinely open, not asserted.
 For the other claimIds use the full supplied evidence and unchanged source-support rules.
 True means source-supported factual premises, not that the question's future answer is established. Citation membership alone is not sufficient.`});

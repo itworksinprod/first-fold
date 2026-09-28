@@ -85,6 +85,7 @@ for (const failure of ['unsupported', 'malformed-review', 'scope']) {
 test('abstention and invalid edit proposals stop before source calls', async () => {
   for (const changeProposal of [p => {p.question = 'PRIVATE_UNEXPECTED_RESPONSE';}, p => {p.decision = 'abstain'; p.question = '';},
     p => {p.question = 'Can a synthetic method guarantee a safe outcome for users?';},
+    p => {p.question = 'Will upcoming studies compare the results?';},
     p => {p.headline = 'PRIVATE_UNEXPECTED_RESPONSE';}]) {
     const {result, requests} = await run({changeProposal});
     assert.equal(result.report.status, 'failed'); assert.equal(requests.length, 1);

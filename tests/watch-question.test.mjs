@@ -55,12 +55,15 @@ test('known risky presuppositions and new numbers are vetoed without claiming a 
   for (const question of ['Can it guarantee safe results?', 'Will deployment begin soon?', 'When is a release scheduled?',
     'Can it prevent accidents?', 'What announced tests come next?', 'Could it ensure correctness?',
     'Can it eliminate failures?', 'Will the rollout start?', 'Could launch happen soon?',
-    'Could ｇｕａｒａｎｔｅｅｓ follow?', 'Could results improve by 5 percent?', 'Will ２０２７ tests follow?']) {
+    'Could ｇｕａｒａｎｔｅｅｓ follow?', 'Could results improve by 5 percent?', 'Will ２０２７ tests follow?',
+    'Will upcoming studies compare the results?', 'Will forthcoming studies test more quality goals?',
+    'Could planned tests answer this question?', 'What will expected trials show?', 'Will ｕｐｃｏｍｉｎｇ studies test the results?']) {
     assert.throws(() => applyWatchQuestion(plan, {...proposal, question}));
   }
   assert.match(WATCH_PROMPT, /not a statement of the publisher's plans/);
   assert.match(WATCH_PROMPT, /Do not recast a demonstrated result as an unresolved question/);
   assert.match(WATCH_PROMPT, /ONLY allowedContext/);
+  assert.match(WATCH_PROMPT, /Frame additional evidence as hypothetical/);
 });
 
 test('all four fields reviewed, added question premises scoped only to two saved passages', () => {
