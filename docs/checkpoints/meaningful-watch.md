@@ -1,10 +1,12 @@
 # Step 3 — meaningful watch question
 
 Status: article experiment remains held; no watch addition is editorially
-accepted. The typed premise checker passed its four reused synthetic controls
-and independent explanation review. This is limited calibration, not general
-qualification. See the chronological trials and current article profile below;
-earlier budgets and test counts describe their historical revisions.
+accepted. The latest hypothetical-form repair is published and locally tested,
+but its live trial was refused by the provider. A subsequent availability probe
+confirmed the account's daily free allocation is exhausted. The typed premise
+checker passed its four reused synthetic controls and independent explanation
+review, which is limited calibration, not general qualification. See the
+chronological trials below; earlier budgets/counts describe those revisions.
 This isolated saved-article experiment follows the accepted Step 2 receipt. No
 fresh research, daily integration, email, recipient, schedule or billing changes.
 
@@ -409,3 +411,40 @@ plaintext rejected question is retained only inside encrypted diagnostics, using
 the same bounded path as the existing premise-word veto. Wrong-shape or misbound
 responses remain excluded. Sources, previous prose, reviewers and limits stay
 unchanged; no outcome is relabeled or manually substituted.
+
+### Current stopping point — external free-allocation block
+
+The hypothetical-form repair was published as
+`1ca30cbc6d873b71326b7d4320663722eec71fad` after all 1,648 repository tests
+and 51 independent focused tests passed. Independent review found and verified
+the Unicode-word-boundary correction before dispatch.
+
+[Article run 36372055917](https://github.com/itworksinprod/first-fold/actions/runs/36372055917)
+was refused with HTTP 429 on the first editor request. No output, draft or
+review was produced. Its 2,400-token figure is a requested ceiling, not measured
+consumption. The sanitized report alone did not identify a specific quota cause.
+Artifact 10949861200, 11,888 bytes, ZIP SHA-256
+`76aa545745df37e92050e2da45c9eb9c91c90354fdbcb893d5eee11feb33add4`.
+Capture SHA-256:
+`dbb7f65d5a6d08e61e256e54b3e97521b1926e8ccf30f7ba8119a2814f29272c`.
+
+The existing no-article `provider-only` mode was then used once: one Llama
+availability request, 128-token maximum, no retries, research or email.
+[Probe 36372246186](https://github.com/itworksinprod/first-fold/actions/runs/36372246186)
+on the same revision also received HTTP 429. Its bounded, token-redacted,
+encrypted provider error explicitly says the daily free allocation is exhausted
+(provider wrapper code 4006). No Retry-After value was supplied. This confirms
+an account allocation block at probe time; it is not a successful article test
+or proof of a particular reset timestamp. Billing was not enabled.
+Artifact 10949661076, 1,647 bytes, ZIP SHA-256
+`9357cce95461398ef28067af94c2e46dcbf6caac40a819eb1c4323a4a3ff21c2`.
+Capture SHA-256:
+`f868483adfccdbe213c47d14dbf2e6fb68301387219eb77c9153f7051c001e54`.
+
+Do not repeatedly retry while allocation is unavailable. After provider capacity
+returns, the next checkpoint is one guarded `saved-meaningful-watch` run of this
+repair (or its reviewed descendant), exact artifact/request/draft verification,
+and independent full-text premise/usefulness review. Keep earlier text unchanged,
+110–225 words, five calls / 6,600 requested-token ceiling, and no email. A green
+run alone cannot close this step. Steps 1–2 remain accepted only for the saved
+sample; Step 3 and broader daily integration remain unfinished.
