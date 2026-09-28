@@ -1,10 +1,10 @@
 # Step 3 — meaningful watch question
 
-Status: locally tested and independently preflight-reviewed; not live-verified
-or editorially accepted. All 1,615 repository tests passed; all 18 watch tests
-passed after final field-order assertions. Credential-free cold CLI validation
-of the actual pinned packet passed. Independent preflight found no blocker for
-one bounded no-email trial; this is code readiness, not prose acceptance.
+Status: article experiment remains held; no watch addition is editorially
+accepted. The typed premise checker passed its four reused synthetic controls
+and independent explanation review. This is limited calibration, not general
+qualification. See the chronological trials and current article profile below;
+earlier budgets and test counts describe their historical revisions.
 This isolated saved-article experiment follows the accepted Step 2 receipt. No
 fresh research, daily integration, email, recipient, schedule or billing changes.
 
@@ -291,3 +291,41 @@ The next control run uses the existing reasoning profile: four single-attempt
 calls / 9,600 maximum requested output tokens. No article data, retries, search,
 email, paid fallback or billing changes. Require all eight fixed judgments and
 independent examination of every premise decomposition before an article trial.
+
+### Typed calibration result — limited pass
+
+[Run 36370715971](https://github.com/itworksinprod/first-fold/actions/runs/36370715971)
+on `15ad46fba61a06e4c254a91aa7bf2e31cada2576` passed all eight judgments in
+four calls / 9,600 maximum requested output tokens. All 1,640 repository tests
+and 82 independent focused/legacy tests passed before publication. Verified
+artifact 10948763048, 11,855 bytes, ZIP SHA-256
+`82c867103c565774051cf5f8bd50f8090dea9f40bcd87e968334769e0854e101`.
+Capture SHA-256:
+`e2a03107f30a38a1cf538141c4836f9d7cde5d18862d867b892ed9e28c4d63a5`.
+Exact parsed-request/response replay passed with zero real network requests.
+
+Primary and independent reviewers accept the limited reused calibration. B now
+separates open alternatives from its supported setup. C explicitly flags the
+nonexistent announced trials/date; D flags the nonexistent universal guarantee.
+The decomposition is not pristine: A includes extra supported context, C/D add
+interpretive premises, and D's top comparison still stresses missing outcome
+data. These do not invalidate its decisive unsupported-guarantee finding, but
+are evidence against claiming general extraction/reviewer reliability. Manual
+coverage review remains mandatory. No article or email was generated.
+
+### Next bounded article profile
+
+Keep the pinned accepted article and all prior text unchanged. The editor now
+prefers a hypothetical, measurable with/without-extra-goal comparison when the
+source actually supplies such a goal and required conditions. It must not claim
+that the comparison exists or necessarily improves the result. No new source,
+named example or prewritten answer is injected.
+
+Use the calibrated reasoning model/profile only for the final watch review:
+editor GPT-OSS 2,400 + three original Llama field reviews at 600 each + final
+GPT-OSS premise review at 2,400 = five single-attempt calls and 6,600 maximum
+requested output tokens. Reasoning calls retain 90-second timeouts; other calls
+retain 30 seconds. Provider identity, exact requests, one attempt, scoped
+citations, word limits, vetoes and full manual review remain mandatory. Free
+quota rejection stops; no retry, billing, alternate provider or delivery change.
+This experiment cannot qualify the daily writer or authorize an email.

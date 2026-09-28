@@ -13,8 +13,10 @@ async function run({failure, at = 0, changeProposal} = {}) {
     now: new Date('2026-09-27T18:00:00Z'), sealDiagnostic: value => value,
     aiRequestImpl: async request => {
       const index = requests.length; requests.push(request);
-      assert.equal(request.model, index === 0 ? FREE_REASONING_WRITER_MODEL : DEFAULT_CLOUDFLARE_AI_MODEL);
-      assert.equal(request.maxTokens, index === 0 ? 2400 : 600);
+      const reasoning = index === 0 || index === 4;
+      assert.equal(request.model, reasoning ? FREE_REASONING_WRITER_MODEL : DEFAULT_CLOUDFLARE_AI_MODEL);
+      assert.equal(request.maxTokens, reasoning ? 2400 : 600);
+      assert.equal(request.timeoutMs, reasoning ? 90000 : 30000);
       assert.equal(request.maxAttempts, 1); assert.equal(request.temperature, 0.1);
       const {body} = buildWorkersAiRequest(request), init = {method: 'POST', redirect: 'error', body: JSON.stringify(body)};
       if (failure === 'no-network' && index === at) return {};
@@ -55,7 +57,7 @@ async function run({failure, at = 0, changeProposal} = {}) {
 test('five single-attempt calls produce a manual-review candidate, not editorial approval or delivery', async () => {
   const {result, requests, network} = await run();
   assert.equal(result.report.status, 'draft-awaiting-manual-review');
-  assert.equal(result.report.outputBudget, 4800); assert.equal(requests.length, 5); assert.equal(network.length, 5);
+  assert.equal(result.report.outputBudget, 6600); assert.equal(requests.length, 5); assert.equal(network.length, 5);
   assert.equal(result.report.searchQueries, 0); assert.equal(result.report.emailSent, false);
   assert.deepEqual(result.report.fieldsPassed, ['headline', 'whatHappened', 'whyItMatters', 'whatToWatch']);
   assert.deepEqual(result.sealed.calls.slice(1).map(c => c.field), result.report.fieldsPassed);
@@ -89,6 +91,15 @@ for (const failure of ['unsupported', 'malformed-review', 'scope', 'question-uns
       assert.equal(verdict.valid, true);
       assert.deepEqual(verdict.claims.map(c => c.sourceSupported), [true, false]);
     }
+  });
+}
+for (const failure of ['quota', 'wrong-endpoint', 'retry', 'no-network', 'provenance', 'model']) {
+  test(`final reasoning review ${failure} stops without a cheaper or paid fallback`, async () => {
+    const {result, requests} = await run({failure, at: 4});
+    assert.equal(result.report.status, 'failed'); assert.equal(requests.length, 5);
+    assert.equal(result.report.outputBudget, 6600);
+    assert.ok(!result.report.fieldsPassed.includes('whatToWatch'));
+    assert.equal(result.report.emailSent, false);
   });
 }
 test('abstention and invalid edit proposals stop before source calls', async () => {

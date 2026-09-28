@@ -17,14 +17,15 @@ export async function diagnoseWatch({plan, publicKey, accountId, apiToken, now,
     reviewerQualification: 'experimental-not-general-qualified', emailSent: false};
   let modelRequests = 0, networkRequests = 0, outputBudget = 0, code = null;
   const request = async (view, stage, field) => {
-    const editing = stage === 'question', model = editing ? FREE_REASONING_WRITER_MODEL : DEFAULT_CLOUDFLARE_AI_MODEL;
+    const editing = stage === 'question', reasoning = editing || field === 'whatToWatch';
+    const model = reasoning ? FREE_REASONING_WRITER_MODEL : DEFAULT_CLOUDFLARE_AI_MODEL;
     if ((editing && modelRequests !== 0) || modelRequests >= 5) throw fail('WATCH_BUDGET');
-    const maxTokens = editing ? 2400 : 600;
-    if (outputBudget + maxTokens > 4800) throw fail('WATCH_BUDGET');
+    const maxTokens = reasoning ? 2400 : 600;
+    if (outputBudget + maxTokens > 6600) throw fail('WATCH_BUDGET');
     const prompt = `${view.prompt}\nJSON schema: ${JSON.stringify(view.schema)}`;
     const options = {model, messages: [{role: 'system', content: prompt}, {role: 'user', content: JSON.stringify(view.data)}],
       schema: view.schema, responseFormat: 'json_object', maxTokens, maxAttempts: 1, temperature: 0.1,
-      timeoutMs: editing ? 90000 : 30000, maxRequestBytes: 70000, maxResponseBytes: 100000};
+      timeoutMs: reasoning ? 90000 : 30000, maxRequestBytes: 70000, maxResponseBytes: 100000};
     const endpoint = workersAiRunUrl(accountId, model), {body} = buildWorkersAiRequest(options), bodyText = JSON.stringify(body);
     const requestSha256 = sha(JSON.stringify({provider: 'cloudflare-workers-ai', model, body}));
     const call = {stage, ...(field ? {field, dimension: 'source'} : {}), request: view.data,

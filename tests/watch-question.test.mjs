@@ -64,6 +64,7 @@ test('known risky presuppositions and new numbers are vetoed without claiming a 
   assert.match(WATCH_PROMPT, /Do not recast a demonstrated result as an unresolved question/);
   assert.match(WATCH_PROMPT, /ONLY allowedContext/);
   assert.match(WATCH_PROMPT, /Frame additional evidence as hypothetical/);
+  assert.match(WATCH_PROMPT, /Do not assume that the comparison has been conducted or that it must show improvement/);
 });
 
 test('all four fields reviewed, added question premises scoped only to two saved passages', () => {
