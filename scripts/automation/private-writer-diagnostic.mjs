@@ -65,7 +65,7 @@ export function assertDiagnosticAuthority(env) {
 }
 
 export function resolvePrivateWriterDiagnosticMode(value = "source") {
-  if (value === 'watch-premise-controls') return value;
+  if (['watch-premise-controls', 'watch-premise-reasoning-controls'].includes(value)) return value;
   if (value === 'saved-meaningful-watch') return value;
   if (value === 'saved-useful-significance') return value;
   if(['context-assisted-language','context-direct-language','context-direct-unit-language','context-named-unit-language','context-two-unit-repair','context-two-unit-plain-repair','context-complete-repair','context-span-repair','context-final-phrase-repair'].includes(value))return value;
@@ -215,9 +215,10 @@ export async function diagnoseOneWriter({ publicKey, accountId, apiToken, now = 
   const watchPlan = await prepareWatchDiagnostic(mode, watchBaselineB64);
   const endpoint = workersAiRunUrl(accountId, DEFAULT_CLOUDFLARE_AI_MODEL);
   if (typeof apiToken !== "string" || !apiToken.trim()) throw failure("DIAGNOSTIC_CONFIGURATION_INVALID");
-  if (mode === 'watch-premise-controls') {
+  if (['watch-premise-controls', 'watch-premise-reasoning-controls'].includes(mode)) {
     const {diagnoseWatchPremiseControls} = await import('./experiments/watch-premise-controls.mjs');
     return diagnoseWatchPremiseControls({publicKey, accountId, apiToken, now,
+      profile: mode === 'watch-premise-reasoning-controls' ? 'reasoning' : 'baseline',
       aiRequestImpl, fetchImpl, sealDiagnostic});
   }
   if (mode === 'saved-meaningful-watch') {

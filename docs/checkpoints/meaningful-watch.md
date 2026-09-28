@@ -192,3 +192,33 @@ The same four controls, evidence, predeclared labels, model, schema and budget
 must be rerun before another article-generation trial. No output is relabeled
 and no rejection is bypassed. This is a contract-interpretation correction, not
 a lowered factuality threshold or general reviewer qualification.
+
+### Second calibration result — same false negative
+
+[Run 36368982322](https://github.com/itworksinprod/first-fold/actions/runs/36368982322)
+on `50eca5e6780d9d2791a3c5fd5fa6ddf435034633` again scored seven of eight
+judgments, with B rejected. Its new explanation, "No evidence for outcome",
+directly supports the diagnosis that this response checked the unanswered outcome
+instead of the supported setup. Primary/independent inspection and exact offline
+replay agree; A/C/D and all retained claims remain correct. This is not a repair.
+Artifact 10948622206, 8,562 bytes, ZIP SHA-256
+`93fe3fe4afb9f79114a241b685842cc296b2c76402edfb535936ccabb9333e1a`.
+Capture SHA-256:
+`ae4b599b4f5c58e56dee6c1cb3faf73d8879ffb5ed459a9b8c8608294629f1fe`.
+
+### Predeclared model-plus-resource-profile comparison
+
+The next opt-in `watch-premise-reasoning-controls` uses the already-allowlisted
+Cloudflare GPT-OSS-120B model, with 2,400 maximum output tokens and a 90-second
+timeout per case. Four single-attempt requests / 9,600 maximum requested output
+tokens total. This is a new, synthetic-only ceiling, not an article profile change.
+Cloudflare account settings and billing are untouched; quota/error/truncation
+stops without retry, paid fallback or another provider. Available free quota is
+not guaranteed by this configuration.
+
+All four cases, source text, labels, messages, schema, response format and scoring
+remain frozen. Tests compare exact request bodies except model identity and
+token allowance; timeout is also checked. The previous Llama mode remains
+unchanged. Because model, allowance and timeout differ, this is not a model-only
+comparison. A pass requires exact explanation review; reused calibration does
+not qualify unseen articles, daily use or an automated editorial reviewer.

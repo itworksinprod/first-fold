@@ -53,6 +53,7 @@ on:
           - saved-useful-significance
           - saved-meaningful-watch
           - watch-premise-controls
+          - watch-premise-reasoning-controls
       public_key:
         description: Ephemeral RSA-3072 public key in base64 DER format (never a private key)
         required: true

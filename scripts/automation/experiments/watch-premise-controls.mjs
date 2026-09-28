@@ -2,7 +2,7 @@
 import {createHash} from 'node:crypto';
 import {buildIsolatedPreservationReview, validateIsolatedPreservationReview} from '../free/isolated-preservation-review.mjs';
 import {watchSourceRequest, WATCH_LABEL} from './watch-question.mjs';
-import {buildWorkersAiRequest, workersAiRunUrl, workersAiFailureDiagnostic, DEFAULT_CLOUDFLARE_AI_MODEL} from '../free/workers-ai.mjs';
+import {buildWorkersAiRequest, workersAiRunUrl, workersAiFailureDiagnostic, DEFAULT_CLOUDFLARE_AI_MODEL, FREE_REASONING_WRITER_MODEL} from '../free/workers-ai.mjs';
 const freeze = value => {
   if (value && typeof value === 'object') {Object.values(value).forEach(freeze); Object.freeze(value);}
   return value;
@@ -26,18 +26,21 @@ export function watchPremiseControlView(control) {
 const sha = text => createHash('sha256').update(text).digest('hex');
 const fail = code => Object.assign(new Error(code), {code});
 
-export async function diagnoseWatchPremiseControls({publicKey, accountId, apiToken, now, aiRequestImpl, fetchImpl, sealDiagnostic}) {
-  const capture = {purpose: 'synthetic-watch-premise-controls-not-an-article', capturedAt: now.toISOString(),
+export async function diagnoseWatchPremiseControls({publicKey, accountId, apiToken, now, aiRequestImpl, fetchImpl, sealDiagnostic, profile = 'baseline'}) {
+  if (!['baseline', 'reasoning'].includes(profile)) throw fail('WATCH_CONTROL_PROFILE_INVALID');
+  const reasoning = profile === 'reasoning', maxTokens = reasoning ? 2400 : 600;
+  const model = reasoning ? FREE_REASONING_WRITER_MODEL : DEFAULT_CLOUDFLARE_AI_MODEL;
+  const capture = {purpose: reasoning ? 'synthetic-watch-premise-reasoning-controls-not-an-article' : 'synthetic-watch-premise-controls-not-an-article', capturedAt: now.toISOString(),
     calls: [], cases: [], emailSent: false, reviewerQualification: 'unqualified-outside-these-fixed-controls'};
   let networkRequests = 0, code = null;
   try {
     for (const control of WATCH_PREMISE_CONTROLS) {
-      const view = watchPremiseControlView(control), model = DEFAULT_CLOUDFLARE_AI_MODEL;
+      const view = watchPremiseControlView(control);
       const scoped = watchSourceRequest(view, 'whatToWatch');
       const prompt = `${scoped.prompt}\nJSON schema: ${JSON.stringify(view.schema)}`;
       const options = {model, messages: [{role: 'system', content: prompt}, {role: 'user', content: JSON.stringify(view.data)}],
-        schema: view.schema, responseFormat: 'json_object', maxTokens: 600, maxAttempts: 1, temperature: 0.1,
-        timeoutMs: 30000, maxRequestBytes: 70000, maxResponseBytes: 100000};
+        schema: view.schema, responseFormat: 'json_object', maxTokens, maxAttempts: 1, temperature: 0.1,
+        timeoutMs: reasoning ? 90000 : 30000, maxRequestBytes: 70000, maxResponseBytes: 100000};
       const endpoint = workersAiRunUrl(accountId, model), {body} = buildWorkersAiRequest(options), bodyText = JSON.stringify(body);
       const requestSha256 = sha(JSON.stringify({provider: 'cloudflare-workers-ai', model, body}));
       const call = {caseId: control.id, request: view.data, promptSha256: sha(prompt), requestSha256};
@@ -71,7 +74,7 @@ export async function diagnoseWatchPremiseControls({publicKey, accountId, apiTok
     capture.failure = workersAiFailureDiagnostic(error);
   }
   const report = {mode: capture.purpose, status: code ? 'failed' : 'controls-passed-awaiting-manual-review', code,
-    modelRequests: capture.calls.length, networkRequests, outputBudget: capture.calls.length * 600,
+    modelRequests: capture.calls.length, networkRequests, outputBudget: capture.calls.length * maxTokens,
     casesCompleted: capture.cases.length, casesPassed: capture.cases.filter(c => c.passed).length,
     searchQueries: 0, emailSent: false};
   return {report, sealed: sealDiagnostic({...capture, report}, publicKey)};
