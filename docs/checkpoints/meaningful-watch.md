@@ -329,3 +329,33 @@ retain 30 seconds. Provider identity, exact requests, one attempt, scoped
 citations, word limits, vetoes and full manual review remain mandatory. Free
 quota rejection stops; no retry, billing, alternate provider or delivery change.
 This experiment cannot qualify the daily writer or authorize an email.
+
+### First typed article result — explicitness and usefulness still held
+
+[Run 36371003839](https://github.com/itworksinprod/first-fold/actions/runs/36371003839)
+on `b0a179249565d37bf7b821e9c04d35ef0f6a0b40` used five calls / 6,600 maximum
+requested output tokens and held the question only. Earlier fields and the
+retained watch sentence passed. The exact 209-word draft preserved all earlier
+text; request/payload replay reproduced the hold. Before publication all 1,646
+tests and 72 independent focused/legacy checks passed.
+
+Artifact 10948034945, 56,825 bytes, ZIP SHA-256
+`7331f45a2e87ea2b300dd4e3121d6bd9a504bbc9bbba021626cc9ee549bf1874`.
+Capture SHA-256:
+`f58230a378744250b5d46dc40e0f9f183c0ca1fe3f366447f338f6cbc39d6a11`.
+Held draft SHA-256:
+`a8458950ca647336cca2bb6b5dd914279760d92ed0bf9e3c6f272d3a75ea0254`.
+
+The audit rejected an inferred constraints-only baseline configuration. Primary
+and independent inspection do not regard that as a proven-correct veto: the
+question does not assert that such a run/configuration exists, and P20 supports
+considering additional goals. Do not conclude that all hypothetical with/without
+comparisons are inherently unsupported. The exact wording nevertheless leaves
+the hypothetical status unclear and uses broad quality language instead of a
+concrete observable metric. It is not accepted for editorial usefulness.
+
+The next writer-only clarification asks for a source-grounded output metric
+alongside required-condition checks, explicitly hypothetically, without an
+existing study/comparison, assumed improvement or unreported baseline. Reviewer
+prompt/schema, sources, immutable prior text, vetoes and five-call/6,600 budget
+remain unchanged. This is not a relabeled rejection or relaxed factual standard.
