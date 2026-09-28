@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {generateKeyPairSync} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
+import {mockQuestionAudit} from './fixtures/watch-fixture.mjs';
 import {WATCH_PREMISE_CONTROLS, watchPremiseControlView, diagnoseWatchPremiseControls} from '../scripts/automation/experiments/watch-premise-controls.mjs';
 import {watchSourceRequest} from '../scripts/automation/experiments/watch-question.mjs';
 import {requestWorkersAiEditorial, buildWorkersAiRequest, workersAiRunUrl, DEFAULT_CLOUDFLARE_AI_MODEL, FREE_REASONING_WRITER_MODEL} from '../scripts/automation/free/workers-ai.mjs';
@@ -42,6 +43,7 @@ async function run({failure, at = 0, profile = 'baseline'} = {}) {
         return {claimId: claim.claimId, comparison: 'Synthetic mock only.',
           evidenceIds: supported ? ['S1P5', 'S1P20'] : [], sourceSupported: supported};
       })};
+      payload.questionAudit = mockQuestionAudit(data, payload.judgments.at(-1));
       if (index === at && failure === 'malformed') payload.extra = 'PRIVATE_UNEXPECTED_RESPONSE';
       if (index === at && failure === 'truncated') return new Response(JSON.stringify({success: true,
         result: {choices: [{finish_reason: 'length', message: {role: 'assistant', content: JSON.stringify(payload)}}]}}),
@@ -69,7 +71,7 @@ test('frozen controls keep supported premises separate from unknown answers and 
     assert.equal(view.data.statement, view.data.claims.map(c => c.text).join(' '));
     assert.deepEqual(view.data.passages.map(p => p.evidenceId), ['S1P5', 'S1P20']);
     assert.doesNotMatch(JSON.stringify(view), /"expected"|"caseId"|"gold"|negative control|positive control/);
-    assert.match(watchSourceRequest(view, 'whatToWatch').prompt, /True means source-supported factual premises, not that the question's future answer is established/);
+    assert.match(watchSourceRequest(view, 'whatToWatch').prompt, /This judges premises, not the question's future answer/);
   }
   assert.throws(() => watchPremiseControlView({...WATCH_PREMISE_CONTROLS[0]}), /CONTROL_INVALID/);
 });

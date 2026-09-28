@@ -254,3 +254,40 @@ and labels, but changes this review representation and explanation. It is not
 an identical-input comparison or new held-out validation. Four calls / 9,600
 maximum requested output tokens; a control pass and exact independent inspection
 are required before deciding another article step. Old approvals are not reused.
+
+### Label repair result — unknown alternatives still misclassified
+
+[Run 36369820715](https://github.com/itworksinprod/first-fold/actions/runs/36369820715)
+on `cb468fd503841d2bc3baa10bf36016502d188bcf` passed A/C/D and all retained
+claims (seven of eight judgments). B was again rejected because unchanged or
+longer outcomes were not source-supported. Those outcomes are explicitly open
+alternatives, not reported findings. Primary and independent review agree that
+the label error is resolved but the assertion/question distinction is not.
+Exact offline replay reproduces the hold. No article or email was generated.
+Artifact 10948033285, 8,866 bytes, ZIP SHA-256
+`502d93f65570fbfd1a70adfea44d0624adb5b13efd4df5383cf00df10f2b9e09`.
+Capture SHA-256:
+`fd060b304578cd837de382954866d2e6e903d6ba1633653e4fb86c9bad1efd30`.
+
+### Typed question-premise contract
+
+Replace the generic assertion prompt plus appended exceptions with two explicit
+review roles. Retained C1 keeps assertion source-support rules; C2 must return
+its exact question, a separate requested unknown-answer description, and 1–6
+factual premises with individual support flags and scoped citations. The strict
+validator checks the entire augmented response before using the existing claim
+validator. C2 must equal the AND of all premise flags; true citations must equal
+their union. Unknown fields, accessors, empty lists, altered question text,
+out-of-scope citations, missing positive citations and inconsistent verdicts fail.
+
+This is observable decomposition, not semantic proof. Independent inspection
+must detect omitted premises or invented plans/guarantees hidden under the
+unknown-answer description. The full question and both negative controls remain
+unchanged. No labels or source text are revised to obtain a pass. The exact new
+prompt, schema and payload are bound in request provenance. Other field contracts
+remain unchanged. The article profile is not promoted or executed in this step.
+
+The next control run uses the existing reasoning profile: four single-attempt
+calls / 9,600 maximum requested output tokens. No article data, retries, search,
+email, paid fallback or billing changes. Require all eight fixed judgments and
+independent examination of every premise decomposition before an article trial.

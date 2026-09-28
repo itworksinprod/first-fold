@@ -2,9 +2,8 @@
 import {createHash} from 'node:crypto';
 import {buildWorkersAiRequest, workersAiRunUrl, workersAiFailureDiagnostic,
   DEFAULT_CLOUDFLARE_AI_MODEL, FREE_REASONING_WRITER_MODEL} from './free/workers-ai.mjs';
-import {validateIsolatedPreservationReview} from './free/isolated-preservation-review.mjs';
 import {assertWatchPlan, applyWatchQuestion, buildWatchFieldReview,
-  WATCH_PASSAGES, watchSourceRequest} from './experiments/watch-question.mjs';
+  WATCH_PASSAGES, watchSourceRequest, validateWatchSourceResponse} from './experiments/watch-question.mjs';
 const fields = ['headline', 'whatHappened', 'whyItMatters', 'whatToWatch'];
 const sha = text => createHash('sha256').update(text).digest('hex');
 const fail = code => Object.assign(new Error(code), {code});
@@ -75,7 +74,7 @@ export async function diagnoseWatch({plan, publicKey, accountId, apiToken, now,
     for (const field of fields) {
       const view = buildWatchFieldReview(plan, applied, field);
       const response = await request(watchSourceRequest(view, field), 'review', field);
-      const verdict = validateIsolatedPreservationReview(response.payload, view);
+      const verdict = validateWatchSourceResponse(response.payload, view, field);
       if (!verdict.valid) response.call.responseRejectedBeforeCapture = true;
       else response.call.response = structuredClone(response.payload);
       const entry = {field, source: {verdict}, verdict};

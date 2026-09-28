@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {gzipSync} from 'node:zlib';
 import {readFile} from 'node:fs/promises';
-import {watchFixture} from './fixtures/watch-fixture.mjs';
+import {watchFixture, mockQuestionAudit} from './fixtures/watch-fixture.mjs';
 import {sha} from './fixtures/significance-fixture.mjs';
 import {buildWatchPlan, decodeWatchPacket, loadWatchPlan, applyWatchQuestion,
-  buildWatchFieldReview, watchSourceRequest, stripWatchDisplayLabel, WATCH_PROMPT, WATCH_PASSAGES, WATCH_LABEL} from '../scripts/automation/experiments/watch-question.mjs';
+  buildWatchFieldReview, watchSourceRequest, validateWatchSourceResponse, stripWatchDisplayLabel, WATCH_PROMPT, WATCH_PASSAGES, WATCH_LABEL} from '../scripts/automation/experiments/watch-question.mjs';
 import {prepareWatchDiagnostic, resolvePrivateWriterDiagnosticMode, diagnoseOneWriter} from '../scripts/automation/private-writer-diagnostic.mjs';
 
 test('one labeled editorial question preserves every old unit, order and headline byte-for-byte', () => {
@@ -74,20 +74,23 @@ test('all four fields reviewed, added question premises scoped only to two saved
     assert.equal(view.data.claims.length, result.units[field].length);
     assert.equal(view.data.passages.some(p => p.evidenceId === 'S2P1'), ['whatHappened', 'whatToWatch'].includes(field));
     const request = watchSourceRequest(view, field);
-    assert.deepEqual(request.data, view.data); assert.deepEqual(request.schema, view.schema);
+    assert.deepEqual(request.data, view.data);
     if (field === 'whatToWatch') {
       assert.equal(view.data.claims.at(-1).text, proposal.question);
       assert.equal(WATCH_LABEL + view.data.claims.at(-1).text, result.units.whatToWatch.at(-1));
       assert.deepEqual(view.data.claims.slice(0, -1).map(c => c.text), plan.baseline.units.whatToWatch);
       assert.equal(view.data.statement, view.data.claims.map(c => c.text).join(' '));
-      assert.ok(request.prompt.startsWith(view.prompt));
-      assert.match(request.prompt, /C2 is explicitly First Fold's editorial watch question/);
-      assert.match(request.prompt, /using ONLY S1P5, S1P20/);
-      assert.match(request.prompt, /True means source-supported factual premises, not that the question's future answer is established/);
-      assert.match(request.prompt, /Do not require a passage proving an answer the question explicitly leaves open/);
-      assert.match(request.prompt, /named plans, guarantees, actors, conditions, dates or claimed capabilities still need source support/);
-      assert.match(request.prompt, /Do not require a source saying First Fold already asked or published the question/);
-      assert.match(request.prompt, /For the other claimIds use the full supplied evidence/);
+      assert.ok(!request.prompt.startsWith(view.prompt));
+      assert.match(request.prompt, /QUESTION PREMISE AUDIT: C2 is our editorial question/);
+      assert.match(request.prompt, /ONLY S1P5, S1P20/);
+      assert.match(request.prompt, /This judges premises, not the question's future answer/);
+      assert.match(request.prompt, /Alternative answers explicitly left open are not separate assertions/);
+      assert.match(request.prompt, /Conditional wording does not excuse an invented plan, guarantee/);
+      assert.match(request.prompt, /no source needs to say First Fold already asked it/);
+      assert.match(request.prompt, /For all claimIds EXCEPT C2/);
+      assert.deepEqual(request.schema.properties.questionAudit.properties.question.enum, [proposal.question]);
+      assert.deepEqual(request.schema.required, ['reviewSha256', 'judgments', 'questionAudit']);
+      assert.deepEqual(request.schema.properties.judgments, view.schema.properties.judgments);
     } else {
       assert.equal(request, view);
       assert.deepEqual(view.data.claims.map(c => c.text), result.units[field]);
@@ -105,6 +108,40 @@ test('only the exact app-owned prefix is excluded; every generated character sta
   assert.equal(stripWatchDisplayLabel(WATCH_LABEL + text), text);
   for (const wrong of [text, '', WATCH_LABEL, 'Some other label: ' + text, 'Before ' + WATCH_LABEL + text, null]) assert.throws(() => stripWatchDisplayLabel(wrong), /DISPLAY_LABEL_INVALID/);
   assert.equal(stripWatchDisplayLabel(WATCH_LABEL + WATCH_LABEL + text), WATCH_LABEL + text);
+});
+
+test('typed premise audit enforces exact text, closed structure, evidence scope and consistent verdicts', () => {
+  const {plan, proposal} = watchFixture(), applied = applyWatchQuestion(plan, proposal);
+  const view = buildWatchFieldReview(plan, applied, 'whatToWatch');
+  const valid = {reviewSha256: view.data.reviewSha256, judgments: view.data.claims.map(c => ({
+    claimId: c.claimId, comparison: 'Synthetic judgment only.', evidenceIds: ['S1P5'], sourceSupported: true}))};
+  valid.questionAudit = mockQuestionAudit(view.data, valid.judgments.at(-1));
+  assert.equal(validateWatchSourceResponse(valid, view, 'whatToWatch').supported, true);
+  const negative = structuredClone(valid);
+  negative.questionAudit.premises.push({text: 'An invented plan.', supported: false, evidenceIds: []});
+  negative.judgments[1].sourceSupported = false; negative.judgments[1].evidenceIds = [];
+  assert.deepEqual(validateWatchSourceResponse(negative, view, 'whatToWatch'), {
+    valid: true, supported: false, claims: [{claimId: 'C1', sourceSupported: true}, {claimId: 'C2', sourceSupported: false}]});
+  for (const mutate of [p => {delete p.questionAudit;}, p => {p.extra = 'hidden';},
+    p => {p.questionAudit.extra = 'hidden';}, p => {p.questionAudit.question += 'Changed';},
+    p => {p.questionAudit.unknownAnswer = ' ';}, p => {p.questionAudit.unknownAnswer = 'x'.repeat(241);},
+    p => {p.questionAudit.premises = [];}, p => {p.questionAudit.premises = Array(2);},
+    p => {p.questionAudit.premises = Array(7).fill(p.questionAudit.premises[0]);},
+    p => {p.questionAudit.premises[0].evidenceIds = [];},
+    p => {p.questionAudit.premises[0].evidenceIds = ['S2P1'];},
+    p => {p.questionAudit.premises[0].evidenceIds = ['S1P5', 'S1P5'];},
+    p => {p.questionAudit.premises[0].evidenceIds = ['S1P20'];},
+    p => {p.questionAudit.premises[0].text = '';}, p => {p.questionAudit.premises[0].supported = 'true';},
+    p => {p.questionAudit.premises[0].supported = false;}, p => {p.judgments[1].sourceSupported = false;},
+    p => {p.judgments[0].extra = 'hidden';}, p => {p.reviewSha256 = '0'.repeat(64);},
+    p => {Object.defineProperty(p.questionAudit, 'premises', {get() {assert.fail('getter invoked');}});},
+    p => {Object.defineProperty(p.questionAudit.premises, '0', {get() {assert.fail('getter invoked');}});},
+    p => {Object.defineProperty(p.questionAudit.premises[0], 'supported', {get() {assert.fail('getter invoked');}});},
+  ]) {
+    const bad = structuredClone(valid); mutate(bad);
+    assert.deepEqual(validateWatchSourceResponse(bad, view, 'whatToWatch'), {valid: false, supported: false});
+  }
+  assert.equal(validateWatchSourceResponse(valid, structuredClone(view), 'whatToWatch').valid, false);
 });
 
 test('only canonical bounded pinned secrets enter the opt-in mode', async () => {

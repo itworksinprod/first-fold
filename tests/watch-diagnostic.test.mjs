@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {watchFixture} from './fixtures/watch-fixture.mjs';
+import {watchFixture, mockQuestionAudit} from './fixtures/watch-fixture.mjs';
 import {diagnoseWatch} from '../scripts/automation/watch-diagnostic.mjs';
 import {requestWorkersAiEditorial, buildWorkersAiRequest, workersAiRunUrl,
   FREE_REASONING_WRITER_MODEL, DEFAULT_CLOUDFLARE_AI_MODEL} from '../scripts/automation/free/workers-ai.mjs';
@@ -42,6 +42,7 @@ async function run({failure, at = 0, changeProposal} = {}) {
           sourceSupported: !(index === at && failure === 'unsupported') &&
             !(index === 4 && i === data.claims.length - 1 && failure === 'question-unsupported')}))};
       if (index === at && failure === 'malformed-review') payload.extra = 'PRIVATE_UNEXPECTED_RESPONSE';
+      if (index === 4) payload.questionAudit = mockQuestionAudit(data, payload.judgments.at(-1));
       return new Response(JSON.stringify({success: true, result: {response: JSON.stringify(payload)}, errors: []}),
         {headers: {'content-type': 'application/json'}});
     }});
@@ -78,8 +79,8 @@ for (const failure of ['unsupported', 'malformed-review', 'scope', 'question-uns
     assert.ok(!result.report.fieldsPassed.includes('whatToWatch'));
     if (failure === 'scope') {
       const review = result.sealed.fieldReviews.find(r => r.field === 'whatToWatch');
-      assert.equal(review.source.verdict.supported, true);
-      assert.equal(review.additionCitationScope.passed, false);
+      assert.equal(review.source.verdict.valid, false);
+      assert.equal(review.additionCitationScope, undefined);
       assert.equal(review.verdict.supported, false);
     }
     if (failure === 'malformed-review') assert.ok(!JSON.stringify(result).includes('PRIVATE_UNEXPECTED_RESPONSE'));

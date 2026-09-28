@@ -1,7 +1,7 @@
 // Frozen synthetic contrast. Expected labels never enter provider requests.
 import {createHash} from 'node:crypto';
-import {buildIsolatedPreservationReview, validateIsolatedPreservationReview} from '../free/isolated-preservation-review.mjs';
-import {watchSourceRequest, WATCH_LABEL, stripWatchDisplayLabel} from './watch-question.mjs';
+import {buildIsolatedPreservationReview} from '../free/isolated-preservation-review.mjs';
+import {watchSourceRequest, validateWatchSourceResponse, WATCH_LABEL, stripWatchDisplayLabel} from './watch-question.mjs';
 import {buildWorkersAiRequest, workersAiRunUrl, workersAiFailureDiagnostic, DEFAULT_CLOUDFLARE_AI_MODEL, FREE_REASONING_WRITER_MODEL} from '../free/workers-ai.mjs';
 const freeze = value => {
   if (value && typeof value === 'object') {Object.values(value).forEach(freeze); Object.freeze(value);}
@@ -37,9 +37,9 @@ export async function diagnoseWatchPremiseControls({publicKey, accountId, apiTok
     for (const control of WATCH_PREMISE_CONTROLS) {
       const view = watchPremiseControlView(control);
       const scoped = watchSourceRequest(view, 'whatToWatch');
-      const prompt = `${scoped.prompt}\nJSON schema: ${JSON.stringify(view.schema)}`;
+      const prompt = `${scoped.prompt}\nJSON schema: ${JSON.stringify(scoped.schema)}`;
       const options = {model, messages: [{role: 'system', content: prompt}, {role: 'user', content: JSON.stringify(view.data)}],
-        schema: view.schema, responseFormat: 'json_object', maxTokens, maxAttempts: 1, temperature: 0.1,
+        schema: scoped.schema, responseFormat: 'json_object', maxTokens, maxAttempts: 1, temperature: 0.1,
         timeoutMs: reasoning ? 90000 : 30000, maxRequestBytes: 70000, maxResponseBytes: 100000};
       const endpoint = workersAiRunUrl(accountId, model), {body} = buildWorkersAiRequest(options), bodyText = JSON.stringify(body);
       const requestSha256 = sha(JSON.stringify({provider: 'cloudflare-workers-ai', model, body}));
@@ -62,7 +62,7 @@ export async function diagnoseWatchPremiseControls({publicKey, accountId, apiTok
       if (result.provider !== 'cloudflare-workers-ai' || result.model !== model || result.requestSha256 !== requestSha256 ||
           !/^[a-f0-9]{64}$/u.test(result.responseSha256 ?? '') || result.attemptCount !== 1) throw fail('WATCH_CONTROL_PROVENANCE');
       Object.assign(call, {provider: result.provider, model, responseSha256: result.responseSha256, attemptCount: 1});
-      const verdict = validateIsolatedPreservationReview(result.editorialPayload, view);
+      const verdict = validateWatchSourceResponse(result.editorialPayload, view, 'whatToWatch');
       if (!verdict.valid) {call.responseRejectedBeforeCapture = true; throw fail('WATCH_CONTROL_RESPONSE_INVALID');}
       call.response = structuredClone(result.editorialPayload);
       const observed = verdict.claims.map(c => c.sourceSupported);
