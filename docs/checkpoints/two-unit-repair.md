@@ -1,7 +1,8 @@
 # Review-guided two-unit repair
 
-Status: live repairs remain held, including automated passes rejected by full-text
-review. The latest short-phrase attempt still failed independent readability.
+Status: the exact 150-word output of run 36361949499 is independently accepted
+for the saved-article plain-language checkpoint. Earlier HOLD records below
+remain historical evidence. See the [completion receipt](plain-language-accepted-2026-09-27.md).
 
 This is a manually scoped repair experiment on saved research. It is not proof
 of an unassisted general writer, source discovery, daily reliability or paid-model
@@ -355,3 +356,9 @@ The span, 20-word cap, other-unit locks, sources, reviewers, providers and 8/6,6
 ceiling remain unchanged. Actual preflight is offline: 11,837 request bytes;
 prompt/schema SHA-256:
 `30affb91b54b64f90f9fb2e07c76a08cb5bc1ff35926e5d4508c4b76a26f2cda`.
+
+The bounded trial passed live in run 36361949499. Independent review inspected
+the exact output and complete saved evidence and accepted its meaning and
+readability. This closes the saved-article repair, not general reviewer or daily
+writer qualification. The [completion receipt](plain-language-accepted-2026-09-27.md)
+pins the immutable result, evidence coverage and remaining boundaries.

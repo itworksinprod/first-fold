@@ -12,10 +12,14 @@ checkpoints below, not their recorded outcomes or any factual/editorial veto.
 Daily production requirements remain unchanged until a separate integration
 checkpoint; this change applies to the isolated fact-summary diagnostics.
 
-Current sequential editorial status: **step 1 (plain language) is still held**.
-The qualification guard and exact phrase containment are locally tested and
-live-verified, but the edited article is not approved. Step 2 (useful significance) and step 3 (meaningful watch guidance)
-have not started. Do not advance merely because a safety guard works as intended.
+Current sequential editorial status: **step 1 passes for the exact saved MIT
+article**, after live checks and independent full-text review on September 27,
+2026. The accepted 150-word output is frozen in the
+[completion receipt](checkpoints/plain-language-accepted-2026-09-27.md).
+Step 2 (useful significance) and step 3 (meaningful watch guidance) have not
+started. This assisted, manually scoped result does not qualify an unseen
+automatic writer, the experimental reviewers, or daily delivery. Historical
+HOLD records below remain unchanged evidence, not the current sample status.
 
 ## Anthropic reader checkpoint
 
@@ -2462,3 +2466,17 @@ rejects all three captured repetitions offline before further provider calls.
 No replacement wording is supplied and no meaning gate is relaxed. All 1,579 tests
 pass. The next live result still requires exact full-text review; this guard alone
 does not complete step 1. See the [receipt](checkpoints/two-unit-repair.md).
+
+### Exact saved article accepted — Step 1 checkpoint closed for this sample
+
+Run 36361949499 on `9fb1b1bc47b177ca9c5822bc4d7c4e419fbc103e` produced 150
+body words and passed all automated checks. Exact offline replay and independent
+full-text/source review passed. The defining relationship, actor, possibility,
+additionality, robot example and deployment caveat remain; the repeated gloss
+is gone. The accepted output is frozen, not hand-corrected after its review.
+
+All 1,579 tests pass. No email, fresh research, paid provider, billing change or
+daily promotion occurred. The next editorial checkpoint is useful significance,
+using this exact accepted baseline; it must receive its own tests, live result
+and exact-text review. Unseen-article and automated-reviewer qualification remain
+separate unresolved work. See the [completion receipt](checkpoints/plain-language-accepted-2026-09-27.md).

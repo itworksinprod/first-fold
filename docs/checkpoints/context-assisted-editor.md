@@ -1,6 +1,9 @@
 # Context-assisted editor checkpoint
 
-Status: live technical checkpoint passed; article readability remains on HOLD.
+Historical status: this initial context-assisted result failed readability.
+Subsequent bounded repairs produced an accepted exact saved-article result; see
+the [plain-language completion receipt](plain-language-accepted-2026-09-27.md).
+This does not qualify the experimental automatic reviewers or daily writer.
 
 The held 157-word edit still leaves two technical concepts unexplained and
 replaces some already-plain language with parenthetical jargon. A review-only

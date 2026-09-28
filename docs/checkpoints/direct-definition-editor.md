@@ -1,6 +1,9 @@
 # Direct-definition editor checkpoint
 
-Status: full local review of the name-preserving candidate is complete; two issues remain on HOLD.
+Status: the name-preserving candidate's two issues were repaired in subsequent
+bounded trials. The exact final saved-article result is accepted for plain
+language; see the [completion receipt](plain-language-accepted-2026-09-27.md).
+The failed trials below remain historical evidence, not production qualification.
 
 Carlos requested continued implementation and verification without continuation
 prompts. The previous context-assisted trial passed factual/meaning checks but
