@@ -64,7 +64,10 @@ automated reviewer's abbreviated citations or equivalence assertions.
 S1 is the saved MIT report. S2 is contextual terminology evidence from the same
 research authors' paper, **not independent reporting or corroboration**.
 
-## What remains unapproved
+## What remained unapproved at the Step 1 checkpoint
+
+Subsequently, the exact sample's [Step 2 significance checkpoint](useful-significance-accepted-2026-09-27.md)
+passed. The Step 1 evidence and acceptance recorded above are unchanged.
 
 - Steps 2 and 3: improve reader-useful significance and meaningful watch guidance.
 - Unseen articles and unassisted drafting/editing reliability. This sample used

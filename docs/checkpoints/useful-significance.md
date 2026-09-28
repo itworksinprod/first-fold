@@ -1,7 +1,9 @@
 # Step 2 — useful significance, isolated saved-article experiment
 
-Status: implemented locally; live and exact editorial review pending. Step 1 is
-closed only for the [accepted saved MIT draft](plain-language-accepted-2026-09-27.md).
+Status: **accepted for the exact saved sample** after live and independent
+full-text review; see the [completion receipt](useful-significance-accepted-2026-09-27.md).
+The earlier attempts below remain rejected. Step 1 is closed only for the
+[accepted saved MIT draft](plain-language-accepted-2026-09-27.md).
 
 ## Predeclared change and acceptance criteria
 
