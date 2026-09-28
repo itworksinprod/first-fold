@@ -1,7 +1,7 @@
 // Frozen synthetic contrast. Expected labels never enter provider requests.
 import {createHash} from 'node:crypto';
 import {buildIsolatedPreservationReview, validateIsolatedPreservationReview} from '../free/isolated-preservation-review.mjs';
-import {watchSourceRequest, WATCH_LABEL} from './watch-question.mjs';
+import {watchSourceRequest, WATCH_LABEL, stripWatchDisplayLabel} from './watch-question.mjs';
 import {buildWorkersAiRequest, workersAiRunUrl, workersAiFailureDiagnostic, DEFAULT_CLOUDFLARE_AI_MODEL, FREE_REASONING_WRITER_MODEL} from '../free/workers-ai.mjs';
 const freeze = value => {
   if (value && typeof value === 'object') {Object.values(value).forEach(freeze); Object.freeze(value);}
@@ -20,7 +20,7 @@ export const WATCH_PREMISE_CONTROLS = freeze([
 ]);
 export function watchPremiseControlView(control) {
   if (!WATCH_PREMISE_CONTROLS.includes(control)) throw Object.assign(new Error('WATCH_CONTROL_INVALID'), {code: 'WATCH_CONTROL_INVALID'});
-  const claims = [retained, WATCH_LABEL + control.question];
+  const claims = [retained, stripWatchDisplayLabel(WATCH_LABEL + control.question)];
   return buildIsolatedPreservationReview({text: claims.join(' '), claims, sources: [source]}, 'source');
 }
 const sha = text => createHash('sha256').update(text).digest('hex');

@@ -222,3 +222,35 @@ token allowance; timeout is also checked. The previous Llama mode remains
 unchanged. Because model, allowance and timeout differ, this is not a model-only
 comparison. A pass requires exact explanation review; reused calibration does
 not qualify unseen articles, daily use or an automated editorial reviewer.
+
+### Reasoning profile result — app-label role error
+
+[Run 36369375705](https://github.com/itworksinprod/first-fold/actions/runs/36369375705)
+on `6787661ec8e8ae34d687e5cb6da678c7ac3f2eea` completed all four calls but
+passed only C/D (six of eight judgments). A/B were rejected because no publisher
+source established that First Fold had posed the question. A's explanation even
+acknowledged that the substantive premises were supported. The label is app-owned
+presentation metadata, not a historical claim requiring publisher corroboration.
+Primary and independent exact-text review agree this is a role/representation
+error, not an invalid gold label. Exact request/payload replay passed, reproducing
+the hold. No article generation, email or reviewer promotion occurred.
+
+Artifact 10948398442, 9,110 bytes, ZIP SHA-256
+`d10ad18fbe4bd57c19e6f24a5f8a31d8f64273b50d383194e70773a00b211548`.
+Capture SHA-256:
+`bdcc09d4f4c4dfd6df2c5ee8ff73fe52b8c507e1d51c499aca291875b28058c7`.
+
+The next representation repair removes only the verified constant display prefix
+from the final question's review claim and review statement. Exact reconstruction
+must give display text = constant label + all unchanged generated question bytes.
+No arbitrary/source attribution, substantive word or retained claim is removed.
+Both control and article paths use the same exact helper, and new review/request
+hashes bind the mapped statement. The prompt explicitly distinguishes current
+application authorship from publisher evidence. Full question-premise checks and
+both negative cases remain unchanged; wrong/missing/mid-string prefixes fail.
+
+The follow-up reuses the reasoning profile and the same frozen cases, evidence
+and labels, but changes this review representation and explanation. It is not
+an identical-input comparison or new held-out validation. Four calls / 9,600
+maximum requested output tokens; a control pass and exact independent inspection
+are required before deciding another article step. Old approvals are not reused.

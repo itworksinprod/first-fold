@@ -5,7 +5,7 @@ import {readFile} from 'node:fs/promises';
 import {watchFixture} from './fixtures/watch-fixture.mjs';
 import {sha} from './fixtures/significance-fixture.mjs';
 import {buildWatchPlan, decodeWatchPacket, loadWatchPlan, applyWatchQuestion,
-  buildWatchFieldReview, watchSourceRequest, WATCH_PROMPT, WATCH_PASSAGES, WATCH_LABEL} from '../scripts/automation/experiments/watch-question.mjs';
+  buildWatchFieldReview, watchSourceRequest, stripWatchDisplayLabel, WATCH_PROMPT, WATCH_PASSAGES, WATCH_LABEL} from '../scripts/automation/experiments/watch-question.mjs';
 import {prepareWatchDiagnostic, resolvePrivateWriterDiagnosticMode, diagnoseOneWriter} from '../scripts/automation/private-writer-diagnostic.mjs';
 
 test('one labeled editorial question preserves every old unit, order and headline byte-for-byte', () => {
@@ -76,20 +76,35 @@ test('all four fields reviewed, added question premises scoped only to two saved
     const request = watchSourceRequest(view, field);
     assert.deepEqual(request.data, view.data); assert.deepEqual(request.schema, view.schema);
     if (field === 'whatToWatch') {
+      assert.equal(view.data.claims.at(-1).text, proposal.question);
+      assert.equal(WATCH_LABEL + view.data.claims.at(-1).text, result.units.whatToWatch.at(-1));
+      assert.deepEqual(view.data.claims.slice(0, -1).map(c => c.text), plan.baseline.units.whatToWatch);
+      assert.equal(view.data.statement, view.data.claims.map(c => c.text).join(' '));
       assert.ok(request.prompt.startsWith(view.prompt));
       assert.match(request.prompt, /C2 is explicitly First Fold's editorial watch question/);
       assert.match(request.prompt, /using ONLY S1P5, S1P20/);
       assert.match(request.prompt, /True means source-supported factual premises, not that the question's future answer is established/);
       assert.match(request.prompt, /Do not require a passage proving an answer the question explicitly leaves open/);
       assert.match(request.prompt, /named plans, guarantees, actors, conditions, dates or claimed capabilities still need source support/);
+      assert.match(request.prompt, /Do not require a source saying First Fold already asked or published the question/);
       assert.match(request.prompt, /For the other claimIds use the full supplied evidence/);
-    } else assert.equal(request, view);
+    } else {
+      assert.equal(request, view);
+      assert.deepEqual(view.data.claims.map(c => c.text), result.units[field]);
+    }
   }
   for (const mutate of [r => {r.draft.headline = 'Changed';}, r => {r.units.whatHappened[0] = 'Changed';},
     r => {r.units.whatToWatch.reverse();}]) {
     const altered = structuredClone(result); mutate(altered);
     assert.throws(() => buildWatchFieldReview(plan, altered, 'headline'), /BASELINE_CHANGED/);
   }
+});
+
+test('only the exact app-owned prefix is excluded; every generated character stays in review', () => {
+  const text = 'Could an unsupported guarantee hold?';
+  assert.equal(stripWatchDisplayLabel(WATCH_LABEL + text), text);
+  for (const wrong of [text, '', WATCH_LABEL, 'Some other label: ' + text, 'Before ' + WATCH_LABEL + text, null]) assert.throws(() => stripWatchDisplayLabel(wrong), /DISPLAY_LABEL_INVALID/);
+  assert.equal(stripWatchDisplayLabel(WATCH_LABEL + WATCH_LABEL + text), WATCH_LABEL + text);
 });
 
 test('only canonical bounded pinned secrets enter the opt-in mode', async () => {

@@ -116,13 +116,23 @@ export function buildWatchFieldReview(plan, applied, field) {
     decision: 'add', question: text.slice(WATCH_LABEL.length)});
   if (JSON.stringify(applied) !== JSON.stringify(expected)) throw fail('WATCH_BASELINE_CHANGED');
   const sources = ['whatHappened', 'whatToWatch'].includes(field) ? [plan.source, plan.supplementSource] : [plan.source];
-  return buildIsolatedPreservationReview({text: expected.draft[field], sources, claims: expected.units[field]}, 'source');
+  const claims = [...expected.units[field]];
+  if (field === 'whatToWatch') claims[claims.length - 1] = stripWatchDisplayLabel(claims.at(-1));
+  return buildIsolatedPreservationReview({text: field === 'whatToWatch' ? claims.join(' ') : expected.draft[field], sources, claims}, 'source');
+}
+
+// This exact constant is application-owned attribution metadata, not source
+// evidence. Never remove arbitrary prose or any part of the generated question.
+export function stripWatchDisplayLabel(text) {
+  if (typeof text !== 'string' || !text.startsWith(WATCH_LABEL) || text.length <= WATCH_LABEL.length) throw fail('WATCH_DISPLAY_LABEL_INVALID');
+  return text.slice(WATCH_LABEL.length);
 }
 
 export function watchSourceRequest(view, field) {
   if (field !== 'whatToWatch') return view;
   return freeze({...view, prompt: `${view.prompt}\n\nEDITORIAL QUESTION AND EVIDENCE SCOPE:
 ${view.data.claims.at(-1).claimId} is explicitly First Fold's editorial watch question, not a reported plan or an answered result.
+The question is being composed now by this application. Its display attribution is application-owned metadata, not a historical publisher claim. Do not require a source saying First Fold already asked or published the question. Judge every factual premise inside the question itself.
 For that question, check EVERY factual presupposition and implication using ONLY ${WATCH_PASSAGES.join(', ')}.
 Do not treat question form as an exemption from source support. Reject invented scheduled tests, method guarantees, asserted missing evidence, deployment assumptions or unreported results even if phrased as a question.
 References to upcoming, forthcoming or expected studies presuppose such studies will occur; these need explicit source support. A merely hypothetical question about further evidence does not assert a plan.

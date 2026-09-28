@@ -61,10 +61,12 @@ test('frozen controls keep supported premises separate from unknown answers and 
   assert.ok(Object.isFrozen(WATCH_PREMISE_CONTROLS[0].expected));
   assert.match(WATCH_PREMISE_CONTROLS[1].question, /shorter, leave its length unchanged, or make it longer/);
   const views = WATCH_PREMISE_CONTROLS.map(watchPremiseControlView);
-  for (const view of views) {
+  for (const [index, view] of views.entries()) {
     assert.deepEqual(view.data.passages, views[0].data.passages);
     assert.deepEqual(view.data.claims[0], views[0].data.claims[0]);
     assert.deepEqual(view.data.claims.map(c => c.claimId), ['C1', 'C2']);
+    assert.equal(view.data.claims[1].text, WATCH_PREMISE_CONTROLS[index].question);
+    assert.equal(view.data.statement, view.data.claims.map(c => c.text).join(' '));
     assert.deepEqual(view.data.passages.map(p => p.evidenceId), ['S1P5', 'S1P20']);
     assert.doesNotMatch(JSON.stringify(view), /"expected"|"caseId"|"gold"|negative control|positive control/);
     assert.match(watchSourceRequest(view, 'whatToWatch').prompt, /True means source-supported factual premises, not that the question's future answer is established/);
