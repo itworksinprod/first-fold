@@ -65,6 +65,7 @@ export function assertDiagnosticAuthority(env) {
 }
 
 export function resolvePrivateWriterDiagnosticMode(value = "source") {
+  if (value === 'saved-meaningful-watch') return value;
   if (value === 'saved-useful-significance') return value;
   if(['context-assisted-language','context-direct-language','context-direct-unit-language','context-named-unit-language','context-two-unit-repair','context-two-unit-plain-repair','context-complete-repair','context-span-repair','context-final-phrase-repair'].includes(value))return value;
   if (['grammar-preservation-controls', 'grammar-reasoning-controls', 'grammar-reasoning-holdouts'].includes(value)) return value;
@@ -142,6 +143,15 @@ export async function prepareSignificanceDiagnostic(mode, encoded) {
   return loadSignificancePlan(decodeSignificancePacket(encoded));
 }
 
+export async function prepareWatchDiagnostic(mode, encoded) {
+  if (mode !== 'saved-meaningful-watch') {
+    if (encoded !== undefined && encoded !== '') throw failure('DIAGNOSTIC_UNEXPECTED_WATCH_PACKET');
+    return undefined;
+  }
+  const {decodeWatchPacket, loadWatchPlan} = await import('./experiments/watch-question.mjs');
+  return loadWatchPlan(decodeWatchPacket(encoded));
+}
+
 async function diagnoseProvider({ publicKey, accountId, apiToken, now, aiRequestImpl, fetchImpl, endpoint }) {
   const capture = { purpose: "one-provider-probe-not-news-or-delivery", capturedAt: now.toISOString(),
     calls: [], emailSent: false };
@@ -190,7 +200,7 @@ async function diagnoseProvider({ publicKey, accountId, apiToken, now, aiRequest
 }
 
 export async function diagnoseOneWriter({ publicKey, accountId, apiToken, now = new Date(),
-  mode = "source", frozenBaselineB64, savedFinalReviewB64, contextEditorB64, sentenceRepairB64, significanceBaselineB64,
+  mode = "source", frozenBaselineB64, savedFinalReviewB64, contextEditorB64, sentenceRepairB64, significanceBaselineB64, watchBaselineB64,
   researchImpl = collectFreeResearchSnapshot, aiRequestImpl = requestWorkersAiEditorial,
   fetchImpl = globalThis.fetch } = {}) {
   // Check encryption and credentials before research or inference, not afterwards.
@@ -201,8 +211,14 @@ export async function diagnoseOneWriter({ publicKey, accountId, apiToken, now = 
   const contextPacketText=await prepareContextDiagnostic(mode,contextEditorB64);
   const repairPacketText=await prepareSentenceRepair(mode,sentenceRepairB64);
   const significancePlan = await prepareSignificanceDiagnostic(mode, significanceBaselineB64);
+  const watchPlan = await prepareWatchDiagnostic(mode, watchBaselineB64);
   const endpoint = workersAiRunUrl(accountId, DEFAULT_CLOUDFLARE_AI_MODEL);
   if (typeof apiToken !== "string" || !apiToken.trim()) throw failure("DIAGNOSTIC_CONFIGURATION_INVALID");
+  if (mode === 'saved-meaningful-watch') {
+    const {diagnoseWatch} = await import('./watch-diagnostic.mjs');
+    return diagnoseWatch({plan: watchPlan, publicKey, accountId, apiToken, now,
+      aiRequestImpl, fetchImpl, sealDiagnostic});
+  }
   if (mode === 'saved-useful-significance') {
     const {diagnoseSignificance} = await import('./significance-diagnostic.mjs');
     return diagnoseSignificance({plan: significancePlan, publicKey, accountId, apiToken, now,
@@ -392,6 +408,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
       await prepareContextDiagnostic(mode,process.env.FIRST_FOLD_CONTEXT_EDITOR_PACKET_B64);
       await prepareSentenceRepair(mode,process.env.FIRST_FOLD_SENTENCE_REPAIR_B64);
       await prepareSignificanceDiagnostic(mode, process.env.FIRST_FOLD_SIGNIFICANCE_BASELINE_B64);
+      await prepareWatchDiagnostic(mode, process.env.FIRST_FOLD_WATCH_BASELINE_B64);
     } else if (command === "run" && args.length === 1) {
       const mode = validatePrivateWriterDiagnosticOptions(process.env);
       const { sealed, report } = await diagnoseOneWriter({ publicKey: process.env.DIAGNOSTIC_PUBLIC_KEY,
@@ -400,6 +417,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
         contextEditorB64:process.env.FIRST_FOLD_CONTEXT_EDITOR_PACKET_B64,
         sentenceRepairB64:process.env.FIRST_FOLD_SENTENCE_REPAIR_B64,
         significanceBaselineB64: process.env.FIRST_FOLD_SIGNIFICANCE_BASELINE_B64,
+        watchBaselineB64: process.env.FIRST_FOLD_WATCH_BASELINE_B64,
         accountId: process.env.CLOUDFLARE_ACCOUNT_ID, apiToken: process.env.CLOUDFLARE_AI_API_TOKEN });
       await writeFile(args[0], JSON.stringify(sealed), { mode: 0o600, flag: "wx" });
       console.info(`::notice title=One-story diagnostic::${JSON.stringify(report)}`);

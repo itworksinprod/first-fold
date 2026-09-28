@@ -51,6 +51,7 @@ on:
           - context-span-repair
           - context-final-phrase-repair
           - saved-useful-significance
+          - saved-meaningful-watch
       public_key:
         description: Ephemeral RSA-3072 public key in base64 DER format (never a private key)
         required: true
@@ -96,8 +97,11 @@ jobs:
         run: node --test tests/context-editor-profile.test.mjs tests/frozen-sentence-diagnostic.test.mjs tests/direct-definition-editor.test.mjs tests/unit-meaning-review.test.mjs tests/sentence-repair-profile.test.mjs tests/repair-span-contract.test.mjs
       - name: Test one-sentence significance boundaries before credentials
         run: node --test tests/significance-introduction.test.mjs tests/significance-diagnostic.test.mjs
+      - name: Test editorial watch-question boundaries before credentials
+        run: node --test tests/watch-question.test.mjs tests/watch-diagnostic.test.mjs
       - name: Validate diagnostic mode and encryption before credentials
         env:
+          FIRST_FOLD_WATCH_BASELINE_B64: ${{ inputs.mode == 'saved-meaningful-watch' && secrets.FIRST_FOLD_WATCH_BASELINE_B64 || '' }}
           FIRST_FOLD_SIGNIFICANCE_BASELINE_B64: ${{ inputs.mode == 'saved-useful-significance' && secrets.FIRST_FOLD_SIGNIFICANCE_BASELINE_B64 || '' }}
           FIRST_FOLD_CONTEXT_EDITOR_PACKET_B64: ${{ (inputs.mode == 'context-final-phrase-repair' || inputs.mode == 'context-assisted-language' || inputs.mode == 'context-direct-language' || inputs.mode == 'context-direct-unit-language' || inputs.mode == 'context-named-unit-language' || inputs.mode == 'context-two-unit-repair' || inputs.mode == 'context-two-unit-plain-repair' || inputs.mode == 'context-complete-repair' || inputs.mode == 'context-span-repair') && secrets.FIRST_FOLD_CONTEXT_EDITOR_PACKET_B64 || '' }}
           FIRST_FOLD_SENTENCE_REPAIR_B64: ${{ inputs.mode == 'context-final-phrase-repair' && secrets.FIRST_FOLD_FINAL_PHRASE_REPAIR_B64 || (inputs.mode == 'context-two-unit-repair' || inputs.mode == 'context-two-unit-plain-repair' || inputs.mode == 'context-complete-repair' || inputs.mode == 'context-span-repair') && secrets.FIRST_FOLD_SENTENCE_REPAIR_B64 || '' }}
@@ -108,6 +112,7 @@ jobs:
         run: node scripts/automation/private-writer-diagnostic.mjs validate
       - name: Inspect the selected bounded diagnostic without delivery
         env:
+          FIRST_FOLD_WATCH_BASELINE_B64: ${{ inputs.mode == 'saved-meaningful-watch' && secrets.FIRST_FOLD_WATCH_BASELINE_B64 || '' }}
           FIRST_FOLD_SIGNIFICANCE_BASELINE_B64: ${{ inputs.mode == 'saved-useful-significance' && secrets.FIRST_FOLD_SIGNIFICANCE_BASELINE_B64 || '' }}
           FIRST_FOLD_CONTEXT_EDITOR_PACKET_B64: ${{ (inputs.mode == 'context-final-phrase-repair' || inputs.mode == 'context-assisted-language' || inputs.mode == 'context-direct-language' || inputs.mode == 'context-direct-unit-language' || inputs.mode == 'context-named-unit-language' || inputs.mode == 'context-two-unit-repair' || inputs.mode == 'context-two-unit-plain-repair' || inputs.mode == 'context-complete-repair' || inputs.mode == 'context-span-repair') && secrets.FIRST_FOLD_CONTEXT_EDITOR_PACKET_B64 || '' }}
           FIRST_FOLD_SENTENCE_REPAIR_B64: ${{ inputs.mode == 'context-final-phrase-repair' && secrets.FIRST_FOLD_FINAL_PHRASE_REPAIR_B64 || (inputs.mode == 'context-two-unit-repair' || inputs.mode == 'context-two-unit-plain-repair' || inputs.mode == 'context-complete-repair' || inputs.mode == 'context-span-repair') && secrets.FIRST_FOLD_SENTENCE_REPAIR_B64 || '' }}

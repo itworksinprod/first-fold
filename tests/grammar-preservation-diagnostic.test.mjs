@@ -197,8 +197,9 @@ test('workflow isolates synthetic mode, tests before credentials and preserves e
   assert.match(workflow, /persist-credentials: false/); assert.match(workflow, /retention-days: 1/);
   assert.doesNotMatch(workflow, /RESEND|OPENAI_API_KEY|schedule:|contents: write|pull-requests: write/);
   assert.deepEqual([...new Set([...workflow.matchAll(/secrets\.([A-Z0-9_]+)/gu)].map(m => m[1]))].sort(),
-    ['CLOUDFLARE_AI_API_TOKEN', 'FIRST_FOLD_CONTEXT_EDITOR_PACKET_B64', 'FIRST_FOLD_FINAL_PHRASE_REPAIR_B64', 'FIRST_FOLD_FINAL_REVIEW_PACKET_B64', 'FIRST_FOLD_FROZEN_BASELINE_B64', 'FIRST_FOLD_SENTENCE_REPAIR_B64', 'FIRST_FOLD_SIGNIFICANCE_BASELINE_B64']);
+    ['CLOUDFLARE_AI_API_TOKEN', 'FIRST_FOLD_CONTEXT_EDITOR_PACKET_B64', 'FIRST_FOLD_FINAL_PHRASE_REPAIR_B64', 'FIRST_FOLD_FINAL_REVIEW_PACKET_B64', 'FIRST_FOLD_FROZEN_BASELINE_B64', 'FIRST_FOLD_SENTENCE_REPAIR_B64', 'FIRST_FOLD_SIGNIFICANCE_BASELINE_B64', 'FIRST_FOLD_WATCH_BASELINE_B64']);
   assert.equal((workflow.match(/inputs.mode == 'saved-useful-significance' && secrets.FIRST_FOLD_SIGNIFICANCE_BASELINE_B64 \|\| ''/gu) ?? []).length, 2);
+  assert.equal((workflow.match(/inputs.mode == 'saved-meaningful-watch' && secrets.FIRST_FOLD_WATCH_BASELINE_B64 \|\| ''/gu) ?? []).length, 2);
   assert.equal((workflow.match(/\(inputs.mode == 'context-two-unit-repair' \|\| inputs.mode == 'context-two-unit-plain-repair' \|\| inputs.mode == 'context-complete-repair' \|\| inputs.mode == 'context-span-repair'\) && secrets.FIRST_FOLD_SENTENCE_REPAIR_B64 \|\| ''/gu)??[]).length,2);
   assert.equal((workflow.match(/inputs.mode == 'saved-final-review' && secrets.FIRST_FOLD_FINAL_REVIEW_PACKET_B64 \|\| ''/gu) ?? []).length, 2);
   assert.equal((workflow.match(/\(inputs.mode == 'frozen-sentence-language' \|\| inputs.mode == 'frozen-definition-language' \|\| inputs.mode == 'frozen-vocabulary-language' \|\| inputs.mode == 'frozen-reasoning-language'\) && secrets.FIRST_FOLD_FROZEN_BASELINE_B64/gu) ?? []).length, 2);

@@ -19,7 +19,8 @@ article**, after live checks and independent full-text review on September 27,
 Step 2 ([useful significance](checkpoints/useful-significance-accepted-2026-09-27.md))
 also passes for the exact saved sample: 179 words, one new problem-context
 sentence, all earlier text unchanged, live-tested and independently reviewed.
-Step 3 (meaningful watch guidance) has not started. These assisted, manually
+Step 3 ([meaningful watch question](checkpoints/meaningful-watch.md)) is in local
+implementation; no live result is yet accepted. These assisted, manually
 scoped results do not qualify an unseen
 automatic writer, the experimental reviewers, or daily delivery. Historical
 HOLD records below remain unchanged evidence, not the current sample status.
