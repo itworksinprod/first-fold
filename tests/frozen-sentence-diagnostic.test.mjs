@@ -237,6 +237,15 @@ test('final phrase repair freezes accepted sentences but reviews all original ch
   const held=await run({finalPhraseRepair:true,mutateProposal:p=>{p.sentences[0].text=p.sentences[0].text.replace('researchers','scientists');}});
   assert.equal(held.report.code,'DIRECT_DEFINITION_LOCKED_UNIT');assert.equal(held.requests.length,1);
 });
+test('final phrase repair cannot bypass final source or original-meaning rejection',async()=>{
+  for(const rejectAt of [6,7]){
+    const held=await run({finalPhraseRepair:true,rejectAt,rejection:'false'});
+    assert.equal(held.report.status,'failed');
+    assert.equal(held.report.code,'FACT_SUMMARY_REVIEW_REJECTED');
+    assert.equal(held.report.emailSent,false);
+    assert.equal(held.requests.length,rejectAt+1);
+  }
+});
 test('span repair locks surrounding meaning and keeps all original-to-final reviews',async()=>{
   const previous=await run({completeRepair:true}),r=await run({spanRepair:true});
   assert.equal(r.report.status,'draft-awaiting-manual-review');

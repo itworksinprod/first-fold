@@ -1,7 +1,7 @@
 # Review-guided two-unit repair
 
-Status: three live repairs held, including automated passes rejected by full-text
-review. A defect-span refinement is under preflight; its live prose is unqualified.
+Status: live repairs remain held, including automated passes rejected by full-text
+review. The latest final-phrase attempt failed the original-to-final meaning gate.
 
 This is a manually scoped repair experiment on saved research. It is not proof
 of an unassisted general writer, source discovery, daily reliability or paid-model
@@ -241,3 +241,40 @@ calls. Request size: 11,180 bytes; prompt/schema SHA-256:
 Independent preflight passed 116 focused/legacy tests. Full-text review of the
 next live result is still required; source-review citation gaps and earlier
 meaning-review false positives remain unresolved for unattended use.
+
+## Final-phrase outcome — compression rejected
+
+[Run 36360635537](https://github.com/itworksinprod/first-fold/actions/runs/36360635537)
+on `f32275fca3fbb53f7b1aae84cf4a6782b766d43a` produced 148 words within the exact
+edit boundaries. It passed source review but failed U6's original-to-final
+meaning check (`FACT_SUMMARY_REVIEW_REJECTED`), after eight calls / 6,600 requested
+tokens. The reviewer found the shortened paraphrase changed the specific concept.
+The separate factual check could not substitute for this failed meaning check.
+The capture replays exactly offline; it is not an approved candidate. No email.
+
+Artifact `10944904610`, 84,045 bytes; ZIP SHA-256:
+`aceab85a679f5f3e46c1edfde2706c5da9939396cc75a935be1a5b05613f04c3`.
+Capture SHA-256:
+`5916737624cc5bd6836992d7f3415bb8b5d32e9d2ade50a3adbdef319430ec04`.
+Draft SHA-256:
+`a325997e267c19f577ab7c8ad1adac53f595b24ca83bde8c3497f71c68441440`.
+
+Independent full-text review agrees with the meaning veto: naming associated
+components did not retain their formal defining relationship or full task/output
+specificity. Readability still repeated a phrase. The replacement used seven of
+the ten allowed words, so this result does not identify the word cap as the cause.
+
+### Precision refinement, same bounded mode
+
+The next revision changes only this mode's editor instructions and records
+`final-phrase-repair-v6`. It distinguishes concept type, component roles and
+defining relationship from merely listing associated ideas, and requires natural
+fit with the locked suffix. It supplies no replacement answer. The same original
+seed, one editable span, ten-word cap, providers, request ceilings and separate
+reviewer inputs/gates remain unchanged. Captures are revision/prompt-hash bound;
+the earlier exact replay refers to its original published revision.
+
+All 1,577 tests pass, including explicit source and final-meaning veto regressions.
+Actual-input preflight: zero network calls; 10,850 request bytes;
+prompt/schema SHA-256:
+`227e3bce76795dba59a528bf63eb8f1c9b16b0bb2ab14c966e24181892ef150a`.

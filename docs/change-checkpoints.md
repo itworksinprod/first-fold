@@ -2433,3 +2433,13 @@ meaning checks, source checks, 110–225 words and final independent readability
 review remain mandatory. All 1,576 tests and actual-input offline preflight pass.
 This is a saved-article no-email experiment, not daily-delivery qualification.
 See the [receipt](checkpoints/two-unit-repair.md).
+
+### Final phrase — correct meaning veto, targeted instruction refinement
+
+Run 36360635537 passed factual checks but failed final meaning review. Independent
+full-text review agrees: the compressed phrase lost defining specificity and
+still repeated wording. The same isolated mode now asks the editor to preserve
+concept type, component roles and their relationship, without supplying an answer
+or changing the original-to-final reviewers. All 1,577 tests pass. Step 1 remains
+held pending a live pass and independent readability approval; no email or daily
+integration occurred. See the [receipt](checkpoints/two-unit-repair.md).
