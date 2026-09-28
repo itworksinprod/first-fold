@@ -128,7 +128,7 @@ export async function diagnoseFactSummary({ publicKey, accountId, apiToken, now,
     if(plainRepair){capture.purpose='context-two-unit-plain-repair-awaiting-manual-review';capture.copyeditStrategy='targeted-label-free-repair-v2';}
     if(completeRepair){capture.purpose='context-complete-repair-awaiting-manual-review';capture.copyeditStrategy='complete-task-repair-v3';}
     if(spanRepair){capture.purpose='context-span-repair-awaiting-manual-review';capture.copyeditStrategy='defect-span-repair-v4';}
-    if(finalPhraseRepair){capture.purpose='context-final-phrase-repair-awaiting-manual-review';capture.copyeditStrategy='final-phrase-repair-v6';}
+    if(finalPhraseRepair){capture.purpose='context-final-phrase-repair-awaiting-manual-review';capture.copyeditStrategy='final-opening-clause-repair-v7';}
     capture.reviewStrategy='isolated-llama-source-plus-gptoss-meaning-experimental';
     capture.context={packetSha256:context.packetSha256,supplementCaptureSha256:context.supplementCaptureSha256,
       supplementUrl:context.supplementUrl,supplementSource:context.supplementSource};

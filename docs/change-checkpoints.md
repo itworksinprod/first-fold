@@ -2443,3 +2443,13 @@ concept type, component roles and their relationship, without supplying an answe
 or changing the original-to-final reviewers. All 1,577 tests pass. Step 1 remains
 held pending a live pass and independent readability approval; no email or daily
 integration occurred. See the [receipt](checkpoints/two-unit-repair.md).
+
+### Opening clause — allow natural composition, preserve evidence boundaries
+
+Run 36361025564 passed automated checks but remains held after independent review
+for abstract wording and repetition. The next bounded edit includes only U6's
+opening subject/predicate, keeping its complete example and deployment caveat
+fixed. All other sentences, headline and original-to-final checks remain unchanged.
+The independent reviewer recommended this boundary adjustment over another synonym
+instruction. All 1,578 tests and actual-packet preflight pass; no live prose approval
+or daily integration is implied. See the [receipt](checkpoints/two-unit-repair.md).

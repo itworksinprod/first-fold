@@ -50,6 +50,21 @@ test('single compacted phrase has a hard word cap without unlocking the remainde
   assert.throws(()=>validateRepairSpanEdits(f.proposal,f.view,contract),/WORD_LIMIT/);
   for(const maxReplacementWords of [0,21,1.5,'5'])assert.throws(()=>buildRepairSpanContract(f.view,[{...f.spec[1],maxReplacementWords}],f.view.data.baselineSha256),/SPEC/);
 });
+test('opening-clause repair locks the example and evidence-status caveat',()=>{
+  const units={headline:['Synthetic headline'],whatHappened:['Mira completed the trial.'],
+    whyItMatters:['The measured result remains limited.'],
+    whatToWatch:['Mira has a design that may permit extra objectives, such as saving energy, but this is not evidence of deployment.']};
+  const view=buildSentenceRewriteView(units),text=units.whatToWatch[0],end=text.indexOf(', such as');
+  const contract=buildRepairSpanContract(view,[{unitId:'U3',start:0,end,spanSha256:sha(text.slice(0,end)),maxReplacementWords:20}],view.data.baselineSha256);
+  const proposal={baselineSha256:view.data.baselineSha256,decision:'rewrite',sentences:view.data.units.map(u=>({unitId:u.unitId,
+    text:u.unitId==='U3'?'Mira can allow further objectives through its design'+text.slice(end):u.text}))};
+  applySentenceRewrite(units,proposal,view);validateRepairSpanEdits(proposal,view,contract);
+  for(const [before,after]of [['saving energy','saving money'],['deployment','implementation']]){
+    const changed=structuredClone(proposal);changed.sentences[2].text=changed.sentences[2].text.replace(before,after);
+    assert.throws(()=>validateRepairSpanEdits(changed,view,contract),/SURROUNDING_TEXT/);
+  }
+  // A boundary pass does not decide equivalence: original-to-final review is still required.
+});
 test('abstention is permitted only through existing decision validation, not approval',()=>{
   const f=fixture(),proposal={baselineSha256:f.view.data.baselineSha256,decision:'abstain',sentences:f.view.data.units.map(u=>({unitId:u.unitId,text:u.text}))};
   assert.equal(applySentenceRewrite(f.units,proposal,f.view).decision,'abstain');

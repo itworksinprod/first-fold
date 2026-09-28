@@ -1,7 +1,7 @@
 # Review-guided two-unit repair
 
 Status: live repairs remain held, including automated passes rejected by full-text
-review. The latest final-phrase attempt failed the original-to-final meaning gate.
+review. The latest short-phrase attempt still failed independent readability.
 
 This is a manually scoped repair experiment on saved research. It is not proof
 of an unassisted general writer, source discovery, daily reliability or paid-model
@@ -278,3 +278,44 @@ All 1,577 tests pass, including explicit source and final-meaning veto regressio
 Actual-input preflight: zero network calls; 10,850 request bytes;
 prompt/schema SHA-256:
 `227e3bce76795dba59a528bf63eb8f1c9b16b0bb2ab14c966e24181892ef150a`.
+
+### Precision trial — automated pass, independent readability hold
+
+[Run 36361025564](https://github.com/itworksinprod/first-fold/actions/runs/36361025564)
+on `f12425841f02cc2574311229a510705ac0e24eba` produced 149 words and passed all
+automated source/meaning checks within eight calls / 6,600 requested tokens.
+Exact offline capture replay passed. The repeated wording remained, so automated
+success does not close the readability checkpoint. No email or promotion.
+
+Artifact `10945244406`, 84,052 bytes; ZIP SHA-256:
+`7c114eefb85040f1d483038f3d2172081b0b900cc72374e19fbf38e1d391c5fe`.
+Capture SHA-256:
+`c376376986568e21a9b20dd6be8666ed6ffdda5137682cb9c3e083377a9554e5`.
+Draft SHA-256:
+`cbb686132c1f506d9dde0a10cc7d0e7a61b7bc2f7d852ddb6a7f68a887dafab1`.
+
+Independent review retains HOLD: the repeated wording persists and an abstract
+label remains. The evidence supports the relationship, but the automated meaning
+explanation does not resolve its implicit defining specificity. No new invented
+claim was identified; the readability failure alone prevents completion.
+
+### Opening-clause refinement
+
+Following independent review, the same mode now uses
+`final-opening-clause-repair-v7`. The reviewed U6 span includes its opening subject
+and predicate, allowing the definition and capability to be expressed together
+without the former forced repetition. The 22-word source span is bounded to at
+most 20 replacement words. This is not a new length threshold for the article.
+Exact offsets are 0–163 (end-exclusive), substring SHA-256:
+`d06f0415af0b8815ace128dd72b309d2efb4b3d66227a17c35aa3322140e6285`.
+
+The entire example and deployment caveat are still byte-exact, as are U1–U5 and
+the headline. Ownership, possibility, additionality and the complete defining
+relationship must survive the original-to-final meaning reviews and full-text
+inspection. No replacement answer is supplied. The same seed packet, sources,
+providers, one-attempt limit and eight-call/6,600-token ceiling apply. Daily code
+and settings remain unchanged.
+
+All 1,578 tests pass, including example/caveat-lock regressions. Actual-input
+preflight: zero network calls; 11,262 request bytes; prompt/schema SHA-256:
+`8fe8f3b20894a0b8326e531d8c596e60c81b499efdc039ac139f366e195d989e`.
