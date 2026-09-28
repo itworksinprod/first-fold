@@ -83,6 +83,13 @@ for (const failure of ['wrong-verdict', 'wrong-retained']) test(`${failure} fail
   assert.equal(result.report.status, 'failed'); assert.equal(requests.length, 4);
   assert.equal(result.report.casesPassed, 3);
 });
+test('observed open-alternatives false negative remains a scored failure under unchanged labels', async () => {
+  const {result} = await run({failure: 'wrong-verdict', at: 1});
+  assert.equal(result.report.code, 'WATCH_CONTROL_MISMATCH');
+  assert.deepEqual(result.sealed.cases[1].expected, [true, true]);
+  assert.deepEqual(result.sealed.cases[1].observed, [true, false]);
+  assert.equal(result.report.casesPassed, 3);
+});
 for (const failure of ['quota', 'wrong-endpoint', 'body', 'method', 'redirect', 'retry', 'no-network', 'provenance', 'model', 'malformed']) {
   test(`${failure} holds without provider retries or later cases`, async () => {
     const {result, requests} = await run({failure, at: 1});

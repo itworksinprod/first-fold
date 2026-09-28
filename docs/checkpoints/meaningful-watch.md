@@ -169,3 +169,26 @@ even that result would only qualify these four cases, not unseen questions.
 Preflight: all 1,634 repository tests passed. Independent code review ran 76
 focused/legacy tests and found no blocker for one fixed no-email calibration.
 Neither preflight nor mock outcomes are live reviewer qualification.
+
+### First calibration result — one false negative
+
+[Run 36368712620](https://github.com/itworksinprod/first-fold/actions/runs/36368712620)
+on `cdfdbfd582da7a095a0a251dd137410e93e4650a` returned all eight valid judgments,
+seven correct. A/C/D passed; B's C2 was incorrectly rejected with "No evidence
+for question premises". B expressly leaves outcome direction open while its
+setup is supported. Its predeclared positive label remains unchanged. Four
+calls / 2,400 requested output tokens, no article or email. Artifact 10948036916,
+8,580 bytes, ZIP SHA-256
+`a998ecf13d517b060b2e4dcdd383974be59d00c80a724347e34598a0f0536850`.
+Capture SHA-256:
+`964a5b2be50637be1ddacc50ff8592f5280b62b9bc0894d6fa56294e072db12b`.
+Exact request/payload replay reproduces the failed score, not approval.
+
+The next prompt clarification distinguishes genuinely open outcome alternatives
+from asserted results and asks the reviewer to name the factual premise behind
+its decision. It still requires support for named plans, guarantees, actors,
+conditions, dates and claimed capabilities; conditional wording is no exemption.
+The same four controls, evidence, predeclared labels, model, schema and budget
+must be rerun before another article-generation trial. No output is relabeled
+and no rejection is bypassed. This is a contract-interpretation correction, not
+a lowered factuality threshold or general reviewer qualification.

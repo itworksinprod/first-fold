@@ -127,6 +127,9 @@ For that question, check EVERY factual presupposition and implication using ONLY
 Do not treat question form as an exemption from source support. Reject invented scheduled tests, method guarantees, asserted missing evidence, deployment assumptions or unreported results even if phrased as a question.
 References to upcoming, forthcoming or expected studies presuppose such studies will occur; these need explicit source support. A merely hypothetical question about further evidence does not assert a plan.
 The question itself need not have been asked by the publisher, but its factual premises must be supported; the uncertain outcome must remain genuinely open, not asserted.
+A genuinely conditional question can ask about a comparison or several alternative outcomes without asserting any of them occurred or will occur. Do not require a passage proving an answer the question explicitly leaves open. Evaluate the factual setup separately from the requested unknown answer; possibilities listed only as questions are not reported results.
+This is not permission to excuse an unsupported premise: named plans, guarantees, actors, conditions, dates or claimed capabilities still need source support, even inside a conditional question.
+In comparison, briefly identify the actual supported or unsupported premise. A bare "No evidence" does not explain which factual assumption failed; do not use it as the whole comparison.
 For the other claimIds use the full supplied evidence and unchanged source-support rules.
 True means source-supported factual premises, not that the question's future answer is established. Citation membership alone is not sufficient.`});
 }

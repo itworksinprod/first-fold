@@ -80,6 +80,8 @@ test('all four fields reviewed, added question premises scoped only to two saved
       assert.match(request.prompt, /C2 is explicitly First Fold's editorial watch question/);
       assert.match(request.prompt, /using ONLY S1P5, S1P20/);
       assert.match(request.prompt, /True means source-supported factual premises, not that the question's future answer is established/);
+      assert.match(request.prompt, /Do not require a passage proving an answer the question explicitly leaves open/);
+      assert.match(request.prompt, /named plans, guarantees, actors, conditions, dates or claimed capabilities still need source support/);
       assert.match(request.prompt, /For the other claimIds use the full supplied evidence/);
     } else assert.equal(request, view);
   }
