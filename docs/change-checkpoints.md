@@ -16,8 +16,9 @@ Current sequential editorial status: **step 1 passes for the exact saved MIT
 article**, after live checks and independent full-text review on September 27,
 2026. The accepted 150-word output is frozen in the
 [completion receipt](checkpoints/plain-language-accepted-2026-09-27.md).
-Step 2 (useful significance) and step 3 (meaningful watch guidance) have not
-started. This assisted, manually scoped result does not qualify an unseen
+Step 2 ([useful significance](checkpoints/useful-significance.md)) is in local
+implementation; live and exact editorial review remain pending. Step 3
+(meaningful watch guidance) has not started. This assisted, manually scoped result does not qualify an unseen
 automatic writer, the experimental reviewers, or daily delivery. Historical
 HOLD records below remain unchanged evidence, not the current sample status.
 
