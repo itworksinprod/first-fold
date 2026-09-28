@@ -50,6 +50,16 @@ test('whole-body length, originality and baseline pins remain enforced', () => {
   assert.throws(() => applySignificanceIntroduction(boundedPlan, {...proposal, baselineSha256: boundedPlan.data.baselineSha256}), /LENGTH/);
 });
 
+test('observed outcome-assurance failure is vetoed locally without treating the guard as semantic proof', () => {
+  const {plan, proposal} = significanceFixture();
+  for (const verb of ['guarantees', 'ensure', 'ensures', 'prevents', 'eliminates', 'ｇｕａｒａｎｔｅｅｓ']) {
+    assert.throws(() => applySignificanceIntroduction(plan, {...proposal,
+      introduction: `The synthetic method ${verb} a safe outcome for all users.`}), /ASSURANCE_LANGUAGE/);
+  }
+  assert.match(SIGNIFICANCE_PROMPT, /problem context only/);
+  assert.match(SIGNIFICANCE_PROMPT, /do not describe the method's behavior, achievement or safety benefit/);
+});
+
 test('unchanged four-field source review policy and supplementary-source scope are retained', () => {
   const {plan, proposal} = significanceFixture(), result = applySignificanceIntroduction(plan, proposal);
   for (const field of ['headline', 'whatHappened', 'whyItMatters', 'whatToWatch']) {

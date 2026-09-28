@@ -18,6 +18,6 @@ export function significanceFixture() {
     supplementSource: {publisher: 'Synthetic context', passages: [{evidenceId: 'S2P1', text: 'Synthetic context evidence.'}]}};
   const plan = buildSignificancePlan(packet);
   const proposal = {baselineSha256: plan.data.baselineSha256, decision: 'add',
-    introduction: 'According to MIT, this could help researchers considering applications where an answer must meet mandatory requirements rather than merely appear plausible.'};
+    introduction: 'MIT describes an application in which a plausible answer could still leave important requirements unmet, illustrating the distinction between a candidate answer and an acceptable finished result.'};
   return {packet, plan, proposal};
 }

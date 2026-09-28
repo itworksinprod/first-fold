@@ -80,3 +80,34 @@ underlying support policy, post-check and call/token ceilings are unchanged.
 The editor is also told not to turn potential usefulness into a promise of safe
 real-world actions, to use the source's hypothetical stakes, and not to invent
 a named beneficiary. This changes neither allowed evidence nor acceptance criteria.
+
+## Second live trial — automated pass, editorial rejection
+
+[Run 36365346026](https://github.com/itworksinprod/first-fold/actions/runs/36365346026)
+on `dc048fb8813b9e8649a7d2fcf565b9aeda2c77f1` completed five calls and all four
+automated source checks. Offline captured-payload/request replay and exact
+baseline identity passed; the assembled draft was 182 words. **Primary editorial
+review and independent review reject the addition:** it explicitly converted hypothetical stakes into
+a safety guarantee. The source reviewer incorrectly approved that claim using
+S1P10/P11. This is a documented false positive, not accepted prose or proof of
+reviewer reliability. No email or production change occurred.
+
+Artifact ID 10947212598, 54,565 bytes, ZIP SHA-256
+`5fa126813d40b364a25f9872ff270e22ccb8bdf90973606b13ebea0adf4a4d91`.
+Local capture SHA-256
+`dad4e825786508203940754398d970fbbdf75bfbfd64eb731488ab51116d9e79`.
+Rejected draft SHA-256
+`144a44b87e7f7d60b722e30dd1a225a7697d2c558d5c601784e6e4db0dc44f63`.
+
+The next experiment narrows the introduction to **problem context and hypothetical
+stakes only**, with no method-behavior, achievement or safety-benefit assertion.
+The locked paragraph already describes the method. A conservative local veto
+blocks assurance terms (guarantee/ensure/prevent/eliminate variants, including
+Unicode compatibility spellings) before review. It is an observed-regression
+guard, not a semantic classifier or a substitute for independent inspection.
+The Why reviewer is reminded that evidence of a problem does not prove a method
+avoids that problem. Allowed evidence, identity, source policy, token/call limits
+and mandatory full-text review remain unchanged. No rejected prose is reused.
+The exact rejected local editor response is now vetoed before any source call;
+its full text remains private. Synthetic inflection/Unicode regressions are in
+the public tests. All 1,597 local tests passed before the next preflight.
