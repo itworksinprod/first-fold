@@ -46,9 +46,14 @@ and introduced meanings absent from the question. The failed gate remains; Step 
 is not live-accepted. The [offline reviewer-calibration candidate](checkpoints/watch-role-calibration.md)
 now separates anchored factual premises, hypothetical controls and unknown
 outcomes; its eight fictional cases have predeclared labels and decisive roles.
-Its offline contract/control checkpoint passed tests and independent review;
-there is no new live result or reviewer qualification. This is not another
-writer prompt. No daily integration, source/reviewer gate, billing or delivery
+Its offline contract/control checkpoint passed tests and independent review.
+The first live synthetic run, 36516460890 at `57d7220`, stopped on case A with
+`ROLE_CALIBRATION_RESPONSE_INVALID`: one request, zero scored cases. Rejected
+prose was omitted, so the exact failed predicate and semantic result are unknown.
+A diagnostic-only first-failure enum passed 1,714 local tests and independent
+review without changing requests or acceptance; it has not run live. No second
+trial or reviewer qualification followed. This is not another writer prompt.
+No daily integration, source/reviewer gate, billing or delivery
 change was made. Require the bounded live test and exact independent review before
 accepting this new assisted approach. These assisted, manually
 scoped results do not qualify an unseen

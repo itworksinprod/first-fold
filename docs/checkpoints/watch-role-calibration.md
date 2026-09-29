@@ -1,9 +1,10 @@
-# Offline question-role calibration checkpoint
+# Question-role calibration checkpoint
 
-Status: offline contract/control checkpoint complete after local tests and
-independent implementation review; not a successful model-quality result.
-No provider result, live qualification or Step 3 article acceptance yet. This is a
-separate offline candidate, not a replacement of the existing factual checks.
+Status: offline contract/control checkpoint complete; the first live synthetic
+trial stopped on a structurally invalid response before scoring any case. A
+diagnostic-only repair passed local tests and independent implementation review,
+but has not run live. No reviewer qualification or Step 3 article acceptance.
+This separate candidate does not replace the existing factual checks.
 
 ## Scope and predeclared distinction
 
@@ -138,3 +139,48 @@ Preflight: all 1,713 repository tests and 159 independently run workflow/focused
 tests passed. Independent review verified all eight data/prompt/schema views are
 identical to the frozen offline revision and cleared the scoped implementation
 for one requested synthetic trial. This is execution readiness, not a live pass.
+
+## First live synthetic trial — structural hold
+
+[Run 36516460890](https://github.com/itworksinprod/first-fold/actions/runs/36516460890)
+used trusted main revision `57d72204fc8e856a98dbbbde9f9b32fecd9c0f6f`.
+Setup, tests, frozen-corpus and encryption-key checks passed. The step
+**Review eight fictional questions without research or delivery** failed with
+`ROLE_CALIBRATION_RESPONSE_INVALID` on case A. One model/network request used a
+2,400 requested-output-token ceiling; zero cases were completed or scored. There
+were no retries, writer calls, searches or email sends.
+
+Artifact `11011615976` was 2,352 bytes. Verified ZIP SHA-256:
+`aceaa5d82ed9fe9f66de776f23caba3843f3fc6967cb1ba3f185d3cda132c3c1`.
+Decrypted capture SHA-256:
+`bf17c52439424541f6ae26c35afa5bcde81311b1ef07e2f7d36c3f1b2e35938b`.
+Case A prompt SHA-256:
+`266c56ebb59968caa7fc87b3f51ff17f07966a6a2f48c830eb4ece50bb3ec7a1`.
+Request SHA-256:
+`ce68ec3be15db4b87e73a821e4674f9cdd514e63e6b41656767a3313c01a0150`.
+
+The exact request/prompt and transport provenance were reconstructed locally and
+independently verified. The rejected parsed payload was deliberately omitted;
+therefore a full response replay, exact predicate diagnosis and semantic review
+are impossible for this run. The receipt does not establish quota exhaustion,
+truncation, or a factual/role judgment. Do not infer those causes or override the
+hold. No second provider trial was made.
+
+## Diagnostic-only repair after the hold
+
+The same structural validator now exposes its first failed predicate as one of
+17 fixed reason codes. Only the encrypted rejected-call record receives that
+code. Rejected prose and values remain omitted; public reports/logs and the
+acceptance criteria are unchanged. This cannot recover the missing previous
+response or retroactively identify its failed predicate.
+
+All 1,714 repository tests passed. Independent preflight passed 38 focused tests
+and compared 192 mutated responses with `57d7220`, finding identical public
+verdicts. A separate local comparison checked 1,072 mutations with the same
+result. Both checks confirmed all eight input views, prompts and schemas remain
+unchanged. Code review found no blocker to this diagnostic-only repair.
+
+This closes the offline diagnostic repair, not live calibration. A separately
+scoped future trial would be needed to obtain the first-failure code; no extra
+provider request is authorized by this receipt. Step 3, article integration and
+daily delivery remain unchanged and unqualified by this work.

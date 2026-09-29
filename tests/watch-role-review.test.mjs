@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {readFile, readdir} from 'node:fs/promises';
-import {buildWatchRoleReview, validateWatchRoleReview, WATCH_ROLE_PROMPT} from '../scripts/automation/experiments/watch-role-review.mjs';
+import {buildWatchRoleReview, validateWatchRoleReview, diagnoseWatchRoleReview, WATCH_ROLE_FAILURE_REASONS, WATCH_ROLE_PROMPT} from '../scripts/automation/experiments/watch-role-review.mjs';
 import {WATCH_ROLE_CONTROLS, WATCH_ROLE_CONTROLSET_SHA256, watchRoleControlView, scoreWatchRoleControl} from '../scripts/automation/experiments/watch-role-controls.mjs';
 
 const source = [
@@ -63,6 +63,42 @@ test('all roles need evidence for true judgments and a false finding remains a h
     response.findings[index].grounded = false;
     assert.deepEqual(validateWatchRoleReview(response, view), {valid: true, reportedGrounded: false, status: 'model-hold-awaiting-independent-review'});
   }
+});
+
+test('private diagnostic exposes only the first failed predicate, without rejected text or changing verdicts', () => {
+  const view = buildWatchRoleReview(input());
+  const variants = [
+    ['ENVELOPE_SHAPE', x => {x.extra = 'PRIVATE_REJECTED_TEXT';}],
+    ['REVIEW_HASH', x => {x.reviewSha256 = 'wrong';}],
+    ['QUESTION_ECHO', x => {x.question = 'PRIVATE_REJECTED_TEXT';}],
+    ['UNKNOWN_ANSWER', x => {x.unknownAnswer = ''; }],
+    ['FINDINGS_ARRAY', x => {x.findings = Array(2);}],
+    ['FINDING_SHAPE', x => {x.findings[0].extra = 'PRIVATE_REJECTED_TEXT';}],
+    ['ANCHOR_TEXT', x => {x.findings[0].anchor = ' ';}],
+    ['ANCHOR_MEMBERSHIP', x => {x.findings[0].anchor = 'PRIVATE_REJECTED_TEXT';}],
+    ['ROLE', x => {x.findings[0].role = 'PRIVATE_REJECTED_TEXT';}],
+    ['REASON_TEXT', x => {x.findings[0].reason = ''; }],
+    ['VERDICT_TYPE', x => {x.findings[0].grounded = 'PRIVATE_REJECTED_TEXT';}],
+    ['CITATIONS_ARRAY', x => {x.findings[0].evidenceIds = []; }],
+    ['CITATIONS_DUPLICATE', x => {x.findings[0].evidenceIds = ['S1P20', 'S1P20'];}],
+    ['CITATIONS_SCOPE', x => {x.findings[0].evidenceIds = ['S2P1'];}],
+    ['DUPLICATE_FINDING', x => {x.findings.push(structuredClone(x.findings[0]));}],
+    ['REQUIRED_ROLES', x => {x.findings[2].role = 'hypothetical_control';}],
+  ];
+  for (const [reason, mutate] of variants) {
+    const response = fixture(view); mutate(response);
+    const d = diagnoseWatchRoleReview(response, view);
+    assert.equal(d.reason, reason); assert.equal(d.verdict.valid, false);
+    assert.deepEqual(validateWatchRoleReview(response, view), d.verdict);
+    assert.doesNotMatch(JSON.stringify(d), /PRIVATE_REJECTED_TEXT/);
+  }
+  assert.deepEqual([...WATCH_ROLE_FAILURE_REASONS].sort(), ['VIEW', ...variants.map(v => v[0])].sort());
+  assert.equal(diagnoseWatchRoleReview(fixture(view), {}).reason, 'VIEW');
+  const multiple = fixture(view); multiple.reviewSha256 = 'wrong'; multiple.question = 'wrong'; multiple.findings = [];
+  assert.equal(diagnoseWatchRoleReview(multiple, view).reason, 'REVIEW_HASH');
+  const getter = fixture(view); Object.defineProperty(getter, 'question', {get() {assert.fail('no accessor');}});
+  assert.equal(diagnoseWatchRoleReview(getter, view).reason, 'ENVELOPE_SHAPE');
+  assert.equal(diagnoseWatchRoleReview(fixture(view), view).reason, null);
 });
 
 test('moved, missing, paraphrased or duplicate anchors and foreign evidence fail structurally', () => {

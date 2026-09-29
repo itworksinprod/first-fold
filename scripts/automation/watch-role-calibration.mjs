@@ -6,7 +6,7 @@ import {pathToFileURL} from 'node:url';
 import {diagnosticPublicKey, sealDiagnostic} from './private-writer-diagnostic.mjs';
 import {WATCH_ROLE_CONTROLS, WATCH_ROLE_CONTROLSET_SHA256, watchRoleControlView,
   scoreWatchRoleControl} from './experiments/watch-role-controls.mjs';
-import {validateWatchRoleReview} from './experiments/watch-role-review.mjs';
+import {diagnoseWatchRoleReview} from './experiments/watch-role-review.mjs';
 import {buildWorkersAiRequest, requestWorkersAiEditorial, workersAiRunUrl, workersAiFailureDiagnostic,
   FREE_REASONING_WRITER_MODEL} from './free/workers-ai.mjs';
 
@@ -63,8 +63,12 @@ export async function runWatchRoleCalibration({plan, publicKey, accountId, apiTo
       if (result.provider !== 'cloudflare-workers-ai' || result.model !== model || result.requestSha256 !== requestSha256 ||
           !/^[a-f0-9]{64}$/u.test(result.responseSha256 ?? '') || result.attemptCount !== 1) throw fail('ROLE_CALIBRATION_PROVENANCE');
       Object.assign(call, {provider: result.provider, model, responseSha256: result.responseSha256, attemptCount: 1});
-      const verdict = validateWatchRoleReview(result.editorialPayload, view);
-      if (!verdict.valid) {call.responseRejectedBeforeCapture = true; throw fail('ROLE_CALIBRATION_RESPONSE_INVALID');}
+      const diagnostic = diagnoseWatchRoleReview(result.editorialPayload, view);
+      if (!diagnostic.verdict.valid) {
+        call.responseRejectedBeforeCapture = true;
+        call.validationReason = diagnostic.reason;
+        throw fail('ROLE_CALIBRATION_RESPONSE_INVALID');
+      }
       call.response = structuredClone(result.editorialPayload);
       capture.cases.push(scoreWatchRoleControl(control, view, result.editorialPayload));
     }

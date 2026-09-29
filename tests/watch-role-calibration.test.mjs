@@ -108,6 +108,10 @@ for (const failure of ['quota', 'transport', 'no-network', 'endpoint', 'method',
     assert.equal(result.report.status, 'failed'); assert.equal(requests.length, 4);
     assert.equal(result.report.casesCompleted, 3); assert.equal(result.report.outputBudget, 9600);
     if (['malformed', 'scope', 'echo'].includes(failure)) assert.equal(result.report.code, 'ROLE_CALIBRATION_RESPONSE_INVALID');
+    if (['malformed', 'scope', 'echo'].includes(failure)) {
+      assert.equal(result.sealed.calls[3].validationReason, {malformed: 'ENVELOPE_SHAPE', scope: 'CITATIONS_SCOPE', echo: 'QUESTION_ECHO'}[failure]);
+      assert.equal(Object.hasOwn(result.report, 'validationReason'), false);
+    }
     if (failure === 'truncated') {
       assert.equal(result.report.code, 'WORKERS_AI_EDITORIAL_FORMAT_INVALID');
       assert.equal(result.sealed.failure.formatReason, 'OUTPUT_TOKEN_LIMIT');

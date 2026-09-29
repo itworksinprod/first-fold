@@ -5,6 +5,10 @@ import {createHash} from 'node:crypto';
 const issued = new WeakSet();
 const roles = Object.freeze(['factual_premise', 'hypothetical_control', 'unknown_outcome']);
 const evidenceIds = Object.freeze(['S1P5', 'S1P20']);
+// First failed structural predicate only. Never contains rejected prose or values.
+export const WATCH_ROLE_FAILURE_REASONS = Object.freeze(['VIEW', 'ENVELOPE_SHAPE', 'REVIEW_HASH', 'QUESTION_ECHO',
+  'UNKNOWN_ANSWER', 'FINDINGS_ARRAY', 'FINDING_SHAPE', 'ANCHOR_TEXT', 'ANCHOR_MEMBERSHIP', 'ROLE', 'REASON_TEXT',
+  'VERDICT_TYPE', 'CITATIONS_ARRAY', 'CITATIONS_DUPLICATE', 'CITATIONS_SCOPE', 'DUPLICATE_FINDING', 'REQUIRED_ROLES']);
 const exact = (value, keys) => {
   if (!value || typeof value !== 'object' || Array.isArray(value) || Object.getPrototypeOf(value) !== Object.prototype) return false;
   const descriptors = Object.getOwnPropertyDescriptors(value);
@@ -71,23 +75,38 @@ export function buildWatchRoleReview(input) {
   return view;
 }
 
-export function validateWatchRoleReview(value, view) {
+// Same acceptance predicates/order as the original validator. The diagnostic
+// wrapper exposes only a fixed code; the public validator keeps its old shape.
+export function diagnoseWatchRoleReview(value, view) {
   const invalid = {valid: false, reportedGrounded: false, status: 'invalid-response'};
-  if (!issued.has(view) || !exact(value, ['reviewSha256', 'question', 'unknownAnswer', 'findings']) ||
-      value.reviewSha256 !== view.data.reviewSha256 || value.question !== view.data.question ||
-      !text(value.unknownAnswer, 240) || !dense(value.findings, 2, 10)) return invalid;
+  const reject = reason => ({verdict: invalid, reason});
+  if (!issued.has(view)) return reject('VIEW');
+  if (!exact(value, ['reviewSha256', 'question', 'unknownAnswer', 'findings'])) return reject('ENVELOPE_SHAPE');
+  if (value.reviewSha256 !== view.data.reviewSha256) return reject('REVIEW_HASH');
+  if (value.question !== view.data.question) return reject('QUESTION_ECHO');
+  if (!text(value.unknownAnswer, 240)) return reject('UNKNOWN_ANSWER');
+  if (!dense(value.findings, 2, 10)) return reject('FINDINGS_ARRAY');
   const seen = new Set(), kinds = new Set(), ids = new Set(view.data.passages.map(p => p.evidenceId));
   for (const f of value.findings) {
-    if (!exact(f, ['anchor', 'role', 'reason', 'evidenceIds', 'grounded']) ||
-        !text(f.anchor, 240) || !value.question.includes(f.anchor) || !roles.includes(f.role) ||
-        !text(f.reason, 240) || typeof f.grounded !== 'boolean' || !dense(f.evidenceIds, f.grounded ? 1 : 0, 2) ||
-        new Set(f.evidenceIds).size !== f.evidenceIds.length || f.evidenceIds.some(id => !ids.has(id))) return invalid;
+    if (!exact(f, ['anchor', 'role', 'reason', 'evidenceIds', 'grounded'])) return reject('FINDING_SHAPE');
+    if (!text(f.anchor, 240)) return reject('ANCHOR_TEXT');
+    if (!value.question.includes(f.anchor)) return reject('ANCHOR_MEMBERSHIP');
+    if (!roles.includes(f.role)) return reject('ROLE');
+    if (!text(f.reason, 240)) return reject('REASON_TEXT');
+    if (typeof f.grounded !== 'boolean') return reject('VERDICT_TYPE');
+    if (!dense(f.evidenceIds, f.grounded ? 1 : 0, 2)) return reject('CITATIONS_ARRAY');
+    if (new Set(f.evidenceIds).size !== f.evidenceIds.length) return reject('CITATIONS_DUPLICATE');
+    if (f.evidenceIds.some(id => !ids.has(id))) return reject('CITATIONS_SCOPE');
     const key = JSON.stringify([f.role, f.anchor]);
-    if (seen.has(key)) return invalid;
+    if (seen.has(key)) return reject('DUPLICATE_FINDING');
     seen.add(key); kinds.add(f.role);
   }
-  if (!kinds.has('factual_premise') || !kinds.has('unknown_outcome')) return invalid;
+  if (!kinds.has('factual_premise') || !kinds.has('unknown_outcome')) return reject('REQUIRED_ROLES');
   const reportedGrounded = value.findings.every(f => f.grounded);
-  return {valid: true, reportedGrounded,
-    status: reportedGrounded ? 'model-positive-awaiting-independent-review' : 'model-hold-awaiting-independent-review'};
+  return {verdict: {valid: true, reportedGrounded,
+    status: reportedGrounded ? 'model-positive-awaiting-independent-review' : 'model-hold-awaiting-independent-review'}, reason: null};
+}
+
+export function validateWatchRoleReview(value, view) {
+  return diagnoseWatchRoleReview(value, view).verdict;
 }

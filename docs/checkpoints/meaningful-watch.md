@@ -20,7 +20,11 @@ false rejection of the hypothetical comparison, but the recorded automated hold
 remains: Step 3 is not live-accepted. Source gates and original criteria remain
 unchanged. The typed premise
 checker passed its four reused synthetic controls and independent explanation
-review, which is limited calibration, not general qualification. See the
+review, which is limited calibration, not general qualification. The later
+[eight-case role calibration](watch-role-calibration.md) stopped in live run
+36516460890 on a structurally invalid first response, before scoring any case.
+Its diagnostic-only repair passed offline tests and independent review; no
+second trial or new article result followed. See the
 chronological trials below; earlier budgets/counts describe those revisions.
 This isolated saved-article experiment follows the accepted Step 2 receipt. No
 fresh research, daily integration, email, recipient, schedule or billing changes.
