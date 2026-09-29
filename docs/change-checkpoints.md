@@ -28,8 +28,11 @@ it does not permit claimed measurements, different tasks or assumed improvement.
 That contrast trial, run 36509198336, was stopped before review for wording that
 turned a required condition into an operational assurance. A writer-only repair
 now separates shared hypothetical conditions from promised performance and makes
-both sides of the same-task contrast explicit. No source/reviewer gate, billing
-or delivery change was made. Require a new bounded live test and exact independent
+both sides of the same-task contrast explicit. Its run 36509575833 failed the
+aggregate text-format gate before a draft existed. The exact formatting cause
+was redacted; the next change adds only a private first-failing-predicate reason
+without retaining malformed text or changing acceptance. No source/reviewer gate,
+billing or delivery change was made. Require a new bounded live test and exact independent
 review—not automatic acceptance. These assisted, manually
 scoped results do not qualify an unseen
 automatic writer, the experimental reviewers, or daily delivery. Historical

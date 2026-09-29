@@ -5,7 +5,7 @@ import {readFile} from 'node:fs/promises';
 import {watchFixture, mockQuestionAudit} from './fixtures/watch-fixture.mjs';
 import {sha} from './fixtures/significance-fixture.mjs';
 import {buildWatchPlan, decodeWatchPacket, loadWatchPlan, applyWatchQuestion,
-  buildWatchFieldReview, watchSourceRequest, validateWatchSourceResponse, stripWatchDisplayLabel, WATCH_PROMPT, WATCH_PASSAGES, WATCH_LABEL} from '../scripts/automation/experiments/watch-question.mjs';
+  buildWatchFieldReview, watchSourceRequest, validateWatchSourceResponse, stripWatchDisplayLabel, WATCH_PROMPT, WATCH_PASSAGES, WATCH_LABEL, WATCH_TEXT_REASONS} from '../scripts/automation/experiments/watch-question.mjs';
 import {prepareWatchDiagnostic, resolvePrivateWriterDiagnosticMode, diagnoseOneWriter} from '../scripts/automation/private-writer-diagnostic.mjs';
 
 test('one labeled editorial question preserves every old unit, order and headline byte-for-byte', () => {
@@ -48,6 +48,34 @@ test('whole-body ceiling, baseline hashes and source context remain enforced', (
   const missing = structuredClone(packet); missing.source.excerpt = 'Only one source passage.';
   missing.source.excerptSha256 = sha(missing.source.excerpt);
   assert.throws(() => buildWatchPlan(missing), /CONTEXT_INVALID/);
+});
+
+test('text failure reasons preserve the original rejection order and public code without rejected prose', () => {
+  const {plan, proposal} = watchFixture();
+  const cases = [[42, 'TYPE'], ['', 'EMPTY'], [' Could this change?', 'TRIM'], ['Could ' + 'x'.repeat(600) + '?', 'CHARACTER_LIMIT'],
+    ['Could ' + 'word '.repeat(36) + 'change?', 'WORD_LIMIT'], ['Could this: change?', 'PLAINTEXT'],
+    ['Could this change', 'QUESTION_ENDING'], ['Could this change? What could follow?', 'QUESTION_COUNT'],
+    ['For the same task, how could results differ?', 'STARTER'], ['Could this change. another output?', 'PUNCTUATION'],
+    ['Could this change. Another output?', 'SENTENCE_COUNT']];
+  assert.deepEqual(cases.map(([, reason]) => reason), WATCH_TEXT_REASONS);
+  assert.equal(Object.isFrozen(WATCH_TEXT_REASONS), true);
+  for (const [question, reason] of cases) assert.throws(() => applyWatchQuestion(plan, {...proposal, question}), error => {
+    assert.equal(error.code, 'WATCH_RESPONSE_TEXT'); assert.equal(error.message, 'WATCH_RESPONSE_TEXT');
+    assert.equal(error.textReason, reason);
+    assert.deepEqual(Object.keys(error).sort(), ['code', 'textReason']);
+    return true;
+  });
+  for (const [question, reason] of [
+    [' Could <markup>', 'TRIM'],
+    ['Could ' + 'longword '.repeat(80) + '<markup>', 'CHARACTER_LIMIT'],
+    ['Could ' + 'word '.repeat(40) + '<markup>', 'WORD_LIMIT'],
+    ['For <markup>', 'PLAINTEXT'],
+    ['For a task? Another question?', 'QUESTION_COUNT'],
+  ]) assert.throws(() => applyWatchQuestion(plan, {...proposal, question}), error =>
+    error.code === 'WATCH_RESPONSE_TEXT' && error.textReason === reason);
+  // A malformed shape must not reach text diagnostics or invoke a getter.
+  const getter = {...proposal}; Object.defineProperty(getter, 'question', {get() {assert.fail('never invoke getter');}});
+  assert.throws(() => applyWatchQuestion(plan, getter), error => error.code === 'WATCH_RESPONSE_SHAPE' && !('textReason' in error));
 });
 
 test('known risky presuppositions and new numbers are vetoed without claiming a semantic proof', () => {

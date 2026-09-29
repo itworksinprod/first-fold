@@ -5,8 +5,9 @@ accepted. After the daily allocation block cleared, the hypothetical-form repair
 passed a live automated test but failed independent usefulness review: its new
 question repeated the existing capability explanation. The next writer-only
 contrast trial was correctly stopped for assurance wording before any source
-review. A narrow role-composition correction is being prepared; source gates
-and original criteria remain unchanged. The typed premise
+review. The subsequent role-composition trial failed a text gate; its exact
+formatting cause was not captured. Diagnosis-only instrumentation is being
+prepared; source gates and original criteria remain unchanged. The typed premise
 checker passed its four reused synthetic controls and independent explanation
 review, which is limited calibration, not general qualification. See the
 chronological trials below; earlier budgets/counts describe those revisions.
@@ -541,3 +542,30 @@ tests pass; diff check is clean. Replay construction confirms the retained draft
 and all four factual-review request/prompt hashes are unchanged. Independent
 review found no contradictory instruction or weakened criterion and cleared one
 bounded trial, still requiring exact-output review.
+
+### Role-composition trial — redacted text-format failure
+
+[Run 36509575833](https://github.com/itworksinprod/first-fold/actions/runs/36509575833)
+on `40172cdc4fae9eaf4b4eaccbc700590ed3e412b0` stopped at
+`WATCH_RESPONSE_TEXT` after one request / 2,400 requested-token ceiling. No draft
+or source review was produced. The encrypted capture intentionally omitted the
+malformed response; the aggregate code does not distinguish length, punctuation,
+question starter or other text predicates. Do not infer which one failed.
+Artifact 11009110607, 12,081 bytes, ZIP SHA-256:
+`13aec6bbcaa4f22d96abef0c4ac9f8e9f598ccbd31994a4d50910edbddd3c508`.
+Capture SHA-256:
+`9eaf9a6ec36d7249cef2ab3db71c82e38adfa91ac994833d1f9942a9e923ad84`.
+
+The next change is diagnostic only, not another writer-prompt guess. The same
+predicates run in the same order with the same public failure code. A local
+allowlisted enum identifies only the first failing text predicate inside the
+encrypted capture. No rejected prose, arbitrary error details, length values or
+model payload are included. Malformed shape/misbound input remains excluded.
+Tests cover each enum, overlapping failures, accessor rejection and unchanged
+acceptance. A future diagnostic cannot recover or explain this redacted response.
+No gates, prompts, packet, reviewers, resource caps, production or email change.
+
+Diagnostic preflight: all 1,652 repository tests and 55 independent focused tests
+pass. Diff check is clean; the exact prior writer request/prompt hashes remain
+unchanged. Independent review cleared one bounded diagnostic trial, not retries
+or automatic acceptance of any resulting draft.

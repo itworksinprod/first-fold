@@ -8,6 +8,9 @@ import {buildIsolatedPreservationReview, validateIsolatedPreservationReview} fro
 export const WATCH_PACKET_SHA256 = 'd0aee1befe62ca2ab1472222dc50380abc284df9e80e5b1fc49839f232d6f1b0';
 export const WATCH_PASSAGES = Object.freeze(['S1P5', 'S1P20']);
 export const WATCH_LABEL = 'First Fold’s watch question: ';
+// Diagnostic categories only; they do not include rejected text or change gates.
+export const WATCH_TEXT_REASONS = Object.freeze(['TYPE', 'EMPTY', 'TRIM', 'CHARACTER_LIMIT', 'WORD_LIMIT',
+  'PLAINTEXT', 'QUESTION_ENDING', 'QUESTION_COUNT', 'STARTER', 'PUNCTUATION', 'SENTENCE_COUNT']);
 const fields = ['headline', 'whatHappened', 'whyItMatters', 'whatToWatch'];
 const plans = new WeakSet();
 const sha = text => createHash('sha256').update(text).digest('hex');
@@ -95,10 +98,20 @@ export function applyWatchQuestion(plan, proposal) {
   if (proposal.decision === 'abstain' && proposal.question === '') return {decision: 'abstain'};
   if (proposal.decision !== 'add') throw fail('WATCH_RESPONSE_DECISION');
   const text = proposal.question;
-  if (typeof text !== 'string' || !text || text !== text.trim() || text.length > 600 || text.split(/\s+/u).length > 36 ||
-      /[{}<>`:]|[\p{Cc}\p{Cf}]|["“”]\s*[,]/u.test(text) || !/\?$/u.test(text) || (text.match(/\?/gu) ?? []).length !== 1 ||
-      !/^(?:Can|Could|Do|Does|Would|Will|How|Which|What|Is|Are)\b/u.test(text) ||
-      /[.!?]\s+\p{Ll}/u.test(text) || [...new Intl.Segmenter('en', {granularity: 'sentence'}).segment(text)].length !== 1) throw fail('WATCH_RESPONSE_TEXT');
+  const rejectText = textReason => { throw Object.assign(fail('WATCH_RESPONSE_TEXT'), {textReason}); };
+  // Same predicates and order as the former aggregate check. Keep its public
+  // code; expose only the first failing enum inside the encrypted diagnostic.
+  if (typeof text !== 'string') rejectText('TYPE');
+  if (!text) rejectText('EMPTY');
+  if (text !== text.trim()) rejectText('TRIM');
+  if (text.length > 600) rejectText('CHARACTER_LIMIT');
+  if (text.split(/\s+/u).length > 36) rejectText('WORD_LIMIT');
+  if (/[{}<>`:]|[\p{Cc}\p{Cf}]|["“”]\s*[,]/u.test(text)) rejectText('PLAINTEXT');
+  if (!/\?$/u.test(text)) rejectText('QUESTION_ENDING');
+  if ((text.match(/\?/gu) ?? []).length !== 1) rejectText('QUESTION_COUNT');
+  if (!/^(?:Can|Could|Do|Does|Would|Will|How|Which|What|Is|Are)\b/u.test(text)) rejectText('STARTER');
+  if (/[.!?]\s+\p{Ll}/u.test(text)) rejectText('PUNCTUATION');
+  if ([...new Intl.Segmenter('en', {granularity: 'sentence'}).segment(text)].length !== 1) rejectText('SENTENCE_COUNT');
   // Form requirement only: a modal cannot prove that every premise is supported.
   if (!/(?<![\p{L}\p{M}\p{N}_])(?:would|could)(?![\p{L}\p{M}\p{N}_])/iu.test(text)) throw fail('WATCH_QUESTION_NOT_HYPOTHETICAL');
   // Deliberately conservative vetoes for this no-roadmap, no-outcome-promise

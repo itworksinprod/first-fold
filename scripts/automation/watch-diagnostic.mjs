@@ -3,7 +3,7 @@ import {createHash} from 'node:crypto';
 import {buildWorkersAiRequest, workersAiRunUrl, workersAiFailureDiagnostic,
   DEFAULT_CLOUDFLARE_AI_MODEL, FREE_REASONING_WRITER_MODEL} from './free/workers-ai.mjs';
 import {assertWatchPlan, applyWatchQuestion, buildWatchFieldReview,
-  WATCH_PASSAGES, watchSourceRequest, validateWatchSourceResponse} from './experiments/watch-question.mjs';
+  WATCH_PASSAGES, WATCH_TEXT_REASONS, watchSourceRequest, validateWatchSourceResponse} from './experiments/watch-question.mjs';
 const fields = ['headline', 'whatHappened', 'whyItMatters', 'whatToWatch'];
 const sha = text => createHash('sha256').update(text).digest('hex');
 const fail = code => Object.assign(new Error(code), {code});
@@ -61,7 +61,12 @@ export async function diagnoseWatch({plan, publicKey, accountId, apiToken, now,
         // never in the report/log, so a hold can be diagnosed rather than guessed.
         editor.call.responseRejected = true;
         capture.rejectedQuestion = {text: editor.payload.question, code: error.code, accepted: false};
-      } else editor.call.responseRejectedBeforeCapture = true;
+      } else {
+        editor.call.responseRejectedBeforeCapture = true;
+        if (error?.code === 'WATCH_RESPONSE_TEXT' && WATCH_TEXT_REASONS.includes(error.textReason)) {
+          capture.rejectedTextDiagnostic = {code: error.code, reason: error.textReason, accepted: false};
+        }
+      }
       throw error;
     }
     editor.call.response = structuredClone(editor.payload);

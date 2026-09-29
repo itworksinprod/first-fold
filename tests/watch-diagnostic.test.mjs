@@ -144,3 +144,16 @@ test('malformed or misbound questions never enter rejected-question capture', as
     assert.equal(result.sealed.calls[0].response, undefined);
   }
 });
+
+test('text diagnostics retain only a private reason enum and never a malformed payload', async () => {
+  const {result, requests} = await run({changeProposal: p => {p.question = 'PRIVATE_UNEXPECTED_RESPONSE';}});
+  assert.equal(requests.length, 1); assert.equal(result.report.code, 'WATCH_RESPONSE_TEXT');
+  assert.deepEqual(result.sealed.rejectedTextDiagnostic, {code: 'WATCH_RESPONSE_TEXT', reason: 'QUESTION_ENDING', accepted: false});
+  assert.equal(result.sealed.rejectedQuestion, undefined); assert.equal(result.sealed.draft, undefined);
+  assert.equal(result.sealed.calls[0].response, undefined);
+  assert.ok(!JSON.stringify(result).includes('PRIVATE_UNEXPECTED_RESPONSE'));
+  assert.ok(!JSON.stringify(result.report).includes('QUESTION_ENDING'));
+  const misbound = await run({changeProposal: p => {p.baselineSha256 = '0'.repeat(64); p.question = 'PRIVATE_UNEXPECTED_RESPONSE';}});
+  assert.equal(misbound.result.report.code, 'WATCH_RESPONSE_SHAPE');
+  assert.equal(misbound.result.sealed.rejectedTextDiagnostic, undefined);
+});
