@@ -71,17 +71,29 @@ test('known risky presuppositions and new numbers are vetoed without claiming a 
 
 test('writer distinguishes a hypothetical optional-goal contrast from repeated capability or measured results', () => {
   assert.match(WATCH_PROMPT, /source explicitly allows an additional quality goal/);
-  assert.match(WATCH_PROMPT, /hypothetical presence versus absence for the SAME task with the SAME required conditions/);
-  assert.match(WATCH_PROMPT, /change only that extra goal/);
+  assert.match(WATCH_PROMPT, /the SAME hypothetical task; the SAME source-named requirements as assumptions/);
+  assert.match(WATCH_PROMPT, /only that particular extra goal present versus absent/);
+  assert.match(WATCH_PROMPT, /Make both presence and absence of the extra goal and the same-task setting explicit/);
   assert.match(WATCH_PROMPT, /absence does not mean removing every objective or required condition/);
   assert.match(WATCH_PROMPT, /Do not assert an implemented switch, an existing operating mode, a measured baseline or a completed comparison/);
   assert.match(WATCH_PROMPT, /without assuming improvement or even a difference/);
   assert.match(WATCH_PROMPT, /Keep an unchanged or worse result possible/);
   assert.match(WATCH_PROMPT, /asking again whether documented goals can coexist, does not add a useful thing to watch/);
-  assert.match(WATCH_PROMPT, /abstain instead of inventing setup details/);
+  assert.match(WATCH_PROMPT, /abstain instead of omitting a role or inventing setup details/);
   assert.match(WATCH_PROMPT, /Do not invent task details or comparisons to other methods/);
   assert.doesNotMatch(WATCH_PROMPT, /whether that SAME output meets|do not introduce a baseline|new comparison group/);
   // Contract text only: these assertions cannot establish generated novelty or usefulness.
+});
+
+test('writer treats required conditions as hypothetical setup, never as operational assurance', () => {
+  assert.match(WATCH_PROMPT, /Required conditions describe the shared hypothetical setup, not an action or promise performed by the method/);
+  assert.match(WATCH_PROMPT, /Express them as conditions, such as under the same requirements/);
+  assert.match(WATCH_PROMPT, /Do not broaden a requirement on a generated output into an assurance about real operation/);
+  assert.match(WATCH_PROMPT, /cannot fit naturally within the word limit using only allowedContext, abstain/);
+  const {plan, proposal} = watchFixture();
+  // Synthetic analogue of the observed assurance failure; no output rewriting.
+  assert.throws(() => applyWatchQuestion(plan, {...proposal,
+    question: 'How could an extra quality goal change an output while guaranteeing correct operation?'}), /WATCH_UNSUPPORTED_PRESUPPOSITION/);
 });
 
 test('observed achieved-result question fails the hypothetical form requirement before factual review', () => {

@@ -3,8 +3,10 @@
 Status: article experiment remains held; no watch addition is editorially
 accepted. After the daily allocation block cleared, the hypothetical-form repair
 passed a live automated test but failed independent usefulness review: its new
-question repeated the existing capability explanation. A narrow writer-only
-correction is being prepared; source gates and original criteria remain unchanged. The typed premise
+question repeated the existing capability explanation. The next writer-only
+contrast trial was correctly stopped for assurance wording before any source
+review. A narrow role-composition correction is being prepared; source gates
+and original criteria remain unchanged. The typed premise
 checker passed its four reused synthetic controls and independent explanation
 review, which is limited calibration, not general qualification. See the
 chronological trials below; earlier budgets/counts describe those revisions.
@@ -504,3 +506,38 @@ Independent review removed a leftover comparison-group prohibition that conflict
 with the intended conditional contrast. Actual saved draft reconstruction and
 all four prior factual-review request/prompt hashes remain identical. This clears
 one bounded live trial, not the prior held text or general writer qualification.
+
+### Conditional-comparison trial — assurance wording held before review
+
+[Run 36509198336](https://github.com/itworksinprod/first-fold/actions/runs/36509198336)
+ran `a06f9be5a05f8f32455dee83bf161099d90418a0`. The editor produced an
+assurance verb prohibited by `WATCH_UNSUPPORTED_PRESUPPOSITION`, stopping after
+one request with a 2,400 requested-output-token ceiling. No draft, factual review,
+email or fallback followed. Local audit verified the exact captured writer
+request/prompt hashes and reproduced the rejection without provider calls.
+Artifact 11008975634, 12,303 bytes, ZIP SHA-256:
+`4a4e1df26486e4cc78dddc8569b3a7cd626e82307a2d31a235c4bab206df649a`.
+Capture SHA-256:
+`2442a2cd59f1752e6b8cd5424ede776480a2e531b9eb3278c533463be535c61b`.
+
+Independent exact-text review agrees with the hold: a generated-path requirement
+became a wider operational assurance. The wording implies a comparison but does
+not explicitly identify the same task or absence of that particular extra goal.
+No rejected output is edited into a draft or described as accepted.
+
+The next writer-only hypothesis replaces the permissive comparison instruction
+with explicit roles: same hypothetical task, same source-named requirements as
+shared conditions, presence versus absence of the one optional goal, and a named
+unknown output measure. Conditions are not performance promises. Other objectives
+and requirements remain intact; improvement is not assumed. If those roles cannot
+fit naturally within the existing word limit, abstain. This is generic composition
+guidance, not an article-specific answer or a new semantic acceptance gate.
+All guards, sources, accepted text, reviewers, five-call / 6,600-token ceiling and
+mandatory exact independent review remain unchanged. Local tests only establish
+the prompt contract and preserved rejection behavior, not live writing quality.
+
+Role-composition preflight: all 1,650 repository tests and 53 independent focused
+tests pass; diff check is clean. Replay construction confirms the retained draft
+and all four factual-review request/prompt hashes are unchanged. Independent
+review found no contradictory instruction or weakened criterion and cleared one
+bounded trial, still requiring exact-output review.

@@ -25,8 +25,12 @@ capacity returned, run 36506646683 passed automated checks but independent revie
 held its question for repeating the existing article. The next writer-only change
 permits a hypothetical same-task contrast of a source-supported optional goal;
 it does not permit claimed measurements, different tasks or assumed improvement.
-No source/reviewer gate, billing or delivery change was made. Require a new
-bounded live test and exact independent review—not automatic acceptance. These assisted, manually
+That contrast trial, run 36509198336, was stopped before review for wording that
+turned a required condition into an operational assurance. A writer-only repair
+now separates shared hypothetical conditions from promised performance and makes
+both sides of the same-task contrast explicit. No source/reviewer gate, billing
+or delivery change was made. Require a new bounded live test and exact independent
+review—not automatic acceptance. These assisted, manually
 scoped results do not qualify an unseen
 automatic writer, the experimental reviewers, or daily delivery. Historical
 HOLD records below remain unchanged evidence, not the current sample status.
