@@ -78,6 +78,17 @@ The reviewer recommends a separately authorized frozen-contract model/profile
 comparison, not another wording patch or article integration. No additional
 trial, email, billing change or daily-delivery change occurred.
 
+Carlos approved the next [fixed-contract model/profile comparison](checkpoints/source-span-model-comparison.md).
+The isolated setup adds only the existing Cloudflare GPT-OSS-120B profile with
+eight single attempts at 2,400 requested output tokens each (19,200 total), a
+90-second request timeout and a 15-minute job limit. The original baseline stays
+unchanged; prompt, corpus, schema and scoring are frozen. All 1,850 local tests,
+144 independently rerun workflow-selected tests and exact historical capture
+replay pass. Independent preflight found no blockers in the code. No live run
+has occurred: the Cloudflare account session is signed out, so Workers Free
+status and available allowance cannot yet be confirmed. This is not article
+qualification or daily-delivery promotion.
+
 ### Prior Step 3 status notes — retained historical evidence
 
 Before that acceptance, Step 3 had a published, locally tested repair but no

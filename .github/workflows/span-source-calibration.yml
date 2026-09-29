@@ -2,6 +2,14 @@ name: Test source coverage controls (encrypted, no email)
 on:
   workflow_dispatch:
     inputs:
+      profile:
+        description: Fixed model/resources; reasoning is eight GPT-OSS-120B calls at up to 2400 output tokens each
+        required: true
+        type: choice
+        default: baseline
+        options:
+          - baseline
+          - reasoning
       public_key:
         description: Ephemeral RSA-3072 public key in base64 DER format (never a private key)
         required: true
@@ -14,7 +22,9 @@ jobs:
   calibration:
     if: github.repository == 'itworksinprod/first-fold' && github.ref == 'refs/heads/main' && github.actor == 'itworksinprod' && github.run_attempt == 1
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: ${{ inputs.profile == 'reasoning' && 15 || 8 }}
+    env:
+      SPAN_CALIBRATION_PROFILE: ${{ inputs.profile }}
     permissions:
       contents: read
     steps:

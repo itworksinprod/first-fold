@@ -7,16 +7,21 @@ import {buildSpanSourceReview,validateSpanSourceReview,assertSpanReviewJson,SPAN
 import {SPAN_SOURCE_CONTROLS,SPAN_SOURCE_CONTROLSET_SHA256} from './experiments/span-source-controls.mjs';
 import {diagnosticPublicKey,sealDiagnostic} from './private-writer-diagnostic.mjs';
 import {buildWorkersAiRequest,requestWorkersAiEditorial,workersAiRunUrl,workersAiFailureDiagnostic,
-  DEFAULT_CLOUDFLARE_AI_MODEL} from './free/workers-ai.mjs';
+  DEFAULT_CLOUDFLARE_AI_MODEL,FREE_REASONING_WRITER_MODEL} from './free/workers-ai.mjs';
 const sha=x=>createHash('sha256').update(x).digest('hex'),fail=code=>Object.assign(new Error(code),{code});
 const issued=new WeakSet();
 export const SPAN_CALIBRATION_LIMITS=Object.freeze({requests:8,tokensPerRequest:600,outputTokens:4800});
+export const SPAN_CALIBRATION_PROFILES=Object.freeze({
+  baseline:Object.freeze({model:DEFAULT_CLOUDFLARE_AI_MODEL,...SPAN_CALIBRATION_LIMITS,timeoutMs:30000}),
+  reasoning:Object.freeze({model:FREE_REASONING_WRITER_MODEL,requests:8,tokensPerRequest:2400,outputTokens:19200,timeoutMs:90000}),
+});
 export const SPAN_CALIBRATION_PIN='c7a74593f9b8e5d4714f6122029a4f5a15f93f9c7d4647a6aac287ddb7a7b94d';
-export function prepareSpanCalibration(){
+export function prepareSpanCalibration(profile='baseline'){
+  if(typeof profile!=='string'||!Object.hasOwn(SPAN_CALIBRATION_PROFILES,profile))throw fail('SPAN_CALIBRATION_PROFILE');
   if(SPAN_SOURCE_CONTROLS.length!==8||SPAN_SOURCE_CONTROLSET_SHA256!==SPAN_CALIBRATION_PIN)throw fail('SPAN_CALIBRATION_CASES');
   const views=Object.freeze(SPAN_SOURCE_CONTROLS.map(c=>buildSpanSourceReview(c.input)));
   for(const [i,v]of views.entries())if(v.data.spans.length!==SPAN_SOURCE_CONTROLS[i].expectedVerdicts.length)throw fail('SPAN_CALIBRATION_LABELS');
-  const plan=Object.freeze({corpusSha256:SPAN_SOURCE_CONTROLSET_SHA256,views});issued.add(plan);return plan;
+  const plan=Object.freeze({corpusSha256:SPAN_SOURCE_CONTROLSET_SHA256,views,profile,limits:SPAN_CALIBRATION_PROFILES[profile]});issued.add(plan);return plan;
 }
 export function assertSpanCalibrationAuthority(env){
   if(env.GITHUB_REPOSITORY!=='itworksinprod/first-fold'||env.GITHUB_REF!=='refs/heads/main'||
@@ -26,27 +31,30 @@ export function assertSpanCalibrationAuthority(env){
 export async function runSpanCalibration({plan,publicKey,accountId,apiToken,now=new Date(),
   aiRequestImpl=requestWorkersAiEditorial,fetchImpl=fetch,sealImpl=sealDiagnostic}){
   if(!issued.has(plan))throw fail('SPAN_CALIBRATION_PLAN');diagnosticPublicKey(publicKey);
+  const limits=plan.limits;
   const capture={purpose:'synthetic-span-source-calibration-awaiting-independent-review',capturedAt:now.toISOString(),
     corpusSha256:plan.corpusSha256,contract:SPAN_SOURCE_CONTRACT,calls:[],cases:[],emailSent:false,
     independentReview:'required-not-performed-by-this-workflow',controls:SPAN_SOURCE_CONTROLS};
+  // Preserve the baseline capture/report shape. This metadata is not model input.
+  if(plan.profile!=='baseline')capture.comparisonProfile={name:plan.profile,...limits};
   let networkRequests=0,outputBudget=0,code=null;
   try{
     for(const [i,view]of plan.views.entries()){
-      const model=DEFAULT_CLOUDFLARE_AI_MODEL,prompt=`${view.prompt}\nJSON schema: ${JSON.stringify(view.schema)}`;
+      const model=limits.model,prompt=`${view.prompt}\nJSON schema: ${JSON.stringify(view.schema)}`;
       const options={model,messages:[{role:'system',content:prompt},{role:'user',content:JSON.stringify(view.data)}],
-        schema:view.schema,responseFormat:'json_object',maxTokens:600,maxAttempts:1,temperature:0.1,
-        timeoutMs:30000,maxRequestBytes:70000,maxResponseBytes:100000};
-      if(capture.calls.length>=8||outputBudget+600>4800)throw fail('SPAN_CALIBRATION_BUDGET');
+        schema:view.schema,responseFormat:'json_object',maxTokens:limits.tokensPerRequest,maxAttempts:1,temperature:0.1,
+        timeoutMs:limits.timeoutMs,maxRequestBytes:70000,maxResponseBytes:100000};
+      if(capture.calls.length>=limits.requests||outputBudget+limits.tokensPerRequest>limits.outputTokens)throw fail('SPAN_CALIBRATION_BUDGET');
       const {body}=buildWorkersAiRequest(options),bodyText=JSON.stringify(body),endpoint=workersAiRunUrl(accountId,model);
       const requestSha256=sha(JSON.stringify({provider:'cloudflare-workers-ai',model,body}));
       const call={caseId:SPAN_SOURCE_CONTROLS[i].id,request:view.data,promptSha256:sha(prompt),requestSha256};
-      capture.calls.push(call);outputBudget+=600;
+      capture.calls.push(call);outputBudget+=limits.tokensPerRequest;
       let attempts=0,active=true,violation=false,result;
       try{
         result=await aiRequestImpl({...options,accountId,apiToken,
           validatePayload:x=>Boolean(x&&typeof x==='object'&&!Array.isArray(x)),
           fetchImpl:async(url,init)=>{
-            if(!active||violation||url!==endpoint||init?.method!=='POST'||init.redirect!=='error'||init.body!==bodyText||attempts>=1||networkRequests>=8){
+            if(!active||violation||url!==endpoint||init?.method!=='POST'||init.redirect!=='error'||init.body!==bodyText||attempts>=1||networkRequests>=limits.requests){
               violation=true;throw fail('SPAN_CALIBRATION_NETWORK');}
             attempts++;networkRequests++;return fetchImpl(url,init);
           }});
@@ -74,7 +82,8 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
     const [command,...args]=process.argv.slice(2);
     if(!((command==='validate'&&args.length===0)||(command==='run'&&args.length===1&&process.env.RUNNER_TEMP&&
       resolve(args[0])===resolve(process.env.RUNNER_TEMP,'span-source-calibration.encrypted.json'))))throw fail('SPAN_CALIBRATION_ARGUMENTS');
-    assertSpanCalibrationAuthority(process.env);diagnosticPublicKey(process.env.DIAGNOSTIC_PUBLIC_KEY);const plan=prepareSpanCalibration();
+    assertSpanCalibrationAuthority(process.env);diagnosticPublicKey(process.env.DIAGNOSTIC_PUBLIC_KEY);
+    const plan=prepareSpanCalibration(process.env.SPAN_CALIBRATION_PROFILE??'baseline');
     if(command==='run'){
       const {report,sealed}=await runSpanCalibration({plan,publicKey:process.env.DIAGNOSTIC_PUBLIC_KEY,
         accountId:process.env.CLOUDFLARE_ACCOUNT_ID,apiToken:process.env.CLOUDFLARE_AI_API_TOKEN});
