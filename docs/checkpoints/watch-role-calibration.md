@@ -1,8 +1,8 @@
 # Question-role calibration checkpoint
 
-Status: offline contract/control checkpoint complete; the indexed-span live
-trial decoded case A but failed its semantic/role score, then stopped on case B's
-citation shape. No reviewer qualification or Step 3 article acceptance.
+Status: offline contracts pass tests, but v3 still failed semantic/role scoring
+and then a structural check. Prompt/response-representation variants are stopped
+pending a structural design assessment. No reviewer qualification or Step 3 article acceptance.
 This separate candidate does not replace the existing factual checks.
 
 ## Scope and predeclared distinction
@@ -300,3 +300,41 @@ It verified the unchanged questions/sources/word inventories/gold labels, strict
 role/check binding, no result upgrade, distinct raw support targets, and preserved
 transport/citation/coverage guards. This clears one bounded synthetic calibration
 after publication, not article or general reviewer qualification.
+
+## V3 live result — outcome confusion and meaning drift persist
+
+[Run 36521522135](https://github.com/itworksinprod/first-fold/actions/runs/36521522135)
+used verified main `6eac0389c948d84ee395bb1eae5317e53c7d9188`. Three
+single-attempt model/network calls used a 7,200 requested-output-token ceiling.
+A and B decoded, but neither passed its fixed score. C stopped with `REASON_TEXT`
+under `ROLE_CALIBRATION_RESPONSE_INVALID`. Its invalid payload was omitted, so
+the precise reason-text defect and any semantic judgment are unknown.
+
+Artifact `11012423242`, 13,751 bytes, ZIP SHA-256
+`2d7f260c07f6b2eb5c72a859497a177ee06913dab88233c76dcd0213cd1baef8`;
+capture SHA-256
+`0dca3f34f907627da42ce9a56b7fc75f8374bacae79bc3407accd8cd4d5ac5c7`.
+All three request hashes and the two retained raw/decoded responses were verified
+locally. C's omission prevents a full three-response replay. No retry, research,
+writer, article integration or email followed.
+
+A reported a positive boolean but omitted hypothetical-control findings and
+introduced an exclusive required-condition-only baseline in `unknownAnswer`.
+B again treated an unchanged outcome as a factual result requiring evidence,
+rather than an open answer. Its support target itself contained that outcome,
+despite the explicit check name. Its shared-task control was not covered.
+Typed fields did not prevent semantic misinterpretation. These failures remain
+recorded; no result, role label or expected answer is repaired after the fact.
+
+Further prompt-only or field-renaming variants are stopped. Assess a structurally
+different source-checked, constrained-composition design before any new call.
+That assessment does not qualify this reviewer or authorize bypassing an existing
+article hold. Step 3's current closure criteria remain unmet.
+
+Independent review agrees with the A/B interpretation and C's diagnostic limit.
+It recommends [a new assisted method](watch-assisted-verification-proposal.md),
+not another prompt/field variant. That method must check complete assertions and
+relationships, preserve all retained article checks, constrain the hypothetical
+comparison, and require independent review of the entire question. Changing the
+existing acceptance gate requires explicit user approval. Offline planning is
+not article approval or provider authorization.

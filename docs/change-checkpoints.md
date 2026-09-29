@@ -55,8 +55,14 @@ review without changing requests or acceptance. Its live run 36520110639 identif
 `ANCHOR_MEMBERSHIP` on the first response, with zero cases scored. A new indexed
 word-span representation preserved exact question/source binding, but live run
 36520783612 returned a wrong answer-absence rejection on A and invalid citations
-on B. An explicit role-specific support-target contract now addresses that
-ambiguity offline; 1,729 local tests pass, but it is not yet live-qualified.
+on B. The explicit role-specific support-target contract passed 1,729 local tests,
+but live run 36521522135 still failed A/B's semantic/role scores, then stopped on
+C's reason-text shape. Further prompt/representation variants are stopped pending
+a structurally different design assessment. No reviewer is live-qualified.
+The [assisted verification proposal](checkpoints/watch-assisted-verification-proposal.md)
+separates source-backed ingredients/relationships from editorial comparison
+stipulations, followed by mandatory independent exact-text review. It needs
+explicit approval to change the acceptance method before live integration.
 This is not another writer prompt.
 No daily integration, source/reviewer gate, billing or delivery
 change was made. Require the bounded live test and exact independent review before
