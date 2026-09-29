@@ -1,9 +1,10 @@
 # Step 3 — assisted verification proposal
 
-Status: **Carlos explicitly approved the acceptance-method change on September
-29, 2026**. The separate opt-in implementation passes 1,761 local tests and
-independent preflight, but its first live trial held at the ingredient review.
-No article approval yet.
+Status: **the exact saved assisted sample passed Step 3 on September 29, 2026**.
+See the [completion receipt](meaningful-watch-accepted-2026-09-29.md). Carlos
+explicitly approved the method change; v1 held, while v2 passed the bounded live
+trial and independent full-text review. Historical planning and failed results
+below remain evidence, not general or daily-production qualification.
 
 ## Why a different method is proposed
 
@@ -182,3 +183,7 @@ explicit same-path/additional-goal/path-length relationships, mandatory editoria
 checks, exact old-capture replay, candidate identity and all four retained views.
 No real provider call was made during preflight; live and whole-text approval
 remain outstanding.
+
+The subsequent v2 live run 36556059384 and independent exact-text review both
+passed. The linked completion receipt records the immutable artifacts, complete
+manual evidence map, seven editorial checks and deliberately narrow acceptance.

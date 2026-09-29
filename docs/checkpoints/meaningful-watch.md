@@ -1,7 +1,14 @@
 # Step 3 — meaningful watch question
 
-Status: article experiment remains held; no watch addition is editorially
-accepted. After the daily allocation block cleared, the hypothetical-form repair
+Status: **PASS for the exact saved assisted sample** under the explicitly
+approved replacement method. See the [September 29 completion receipt](meaningful-watch-accepted-2026-09-29.md)
+for live evidence, independent approval and limits. This is not daily-production
+or general reviewer qualification. Earlier held attempts below remain unchanged.
+
+## Historical trajectory before the accepted assisted result
+
+The article experiment remained held through the trials below. After the daily
+allocation block cleared, the hypothetical-form repair
 passed a live automated test but failed independent usefulness review: its new
 question repeated the existing capability explanation. The next writer-only
 contrast trial was correctly stopped for assurance wording before any source
@@ -31,10 +38,9 @@ A introduced an exclusive baseline, B still checked the unanswered outcome, and
 C failed a reason-text gate. These reviewer variants remain unqualified; a
 structural design assessment is needed before further provider trials.
 Carlos explicitly approved the [assisted-verification alternative](watch-assisted-verification-proposal.md)
-on September 29. Its isolated implementation is locally tested and awaits
-independent preflight and a bounded live attempt; it does not override the old
-failed checks or approve the article.
-No new article result followed. See the
+on September 29. Its v1 live result held; the separately reviewed v2 result later
+passed live and exact independent review as recorded in the completion receipt.
+That acceptance does not override the old failed checks. See the
 chronological trials below; earlier budgets/counts describe those revisions.
 This isolated saved-article experiment follows the accepted Step 2 receipt. No
 fresh research, daily integration, email, recipient, schedule or billing changes.

@@ -19,8 +19,19 @@ article**, after live checks and independent full-text review on September 27,
 Step 2 ([useful significance](checkpoints/useful-significance-accepted-2026-09-27.md))
 also passes for the exact saved sample: 179 words, one new problem-context
 sentence, all earlier text unchanged, live-tested and independently reviewed.
-Step 3 ([meaningful watch question](checkpoints/meaningful-watch.md)) has a
-published, locally tested repair but no accepted live article result. After free
+Step 3 ([meaningful watch question](checkpoints/meaningful-watch-accepted-2026-09-29.md))
+**also passes for this exact saved assisted sample**, September 29: 210 body
+words, a 27-word question plus its label, all prior text/headline/order unchanged.
+The explicitly approved assisted method passed live run 36556059384, exact local
+replay and independent whole-article review of all seven editorial checks.
+The revision passed 1,764 tests; no research, email, paid fallback or daily change.
+The next separate checkpoint is a different article without custom prompt fixes.
+This result does not establish autonomous writer/reviewer or production readiness.
+
+### Prior Step 3 status notes — retained historical evidence
+
+Before that acceptance, Step 3 had a published, locally tested repair but no
+accepted live article result. After free
 capacity returned, run 36506646683 passed automated checks but independent review
 held its question for repeating the existing article. The next writer-only change
 permits a hypothetical same-task contrast of a source-supported optional goal;
