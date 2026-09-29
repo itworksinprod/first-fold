@@ -40,7 +40,7 @@ against each predeclared distinction. Passing labels alone is insufficient.
 Corpus SHA-256, including predeclared segment labels:
 `c7a74593f9b8e5d4714f6122029a4f5a15f93f9c7d4647a6aac287ddb7a7b94d`.
 
-Prompt SHA-256:
+First live (v1) prompt SHA-256:
 `15926a4c97b5ba241fa2511290d44841f236a5b0e7abfe516e308f4ffb89efcf`.
 
 The previously held real article remains byte-identical and unapproved. These
@@ -126,3 +126,27 @@ identify the actual unsupported guarantee, causal link, continued closed-door
 operation and widened measurement scope. The three misses above are genuine
 semantic errors, not merely scoring artifacts. The result remains frozen and
 held. No post-result retry or article trial occurred.
+
+## Narrow v2 clarification — local only
+
+The independent reviewer recommended three generic distinctions, now implemented
+locally: exact matching applies to evidence quotes rather than candidate prose;
+conjunction/chronology alone do not assert causation; and a neighboring unsupported
+assertion must not automatically invalidate a separately supported segment.
+Full-sentence interpretation, actual causal evidence requirements, source scopes,
+quote membership and uncertainty holds are unchanged. No example, expected
+answer, publisher detail or corrected article prose enters the prompt.
+
+Contract `lossless-contextual-span-source-v2` binds a distinct request hash so
+v1 verdicts cannot be replayed as v2 judgments. The new prompt SHA-256 is
+`ef268f860df247fb96d97dc21f2372d623e40e210ca8023af3044b5c0ef1af61`.
+Controls, labels, segmentation, response schema, model and eight-call/4,800-token
+ceiling remain fixed. Another attempt would be reused development calibration,
+not a fresh holdout or an independent reliability measurement. The v1 artifact
+and failed verdicts remain unchanged. This revision is not yet published or
+live-tested; no additional provider attempt has occurred.
+All 1,829 local tests pass. Independent preflight reran the 35 focused tests and
+found no weakening of source support or insertion of a case-specific answer.
+It cleared this revision for one later authorized bounded calibration, not
+article integration. Replaying the v1 artifact requires its recorded c9741ed
+code revision; the intentionally distinct v2 hashes cannot validate v1 responses.

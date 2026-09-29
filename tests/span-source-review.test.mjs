@@ -15,7 +15,7 @@ test('all eight controls are balanced, frozen and stripped of expected labels be
   assert.equal(controls.length,8);assert.equal(controls.filter(c=>c.expectedSupported).length,4);
   assert.equal(SPAN_SOURCE_CONTROLSET_SHA256,sha(JSON.stringify(controls)));
   assert.equal(SPAN_SOURCE_CONTROLSET_SHA256,'c7a74593f9b8e5d4714f6122029a4f5a15f93f9c7d4647a6aac287ddb7a7b94d');
-  assert.equal(sha(SPAN_SOURCE_PROMPT),'15926a4c97b5ba241fa2511290d44841f236a5b0e7abfe516e308f4ffb89efcf');
+  assert.equal(sha(SPAN_SOURCE_PROMPT),'ef268f860df247fb96d97dc21f2372d623e40e210ca8023af3044b5c0ef1af61');
   freezeCheck(controls);
   for(const c of controls){const v=build(c.input);freezeCheck(v);
     assert.equal(v.prompt,SPAN_SOURCE_PROMPT);assert.equal(v.data.policy,SPAN_SOURCE_CONTRACT);
@@ -27,6 +27,16 @@ test('all eight controls are balanced, frozen and stripped of expected labels be
   }
   assert.equal(splitReviewSpans(controls[1].input.text).length,1,'unpunctuated counterexample cannot rely on splitting');
   assert.doesNotMatch(SPAN_SOURCE_PROMPT,/GitHub|runner|Bellweather|museum|Oak Hall/);
+});
+test('v2 clarifies entailment without changing controls or accepting a v1 verdict hash',()=>{
+  assert.equal(SPAN_SOURCE_CONTRACT,'lossless-contextual-span-source-v2');
+  assert.match(SPAN_SOURCE_PROMPT,/Exact copying is required for evidence quotes, not for the candidate wording/);
+  assert.match(SPAN_SOURCE_PROMPT,/does not by itself assert that one caused the other/);
+  assert.match(SPAN_SOURCE_PROMPT,/does not automatically contradict a separately supported contribution/);
+  assert.match(SPAN_SOURCE_PROMPT,/Only supported passes/);
+  const v=build(controls[0].input),r=mock(v),{reviewSha256,...data}=v.data;
+  r.reviewSha256=sha(JSON.stringify({...data,policy:'lossless-contextual-span-source-v1'}));
+  assert.notEqual(r.reviewSha256,reviewSha256);assert.deepEqual(validate(r,v),invalid);
 });
 test('host spans preserve every byte, connective, date, negation and Unicode character',()=>{
   for(const sentence of [controls[0].input.text,...controls.map(c=>c.input.text),

@@ -63,6 +63,11 @@ matches: all four bad sentences were rejected, but two faithful sentences were
 also rejected and one negative contained an extra wrong segment verdict. Exact
 offline replay passed. The held article, writer prompt and daily workflow are
 unchanged; structural coverage is not a claim of semantic correctness.
+Independent result review confirmed those misses. A local-only v2 clarification
+distinguishes conjunction from causation, faithful paraphrase from exact source
+quotes, and each segment's contribution from a neighboring error. The corpus,
+labels, schema and request budget are unchanged. All 1,829 local tests and an
+independent preflight pass. This revision has not been published or live-qualified.
 
 ### Prior Step 3 status notes — retained historical evidence
 
