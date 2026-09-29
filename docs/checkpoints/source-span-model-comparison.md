@@ -234,3 +234,33 @@ labels, prompt, schema and gates frozen. Seek execution approval and check free
 capacity before dispatch; no such additional trial is run here. Even a full pass
 would establish only this reused development calibration, not unseen accuracy,
 article approval or daily-production readiness.
+
+## Uniform eight-case follow-up — predeclared September 29
+
+Carlos's "go" authorizes one uniform run after the successful SC05 probe. The
+new closed `reasoning-uniform` profile selects all eight frozen controls in the
+original order. It keeps GPT-OSS-120B, v2 prompt, inputs, evidence, schema,
+temperature, expected labels, scoring and the 90-second request timeout fixed.
+Only the full comparison's output allowance changes: 4,800 per request,
+**eight requests maximum / 38,400 requested output tokens maximum**, 15-minute
+workflow limit, one attempt per case. Existing profiles stay unchanged.
+
+No retry, repair, prompt customization, fallback, paid service, article or email
+is part of this experiment. Provider refusal, truncation, malformed output or
+provenance failure stops the run. Valid semantic mismatches are retained as
+failures while remaining fixed cases run. Every exact span verdict must match;
+each explanation and quote still requires independent review. Even 8/8 would
+only pass reused development controls, not unseen generalization or real-news
+readiness. Earlier mixed-budget results are never merged into this result.
+
+Completion follows the established workflow: local tests, independent preflight,
+trusted-main publication, recent read-only Free plan/capacity verification, one
+dispatch with a fresh local private key, artifact identity/hash verification,
+offline exact-request/parsed-response replay and independent exact-output review.
+Local and live results will be recorded below; none are assumed from SC05 alone.
+
+Preflight: all 1,891 local tests passed, including 185 workflow-selected tests
+independently rerun. Independent diff review found no blockers and confirmed that
+existing profiles and acceptance gates remain unchanged. Read-only inspection
+before dispatch confirmed Workers Free Active, no payment method on file, and
+5.82k/10k displayed daily usage (a rounded observation, not test consumption).

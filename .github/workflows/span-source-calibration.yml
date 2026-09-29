@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       profile:
-        description: Fixed profiles; reasoning-sc05 is ONE SC05 call with a 4800-token cap, not full calibration
+        description: Fixed profiles; reasoning-uniform is eight calls at 4800 tokens each; reasoning-sc05 is one case
         required: true
         type: choice
         default: baseline
@@ -11,6 +11,7 @@ on:
           - baseline
           - reasoning
           - reasoning-sc05
+          - reasoning-uniform
       public_key:
         description: Ephemeral RSA-3072 public key in base64 DER format (never a private key)
         required: true
@@ -23,7 +24,7 @@ jobs:
   calibration:
     if: github.repository == 'itworksinprod/first-fold' && github.ref == 'refs/heads/main' && github.actor == 'itworksinprod' && github.run_attempt == 1
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ inputs.profile == 'reasoning' && 15 || 8 }}
+    timeout-minutes: ${{ (inputs.profile == 'reasoning' || inputs.profile == 'reasoning-uniform') && 15 || 8 }}
     env:
       SPAN_CALIBRATION_PROFILE: ${{ inputs.profile }}
     permissions:

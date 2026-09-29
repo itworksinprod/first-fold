@@ -15,6 +15,7 @@ export const SPAN_CALIBRATION_PROFILES=Object.freeze({
   baseline:Object.freeze({model:DEFAULT_CLOUDFLARE_AI_MODEL,...SPAN_CALIBRATION_LIMITS,timeoutMs:30000}),
   reasoning:Object.freeze({model:FREE_REASONING_WRITER_MODEL,requests:8,tokensPerRequest:2400,outputTokens:19200,timeoutMs:90000}),
   'reasoning-sc05':Object.freeze({model:FREE_REASONING_WRITER_MODEL,requests:1,tokensPerRequest:4800,outputTokens:4800,timeoutMs:90000}),
+  'reasoning-uniform':Object.freeze({model:FREE_REASONING_WRITER_MODEL,requests:8,tokensPerRequest:4800,outputTokens:38400,timeoutMs:90000}),
 });
 export const SPAN_CALIBRATION_PIN='c7a74593f9b8e5d4714f6122029a4f5a15f93f9c7d4647a6aac287ddb7a7b94d';
 export function prepareSpanCalibration(profile='baseline'){

@@ -94,9 +94,9 @@ test('manual workflow carries no delivery or article secrets and retains only en
   assert.doesNotMatch(y,/schedule:|pull_request:|RESEND|OPENAI|FIRST_FOLD_ARTICLE|contents: write/);
   assert.match(y,/cancel-in-progress: false/);assert.match(y,/persist-credentials: false/);
   assert.match(y,/retention-days: 1/);assert.match(y,/span-source-calibration\.encrypted\.json/);
-  assert.ok(y.includes("timeout-minutes: ${{ inputs.profile == 'reasoning' && 15 || 8 }}"));
+  assert.ok(y.includes("timeout-minutes: ${{ (inputs.profile == 'reasoning' || inputs.profile == 'reasoning-uniform') && 15 || 8 }}"));
   assert.match(y,/SPAN_CALIBRATION_PROFILE: \$\{\{ inputs.profile \}\}/);
-  assert.match(y,/default: baseline\s+options:\s+- baseline\s+- reasoning\s+- reasoning-sc05/);
+  assert.match(y,/default: baseline\s+options:\s+- baseline\s+- reasoning\s+- reasoning-sc05\s+- reasoning-uniform/);
   assert.deepEqual([...y.matchAll(/secrets\.(\w+)/g)].map(m=>m[1]),['CLOUDFLARE_AI_API_TOKEN']);
 });
 test('SC05 feasibility is one frozen case with only its output allowance changed',async()=>{
@@ -148,16 +148,32 @@ test('reasoning comparison changes only declared model and resources, retains al
     assert.notEqual(c.calls[i].requestSha256,baseline.result.sealed.calls[i].requestSha256);
   }
 });
-for(const failure of ['quota','transport','truncation','skip','quote','hash','provider','model','attempt','response-hash','accessor','url','method','body','redirect','retry','no-network','profile-downgrade']){
-  test(`reasoning ${failure} stops without a retry, fallback or budget growth`,async()=>{
-    const {result,calls}=await run(failure,1,false,'reasoning');
+for(const profile of ['reasoning','reasoning-uniform'])for(const failure of ['quota','transport','truncation','skip','quote','hash','provider','model','attempt','response-hash','accessor','url','method','body','redirect','retry','no-network','profile-downgrade']){
+  test(`${profile} ${failure} stops without a retry, fallback or budget growth`,async()=>{
+    const {result,calls}=await run(failure,1,false,profile);
     assert.equal(calls.length,2);assert.equal(result.report.status,'failed');assert.equal(result.report.casesCompleted,1);
-    assert.equal(result.report.outputBudget,4800);
+    assert.equal(result.report.outputBudget,2*SPAN_CALIBRATION_PROFILES[profile].tokensPerRequest);
   });
 }
-test('reasoning mismatches and uncertainty cannot weaken scoring',async()=>{
+for(const profile of ['reasoning','reasoning-uniform'])test(`${profile} mismatches and uncertainty cannot weaken scoring`,async()=>{
   for(const failure of ['wrong-label','uncertain']){
-    const {result,calls}=await run(failure,1,false,'reasoning');
+    const {result,calls}=await run(failure,1,false,profile);
     assert.equal(calls.length,8);assert.equal(result.report.casesPassed,7);assert.equal(result.report.code,'SPAN_CALIBRATION_MISMATCH');
+  }
+});
+test('uniform reasoning uses all eight frozen cases, changing only the per-call output cap',async()=>{
+  const plan=prepareSpanCalibration('reasoning-uniform'),previous=prepareSpanCalibration('reasoning');
+  assert.deepEqual(plan.views,previous.views);assert.deepEqual(plan.controls,controls);
+  assert.equal(plan.corpusSha256,previous.corpusSha256);assert.ok(Object.isFrozen(plan.limits));
+  assert.deepEqual(plan.limits,{...previous.limits,tokensPerRequest:4800,outputTokens:38400});
+  const before=await run(undefined,0,false,'reasoning'),after=await run(undefined,0,true,'reasoning-uniform');
+  const c=openDiagnostic(after.result.sealed,pair.privateKey);
+  assert.equal(after.calls.length,8);assert.equal(after.network.length,8);assert.equal(after.result.report.outputBudget,38400);
+  assert.equal(after.result.report.casesPassed,8);assert.equal(after.result.report.status,'controls-passed-awaiting-independent-review');
+  assert.deepEqual(c.controls,controls);assert.deepEqual(c.comparisonProfile,{name:'reasoning-uniform',...plan.limits});
+  for(const [i,request]of after.calls.entries()){
+    const a=buildWorkersAiRequest(request),b=buildWorkersAiRequest(before.calls[i]);
+    assert.deepEqual({...a.body,max_tokens:2400},b.body);assert.equal(a.model,b.model);
+    assert.equal(c.calls[i].promptSha256,before.result.sealed.calls[i].promptSha256);
   }
 });

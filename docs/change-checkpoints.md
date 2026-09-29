@@ -107,6 +107,12 @@ calibration, unseen generalization and article approval are not. The next propos
 step is a separately approved full set at one consistent cap, not aggregation of
 the mixed-budget results. No additional trial, email or production change occurred.
 
+Carlos then said "go" to that uniform eight-case test. Its fixed profile is now
+under preflight: all eight original controls, 4,800 requested output tokens per
+call / 38,400 maximum, one attempt each, same model and 90-second timeout, with
+all prompts, evidence and checks unchanged. This new result will stand alone;
+the earlier subsets cannot qualify it. No article or daily integration is included.
+
 ### Prior Step 3 status notes — retained historical evidence
 
 Before that acceptance, Step 3 had a published, locally tested repair but no
