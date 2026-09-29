@@ -99,9 +99,13 @@ resource-feasibility check, not article qualification or daily-delivery promotio
 Carlos then authorized that one-case follow-up. The fixed `reasoning-sc05` profile
 is built locally: one SC05 request, 4,800 output tokens, unchanged model/prompt/
 input/schema/90-second timeout and acceptance. All 1,871 tests pass. Independent
-preflight cleared the diff and 165 selected tests; one live result is pending.
-Even success would establish only
-this case's feasibility, not complete calibration or article approval.
+preflight cleared the diff and 165 selected tests. Run 36622634221 on `90f5922`
+completed one request with all three SC05 judgments correct. Exact offline
+request/parsed-response replay and independent semantic review passed. This
+one-case resource-feasibility checkpoint is complete; the uniform eight-case
+calibration, unseen generalization and article approval are not. The next proposed
+step is a separately approved full set at one consistent cap, not aggregation of
+the mixed-budget results. No additional trial, email or production change occurred.
 
 ### Prior Step 3 status notes — retained historical evidence
 

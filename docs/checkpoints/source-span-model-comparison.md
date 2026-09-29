@@ -1,10 +1,11 @@
 # Frozen-contract source-span reviewer comparison
 
-Status: published and live-tested once; **HOLD — incomplete calibration**.
-Four cases were correct, then the fifth reached the output-token limit. The
-remaining three were not attempted. There is no article approval or full-set pass.
-Carlos's "go" authorized this comparison following the independently held v2
-run; the bounded attempt is complete and no follow-up trial has been started.
+Status: **overall calibration remains incomplete**. The first comparison returned
+four correct cases, then stopped at SC05's output cap. A separately authorized
+single-case follow-up now **passes for SC05 resource feasibility**, including
+independent exact-output review. SC06–SC08 remain unattempted under this model.
+There is no article approval or uniform full-set pass. Both bounded attempts are
+complete; no further provider trial has been started.
 
 ## Question and fixed evidence
 
@@ -193,3 +194,43 @@ After publication, verify trusted main, use a fresh local encryption key, dispat
 once, verify the artifact identity and hash, and replay the saved request/parsed
 response offline. Independent review must assess all three exact span judgments
 and evidence. No article, email, fresh research or daily integration is authorized.
+
+### Live one-case result
+
+Published setup: `90f5922d08f0b12d0ac5d2af4dadd72cc9b18b29`.
+[Run 36622634221](https://github.com/itworksinprod/first-fold/actions/runs/36622634221)
+completed successfully on that trusted main revision and first owner-dispatched
+attempt. All 165 workflow-selected tests and input validation passed. The run
+made exactly one model/network request, with a 4,800 requested-output-token
+ceiling (not a measurement of tokens consumed). SC05 completed with the expected
+three supported span judgments. No retry, article, search or email occurred.
+
+Verified artifact `11058467406`: 4,230 ZIP bytes, SHA-256
+`5e41516735fba80fdb8a7d3bc66a7895f4c37f299f1fbc7a497865471979d15c`.
+Decrypted capture SHA-256:
+`07024400e843dcb51766c50387f382c5be0290cf5cf1b46ed8b444e2759c16a6`.
+The run identity, revision, actor, attempt and artifact were checked before
+decryption. Exact local request comparison against the previous failed SC05
+confirmed `max_tokens: 2400 -> 4800` was the only request change. Offline replay
+reproduced the saved parsed response, validation, case result and report with no
+real network calls. This is not a claim to replay original provider HTTP bytes.
+The historical eight-case Llama v2 capture was also replayed offline under the
+new runner, reproducing all prior decisions and its unchanged failed report.
+
+Independent exact-output review: **PASS for this one resource probe**. T1
+preserves the demonstration-time restriction; T2 retains "only while" rather
+than weakening the door-open condition; T3 correctly resolves "it" to the bell
+and preserves the consequence of closing the door. Every quote is an exact,
+relevant source substring. No matched label masks faulty reasoning.
+
+This demonstrates completion once at the larger cap, not that all cases will
+fit it. Overall calibration is incomplete, with SC06–SC08 still unobserved under
+the reasoning-model comparison. Do not combine this result with earlier
+different-budget subsets into a claimed eight-case pass.
+
+Next recommendation: predeclare and preflight a uniform eight-case run at the
+4,800-token per-call cap (38,400 total requested ceiling), keeping all inputs,
+labels, prompt, schema and gates frozen. Seek execution approval and check free
+capacity before dispatch; no such additional trial is run here. Even a full pass
+would establish only this reused development calibration, not unseen accuracy,
+article approval or daily-production readiness.
