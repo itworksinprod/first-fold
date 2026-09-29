@@ -1,4 +1,4 @@
-// Offline-only candidate contract. No provider, workflow, article or send wiring.
+// Pure candidate contract; only the opt-in synthetic calibration may invoke it.
 // Exact anchors bind wording, not semantic correctness or complete premise coverage.
 import {createHash} from 'node:crypto';
 

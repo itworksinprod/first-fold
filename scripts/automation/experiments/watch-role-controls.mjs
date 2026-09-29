@@ -1,4 +1,4 @@
-// Predeclared fictional cases, offline only. Labels/decisive anchors stay host-side.
+// Predeclared fictional cases for isolated calibration. Labels/decisive anchors stay host-side.
 // Never use matches on this reused set as broad reviewer or article qualification.
 import {createHash} from 'node:crypto';
 import {buildWatchRoleReview, validateWatchRoleReview} from './watch-role-review.mjs';

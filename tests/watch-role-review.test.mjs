@@ -207,7 +207,7 @@ test('control views cannot be forged or scored against the wrong case', () => {
   assert.equal(scoreWatchRoleControl(a, view, malformed).observed, null);
 });
 
-test('offline experiment has no live workflow or automatic article/provider integration', async () => {
+test('role candidate is wired only to its opt-in synthetic calibration, never an article or daily path', async () => {
   const scripts = new URL('../scripts/automation/', import.meta.url);
   const workflows = new URL('../.github/workflows/', import.meta.url);
   async function checkTree(dir) {
@@ -216,6 +216,8 @@ test('offline experiment has no live workflow or automatic article/provider inte
       if (!entry.isFile()) continue;
       if (dir.href === new URL('experiments/', scripts).href &&
           ['watch-role-review.mjs', 'watch-role-controls.mjs'].includes(entry.name)) continue;
+      if (dir.href === scripts.href && entry.name === 'watch-role-calibration.mjs') continue;
+      if (dir.href === workflows.href && entry.name === 'watch-role-calibration.yml') continue;
       assert.doesNotMatch(await readFile(new URL(entry.name, dir), 'utf8'), /watch-role-(?:review|controls)/);
     }
   }

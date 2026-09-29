@@ -2,7 +2,7 @@
 
 Status: offline contract/control checkpoint complete after local tests and
 independent implementation review; not a successful model-quality result.
-No provider trial, live qualification or Step 3 article acceptance. This is a
+No provider result, live qualification or Step 3 article acceptance yet. This is a
 separate offline candidate, not a replacement of the existing factual checks.
 
 ## Scope and predeclared distinction
@@ -59,7 +59,7 @@ calibration set, not evidence of broad reviewer reliability or an unseen holdout
 
 ## Candidate contract and limits
 
-`experiments/watch-role-review.mjs` is pure offline code. It issues immutable,
+`experiments/watch-role-review.mjs` is pure request/validation code. It issues immutable,
 input-hashed request views and checks exact question echo, bounded reasons,
 neutral-answer-description shape, valid scoped citations, role enums, exact text
 anchors, source citations for true findings and duplicate/shape/accessor guards.
@@ -75,9 +75,9 @@ a model judgment awaiting independent exact-text review, never approval.
 The local tests use labeled structure-only mock responses to check parsing and
 scoring. Their passes are not successful model classifications. Existing article
 length, factual and meaning guards, saved drafts, source checks and live workflow
-requests remain unchanged. The new files are not imported by a production entry
-point or workflow. There is no network, credential, provider, writer, renderer,
-email, quota, billing or schedule integration in this checkpoint.
+requests remain unchanged. At offline closure, the new files were not imported by
+any live entry point or workflow. The subsequent opt-in synthetic harness below
+is separate; production article and delivery paths remain unchanged.
 
 ## Required evidence before advancing
 
@@ -106,3 +106,35 @@ model response was obtained or classified successfully here. Neither reviewer
 qualification nor Step 3 is complete. Next, separately define an isolated
 synthetic-only live harness and its bounded execution scope; do not jump directly
 to the saved article or add this reviewer to production.
+
+## Next opt-in live calibration — pre-results scope
+
+Following Carlos's request to test the frozen fictional examples, a separate
+`watch-role-calibration.yml` workflow uses only the existing Cloudflare account
+variable and Workers AI token. No article secrets or arbitrary source input exist.
+Only the owner may manually dispatch trusted main on attempt one. Tests, corpus
+pin verification and encryption-key validation precede provider credentials.
+
+Exactly eight single-attempt requests at most, in frozen A–H order, use the
+existing GPT-OSS-120B profile with 2,400 maximum output tokens and a 90-second
+timeout each. Ceiling: 19,200 requested output tokens, not actual consumption.
+The workflow allows 16 minutes for requests, setup and encrypted upload. It has
+no retry, probe, alternate model/provider, writer, research or delivery action.
+Existing account settings/billing are unchanged; free capacity is not guaranteed.
+
+A valid wrong verdict or wrong role is recorded while the remaining fixed cases
+run. Quota, transport, truncation, malformed response or provenance failure stops
+immediately. All eight verdicts and decisive role checks must match, followed by
+independent review of exact explanations and semantic coverage. A green workflow
+means only controls awaiting review, never an approved article or policy update.
+
+Each request, prompt and parsed response is bound to the frozen input and recorded
+only in a one-day encrypted artifact. Malformed payloads remain omitted, and a
+missing response prevents a full replay claim. No expected labels or role anchors
+are supplied to the model. The frozen corpus, prompt and schema are unchanged;
+only a separate execution wrapper and workflow are added.
+
+Preflight: all 1,713 repository tests and 159 independently run workflow/focused
+tests passed. Independent review verified all eight data/prompt/schema views are
+identical to the frozen offline revision and cleared the scoped implementation
+for one requested synthetic trial. This is execution readiness, not a live pass.
