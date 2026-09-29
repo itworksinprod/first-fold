@@ -63,11 +63,20 @@ matches: all four bad sentences were rejected, but two faithful sentences were
 also rejected and one negative contained an extra wrong segment verdict. Exact
 offline replay passed. The held article, writer prompt and daily workflow are
 unchanged; structural coverage is not a claim of semantic correctness.
-Independent result review confirmed those misses. A local-only v2 clarification
+Independent result review confirmed those misses. A v2 clarification
 distinguishes conjunction from causation, faithful paraphrase from exact source
 quotes, and each segment's contribution from a neighboring error. The corpus,
 labels, schema and request budget are unchanged. All 1,829 local tests and an
-independent preflight pass. This revision has not been published or live-qualified.
+independent preflight pass. After explicit approval, v2 was published at
+`180a46a` and tested once in run 36601205488. All 123 workflow-selected tests
+passed, but the live calibration remains **HOLD**: 6/8 exact case vectors,
+16/18 segment labels and 7/8 whole-sentence decisions. All four unsupported
+sentences were rejected; one valid sentence and one separately valid segment
+were still falsely rejected. Exact offline replay and independent full-output
+review confirm the result. This is not a provider or formatting failure.
+The reviewer recommends a separately authorized frozen-contract model/profile
+comparison, not another wording patch or article integration. No additional
+trial, email, billing change or daily-delivery change occurred.
 
 ### Prior Step 3 status notes — retained historical evidence
 

@@ -1,7 +1,8 @@
 # Source-span coverage calibration
 
-Status: published and live-tested once; calibration **HOLD**, with 5/8 exact
-per-segment matches. This does not repair or approve the held GitHub article.
+Status: v2 published and live-tested once; calibration **HOLD**, with 6/8 exact
+per-segment matches (v1 was 5/8). This does not repair or approve the held GitHub
+article. No further trial is authorized by this completed bounded attempt.
 
 ## Why a new contract
 
@@ -127,10 +128,10 @@ operation and widened measurement scope. The three misses above are genuine
 semantic errors, not merely scoring artifacts. The result remains frozen and
 held. No post-result retry or article trial occurred.
 
-## Narrow v2 clarification — local only
+## Narrow v2 clarification — published and live-tested
 
 The independent reviewer recommended three generic distinctions, now implemented
-locally: exact matching applies to evidence quotes rather than candidate prose;
+in v2: exact matching applies to evidence quotes rather than candidate prose;
 conjunction/chronology alone do not assert causation; and a neighboring unsupported
 assertion must not automatically invalidate a separately supported segment.
 Full-sentence interpretation, actual causal evidence requirements, source scopes,
@@ -143,10 +144,55 @@ v1 verdicts cannot be replayed as v2 judgments. The new prompt SHA-256 is
 Controls, labels, segmentation, response schema, model and eight-call/4,800-token
 ceiling remain fixed. Another attempt would be reused development calibration,
 not a fresh holdout or an independent reliability measurement. The v1 artifact
-and failed verdicts remain unchanged. This revision is not yet published or
-live-tested; no additional provider attempt has occurred.
+and failed verdicts remain unchanged. Carlos explicitly approved publishing this
+revision and one additional eight-case attempt; its result is recorded below.
 All 1,829 local tests pass. Independent preflight reran the 35 focused tests and
 found no weakening of source support or insertion of a case-specific answer.
 It cleared this revision for one later authorized bounded calibration, not
 article integration. Replaying the v1 artifact requires its recorded c9741ed
 code revision; the intentionally distinct v2 hashes cannot validate v1 responses.
+
+## Second live result — September 29, 2026
+
+[Run 36601205488](https://github.com/itworksinprod/first-fold/actions/runs/36601205488)
+used trusted main `180a46a1d55672cd7c2ddeb50f4fa975a9e63d33`, owner manual dispatch,
+attempt one. All 123 workflow-selected tests and input validation passed. The
+step **Check eight synthetic sentences without articles or delivery** failed
+with `SPAN_CALIBRATION_MISMATCH`: eight model/network requests completed with
+4,800 requested output tokens. Every response was structurally valid; no provider,
+quota, transport, malformed-response or truncation error occurred. No retry,
+writer, research or email request followed.
+
+Run identity, head, workflow, actor, attempt, artifact name and digest were
+verified before local decryption. Artifact `11049083780` was 21,368 ZIP bytes,
+SHA-256 `7b3a27014fe545c3aaf4226c0e829f05a90ff1062522f76ce3dad32bb629462a`.
+Saved capture SHA-256:
+`92f5c239ab98db3cd8bdefd5da85a65184c6a0d8d853a74faabbd6b5436e271c`.
+All eight exact requests and parsed responses replayed offline, reproducing the
+complete report and case results with zero real network calls. Original provider
+HTTP bytes were not independently replayed.
+
+Independent exact-output review inspected all eight sources, complete sentences,
+segments, explanations and quotes, and confirmed **HOLD**:
+
+- 6/8 exact per-case vectors, 16/18 individual segment labels and 7/8
+  whole-sentence decisions matched the unchanged expected labels.
+- All four unsupported sentences were held; three of four supported sentences
+  passed. SC07 now correctly resolves the faithful two-pilot-room paraphrase.
+- SC03 T2 still invents a causal claim from a conjunction of observations and
+  wrongly rejects it for missing causal evidence.
+- SC06 T2 still wrongly rejects the supported open-door clause beside the
+  correctly rejected claim of continued sounding after closure.
+- Some matched explanations are terse or ambiguous, but their decisive quotes
+  support the expected judgments. Independent review found no additional proven
+  semantic false positive among those matched cases. This small reused corpus
+  does not establish a general false-positive rate or production reliability.
+
+The result is frozen; original labels, scoring, source requirements, article text
+and production settings remain unchanged. The eight-case request ceiling is
+exhausted for this approval. The independent reviewer recommends a separately
+scoped model/profile comparison with the same frozen contract and controls,
+rather than another wording patch. No alternative was selected or called.
+Any such comparison needs its own free-quota/budget preflight and authorization;
+even a pass would still need a new holdout and separately bounded real-article
+qualification before production integration.
