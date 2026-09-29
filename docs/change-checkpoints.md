@@ -57,9 +57,12 @@ The next [source-span calibration](checkpoints/source-span-calibration.md) is
 implemented locally as a separate checker experiment. It requires a verdict and
 exact source evidence for every host-owned text segment in full sentence context.
 Eight balanced fictional controls and per-segment labels were declared before
-inference. All 1,828 local tests pass; independent preflight passed and live
-calibration remains pending. The held article, writer prompt and daily workflow
-are unchanged; structural coverage is not a claim of semantic correctness.
+inference. All 1,828 local tests and independent preflight passed. Live run
+36590877240 completed all eight checks but remains held at 5/8 exact segment
+matches: all four bad sentences were rejected, but two faithful sentences were
+also rejected and one negative contained an extra wrong segment verdict. Exact
+offline replay passed. The held article, writer prompt and daily workflow are
+unchanged; structural coverage is not a claim of semantic correctness.
 
 ### Prior Step 3 status notes — retained historical evidence
 

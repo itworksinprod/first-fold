@@ -1,7 +1,7 @@
 # Source-span coverage calibration
 
-Status: implemented and independently preflight-reviewed locally; live
-calibration pending. This does not repair or approve the held GitHub article.
+Status: published and live-tested once; calibration **HOLD**, with 5/8 exact
+per-segment matches. This does not repair or approve the held GitHub article.
 
 ## Why a new contract
 
@@ -87,3 +87,42 @@ Independent preflight reran all 122 workflow-selected tests and cleared the
 sparse-array repair, caps, authority and isolation. The final requested alignment
 advertises the validator's eight-character quote minimum in both schema and
 prompt; this changes no verdict or editorial threshold.
+
+## First live result — September 29, 2026
+
+[Run 36590877240](https://github.com/itworksinprod/first-fold/actions/runs/36590877240)
+used trusted main `c9741edcf0746dba94e49f7a7392e1a6d0963635`, owner manual dispatch,
+attempt one. All 122 workflow-selected tests and input validation passed.
+The step **Check eight synthetic sentences without articles or delivery** failed
+with `SPAN_CALIBRATION_MISMATCH`: eight requests completed, 4,800 requested
+output tokens, five cases matched every predeclared segment label. No provider,
+quota, transport, malformed-response or truncation error occurred. No email was
+sent and no article was generated or edited.
+
+Run identity, head, workflow, actor, attempt, artifact name and digest were
+verified before decrypting locally. Artifact `11043429591` was 21,285 ZIP bytes,
+SHA-256 `303eb6bfe0e6b1cacd08b78d478c0d842e81d33874694d8e1da1273d1dfbb39e`.
+Saved capture SHA-256:
+`6697173e0f84101a913f8d997543461705e6562002f2e34540ce7fb498a709f7`.
+All eight exact requests and parsed responses replayed offline, reproducing the
+complete score/report with zero real network calls. Original HTTP bytes were
+not independently replayed.
+
+All four unsupported whole sentences were held, but only two of the four
+supported sentences passed. Overall sentence labels were 6/8; stricter
+per-segment scoring remains 5/8 and has not been relaxed:
+
+- SC03: the reviewer treated a faithful conjunction of two observations as if
+  it claimed causation, despite no causal wording in the candidate.
+- SC06: it correctly rejected continued sounding after door closure, but also
+  rejected the independently supported open-door part of that sentence.
+- SC07: it rejected a faithful paraphrase of the two-room measurement scope
+  while quoting the source wording that supports the same scope.
+
+Independent review inspected every positive and negative explanation, retained
+the original labels and confirmed the hold: 5/8 exact case vectors, 15/18
+individual segment verdicts and 6/8 whole-sentence verdicts. The matched negatives
+identify the actual unsupported guarantee, causal link, continued closed-door
+operation and widened measurement scope. The three misses above are genuine
+semantic errors, not merely scoring artifacts. The result remains frozen and
+held. No post-result retry or article trial occurred.
