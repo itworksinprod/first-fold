@@ -1,9 +1,10 @@
 # Step 3 — meaningful watch question
 
 Status: article experiment remains held; no watch addition is editorially
-accepted. The latest hypothetical-form repair is published and locally tested,
-but its live trial was refused by the provider. A subsequent availability probe
-confirmed the account's daily free allocation is exhausted. The typed premise
+accepted. After the daily allocation block cleared, the hypothetical-form repair
+passed a live automated test but failed independent usefulness review: its new
+question repeated the existing capability explanation. A narrow writer-only
+correction is being prepared; source gates and original criteria remain unchanged. The typed premise
 checker passed its four reused synthetic controls and independent explanation
 review, which is limited calibration, not general qualification. See the
 chronological trials below; earlier budgets/counts describe those revisions.
@@ -412,7 +413,7 @@ the same bounded path as the existing premise-word veto. Wrong-shape or misbound
 responses remain excluded. Sources, previous prose, reviewers and limits stay
 unchanged; no outcome is relabeled or manually substituted.
 
-### Current stopping point — external free-allocation block
+### Previous stopping point — external free-allocation block
 
 The hypothetical-form repair was published as
 `1ca30cbc6d873b71326b7d4320663722eec71fad` after all 1,648 repository tests
@@ -448,3 +449,58 @@ and independent full-text premise/usefulness review. Keep earlier text unchanged
 110–225 words, five calls / 6,600 requested-token ceiling, and no email. A green
 run alone cannot close this step. Steps 1–2 remain accepted only for the saved
 sample; Step 3 and broader daily integration remain unfinished.
+
+### Post-reset result — automated pass, redundant question held
+
+One-time provider probe [36506534443](https://github.com/itworksinprod/first-fold/actions/runs/36506534443)
+and article trial [36506646683](https://github.com/itworksinprod/first-fold/actions/runs/36506646683)
+both ran trusted main `1b6b52a47757e3ac69d647753fff6fca2c45f614`, with code
+unchanged from the hypothetical-form repair. All 1,648 local tests passed again.
+The probe made one 128-token-ceiling request; the article used five calls with
+the unchanged 6,600 requested-output-token ceiling. These ceilings are not
+measured consumption. No email, retry, research or billing change occurred.
+
+Article artifact 11006933917, 56,352 bytes, ZIP SHA-256
+`834e9aabb3f57b154a9bfff12a766088761985188bab744929837b3e0ee1ee7a`.
+Capture SHA-256:
+`a2e19836a7c674bb1a9be90273028b21afd4adae0866a57edbf001d3b055cb38`.
+Draft SHA-256:
+`b5b291e53af8d411654d43b90dd1ecbf6cc69d9e651138840ff996c5304f6d7c`.
+Exact offline request/payload replay passed, all old units and their order stayed
+identical, and the body was 197 words. All automatic fields passed.
+
+Primary and independent full-text review nevertheless HOLD the question: it
+asks whether the distance goal and collision avoidance could coexist, repeating
+both the preceding sentence and P20. The hypothetical framing and source setup
+are broadly sound; the decisive defect is absence of new reader usefulness.
+The automated audit's unknownAnswer repeats that same documented capability.
+The original read-only daily monitor was restored and verified after the trial.
+
+### Next writer-only correction — meaningful conditional comparison
+
+Carlos requested continued work. Offline independent feasibility review rejected
+a question-start-word filter as insufficient: an absolute path length without a
+shared task is not useful merely because it begins How or What. No such filter
+was implemented and no additional quality verdict is inferred from grammar.
+
+The review found a defensible unanswered relationship within the original
+criteria: the effect of a source-supported optional quality goal on its named
+output measure for the same hypothetical task and required conditions. This
+corrects the later blanket comparison ban rather than weakening source support.
+Absence means absence of that particular extra goal, not all objectives. Do not
+assert a switch, operating mode, actual comparison, measured baseline, improvement
+or announced future study. Keep unchanged/worse outcomes possible. If there is
+no useful supported contrast, the writer must abstain.
+
+Only the writer prompt changes. No illustrative article answer enters the model
+input. Pinned sources, baseline, output schema, factual reviewer, form/premise
+guards, 110–225 words, 36-word question, five calls / 6,600-token ceiling and exact
+independent review remain unchanged. Tests of prompt wording verify the contract,
+not semantic quality. A live pass and useful non-repetitive exact text are still
+required before Step 3 can close. No daily or email integration is authorized.
+
+Preflight: all 1,649 repository tests and 52 independent focused checks pass.
+Independent review removed a leftover comparison-group prohibition that conflicted
+with the intended conditional contrast. Actual saved draft reconstruction and
+all four prior factual-review request/prompt hashes remain identical. This clears
+one bounded live trial, not the prior held text or general writer qualification.

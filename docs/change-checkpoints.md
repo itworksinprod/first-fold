@@ -20,11 +20,13 @@ Step 2 ([useful significance](checkpoints/useful-significance-accepted-2026-09-2
 also passes for the exact saved sample: 179 words, one new problem-context
 sentence, all earlier text unchanged, live-tested and independently reviewed.
 Step 3 ([meaningful watch question](checkpoints/meaningful-watch.md)) has a
-published, locally tested repair but no accepted live article result. Its latest
-test was refused by Cloudflare; a separate encrypted availability probe confirmed
-exhaustion of the daily free allocation. No billing or delivery change was made.
-Resume with one bounded live test after capacity returns, then exact independent
-review—not automatic acceptance. These assisted, manually
+published, locally tested repair but no accepted live article result. After free
+capacity returned, run 36506646683 passed automated checks but independent review
+held its question for repeating the existing article. The next writer-only change
+permits a hypothetical same-task contrast of a source-supported optional goal;
+it does not permit claimed measurements, different tasks or assumed improvement.
+No source/reviewer gate, billing or delivery change was made. Require a new
+bounded live test and exact independent review—not automatic acceptance. These assisted, manually
 scoped results do not qualify an unseen
 automatic writer, the experimental reviewers, or daily delivery. Historical
 HOLD records below remain unchanged evidence, not the current sample status.

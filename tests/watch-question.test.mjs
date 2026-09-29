@@ -64,12 +64,24 @@ test('known risky presuppositions and new numbers are vetoed without claiming a 
   assert.match(WATCH_PROMPT, /Do not recast a demonstrated result as an unresolved question/);
   assert.match(WATCH_PROMPT, /ONLY allowedContext/);
   assert.match(WATCH_PROMPT, /Frame the possible output itself as hypothetical/);
-  assert.match(WATCH_PROMPT, /Do not assume that a comparison has been conducted or that it must show improvement/);
-  assert.match(WATCH_PROMPT, /concrete output metric to observe alongside checks of those requirements/);
   assert.match(WATCH_PROMPT, /Use explicit hypothetical wording with would or could/);
-  assert.match(WATCH_PROMPT, /whether that SAME output meets the source-named requirements/);
   assert.match(WATCH_PROMPT, /Do not refer to studies, tests, future measurements or further research/);
   assert.doesNotMatch(WATCH_PROMPT, /A concrete unanswered comparison|prefer a hypothetical comparison|Ask what hypothetical measurements would show/);
+});
+
+test('writer distinguishes a hypothetical optional-goal contrast from repeated capability or measured results', () => {
+  assert.match(WATCH_PROMPT, /source explicitly allows an additional quality goal/);
+  assert.match(WATCH_PROMPT, /hypothetical presence versus absence for the SAME task with the SAME required conditions/);
+  assert.match(WATCH_PROMPT, /change only that extra goal/);
+  assert.match(WATCH_PROMPT, /absence does not mean removing every objective or required condition/);
+  assert.match(WATCH_PROMPT, /Do not assert an implemented switch, an existing operating mode, a measured baseline or a completed comparison/);
+  assert.match(WATCH_PROMPT, /without assuming improvement or even a difference/);
+  assert.match(WATCH_PROMPT, /Keep an unchanged or worse result possible/);
+  assert.match(WATCH_PROMPT, /asking again whether documented goals can coexist, does not add a useful thing to watch/);
+  assert.match(WATCH_PROMPT, /abstain instead of inventing setup details/);
+  assert.match(WATCH_PROMPT, /Do not invent task details or comparisons to other methods/);
+  assert.doesNotMatch(WATCH_PROMPT, /whether that SAME output meets|do not introduce a baseline|new comparison group/);
+  // Contract text only: these assertions cannot establish generated novelty or usefulness.
 });
 
 test('observed achieved-result question fails the hypothetical form requirement before factual review', () => {
