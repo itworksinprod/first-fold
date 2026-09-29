@@ -43,9 +43,15 @@ publisher identity, all captured body blocks and the existing source/word-limit
 gates without forcing the MIT comparison. A narrow response-capture correctness
 finding was repaired before clearance. This is an already examined development
 sample with a declared generic input/prompt revision, not an unseen holdout.
-The documentation-only applicability receipt is published at `28d267d`; the new
-test setup is not yet published or live-run. Its separate publication and one
-bounded no-email attempt are awaiting Carlos's explicit approval.
+After Carlos's explicit approval, the setup was published at `d9757fc` and
+live-tested once in run 36575945893: 149 body words, five calls, 4,800 requested
+output tokens, all automated checks passed, and exact offline replay passed.
+Independent full-text review nevertheless **held** the result: the writer added
+an unsupported security/features guarantee and the automated source reviewer
+checked only the supported opening clause. This is a documented false positive,
+not quality approval. No retry, custom correction, email or daily promotion
+occurred. Clause-complete source-review qualification is the next proposed
+checkpoint; the different-article summary is not yet accepted.
 
 ### Prior Step 3 status notes — retained historical evidence
 
