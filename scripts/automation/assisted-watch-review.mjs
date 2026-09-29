@@ -14,6 +14,8 @@ import {buildWorkersAiRequest, requestWorkersAiEditorial, workersAiRunUrl, worke
 
 export const ASSISTED_WATCH_METHOD = 'source-ingredients-constrained-composition-independent-review-v1';
 export const ASSISTED_MAP_FILE_SHA256 = 'e0aedeb00c07b6c96fcf1e37c5f81d0488b3dceaacd2ea235815a3e438539165';
+export const ASSISTED_MAP_V2_FILE_SHA256 = '138f99b6eb4c863f23c0dce3b78da4a23b11035995b4353435b8792dbd024fd5';
+export const ASSISTED_INGREDIENT_CONTRACT_V2 = 'source-assertions-with-mandatory-editorial-checklist-v2';
 const sha = text => createHash('sha256').update(text).digest('hex');
 const fail = code => Object.assign(new Error(code), {code});
 const issued = new WeakSet();
@@ -29,8 +31,12 @@ const dense = (value, n) => Array.isArray(value) && Object.getPrototypeOf(value)
 const text = s => typeof s === 'string' && s === s.trim() && s.length > 0 && s.length <= 600 && !/[\p{Cc}\p{Cf}]/u.test(s);
 
 // Synthetic fixtures may build issued plans. The CLI additionally pins every input.
-export function buildAssistedWatchPlan(watchPlan, choices, assertions) {
+export function buildAssistedWatchPlan(watchPlan, choices, assertions, editorialChecks = null) {
   const composition = buildCompositionReview(watchPlan, choices);
+  if (editorialChecks !== null && (!dense(editorialChecks, 7) ||
+      editorialChecks.some(c => !exact(c, ['id', 'check']) || typeof c.id !== 'string' ||
+        !/^[a-z][a-z-]{0,39}$/u.test(c.id) || !text(c.check)) ||
+      new Set(editorialChecks.map(c => c.id)).size !== 7)) throw fail('ASSISTED_EDITORIAL_CHECKS_INVALID');
   if (!dense(assertions, 3)) throw fail('ASSISTED_INGREDIENTS_INVALID');
   const ids = new Set();
   for (const a of assertions) {
@@ -51,11 +57,20 @@ export function buildAssistedWatchPlan(watchPlan, choices, assertions) {
     text: watchPlan.baseline.draft.whatToWatch, claims: watchPlan.baseline.units.whatToWatch,
     sources: [watchPlan.source, watchPlan.supplementSource]}, 'source')});
   views.push({field: 'ingredients', view: ingredientView});
-  const plan = freeze({composition, assertions: structuredClone(assertions), views});
+  const plan = freeze({composition, assertions: structuredClone(assertions),
+    editorialChecks: editorialChecks === null ? null : structuredClone(editorialChecks), views});
   issued.add(plan); return plan;
 }
 
 export function prepareAssistedWatchReview(baselineB64, catalogB64, mapB64) {
+  return preparePinnedAssistedReview(baselineB64, catalogB64, mapB64, false);
+}
+
+export function prepareAssistedWatchReviewV2(baselineB64, catalogB64, mapB64) {
+  return preparePinnedAssistedReview(baselineB64, catalogB64, mapB64, true);
+}
+
+function preparePinnedAssistedReview(baselineB64, catalogB64, mapB64, v2) {
   const composition = prepareCompositionReview(baselineB64, catalogB64);
   if (typeof mapB64 !== 'string' || !mapB64 || mapB64.length > 24000 || !/^[A-Za-z0-9+/]+={0,2}$/u.test(mapB64)) throw fail('ASSISTED_MAP_INVALID');
   let source;
@@ -64,12 +79,14 @@ export function prepareAssistedWatchReview(baselineB64, catalogB64, mapB64) {
     if (bytes.toString('base64') !== mapB64) throw fail('ASSISTED_MAP_INVALID');
     source = gunzipSync(bytes, {maxOutputLength: 20000}).toString('utf8');
   } catch {throw fail('ASSISTED_MAP_INVALID');}
-  if (sha(source) !== ASSISTED_MAP_FILE_SHA256) throw fail('ASSISTED_MAP_INVALID');
+  if (sha(source) !== (v2 ? ASSISTED_MAP_V2_FILE_SHA256 : ASSISTED_MAP_FILE_SHA256)) throw fail('ASSISTED_MAP_INVALID');
   const map = JSON.parse(source);
+  if (v2 && (map.version !== 2 || map.method !== ASSISTED_WATCH_METHOD)) throw fail('ASSISTED_MAP_BINDING');
   if (map.baselinePacketSha256 !== composition.watchPlan.packetSha256 ||
       map.candidateDraftSha256 !== composition.composition.draftSha256 ||
       map.question !== composition.composition.selection.question) throw fail('ASSISTED_MAP_BINDING');
-  return buildAssistedWatchPlan(composition.watchPlan, composition.composition.catalog.choices, map.sourceAssertions);
+  return buildAssistedWatchPlan(composition.watchPlan, composition.composition.catalog.choices,
+    map.sourceAssertions, v2 ? map.editorialChecks : null);
 }
 
 export function assertAssistedWatchAuthority(env) {
@@ -87,7 +104,9 @@ export async function reviewAssistedWatch({plan, publicKey, accountId, apiToken,
     capturedAt: now.toISOString(), packetSha256: watchPlan.packetSha256, originRunId: watchPlan.originRunId,
     originCaptureSha256: watchPlan.originCaptureSha256, source: watchPlan.sourceRecord,
     supplementSource: watchPlan.supplementSource, beforeCopyedit: watchPlan.baseline, composition,
-    ingredientAssertions: plan.assertions, ingredientMapFileSha256: ASSISTED_MAP_FILE_SHA256,
+    ingredientAssertions: plan.assertions,
+    ingredientMapFileSha256: plan.editorialChecks ? ASSISTED_MAP_V2_FILE_SHA256 : ASSISTED_MAP_FILE_SHA256,
+    ...(plan.editorialChecks ? {ingredientContract: ASSISTED_INGREDIENT_CONTRACT_V2, editorialChecks: plan.editorialChecks} : {}),
     draft: applied.draft, reviewUnits: applied.units, draftSha256: composition.draftSha256,
     retainedTextIdentity: applied.retainedTextIdentity, calls: [], fieldReviews: [], emailSent: false,
     independentReview: 'required-not-performed-by-this-workflow', previousWholeQuestionHold: 'preserved-not-overridden'};
@@ -131,6 +150,7 @@ export async function reviewAssistedWatch({plan, publicKey, accountId, apiToken,
     capture.failure = workersAiFailureDiagnostic(error);
   }
   const report = {mode: capture.purpose, method: ASSISTED_WATCH_METHOD,
+    ...(plan.editorialChecks ? {ingredientContract: ASSISTED_INGREDIENT_CONTRACT_V2} : {}),
     status: code ? 'failed' : 'awaiting-independent-review', code,
     modelRequests: capture.calls.length, networkRequests, outputBudget, writerRequests: 0, searchQueries: 0, emailSent: false,
     fieldsPassed: capture.fieldReviews.filter(r => r.verdict.valid && r.verdict.supported).map(r => r.field)};
@@ -143,7 +163,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     if (!((command === 'validate' && args.length === 0) || (command === 'run' && args.length === 1 &&
         process.env.RUNNER_TEMP && resolve(args[0]) === resolve(process.env.RUNNER_TEMP, 'assisted-watch.encrypted.json')))) throw fail('ASSISTED_ARGUMENTS_INVALID');
     assertAssistedWatchAuthority(process.env); diagnosticPublicKey(process.env.DIAGNOSTIC_PUBLIC_KEY);
-    const plan = prepareAssistedWatchReview(process.env.FIRST_FOLD_WATCH_BASELINE_B64,
+    const plan = prepareAssistedWatchReviewV2(process.env.FIRST_FOLD_WATCH_BASELINE_B64,
       process.env.FIRST_FOLD_WATCH_COMPOSITION_B64, process.env.FIRST_FOLD_WATCH_INGREDIENTS_B64);
     if (command === 'run') {
       const {sealed, report} = await reviewAssistedWatch({plan, publicKey: process.env.DIAGNOSTIC_PUBLIC_KEY,

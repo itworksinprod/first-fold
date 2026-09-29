@@ -2,7 +2,8 @@
 
 Status: **Carlos explicitly approved the acceptance-method change on September
 29, 2026**. The separate opt-in implementation passes 1,761 local tests and
-independent preflight; one bounded live test remains. No article approval yet.
+independent preflight, but its first live trial held at the ingredient review.
+No article approval yet.
 
 ## Why a different method is proposed
 
@@ -122,3 +123,62 @@ transfer approval to revised prose. The new result must state the method change.
 No daily delivery, production policy, recipient, billing, editorial score,
 freshness threshold or email changes belong to this step. Generalization and
 delivery remain later checkpoints even if this sample passes.
+
+## First live result — retained article passes, ingredients held
+
+[Run 36555124430](https://github.com/itworksinprod/first-fold/actions/runs/36555124430)
+used verified main `711feb418a9c47f4336e3350291e2a410d9cec23`.
+`Check retained assertions and question ingredients without delivery` failed with
+`ASSISTED_SOURCE_REJECTED`, after five single-attempt requests and a 4,800-token
+requested-output ceiling. All four retained fields passed; all three ingredient
+judgments were structurally valid false answers. No email or retry followed.
+
+Artifact `11027301623`, 62,343 bytes, ZIP SHA-256
+`a647d829867c6209db05c4815cf3432053bedf9d88b5462f0472fcfaf7be749a`;
+decrypted capture SHA-256
+`cf3cf1a73f1a2e8f3effc913e44eb4cc518103c6299900bed22c9515a6d3907c`.
+All five exact requests and retained parsed responses replayed offline, reproducing
+the hold. Earlier text identity passed; the candidate remains 210 body words with
+a 27-word question. This did not approve the article or the question.
+
+C1's explanation rejected the statement that a capability example is not evidence
+of a performed comparison. C2 rejected non-mandatory/non-exclusive goal wording.
+C3 rejected the path-length interpretation and excluded metrics. The source
+assertions were concatenated with relationship notes that also contained
+editorial review instructions and scope cautions. A proposed narrow repair must
+distinguish source-backed relationships from those editorial obligations without
+dropping either from the full verification process. Independent assessment is
+required before another trial; the current false judgments remain unchanged.
+
+## V2 representation repair — facts and editorial obligations are distinct
+
+Independent exact-text review passed the unchanged candidate but retained the
+live hold. It found a repair within the approved method: keep every positive
+factual premise and relationship model-checked, while treating source-scope notes
+and review instructions as explicit mandatory editorial obligations. In particular,
+C3 rejected the substantive shortest-distance/path-length bridge too; that bridge
+must not be moved to manual-only review.
+
+The private `watch-assisted-premises-v2.json` freezes all three source assertions
+and relationships, seven editorial checks, and a clause-by-clause coverage map
+from v1. SHA-256:
+`138f99b6eb4c863f23c0dce3b78da4a23b11035995b4353435b8792dbd024fd5`.
+The fifth request still checks same-path collision/distance properties, the
+additional-goal relationship alongside collision avoidance, and path-length
+equivalence. It no longer asks the publisher to support our review instructions.
+Every editorial obligation remains in the encrypted capture for mandatory
+independent whole-text review; these are not automatically marked satisfied.
+
+All four retained source requests and the assembled article remain byte-identical.
+The CLI pins v2; v1 remains available only as a library preparation path for
+replaying its recorded failed result. Wrong-version or changed input is rejected
+before providers. All 1,764 local tests pass, including 35 assisted-path tests.
+No old verdict has been edited, upgraded or discarded. A passing workflow still
+only awaits independent review. Independent preflight precedes any v2 live call.
+
+V2 independent preflight cleared one five-call/4,800-token no-email trial after
+79 focused tests. It checked clause coverage, unchanged positive assertions,
+explicit same-path/additional-goal/path-length relationships, mandatory editorial
+checks, exact old-capture replay, candidate identity and all four retained views.
+No real provider call was made during preflight; live and whole-text approval
+remain outstanding.

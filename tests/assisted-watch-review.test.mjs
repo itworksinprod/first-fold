@@ -175,6 +175,38 @@ test('ingredient inventory is closed, bounded, dense, copied and frozen', () => 
   assert.throws(() => p.assertions[0].relationship = 'Changed');
   assert.throws(() => p.views.pop());
 });
+test('v2 editorial checks cannot replace any positive assertion/relationship in the model input', () => {
+  const {watchPlan, choices, assertions} = inputs();
+  const checks = Array.from({length:7}, (_,i) => ({id:`check-${String.fromCharCode(97+i)}`,check:`Synthetic editorial obligation ${i}.`}));
+  const v1=buildAssistedWatchPlan(watchPlan,choices,assertions);
+  const v2=buildAssistedWatchPlan(watchPlan,choices,assertions,checks);
+  assert.deepEqual(v2.views,v1.views); // New checklist cannot cause a fact/relationship to disappear.
+  assert.deepEqual(v2.assertions,v1.assertions);
+  checks[0].check='Changed';assert.notEqual(v2.editorialChecks[0].check,'Changed');
+  assert.throws(()=>v2.editorialChecks.pop());
+});
+test('v2 checklist is complete, dense and bounded; missing obligations cannot be silently ignored', () => {
+  for(const alter of [x=>x.pop(),x=>delete x[2],x=>x[0].extra='x',x=>x[1].id=x[0].id,
+    x=>x[0].check='',x=>x[0].check='x'.repeat(601)]){
+    const {watchPlan,choices,assertions}=inputs();
+    const checks=Array.from({length:7},(_,i)=>({id:`check-${String.fromCharCode(97+i)}`,check:`Synthetic obligation ${i}.`}));
+    alter(checks);assert.throws(()=>buildAssistedWatchPlan(watchPlan,choices,assertions,checks),/EDITORIAL_CHECKS_INVALID/);
+  }
+});
+test('v2 all-positive model responses retain mandatory editorial checklist and still require independent review',async()=>{
+  const {watchPlan,choices,assertions}=inputs();
+  const checks=Array.from({length:7},(_,i)=>({id:`check-${String.fromCharCode(97+i)}`,check:`Synthetic obligation ${i}.`}));
+  const plan=buildAssistedWatchPlan(watchPlan,choices,assertions,checks);
+  let calls=0;
+  const result=await reviewAssistedWatch({plan,publicKey,accountId:'0'.repeat(32),apiToken:'TEST',sealImpl:x=>x,
+    fetchImpl:async(_url,init)=>{calls++;const data=JSON.parse(JSON.parse(init.body).messages[1].content);
+      return new Response(JSON.stringify({success:true,result:{response:JSON.stringify(reply(data))}}),{headers:{'content-type':'application/json'}});}});
+  assert.equal(calls,5);assert.equal(result.report.outputBudget,4800);
+  assert.equal(result.report.status,'awaiting-independent-review');
+  assert.equal(result.report.ingredientContract,'source-assertions-with-mandatory-editorial-checklist-v2');
+  assert.deepEqual(result.sealed.editorialChecks,checks);
+  assert.equal(result.sealed.independentReview,'required-not-performed-by-this-workflow');
+});
 test('encryption hides text and does not turn fixture success into independent approval', async () => {
   const plan = fixture();
   const result = await reviewAssistedWatch({plan, publicKey, accountId: '0'.repeat(32), apiToken: 'PRIVATE',
