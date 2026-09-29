@@ -251,10 +251,10 @@ test('role candidate is wired only to its opt-in synthetic calibration, never an
       if (entry.isDirectory()) {await checkTree(new URL(`${entry.name}/`, dir)); continue;}
       if (!entry.isFile()) continue;
       if (dir.href === new URL('experiments/', scripts).href &&
-          ['watch-role-review.mjs', 'watch-role-controls.mjs'].includes(entry.name)) continue;
+          ['watch-role-review.mjs', 'watch-role-controls.mjs', 'watch-role-span-review.mjs'].includes(entry.name)) continue;
       if (dir.href === scripts.href && entry.name === 'watch-role-calibration.mjs') continue;
       if (dir.href === workflows.href && entry.name === 'watch-role-calibration.yml') continue;
-      assert.doesNotMatch(await readFile(new URL(entry.name, dir), 'utf8'), /watch-role-(?:review|controls)/);
+      assert.doesNotMatch(await readFile(new URL(entry.name, dir), 'utf8'), /watch-role-(?:review|controls|span-review)/);
     }
   }
   for (const dir of [scripts, workflows]) await checkTree(dir);

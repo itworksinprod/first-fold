@@ -25,7 +25,7 @@ jobs:
         with:
           node-version: '24'
       - name: Test synthetic calibration boundaries without credentials
-        run: node --test tests/watch-role-review.test.mjs tests/watch-role-calibration.test.mjs tests/watch-question.test.mjs tests/watch-premise-controls.test.mjs tests/free-workers-ai.test.mjs tests/private-writer-diagnostic.test.mjs
+        run: node --test tests/watch-role-review.test.mjs tests/watch-role-span-review.test.mjs tests/watch-role-calibration.test.mjs tests/watch-question.test.mjs tests/watch-premise-controls.test.mjs tests/free-workers-ai.test.mjs tests/private-writer-diagnostic.test.mjs
       - name: Validate fixed synthetic corpus and encryption before credentials
         env:
           DIAGNOSTIC_PUBLIC_KEY: ${{ inputs.public_key }}

@@ -6,7 +6,7 @@ import {pathToFileURL} from 'node:url';
 import {diagnosticPublicKey, sealDiagnostic} from './private-writer-diagnostic.mjs';
 import {WATCH_ROLE_CONTROLS, WATCH_ROLE_CONTROLSET_SHA256, watchRoleControlView,
   scoreWatchRoleControl} from './experiments/watch-role-controls.mjs';
-import {diagnoseWatchRoleReview} from './experiments/watch-role-review.mjs';
+import {buildWatchRoleSpanReview, diagnoseWatchRoleSpanReview, WATCH_ROLE_SPAN_CONTRACT} from './experiments/watch-role-span-review.mjs';
 import {buildWorkersAiRequest, requestWorkersAiEditorial, workersAiRunUrl, workersAiFailureDiagnostic,
   FREE_REASONING_WRITER_MODEL} from './free/workers-ai.mjs';
 
@@ -16,8 +16,9 @@ const issued = new WeakSet();
 export const ROLE_CALIBRATION_PIN = '5d7a7d4451f66feb6784ef41a9f5990bb2d6be67f52cde838d735d6edb618859';
 export function prepareWatchRoleCalibration() {
   if (WATCH_ROLE_CONTROLSET_SHA256 !== ROLE_CALIBRATION_PIN || WATCH_ROLE_CONTROLS.length !== 8) throw fail('ROLE_CALIBRATION_PIN');
-  const plan = Object.freeze({corpusSha256: ROLE_CALIBRATION_PIN,
-    views: Object.freeze(WATCH_ROLE_CONTROLS.map(watchRoleControlView))});
+  const controlViews = Object.freeze(WATCH_ROLE_CONTROLS.map(watchRoleControlView));
+  const plan = Object.freeze({corpusSha256: ROLE_CALIBRATION_PIN, controlViews,
+    views: Object.freeze(controlViews.map(view => buildWatchRoleSpanReview({question: view.data.question, passages: view.data.passages})))});
   issued.add(plan); return plan;
 }
 
@@ -32,7 +33,7 @@ export async function runWatchRoleCalibration({plan, publicKey, accountId, apiTo
   if (!issued.has(plan)) throw fail('ROLE_CALIBRATION_PLAN');
   diagnosticPublicKey(publicKey);
   const capture = {purpose: 'synthetic-watch-role-calibration-awaiting-manual-review', capturedAt: now.toISOString(),
-    corpusSha256: plan.corpusSha256, calls: [], cases: [], emailSent: false,
+    corpusSha256: plan.corpusSha256, contract: WATCH_ROLE_SPAN_CONTRACT, calls: [], cases: [], emailSent: false,
     reviewerQualification: 'unqualified-outside-these-frozen-synthetic-controls'};
   let networkRequests = 0, outputBudget = 0, code = null;
   try {
@@ -63,14 +64,15 @@ export async function runWatchRoleCalibration({plan, publicKey, accountId, apiTo
       if (result.provider !== 'cloudflare-workers-ai' || result.model !== model || result.requestSha256 !== requestSha256 ||
           !/^[a-f0-9]{64}$/u.test(result.responseSha256 ?? '') || result.attemptCount !== 1) throw fail('ROLE_CALIBRATION_PROVENANCE');
       Object.assign(call, {provider: result.provider, model, responseSha256: result.responseSha256, attemptCount: 1});
-      const diagnostic = diagnoseWatchRoleReview(result.editorialPayload, view);
+      const diagnostic = diagnoseWatchRoleSpanReview(result.editorialPayload, view);
       if (!diagnostic.verdict.valid) {
         call.responseRejectedBeforeCapture = true;
         call.validationReason = diagnostic.reason;
         throw fail('ROLE_CALIBRATION_RESPONSE_INVALID');
       }
       call.response = structuredClone(result.editorialPayload);
-      capture.cases.push(scoreWatchRoleControl(control, view, result.editorialPayload));
+      call.canonicalResponse = diagnostic.canonical;
+      capture.cases.push(scoreWatchRoleControl(control, plan.controlViews[index], diagnostic.canonical));
     }
     // A valid wrong answer is evidence, not a transport error or a retry request.
     if (capture.cases.length !== 8 || capture.cases.some(c => !c.matched)) throw fail('ROLE_CALIBRATION_MISMATCH');

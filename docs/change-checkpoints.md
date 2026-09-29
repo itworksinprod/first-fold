@@ -51,8 +51,11 @@ The first live synthetic run, 36516460890 at `57d7220`, stopped on case A with
 `ROLE_CALIBRATION_RESPONSE_INVALID`: one request, zero scored cases. Rejected
 prose was omitted, so the exact failed predicate and semantic result are unknown.
 A diagnostic-only first-failure enum passed 1,714 local tests and independent
-review without changing requests or acceptance; it has not run live. No second
-trial or reviewer qualification followed. This is not another writer prompt.
+review without changing requests or acceptance. Its live run 36520110639 identified
+`ANCHOR_MEMBERSHIP` on the first response, with zero cases scored. A new indexed
+word-span representation preserves exact question/source binding and the original
+semantic criteria while avoiding generated quote copying; 1,723 local tests pass,
+but it is not yet live-qualified. This is not another writer prompt.
 No daily integration, source/reviewer gate, billing or delivery
 change was made. Require the bounded live test and exact independent review before
 accepting this new assisted approach. These assisted, manually

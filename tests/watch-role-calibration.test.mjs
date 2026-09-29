@@ -4,6 +4,7 @@ import {generateKeyPairSync} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import {prepareWatchRoleCalibration, runWatchRoleCalibration, assertRoleCalibrationAuthority, ROLE_CALIBRATION_PIN} from '../scripts/automation/watch-role-calibration.mjs';
 import {WATCH_ROLE_CONTROLS, watchRoleControlView} from '../scripts/automation/experiments/watch-role-controls.mjs';
+import {buildWatchRoleSpanReview} from '../scripts/automation/experiments/watch-role-span-review.mjs';
 import {buildWorkersAiRequest, requestWorkersAiEditorial, workersAiRunUrl, FREE_REASONING_WRITER_MODEL} from '../scripts/automation/free/workers-ai.mjs';
 import {openDiagnostic} from '../scripts/automation/private-writer-diagnostic.mjs';
 
@@ -19,6 +20,17 @@ function mockResponse(control, data) {
   return {reviewSha256: data.reviewSha256, question: control.question,
     unknownAnswer: 'An unresolved hypothetical answer, represented by a structure-only mock.', findings};
 }
+function encodeSpans(payload) {
+  const tokens = [...payload.question.matchAll(/\S+/gu)];
+  payload.findings = payload.findings.map(({anchor, ...finding}) => {
+    const start = payload.question.indexOf(anchor); assert.ok(start >= 0);
+    const last = start + anchor.length - 1;
+    return {...finding,
+      startWord: tokens.findIndex(t => t.index <= start && t.index + t[0].length > start) + 1,
+      endWord: tokens.findIndex(t => t.index <= last && t.index + t[0].length > last) + 1};
+  });
+  return payload;
+}
 
 async function run(failure, at = 3) {
   const plan = prepareWatchRoleCalibration(), requests = [], network = [], late = [], accountId = '0'.repeat(32);
@@ -26,7 +38,8 @@ async function run(failure, at = 3) {
     now: new Date('2026-09-29T04:00:00Z'), sealImpl: value => value,
     aiRequestImpl: async request => {
       const index = requests.length; requests.push(request); late.push(request.fetchImpl);
-      const view = watchRoleControlView(WATCH_ROLE_CONTROLS[index]);
+      const original = watchRoleControlView(WATCH_ROLE_CONTROLS[index]);
+      const view = buildWatchRoleSpanReview({question: original.data.question, passages: original.data.passages});
       assert.deepEqual(JSON.parse(request.messages[1].content), view.data);
       assert.equal(request.messages[0].content, `${view.prompt}\nJSON schema: ${JSON.stringify(view.schema)}`);
       assert.doesNotMatch(JSON.stringify(request.messages), /"expected"|"checks"|"caseId"|"gold"/);
@@ -66,9 +79,11 @@ async function run(failure, at = 3) {
         payload.findings[0].role = 'hypothetical_control';
         payload.findings.push({anchor: 'LumenRoute', role: 'factual_premise', reason: 'Synthetic structural mock.', grounded: true, evidenceIds: ['S1P5']});
       }
+      encodeSpans(payload);
       if (index === at && failure === 'malformed') payload.extra = 'PRIVATE_INVALID_PROSE';
       if (index === at && failure === 'scope') payload.findings[0].evidenceIds = ['S2P1'];
       if (index === at && failure === 'echo') payload.question += ' Changed.';
+      if (index === at && failure === 'range') payload.findings[0].endWord = 999;
       const result = index === at && failure === 'truncated'
         ? {choices: [{index: 0, message: {role: 'assistant', content: JSON.stringify(payload)}, finish_reason: 'length'}]}
         : {response: JSON.stringify(payload)};
@@ -92,6 +107,11 @@ test('fixed eight-case calibration sends only frozen requests and requires every
   assert.equal(result.report.outputBudget, 19200); assert.equal(result.report.casesPassed, 8);
   assert.equal(result.report.writerRequests, 0); assert.equal(result.report.searchQueries, 0); assert.equal(result.report.emailSent, false);
   assert.equal(result.sealed.corpusSha256, ROLE_CALIBRATION_PIN);
+  assert.equal(result.sealed.contract, 'watch-role-word-spans-v2');
+  assert.equal(result.sealed.calls[0].response.findings[0].anchor, undefined);
+  assert.equal(typeof result.sealed.calls[0].response.findings[0].startWord, 'number');
+  assert.equal(typeof result.sealed.calls[0].canonicalResponse.findings[0].anchor, 'string');
+  assert.equal(result.sealed.calls[0].canonicalResponse.findings[0].startWord, undefined);
   assert.equal(result.sealed.draft, undefined);
 });
 for (const failure of ['wrong-verdict', 'wrong-role']) test(`valid ${failure} finishes the fixed set but does not qualify the reviewer`, async () => {
@@ -102,14 +122,14 @@ for (const failure of ['wrong-verdict', 'wrong-role']) test(`valid ${failure} fi
   assert.equal(result.sealed.calls[3].response !== undefined, true);
 });
 for (const failure of ['quota', 'transport', 'no-network', 'endpoint', 'method', 'body', 'redirect', 'retry',
-  'provenance', 'model', 'provider', 'attempt', 'response-hash', 'malformed', 'scope', 'echo', 'truncated']) {
+  'provenance', 'model', 'provider', 'attempt', 'response-hash', 'malformed', 'scope', 'echo', 'range', 'truncated']) {
   test(`${failure} stops immediately without retries, more cases, a paid fallback or raw rejected prose`, async () => {
     const {result, requests} = await run(failure);
     assert.equal(result.report.status, 'failed'); assert.equal(requests.length, 4);
     assert.equal(result.report.casesCompleted, 3); assert.equal(result.report.outputBudget, 9600);
-    if (['malformed', 'scope', 'echo'].includes(failure)) assert.equal(result.report.code, 'ROLE_CALIBRATION_RESPONSE_INVALID');
-    if (['malformed', 'scope', 'echo'].includes(failure)) {
-      assert.equal(result.sealed.calls[3].validationReason, {malformed: 'ENVELOPE_SHAPE', scope: 'CITATIONS_SCOPE', echo: 'QUESTION_ECHO'}[failure]);
+    if (['malformed', 'scope', 'echo', 'range'].includes(failure)) assert.equal(result.report.code, 'ROLE_CALIBRATION_RESPONSE_INVALID');
+    if (['malformed', 'scope', 'echo', 'range'].includes(failure)) {
+      assert.equal(result.sealed.calls[3].validationReason, {malformed: 'ENVELOPE_SHAPE', scope: 'CITATIONS_SCOPE', echo: 'QUESTION_ECHO', range: 'ANCHOR_RANGE'}[failure]);
       assert.equal(Object.hasOwn(result.report, 'validationReason'), false);
     }
     if (failure === 'truncated') {
@@ -117,6 +137,7 @@ for (const failure of ['quota', 'transport', 'no-network', 'endpoint', 'method',
       assert.equal(result.sealed.failure.formatReason, 'OUTPUT_TOKEN_LIMIT');
     }
     assert.equal(result.sealed.calls[3].response, undefined);
+    assert.equal(result.sealed.calls[3].canonicalResponse, undefined);
   });
 }
 test('first request quota block stops with one request and no calibration verdicts', async () => {

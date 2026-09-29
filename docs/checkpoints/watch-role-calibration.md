@@ -1,9 +1,9 @@
 # Question-role calibration checkpoint
 
-Status: offline contract/control checkpoint complete; the first live synthetic
-trial stopped on a structurally invalid response before scoring any case. A
-diagnostic-only repair passed local tests and independent implementation review,
-but has not run live. No reviewer qualification or Step 3 article acceptance.
+Status: offline contract/control checkpoint complete; two live synthetic trials
+stopped before scoring a case. The instrumented second run identified
+`ANCHOR_MEMBERSHIP`. A separately versioned indexed-span representation is now
+being prepared; it has not passed live. No reviewer qualification or Step 3 article acceptance.
 This separate candidate does not replace the existing factual checks.
 
 ## Scope and predeclared distinction
@@ -184,3 +184,56 @@ This closes the offline diagnostic repair, not live calibration. A separately
 scoped future trial would be needed to obtain the first-failure code; no extra
 provider request is authorized by this receipt. Step 3, article integration and
 daily delivery remain unchanged and unqualified by this work.
+
+## Instrumented trial — exact anchor membership failed
+
+[Run 36520110639](https://github.com/itworksinprod/first-fold/actions/runs/36520110639)
+used verified main `721d2aeaa8d4628077ff24c433a127dc3a51833e`. Setup and
+validation passed; **Review eight fictional questions without research or
+delivery** failed with `ROLE_CALIBRATION_RESPONSE_INVALID`. The encrypted
+first-failure code is `ANCHOR_MEMBERSHIP`: an anchor was not an exact contiguous
+substring of the question. Its actual wording was not retained, so the precise
+copying error, any later defects and semantic verdict remain unknown.
+
+One request / 2,400 requested-output-token ceiling, zero scored cases, no retries
+or article/email actions. Artifact `11012219163`, 2,389 bytes, ZIP SHA-256
+`648db031b799d09a17d5c2b0308d753e74cf4840c1edc4090c1a895ef1188244`;
+capture SHA-256
+`88e02fbc715da1815795b46a98864d98691884c702be5c33b6e81bc7d185a3be`.
+Primary and independent request-hash verification passed; full response replay
+and explanation review are unavailable because the response was omitted.
+
+## Next representation — indexed word spans, not repaired model quotes
+
+Carlos requested continued iteration through Step 3. The separately versioned
+`watch-role-word-spans-v2` adapter gives the model a host-built, numbered word
+inventory of the unchanged question. Findings select 1-based inclusive start/end
+word IDs instead of generating anchor text. Tokenization uses non-whitespace
+spans; code slices the original string so punctuation and intervening whitespace
+remain exact. No clamping, text replacement or guessing is permitted.
+
+The immutable inventory is bound with the complete question, passages and v2
+policy hash. Exact question and hash echo are still required. After strict raw
+shape/range checks, decoding creates a canonical anchor and applies the original
+240-character, role, reason, citation, duplicate and coverage checks. The old v1
+contract and failed captures stay untouched. This is a declared protocol change,
+not automatic correction or acceptance of a rejected v1 response.
+
+The eight questions, evidence, expected labels and decisive role checks remain
+frozen. Valid raw index responses and decoded anchors are captured distinctly,
+inside the encrypted artifact, for exact replay and independent inspection.
+Index validity cannot prove the correct words were selected or that explanations
+are sound. All eight scores and independent exact-text review remain required.
+
+Local preflight passed all 1,723 tests, including 47 role-focused tests. The next
+live scope remains one fixed A–H sequence, at most eight single-attempt calls,
+2,400 output tokens each / 19,200 requested total. No probe, retries, additional
+provider, real article, email, billing or daily changes. Stop on provider or
+structural failure. A calibration pass would permit consideration of a separate
+article integration, preserving the retained watch assertion's factual check;
+the question-only reviewer cannot silently replace it.
+
+Independent preflight passed 169 workflow/focused tests and checked exact span
+reconstruction across repeated/nonbreaking spaces, punctuation and Unicode.
+It found no blocking issue and cleared one bounded synthetic trial after
+publication, not semantic approval or article integration.
