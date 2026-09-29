@@ -36,8 +36,10 @@ invalid question opening in run 36509945146. The correction produced a draft in
 rejected the comparison's exclusive-baseline premise. Prompt-only variants have
 stopped. A source-bound, manually curated concept selector with host-owned
 comparison grammar passed offline independent review. A separate pinned,
-review-only workflow is in preflight, with no writer call and the unchanged four
-source checks. No daily integration, source/reviewer gate, billing or delivery
+review-only workflow is published at `742dffd`, with no writer call and the
+unchanged four source checks. Its dispatch was blocked before execution pending
+explicit approval of the new curated payload/four-call scope. No live result
+exists for that path. No daily integration, source/reviewer gate, billing or delivery
 change was made. Require the bounded live test and exact independent review before
 accepting this new assisted approach. These assisted, manually
 scoped results do not qualify an unseen

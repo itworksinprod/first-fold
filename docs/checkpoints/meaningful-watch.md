@@ -11,8 +11,10 @@ an invalid question opening. The corrected opening produced a draft, but exact
 review rejected its exclusive-baseline premise; the final model review was also
 structurally invalid. Prompt-only retries have stopped. An offline structured
 composition prototype passed offline independent review. Its separate, pinned,
-review-only live path is in preflight; no daily integration or live acceptance.
-Source gates and original criteria remain unchanged. The typed premise
+review-only live path passed preflight; no daily integration or live acceptance.
+The reviewed integration is published, but dispatch is awaiting explicit approval
+of its new curated payload and four-call review scope. No live result exists for
+this path. Source gates and original criteria remain unchanged. The typed premise
 checker passed its four reused synthetic controls and independent explanation
 review, which is limited calibration, not general qualification. See the
 chronological trials below; earlier budgets/counts describe those revisions.
@@ -697,3 +699,21 @@ workflow/focused tests pass, with a clean diff check. The independent reviewer
 verified real pins, immutable baseline, tamper rejection, unchanged four source
 requests, authority, transport and encrypted-capture boundaries. Cleared for one
 bounded live review only; no editorial acceptance or production promotion.
+
+### Current stopping point — published, live dispatch not authorized yet
+
+The isolated review-only integration was published as
+`742dffd7b3017a80647f659dd1841cac3a1c28f3`. The new immutable catalog secret
+was created without changing the existing baseline secret. Local preparation
+verified the real pins; a fresh local encryption key was generated.
+
+The execution approval gate rejected the proposed dispatch before it ran,
+requiring explicit authorization for sending the new curated payload through
+four review calls (4,200 requested-output tokens maximum). This is not a provider
+failure or a failed GitHub run. No composed-review run, provider call or email
+result exists. Do not bypass the approval gate or mark Step 3 complete.
+
+After explicit approval, the next action is one bounded run of the published
+review-only workflow, then artifact verification, exact replay and independent
+full-text review. Daily delivery, recipient, production policy and billing remain
+unchanged. The original daily read-only monitor remains restored.
