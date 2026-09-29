@@ -7,8 +7,12 @@ question repeated the existing capability explanation. The next writer-only
 contrast trial was correctly stopped for assurance wording before any source
 review. The subsequent role-composition trial failed a text gate; its exact
 formatting cause was not captured. A subsequent instrumented trial identified
-an invalid question opening; the writer instruction is being aligned with the
-unchanged starter gate. Source gates and original criteria remain unchanged. The typed premise
+an invalid question opening. The corrected opening produced a draft, but exact
+review rejected its exclusive-baseline premise; the final model review was also
+structurally invalid. Prompt-only retries have stopped. An offline structured
+composition prototype passed offline independent review. Its separate, pinned,
+review-only live path is in preflight; no daily integration or live acceptance.
+Source gates and original criteria remain unchanged. The typed premise
 checker passed its four reused synthetic controls and independent explanation
 review, which is limited calibration, not general qualification. See the
 chronological trials below; earlier budgets/counts describe those revisions.
@@ -594,3 +598,102 @@ unchanged; a new live result still requires exact independent review.
 Opening preflight: all 1,653 repository tests and 56 independent focused tests
 pass, with a clean diff check. Independent review cleared one bounded no-email
 trial of this prompt-only correction, not editorial acceptance.
+
+### Opening result — invalid final review and independently rejected premise
+
+[Run 36510201644](https://github.com/itworksinprod/first-fold/actions/runs/36510201644)
+ran `59c6f82f728a75b8599c5d945f0ad5f288095ce6`. Its writer passed shape
+checks; headline, What happened and Why it matters passed source checks. The
+final What to watch review was structurally invalid, so `WATCH_SOURCE_REJECTED`
+does not establish a substantive source verdict. That malformed payload was not
+retained and its exact failure cause cannot be recovered. Five calls / 6,600
+requested-output-token ceiling; no email, retries or fallback.
+Artifact 11008133624, 55,382 bytes, ZIP SHA-256:
+`55cc658932bad73344786a05898b29e98da53c4c50b30f03b7e17c1ecdc43cde`.
+Capture SHA-256:
+`0e60ade50f6273adb98582c50c22d7df083612debe1ba9b9bb2d6092fb8da03f`.
+Held draft SHA-256:
+`60d8721d926bc38c2d66944c58acbf3137d555deaf53b1c609c1fcbb8a1d2b77`.
+
+All five request/prompt hashes, the reconstructed draft and four retained valid
+responses were verified offline. The body has 211 words, the question 28 words,
+and all old text is identical. **Full result replay is unavailable** because the
+fifth response is redacted; the earlier general replay helper cannot recreate
+that response. Do not call that limitation a successful full replay.
+
+Independent exact-text review separately HOLDs the question: its comparison
+describes a method that enforces only the collision requirement, not merely the
+absence of one extra quality goal. This implies an unreported exclusive operating
+mode. Same constraints also do not explicitly identify the same task. The unknown
+is more concrete, but its setup is still wrong. Neither malformed model review
+nor useful intent overrides those defects.
+
+### Offline structured-composition prototype — not live integration
+
+Further prompt-only variants are stopped. The next bounded design experiment is
+`experiments/watch-composition.mjs`: a manually curated catalog binds measure,
+task, requirements and optional-goal phrases to exact allowed source spans. An
+issued catalog hash and choice ID (or abstention) replace arbitrary question
+writing. Host-owned grammar fixes the same task, same requirements and presence
+versus absence of only the selected extra goal. Free text or a changed catalog
+cannot be submitted through the selector. Existing article checks are not bypassed.
+
+This is **curated-concept and template-assisted composition**, not unconstrained
+AI writing or automatically extracted facts. Span membership is provenance, not
+entailment. The catalog's paraphrases, optional-goal relationship and final text
+still require exact independent factual/usefulness/readability review. No model
+can confer approval by selecting an ID. The prototype has no network, workflow,
+renderer or email integration; daily delivery and existing diagnostic modes are
+unchanged.
+
+Initial synthetic tests use image compression, circuit layout and container
+design, not article-specific answer examples. They verify composition, bounded
+text, source binding, issued-plan identity, accessor/injection/shape rejection,
+abstention and unchanged accepted-text assembly. A private MIT catalog provides
+one offline worked example for independent review, not a replacement of any held
+model output or proof of general applicability. Live testing of this new approach
+would be a separate integration checkpoint after the offline review.
+
+### Offline composition accepted; separate live-review preflight
+
+Primary and independent review accept the exact curated-assisted candidate
+offline. Its question has 27 words, body 210, and all accepted earlier text and
+headline remain byte-identical. P20 supports the curated concepts. Host grammar
+keeps the same hypothetical task and requirements and varies only the selected
+extra goal; it does not assert an operating mode, results, guarantees or research
+plans. The prose is mildly formulaic but clear, and the incremental-effect
+question adds useful content. This is not a free-writing/generalization result.
+All 1,660 tests and 63 independent focused tests passed at offline closure.
+
+The next opt-in workflow is `composed-watch-review.yml`, not a change to existing
+writer modes or the daily paper. With one eligible catalog choice a model writer
+or selector would be unnecessary; the exact reviewed text is assembled locally
+and sent only to the existing four source/premise checks. Three Llama requests
+at 600 tokens and one GPT-OSS request at 2,400: four single attempts, **4,200
+requested-output tokens maximum**. No retries, research, email, provider switch
+or paid fallback. Existing factual prompts, schema, validations and manual gate
+are unchanged. A malformed review remains a hold, never editorial approval.
+
+The existing saved source/baseline secret remains unchanged. A new workflow-only
+secret holds the immutable curated catalog, with exact pins verified before
+provider credentials. Trusted-main/owner/manual/attempt-one checks and one-day
+encrypted artifacts apply. Captures explicitly label manual catalog/template
+authorship and zero writer requests. Public records contain metadata, not the
+full source, catalog or article.
+
+- Catalog file SHA-256: `0323b153515678f73ce52e4a4c42decfd23efdf932536eebb9d1d9ae8647f7ee`
+- Source-bound catalog data SHA-256: `6c1804917b1b8e5902e86300c71587e0a250c48e6ef246238d79ba4c8ca30a79`
+- Template SHA-256: `22a5ae0a179e5a479ee725acfd0c182a02fca2ed76f8d267e29b20551380e660`
+- Exact candidate SHA-256: `3fc57771ccb552662d242c1e6ab00d14ea9241443dd6edfffac3a441e720ea99`
+
+Before dispatch: full tests, independent integration preflight and publication
+of the exact tested revision. After dispatch: verify run/artifact identity,
+decrypt locally, replay all retained requests/responses and inspect exact text
+independently. Earlier failed outputs remain held. This workflow must not
+promote the experiment into daily delivery or claim automatic concept curation.
+
+Integration preflight: all 1,676 repository tests and 174 independently run
+workflow/focused tests pass, with a clean diff check. The independent reviewer
+verified real pins, immutable baseline, tamper rejection, unchanged four source
+requests, authority, transport and encrypted-capture boundaries. Cleared for one
+bounded live review only; no editorial acceptance or production promotion.

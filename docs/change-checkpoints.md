@@ -31,10 +31,15 @@ now separates shared hypothetical conditions from promised performance and makes
 both sides of the same-task contrast explicit. Its run 36509575833 failed the
 aggregate text-format gate before a draft existed. The exact formatting cause
 was redacted; private first-failing-predicate diagnostics then identified an
-invalid question opening in run 36509945146. A prompt-only correction now specifies
-an allowed opening without broadening the gate or repairing model output. No source/reviewer gate,
-billing or delivery change was made. Require a new bounded live test and exact independent
-review—not automatic acceptance. These assisted, manually
+invalid question opening in run 36509945146. The correction produced a draft in
+36510201644, but its final review was structurally invalid and independent review
+rejected the comparison's exclusive-baseline premise. Prompt-only variants have
+stopped. A source-bound, manually curated concept selector with host-owned
+comparison grammar passed offline independent review. A separate pinned,
+review-only workflow is in preflight, with no writer call and the unchanged four
+source checks. No daily integration, source/reviewer gate, billing or delivery
+change was made. Require the bounded live test and exact independent review before
+accepting this new assisted approach. These assisted, manually
 scoped results do not qualify an unseen
 automatic writer, the experimental reviewers, or daily delivery. Historical
 HOLD records below remain unchanged evidence, not the current sample status.
