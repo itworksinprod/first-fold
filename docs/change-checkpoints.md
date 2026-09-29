@@ -53,9 +53,11 @@ prose was omitted, so the exact failed predicate and semantic result are unknown
 A diagnostic-only first-failure enum passed 1,714 local tests and independent
 review without changing requests or acceptance. Its live run 36520110639 identified
 `ANCHOR_MEMBERSHIP` on the first response, with zero cases scored. A new indexed
-word-span representation preserves exact question/source binding and the original
-semantic criteria while avoiding generated quote copying; 1,723 local tests pass,
-but it is not yet live-qualified. This is not another writer prompt.
+word-span representation preserved exact question/source binding, but live run
+36520783612 returned a wrong answer-absence rejection on A and invalid citations
+on B. An explicit role-specific support-target contract now addresses that
+ambiguity offline; 1,729 local tests pass, but it is not yet live-qualified.
+This is not another writer prompt.
 No daily integration, source/reviewer gate, billing or delivery
 change was made. Require the bounded live test and exact independent review before
 accepting this new assisted approach. These assisted, manually

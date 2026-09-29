@@ -4,7 +4,7 @@ import {generateKeyPairSync} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import {prepareWatchRoleCalibration, runWatchRoleCalibration, assertRoleCalibrationAuthority, ROLE_CALIBRATION_PIN} from '../scripts/automation/watch-role-calibration.mjs';
 import {WATCH_ROLE_CONTROLS, watchRoleControlView} from '../scripts/automation/experiments/watch-role-controls.mjs';
-import {buildWatchRoleSpanReview} from '../scripts/automation/experiments/watch-role-span-review.mjs';
+import {buildWatchRoleTypedReview, WATCH_ROLE_CHECKS} from '../scripts/automation/experiments/watch-role-typed-review.mjs';
 import {buildWorkersAiRequest, requestWorkersAiEditorial, workersAiRunUrl, FREE_REASONING_WRITER_MODEL} from '../scripts/automation/free/workers-ai.mjs';
 import {openDiagnostic} from '../scripts/automation/private-writer-diagnostic.mjs';
 
@@ -22,10 +22,10 @@ function mockResponse(control, data) {
 }
 function encodeSpans(payload) {
   const tokens = [...payload.question.matchAll(/\S+/gu)];
-  payload.findings = payload.findings.map(({anchor, ...finding}) => {
+  payload.findings = payload.findings.map(({anchor, grounded, ...finding}) => {
     const start = payload.question.indexOf(anchor); assert.ok(start >= 0);
     const last = start + anchor.length - 1;
-    return {...finding,
+    return {...finding, check:WATCH_ROLE_CHECKS[finding.role], supportTarget:'Structure-only fixture target, not semantic validation.', supported:grounded,
       startWord: tokens.findIndex(t => t.index <= start && t.index + t[0].length > start) + 1,
       endWord: tokens.findIndex(t => t.index <= last && t.index + t[0].length > last) + 1};
   });
@@ -39,7 +39,7 @@ async function run(failure, at = 3) {
     aiRequestImpl: async request => {
       const index = requests.length; requests.push(request); late.push(request.fetchImpl);
       const original = watchRoleControlView(WATCH_ROLE_CONTROLS[index]);
-      const view = buildWatchRoleSpanReview({question: original.data.question, passages: original.data.passages});
+      const view = buildWatchRoleTypedReview({question: original.data.question, passages: original.data.passages});
       assert.deepEqual(JSON.parse(request.messages[1].content), view.data);
       assert.equal(request.messages[0].content, `${view.prompt}\nJSON schema: ${JSON.stringify(view.schema)}`);
       assert.doesNotMatch(JSON.stringify(request.messages), /"expected"|"checks"|"caseId"|"gold"/);
@@ -107,7 +107,7 @@ test('fixed eight-case calibration sends only frozen requests and requires every
   assert.equal(result.report.outputBudget, 19200); assert.equal(result.report.casesPassed, 8);
   assert.equal(result.report.writerRequests, 0); assert.equal(result.report.searchQueries, 0); assert.equal(result.report.emailSent, false);
   assert.equal(result.sealed.corpusSha256, ROLE_CALIBRATION_PIN);
-  assert.equal(result.sealed.contract, 'watch-role-word-spans-v2');
+  assert.equal(result.sealed.contract, 'watch-role-support-targets-v3');
   assert.equal(result.sealed.calls[0].response.findings[0].anchor, undefined);
   assert.equal(typeof result.sealed.calls[0].response.findings[0].startWord, 'number');
   assert.equal(typeof result.sealed.calls[0].canonicalResponse.findings[0].anchor, 'string');

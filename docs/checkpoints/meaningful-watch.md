@@ -24,8 +24,9 @@ review, which is limited calibration, not general qualification. The later
 [eight-case role calibration](watch-role-calibration.md) stopped in live run
 36516460890 on a structurally invalid first response, before scoring any case.
 Its diagnostic-only repair identified an exact-anchor membership failure in
-36520110639. An indexed word-span representation now addresses that copying
-burden without changing the semantic criteria; it remains unverified live.
+36520110639. Indexed spans decoded A in 36520783612, but its verdict still
+confused an unanswered question with unsupported ingredients; B failed a citation
+check. A role-specific support-target contract is now an offline candidate.
 No new article result followed. See the
 chronological trials below; earlier budgets/counts describe those revisions.
 This isolated saved-article experiment follows the accepted Step 2 receipt. No

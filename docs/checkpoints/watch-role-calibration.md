@@ -1,9 +1,8 @@
 # Question-role calibration checkpoint
 
-Status: offline contract/control checkpoint complete; two live synthetic trials
-stopped before scoring a case. The instrumented second run identified
-`ANCHOR_MEMBERSHIP`. A separately versioned indexed-span representation is now
-being prepared; it has not passed live. No reviewer qualification or Step 3 article acceptance.
+Status: offline contract/control checkpoint complete; the indexed-span live
+trial decoded case A but failed its semantic/role score, then stopped on case B's
+citation shape. No reviewer qualification or Step 3 article acceptance.
 This separate candidate does not replace the existing factual checks.
 
 ## Scope and predeclared distinction
@@ -237,3 +236,67 @@ Independent preflight passed 169 workflow/focused tests and checked exact span
 reconstruction across repeated/nonbreaking spaces, punctuation and Unicode.
 It found no blocking issue and cleared one bounded synthetic trial after
 publication, not semantic approval or article integration.
+
+## Indexed-span live result — copying barrier passed, semantic hold remains
+
+[Run 36520783612](https://github.com/itworksinprod/first-fold/actions/runs/36520783612)
+ran trusted main `58285569268234417463414bffcf15bd8647fe55`. Two model/network
+requests used a 4,800 requested-output-token ceiling. Case A decoded validly but
+failed its fixed score; case B then failed `CITATIONS_ARRAY` under
+`ROLE_CALIBRATION_RESPONSE_INVALID`. No later case, retry, writer, research or
+email action followed. The span fix is not a successful calibration.
+
+Artifact `11012521915`, 7,594 bytes, ZIP SHA-256
+`5a68dabb95a710aa92d4dd260861ec56503b460c2bf1286ecaeea584dda50829`;
+capture SHA-256
+`5caee0082e06604e47ef465099f155e6ac771f6bc803ec1bb12583e51d64fb81`.
+Both exact request hashes and A's raw indexed response/derived anchors verify
+offline. Full response replay is unavailable because B's invalid response was
+omitted. Its precise citation defect and semantic result are unknown.
+
+A returned false for the requested unknown because the passages do not provide
+the difference in route length. That explanation checks the missing answer,
+not the supported subject, measure and hypothetical setup. A's shared conditions
+were also grouped as a factual premise, and the optional goal appeared only as
+a hypothetical control, failing the predeclared decisive role coverage. The
+recorded failed result remains held; it is not relabeled or corrected afterward.
+Independent review agrees A's unknown-outcome rationale checked the wrong target,
+and independently verified both requests and A's response/score. B's precise
+citation defect remains unknown.
+
+## Next offline contract — explicit role-specific support targets
+
+`watch-role-support-targets-v3` retains indexed spans but replaces the ambiguous
+per-finding `grounded` result with a role-discriminated check, explicit bounded
+`supportTarget`, and `supported` result:
+
+- Factual premises: `source_entails_premise`.
+- Hypothetical conditions: `source_supports_comparison_ingredients`.
+- Unknown outcomes: `source_supports_subject_measure_setup`.
+
+Each check's support target is visible separately from the neutral `unknownAnswer`.
+For the last role, the target is the subject, measure and setup ingredients, not
+the missing value/effect/answer. Role/check mismatches reject. The parser does not
+judge semantic content with a regex or convert a negative result into positive.
+After raw v3 shape and input binding checks, only the supplied boolean is mapped
+to the original canonical field; all original span/citation/reason/coverage
+checks still apply. V1/v2 contracts and old rejected evidence remain unchanged.
+
+Raw support targets stay in the encrypted response for independent review. A
+regression expressly demonstrates that a well-shaped but misconstrued target
+can parse; the old answer-absence rationale remains semantically unacceptable,
+not a new expected answer supplied to the model or an automatic approval. All
+eight frozen inputs, gold verdicts and decisive roles are unchanged.
+
+Offline tests: 1,729 repository tests and 53 focused tests pass. The proposed
+live scope remains one fixed eight-case calibration, at most 19,200 requested
+output tokens and one request per case. Provider or structural failure stops;
+no retry, article, research, email, alternate provider or billing change. Require
+independent preflight before publication/execution and exact response review
+afterward. Step 3 remains held pending the existing closure criteria.
+
+Independent v3 preflight passed 175 workflow/focused tests and found no blocker.
+It verified the unchanged questions/sources/word inventories/gold labels, strict
+role/check binding, no result upgrade, distinct raw support targets, and preserved
+transport/citation/coverage guards. This clears one bounded synthetic calibration
+after publication, not article or general reviewer qualification.
