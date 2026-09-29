@@ -50,7 +50,7 @@ and resources differ; any outcome must not be attributed solely to model identit
 No reasoning-effort override, custom model-specific prompt, new adapter, arbitrary
 model ID, budget override or paid endpoint is introduced. The existing native
 Cloudflare Execute Model adapter and free-model allowlist are unchanged. The
-runner permits only two frozen profiles; caller-provided source text is not
+original comparison permits only two frozen profiles; caller-provided source text is not
 accepted. Original baseline requests and capture/report shape remain unchanged.
 The new encrypted capture adds the selected comparison profile and resource caps;
 each request/provenance hash still binds the actual selected model and body.
@@ -161,3 +161,35 @@ capacity first, and do not retry or salvage truncated content. This would only
 test completion at the new cap. Different-budget subsets must not be combined
 into a claimed eight-case qualification. No such test is implemented or run here.
 The held article and daily delivery remain unchanged; no email was sent.
+
+## One-case resource-feasibility follow-up — predeclared September 29
+
+Carlos's next "continue" authorizes the recommended isolated SC05 follow-up.
+The closed `reasoning-sc05` profile selects only the existing SC05 input, with
+**one request, a 4,800-token requested-output ceiling, the same 90-second request
+timeout and an eight-minute job limit**. The existing reasoning model, v2 prompt,
+schema, temperature, source, sentence, three supported labels and validation all
+stay fixed. Only SC05's output allowance changes versus its prior request.
+No arbitrary case, prompt, model or budget input is added. Baseline and full
+reasoning profiles remain unchanged.
+
+This is a completion/resource experiment on an already exposed development case,
+not a full-set qualification, unseen evaluation or an article test. Its purpose
+and success status explicitly say resource probe; it cannot create an eight-case
+pass. Failed, malformed or truncated output ends the one attempt with no salvage,
+retry or additional case. Never pool different-budget subsets into qualification.
+
+Preflight: all 1,871 local tests pass, including 165 workflow-selected tests.
+Tests bind the single input and ensure its request body differs from the previous
+SC05 request only at `max_tokens`; they cover refusals, output limits, wrong
+labels, uncertainty, missing evidence, provenance and network-boundary failures.
+Independent preflight found no blockers and reran all 165 selected tests. Live
+verification is still pending at this declaration.
+Current read-only account inspection shows Workers Free Active, no payment method
+and 5.74k/10k displayed daily neurons used. Reconfirm the observation is recent
+before dispatch; no plan, billing or payment changes are permitted.
+
+After publication, verify trusted main, use a fresh local encryption key, dispatch
+once, verify the artifact identity and hash, and replay the saved request/parsed
+response offline. Independent review must assess all three exact span judgments
+and evidence. No article, email, fresh research or daily integration is authorized.

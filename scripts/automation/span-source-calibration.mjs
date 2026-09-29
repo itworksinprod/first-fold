@@ -1,4 +1,4 @@
-// Eight fixed synthetic checks only. No article, writer, repair, retry or email.
+// Fixed synthetic controls or one pinned resource probe. No article, writer, retry or email.
 import {createHash} from 'node:crypto';
 import {writeFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
@@ -14,14 +14,17 @@ export const SPAN_CALIBRATION_LIMITS=Object.freeze({requests:8,tokensPerRequest:
 export const SPAN_CALIBRATION_PROFILES=Object.freeze({
   baseline:Object.freeze({model:DEFAULT_CLOUDFLARE_AI_MODEL,...SPAN_CALIBRATION_LIMITS,timeoutMs:30000}),
   reasoning:Object.freeze({model:FREE_REASONING_WRITER_MODEL,requests:8,tokensPerRequest:2400,outputTokens:19200,timeoutMs:90000}),
+  'reasoning-sc05':Object.freeze({model:FREE_REASONING_WRITER_MODEL,requests:1,tokensPerRequest:4800,outputTokens:4800,timeoutMs:90000}),
 });
 export const SPAN_CALIBRATION_PIN='c7a74593f9b8e5d4714f6122029a4f5a15f93f9c7d4647a6aac287ddb7a7b94d';
 export function prepareSpanCalibration(profile='baseline'){
   if(typeof profile!=='string'||!Object.hasOwn(SPAN_CALIBRATION_PROFILES,profile))throw fail('SPAN_CALIBRATION_PROFILE');
   if(SPAN_SOURCE_CONTROLS.length!==8||SPAN_SOURCE_CONTROLSET_SHA256!==SPAN_CALIBRATION_PIN)throw fail('SPAN_CALIBRATION_CASES');
-  const views=Object.freeze(SPAN_SOURCE_CONTROLS.map(c=>buildSpanSourceReview(c.input)));
-  for(const [i,v]of views.entries())if(v.data.spans.length!==SPAN_SOURCE_CONTROLS[i].expectedVerdicts.length)throw fail('SPAN_CALIBRATION_LABELS');
-  const plan=Object.freeze({corpusSha256:SPAN_SOURCE_CONTROLSET_SHA256,views,profile,limits:SPAN_CALIBRATION_PROFILES[profile]});issued.add(plan);return plan;
+  const controls=profile==='reasoning-sc05'?Object.freeze([SPAN_SOURCE_CONTROLS[4]]):SPAN_SOURCE_CONTROLS;
+  if(profile==='reasoning-sc05'&&controls[0].id!=='SC05')throw fail('SPAN_CALIBRATION_CASES');
+  const views=Object.freeze(controls.map(c=>buildSpanSourceReview(c.input)));
+  for(const [i,v]of views.entries())if(v.data.spans.length!==controls[i].expectedVerdicts.length)throw fail('SPAN_CALIBRATION_LABELS');
+  const plan=Object.freeze({corpusSha256:SPAN_SOURCE_CONTROLSET_SHA256,views,controls,profile,limits:SPAN_CALIBRATION_PROFILES[profile]});issued.add(plan);return plan;
 }
 export function assertSpanCalibrationAuthority(env){
   if(env.GITHUB_REPOSITORY!=='itworksinprod/first-fold'||env.GITHUB_REF!=='refs/heads/main'||
@@ -31,10 +34,10 @@ export function assertSpanCalibrationAuthority(env){
 export async function runSpanCalibration({plan,publicKey,accountId,apiToken,now=new Date(),
   aiRequestImpl=requestWorkersAiEditorial,fetchImpl=fetch,sealImpl=sealDiagnostic}){
   if(!issued.has(plan))throw fail('SPAN_CALIBRATION_PLAN');diagnosticPublicKey(publicKey);
-  const limits=plan.limits;
-  const capture={purpose:'synthetic-span-source-calibration-awaiting-independent-review',capturedAt:now.toISOString(),
+  const limits=plan.limits,resourceProbe=plan.profile==='reasoning-sc05';
+  const capture={purpose:resourceProbe?'synthetic-sc05-resource-feasibility-awaiting-independent-review':'synthetic-span-source-calibration-awaiting-independent-review',capturedAt:now.toISOString(),
     corpusSha256:plan.corpusSha256,contract:SPAN_SOURCE_CONTRACT,calls:[],cases:[],emailSent:false,
-    independentReview:'required-not-performed-by-this-workflow',controls:SPAN_SOURCE_CONTROLS};
+    independentReview:'required-not-performed-by-this-workflow',controls:plan.controls};
   // Preserve the baseline capture/report shape. This metadata is not model input.
   if(plan.profile!=='baseline')capture.comparisonProfile={name:plan.profile,...limits};
   let networkRequests=0,outputBudget=0,code=null;
@@ -47,7 +50,7 @@ export async function runSpanCalibration({plan,publicKey,accountId,apiToken,now=
       if(capture.calls.length>=limits.requests||outputBudget+limits.tokensPerRequest>limits.outputTokens)throw fail('SPAN_CALIBRATION_BUDGET');
       const {body}=buildWorkersAiRequest(options),bodyText=JSON.stringify(body),endpoint=workersAiRunUrl(accountId,model);
       const requestSha256=sha(JSON.stringify({provider:'cloudflare-workers-ai',model,body}));
-      const call={caseId:SPAN_SOURCE_CONTROLS[i].id,request:view.data,promptSha256:sha(prompt),requestSha256};
+      const call={caseId:plan.controls[i].id,request:view.data,promptSha256:sha(prompt),requestSha256};
       capture.calls.push(call);outputBudget+=limits.tokensPerRequest;
       let attempts=0,active=true,violation=false,result;
       try{
@@ -66,13 +69,13 @@ export async function runSpanCalibration({plan,publicKey,accountId,apiToken,now=
       Object.assign(call,{provider:result.provider,model,responseSha256:result.responseSha256,attemptCount:1,response:structuredClone(result.editorialPayload)});
       const verdict=validateSpanSourceReview(call.response,view);call.verdict=verdict;
       if(!verdict.valid)throw fail('SPAN_CALIBRATION_RESPONSE_INVALID');
-      const control=SPAN_SOURCE_CONTROLS[i];
+      const control=plan.controls[i];
       capture.cases.push({caseId:control.id,expectedSupported:control.expectedSupported,expectedVerdicts:control.expectedVerdicts,verdict,
         matched:verdict.supported===control.expectedSupported&&JSON.stringify(verdict.spans.map(s=>s.verdict))===JSON.stringify(control.expectedVerdicts)});
     }
-    if(capture.cases.length!==8||capture.cases.some(c=>!c.matched))throw fail('SPAN_CALIBRATION_MISMATCH');
+    if(capture.cases.length!==plan.controls.length||capture.cases.some(c=>!c.matched))throw fail('SPAN_CALIBRATION_MISMATCH');
   }catch(error){code=/^[A-Z_]{1,64}$/.test(error?.code??'')?error.code:'SPAN_CALIBRATION_FAILED';capture.failure=workersAiFailureDiagnostic(error);}
-  const report={status:code?'failed':'controls-passed-awaiting-independent-review',code,modelRequests:capture.calls.length,
+  const report={status:code?'failed':resourceProbe?'resource-probe-passed-awaiting-independent-review':'controls-passed-awaiting-independent-review',code,modelRequests:capture.calls.length,
     networkRequests,outputBudget,casesCompleted:capture.cases.length,casesPassed:capture.cases.filter(c=>c.matched).length,
     writerRequests:0,searchQueries:0,emailSent:false};
   return {report,sealed:sealImpl({...capture,report},publicKey)};

@@ -8,8 +8,8 @@ import {requestWorkersAiEditorial,buildWorkersAiRequest,workersAiRunUrl,DEFAULT_
 import {openDiagnostic} from '../scripts/automation/private-writer-diagnostic.mjs';
 const pair=generateKeyPairSync('rsa',{modulusLength:3072});
 const publicKey=pair.publicKey.export({type:'spki',format:'der'}).toString('base64');
-const reply=(view,index)=>({reviewSha256:view.data.reviewSha256,judgments:view.data.spans.map((s,i)=>({spanId:s.spanId,
-  verdict:controls[index].expectedVerdicts[i],explanation:'Synthetic label injection tests scoring mechanics only.',
+const reply=(view,control)=>({reviewSha256:view.data.reviewSha256,judgments:view.data.spans.map((s,i)=>({spanId:s.spanId,
+  verdict:control.expectedVerdicts[i],explanation:'Synthetic label injection tests scoring mechanics only.',
   evidence:[{evidenceId:'S1P1',quote:view.data.passages[0].text.split('. ')[0]}]}))});
 async function run(failure,at=0,encrypt=false,profile='baseline'){
   const plan=prepareSpanCalibration(profile),calls=[],network=[],late=[],accountId='0'.repeat(32),limits=SPAN_CALIBRATION_PROFILES[profile];
@@ -42,8 +42,8 @@ async function run(failure,at=0,encrypt=false,profile='baseline'){
       const index=network.length;network.push(index);
       if(index===at&&failure==='quota')return new Response(JSON.stringify({success:false,errors:[{code:3036,message:'PRIVATE_QUOTA_DETAIL'}]}),{status:429});
       if(index===at&&failure==='transport')throw new Error('PRIVATE_TRANSPORT_DETAIL');
-      const payload=reply(plan.views[index],index);
-      if(index===at&&failure==='wrong-label')payload.judgments.at(-1).verdict='supported';
+      const payload=reply(plan.views[index],plan.controls[index]);
+      if(index===at&&failure==='wrong-label')payload.judgments.at(-1).verdict=payload.judgments.at(-1).verdict==='supported'?'unsupported':'supported';
       if(index===at&&failure==='uncertain')payload.judgments.at(-1).verdict='uncertain';
       if(index===at&&failure==='skip')payload.judgments.pop();
       if(index===at&&failure==='quote')payload.judgments[0].evidence[0].quote='Fabricated quote';
@@ -51,7 +51,7 @@ async function run(failure,at=0,encrypt=false,profile='baseline'){
       return new Response(JSON.stringify({success:true,result:response}),{headers:{'content-type':'application/json'}});
     }});
   for(const fn of late)await assert.rejects(fn('https://unapproved.invalid/',{}),/SPAN_CALIBRATION_NETWORK/);
-  assert.ok(network.length<=8);assert.ok(result.report.outputBudget<=limits.outputTokens);
+  assert.ok(network.length<=limits.requests);assert.ok(result.report.outputBudget<=limits.outputTokens);
   assert.doesNotMatch(JSON.stringify(result),/PRIVATE_FIXTURE_TOKEN/);assert.doesNotMatch(JSON.stringify(result.report),/PRIVATE_/);
   return {result,calls,network};
 }
@@ -96,9 +96,34 @@ test('manual workflow carries no delivery or article secrets and retains only en
   assert.match(y,/retention-days: 1/);assert.match(y,/span-source-calibration\.encrypted\.json/);
   assert.ok(y.includes("timeout-minutes: ${{ inputs.profile == 'reasoning' && 15 || 8 }}"));
   assert.match(y,/SPAN_CALIBRATION_PROFILE: \$\{\{ inputs.profile \}\}/);
-  assert.match(y,/default: baseline\s+options:\s+- baseline\s+- reasoning/);
+  assert.match(y,/default: baseline\s+options:\s+- baseline\s+- reasoning\s+- reasoning-sc05/);
   assert.deepEqual([...y.matchAll(/secrets\.(\w+)/g)].map(m=>m[1]),['CLOUDFLARE_AI_API_TOKEN']);
 });
+test('SC05 feasibility is one frozen case with only its output allowance changed',async()=>{
+  const full=prepareSpanCalibration('reasoning'),one=prepareSpanCalibration('reasoning-sc05');
+  assert.equal(one.controls.length,1);assert.equal(one.controls[0].id,'SC05');
+  assert.deepEqual(one.controls[0],controls[4]);assert.deepEqual(one.views,[full.views[4]]);
+  assert.equal(one.corpusSha256,full.corpusSha256);assert.ok(Object.isFrozen(one.controls));
+  assert.deepEqual(one.limits,{...full.limits,requests:1,tokensPerRequest:4800,outputTokens:4800});
+  const before=await run(undefined,0,false,'reasoning'),after=await run(undefined,0,true,'reasoning-sc05');
+  assert.equal(after.calls.length,1);assert.equal(after.network.length,1);
+  const a=buildWorkersAiRequest(after.calls[0]),b=buildWorkersAiRequest(before.calls[4]);
+  assert.deepEqual({...a.body,max_tokens:2400},b.body);assert.equal(a.model,b.model);
+  const c=openDiagnostic(after.result.sealed,pair.privateKey);
+  assert.deepEqual(c.controls,[controls[4]]);assert.equal(c.calls[0].caseId,'SC05');
+  assert.equal(c.calls[0].promptSha256,before.result.sealed.calls[4].promptSha256);
+  assert.equal(c.purpose,'synthetic-sc05-resource-feasibility-awaiting-independent-review');
+  assert.deepEqual(c.comparisonProfile,{name:'reasoning-sc05',...one.limits});
+  assert.equal(after.result.report.status,'resource-probe-passed-awaiting-independent-review');
+  assert.equal(after.result.report.casesPassed,1);assert.equal(after.result.report.outputBudget,4800);
+});
+for(const failure of ['quota','transport','truncation','skip','quote','hash','provider','model','attempt','response-hash','accessor','url','method','body','redirect','retry','no-network','profile-downgrade','wrong-label','uncertain']){
+  test(`SC05 ${failure} stops after one attempt without full-calibration success`,async()=>{
+    const {result,calls}=await run(failure,0,false,'reasoning-sc05');
+    assert.equal(calls.length,1);assert.equal(result.report.status,'failed');
+    assert.equal(result.report.casesPassed,0);assert.equal(result.report.outputBudget,4800);
+  });
+}
 test('comparison profiles are closed, deeply frozen and do not alter baseline requests',()=>{
   const a=prepareSpanCalibration(),b=prepareSpanCalibration('reasoning');
   assert.deepEqual(a.views,b.views);assert.equal(a.corpusSha256,b.corpusSha256);

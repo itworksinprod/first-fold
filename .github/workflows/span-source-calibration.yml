@@ -3,13 +3,14 @@ on:
   workflow_dispatch:
     inputs:
       profile:
-        description: Fixed model/resources; reasoning is eight GPT-OSS-120B calls at up to 2400 output tokens each
+        description: Fixed profiles; reasoning-sc05 is ONE SC05 call with a 4800-token cap, not full calibration
         required: true
         type: choice
         default: baseline
         options:
           - baseline
           - reasoning
+          - reasoning-sc05
       public_key:
         description: Ephemeral RSA-3072 public key in base64 DER format (never a private key)
         required: true
@@ -40,7 +41,7 @@ jobs:
         env:
           DIAGNOSTIC_PUBLIC_KEY: ${{ inputs.public_key }}
         run: node scripts/automation/span-source-calibration.mjs validate
-      - name: Check eight synthetic sentences without articles or delivery
+      - name: Check selected fixed synthetic controls without articles or delivery
         env:
           DIAGNOSTIC_PUBLIC_KEY: ${{ inputs.public_key }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}

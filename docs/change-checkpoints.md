@@ -96,6 +96,13 @@ absent failed response and full run were not replayed. No retry or next provider
 test was started. The next recommendation is a separately bounded one-case
 resource-feasibility check, not article qualification or daily-delivery promotion.
 
+Carlos then authorized that one-case follow-up. The fixed `reasoning-sc05` profile
+is built locally: one SC05 request, 4,800 output tokens, unchanged model/prompt/
+input/schema/90-second timeout and acceptance. All 1,871 tests pass. Independent
+preflight cleared the diff and 165 selected tests; one live result is pending.
+Even success would establish only
+this case's feasibility, not complete calibration or article approval.
+
 ### Prior Step 3 status notes — retained historical evidence
 
 Before that acceptance, Step 3 had a published, locally tested repair but no
