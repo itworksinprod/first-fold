@@ -12,9 +12,13 @@ review rejected its exclusive-baseline premise; the final model review was also
 structurally invalid. Prompt-only retries have stopped. An offline structured
 composition prototype passed offline independent review. Its separate, pinned,
 review-only live path passed preflight; no daily integration or live acceptance.
-The reviewed integration is published, but dispatch is awaiting explicit approval
-of its new curated payload and four-call review scope. No live result exists for
-this path. Source gates and original criteria remain unchanged. The typed premise
+After explicit approval of its new curated payload and four-call review scope,
+the review-only path ran once as 36512680336. Its first three fields passed;
+the final premise review returned a structurally valid rejection. Exact offline
+replay reproduced that hold. Independent exact-text review identifies a semantic
+false rejection of the hypothetical comparison, but the recorded automated hold
+remains: Step 3 is not live-accepted. Source gates and original criteria remain
+unchanged. The typed premise
 checker passed its four reused synthetic controls and independent explanation
 review, which is limited calibration, not general qualification. See the
 chronological trials below; earlier budgets/counts describe those revisions.
@@ -700,7 +704,7 @@ verified real pins, immutable baseline, tamper rejection, unchanged four source
 requests, authority, transport and encrypted-capture boundaries. Cleared for one
 bounded live review only; no editorial acceptance or production promotion.
 
-### Current stopping point — published, live dispatch not authorized yet
+### Previous approval gate — published, dispatch initially blocked
 
 The isolated review-only integration was published as
 `742dffd7b3017a80647f659dd1841cac3a1c28f3`. The new immutable catalog secret
@@ -717,3 +721,76 @@ After explicit approval, the next action is one bounded run of the published
 review-only workflow, then artifact verification, exact replay and independent
 full-text review. Daily delivery, recipient, production policy and billing remain
 unchanged. The original daily read-only monitor remains restored.
+
+### Approved composed review — well-formed false rejection, hold retained
+
+Carlos explicitly approved the new saved-draft/source/catalog payload and four
+review calls before dispatch. [Run 36512680336](https://github.com/itworksinprod/first-fold/actions/runs/36512680336)
+ran verified main `742dffd7b3017a80647f659dd1841cac3a1c28f3`. Its credential-free
+tests and private-input pin validation passed. The exact failing step was
+**Review the pinned composed candidate without writing or delivery**, with
+`COMPOSITION_SOURCE_REJECTED`. Headline, What happened and Why it matters passed;
+the retained watch sentence passed, but the new question received a valid false
+judgment. This is not a quota refusal, malformed-response failure or failed send.
+
+Four single-attempt provider requests, 4,200 maximum requested output tokens;
+zero writer calls, research queries, retries or email. The ceiling is not measured
+token consumption. All 1,676 local tests passed again. No production, threshold,
+recipient, schedule, billing or provider changes were made.
+
+- Encrypted artifact: 11009352582, 55,366 bytes.
+- ZIP SHA-256: `e26e1793d74900eeee5788d15c52ee86485e5ea826b7e30705e1f9007c06d7bd`.
+- Capture SHA-256: `ea08b018d259395a596364902a71f621b9547fec2e1e099eb1915ecb9f95bb1f`.
+- Exact draft SHA-256: `3fc57771ccb552662d242c1e6ab00d14ea9241443dd6edfffac3a441e720ea99`.
+
+Verified trusted-main run identity and artifact digest before local decryption.
+All four exact request/prompt hashes and retained parsed response payloads replay
+through the existing adapters and validators with zero real network requests,
+reproducing the failed report and field reviews. This is parsed-payload replay,
+not reconstruction of the original raw HTTP response bytes. All earlier article
+text and order remain identical; the body is 210 words and the question 27.
+
+The final audit rejects holding the same task and requirements constant, describes
+the question as nonfactual, inserts an exclusive-baseline interpretation into its
+unknown answer, and also introduces an assumption that the extra goal affects
+path length. Primary and independent exact-text review identify this as a semantic
+false rejection under the predeclared hypothetical-question policy. The shared
+task and requirements stipulate comparison controls; they do not report executed
+trials. The actual question neither removes all other objectives nor promises an
+effect on path length. The audit's well-formed JSON does not establish sound
+reasoning or trustworthy premise coverage.
+
+Retained prose remains supported and readable against the complete saved evidence.
+Some automatic citations are incomplete, and the watch rationale also conflates
+a required collision constraint with extra quality goals. These are additional
+limits on reviewer reliability, not changes to the previously accepted prose.
+
+The independent reviewer also reproduced all four request/parsed-response checks
+offline and verified the exact 210-word draft and retained-text identity. This
+does not override the failed automated gate or close Step 3. No second trial is
+dispatched under this one-run approval. Next is a separately scoped offline
+reviewer-calibration repair, not another writer prompt or acceptance of this held
+run. Freeze a small synthetic contrast set and independently predeclare labels
+before any new model result. Design text-anchored roles distinguishing
+source-supported ingredients, explicitly hypothetical shared conditions, and
+unknown outcomes while retaining rejection of invented real plans, operating
+modes, guarantees and results. Conditional language must not receive an automatic
+exemption. This recommendation is not another live-call authorization.
+
+### Next offline checkpoint — role-aware reviewer candidate
+
+Carlos requested the offline reviewer repair. The new
+[question-role calibration checkpoint](watch-role-calibration.md) defines eight
+fictional examples with independently predeclared labels and host-only decisive
+role expectations. The fictional source was clarified to explicitly name the
+optional minimization goal before any model result. A pure request/parser/scorer
+candidate now separates factual premises, hypothetical controls and unknown
+outcomes using exact overlapping text anchors and scoped citations for every
+positive item. Anchor membership is not semantic proof; independent coverage
+and explanation review remain mandatory. Neither the old reviewer nor any live
+workflow changes. No provider call or automatic acceptance is part of this step.
+All 1,689 repository tests and 92 independently run focused/legacy tests passed.
+The independent reviewer cleared the offline contract/control checkpoint and
+requested a literal predeclared-corpus hash test; that pin is now enforced. This
+does not qualify the live reviewer or close Step 3. The next separate checkpoint
+is an opt-in synthetic-only live harness, not an article retry or daily promotion.

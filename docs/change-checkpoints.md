@@ -37,9 +37,18 @@ rejected the comparison's exclusive-baseline premise. Prompt-only variants have
 stopped. A source-bound, manually curated concept selector with host-owned
 comparison grammar passed offline independent review. A separate pinned,
 review-only workflow is published at `742dffd`, with no writer call and the
-unchanged four source checks. Its dispatch was blocked before execution pending
-explicit approval of the new curated payload/four-call scope. No live result
-exists for that path. No daily integration, source/reviewer gate, billing or delivery
+unchanged four source checks. Its dispatch was initially blocked before execution;
+after explicit approval of the new payload/four-call scope, run 36512680336
+passed three fields but received a well-formed false rejection of the new watch
+question. Exact offline replay reproduced the hold; independent review found that
+the audit mistook hypothetical comparison controls for unsupported factual claims
+and introduced meanings absent from the question. The failed gate remains; Step 3
+is not live-accepted. The [offline reviewer-calibration candidate](checkpoints/watch-role-calibration.md)
+now separates anchored factual premises, hypothetical controls and unknown
+outcomes; its eight fictional cases have predeclared labels and decisive roles.
+Its offline contract/control checkpoint passed tests and independent review;
+there is no new live result or reviewer qualification. This is not another
+writer prompt. No daily integration, source/reviewer gate, billing or delivery
 change was made. Require the bounded live test and exact independent review before
 accepting this new assisted approach. These assisted, manually
 scoped results do not qualify an unseen
