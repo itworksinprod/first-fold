@@ -124,6 +124,19 @@ test('writer treats required conditions as hypothetical setup, never as operatio
     question: 'How could an extra quality goal change an output while guaranteeing correct operation?'}), /WATCH_UNSUPPORTED_PRESUPPOSITION/);
 });
 
+test('writer opening guidance conforms to the unchanged question-starter gate', () => {
+  assert.match(WATCH_PROMPT, /Start exactly with How would or How could, followed by the source-named output measure/);
+  assert.match(WATCH_PROMPT, /place the shared-task conditions later, not in an introductory clause/);
+  const {plan, proposal} = watchFixture();
+  for (const question of ['How would an output differ under the same requirements?', 'How could an output differ under the same requirements?']) {
+    assert.equal(applyWatchQuestion(plan, {...proposal, question}).decision, 'add');
+  }
+  // Synthetic shape check only, not a source-support or usefulness verdict.
+  assert.throws(() => applyWatchQuestion(plan, {...proposal,
+    question: 'Under the same requirements, how would an output differ?'}), error =>
+    error.code === 'WATCH_RESPONSE_TEXT' && error.textReason === 'STARTER');
+});
+
 test('observed achieved-result question fails the hypothetical form requirement before factual review', () => {
   const {plan, proposal} = watchFixture();
   for (const question of ['What is the shortest path length achieved by HardFlow while remaining collision‑free?',

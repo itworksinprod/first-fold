@@ -30,8 +30,9 @@ turned a required condition into an operational assurance. A writer-only repair
 now separates shared hypothetical conditions from promised performance and makes
 both sides of the same-task contrast explicit. Its run 36509575833 failed the
 aggregate text-format gate before a draft existed. The exact formatting cause
-was redacted; the next change adds only a private first-failing-predicate reason
-without retaining malformed text or changing acceptance. No source/reviewer gate,
+was redacted; private first-failing-predicate diagnostics then identified an
+invalid question opening in run 36509945146. A prompt-only correction now specifies
+an allowed opening without broadening the gate or repairing model output. No source/reviewer gate,
 billing or delivery change was made. Require a new bounded live test and exact independent
 review—not automatic acceptance. These assisted, manually
 scoped results do not qualify an unseen

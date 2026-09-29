@@ -6,8 +6,9 @@ passed a live automated test but failed independent usefulness review: its new
 question repeated the existing capability explanation. The next writer-only
 contrast trial was correctly stopped for assurance wording before any source
 review. The subsequent role-composition trial failed a text gate; its exact
-formatting cause was not captured. Diagnosis-only instrumentation is being
-prepared; source gates and original criteria remain unchanged. The typed premise
+formatting cause was not captured. A subsequent instrumented trial identified
+an invalid question opening; the writer instruction is being aligned with the
+unchanged starter gate. Source gates and original criteria remain unchanged. The typed premise
 checker passed its four reused synthetic controls and independent explanation
 review, which is limited calibration, not general qualification. See the
 chronological trials below; earlier budgets/counts describe those revisions.
@@ -569,3 +570,27 @@ Diagnostic preflight: all 1,652 repository tests and 55 independent focused test
 pass. Diff check is clean; the exact prior writer request/prompt hashes remain
 unchanged. Independent review cleared one bounded diagnostic trial, not retries
 or automatic acceptance of any resulting draft.
+
+### Instrumented result — question-starter mismatch
+
+[Run 36509945146](https://github.com/itworksinprod/first-fold/actions/runs/36509945146)
+on `a9e0527692948debae4a0180a5e4a8cc11b8d711` stopped after one request
+/ 2,400 requested-token ceiling. Its private first-failure enum is `STARTER`
+under the unchanged `WATCH_RESPONSE_TEXT` code. No draft or source review exists.
+The malformed text is not retained; neither its exact opening nor other possible
+defects are known. This does not identify the previous redacted run's cause.
+Artifact 11008547796, 12,173 bytes, ZIP SHA-256:
+`663d9269b31a5656fe7c9c09f0d11f818b29c2c6eb8d60ce6eccb3b904ed07be`.
+Capture SHA-256:
+`5507913802394e697f73b97c85fb4fe8f530a32767f132e84d633fed599ff21e`.
+
+The narrow correction supplies an omitted format instruction: begin with How
+would or How could and put shared-task conditions later, not in an introductory
+clause. The existing question-starter whitelist is not broadened. No output is
+rewritten, accepted on shape alone, or substituted with a supplied article answer.
+Role composition, evidence, earlier text, semantic checks and resource caps stay
+unchanged; a new live result still requires exact independent review.
+
+Opening preflight: all 1,653 repository tests and 56 independent focused tests
+pass, with a clean diff check. Independent review cleared one bounded no-email
+trial of this prompt-only correction, not editorial acceptance.
