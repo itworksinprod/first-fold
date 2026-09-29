@@ -36,6 +36,17 @@ The next narrow change is article-neutral input handling and a predeclared,
 topic-independent strategy for stories outside that comparison type—not another
 custom MIT prompt. No production integration or autonomous readiness is claimed.
 
+A separate [article-neutral source-excerpt trial](checkpoints/article-neutral-summary-trial.md)
+is now built locally with all 1,794 tests passing and independent preflight
+clearance (125 workflow-selected tests independently rerun). It preserves genuine
+publisher identity, all captured body blocks and the existing source/word-limit
+gates without forcing the MIT comparison. A narrow response-capture correctness
+finding was repaired before clearance. This is an already examined development
+sample with a declared generic input/prompt revision, not an unseen holdout.
+The documentation-only applicability receipt is published at `28d267d`; the new
+test setup is not yet published or live-run. Its separate publication and one
+bounded no-email attempt are awaiting Carlos's explicit approval.
+
 ### Prior Step 3 status notes — retained historical evidence
 
 Before that acceptance, Step 3 had a published, locally tested repair but no
