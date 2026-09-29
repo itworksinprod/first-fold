@@ -84,10 +84,17 @@ eight single attempts at 2,400 requested output tokens each (19,200 total), a
 90-second request timeout and a 15-minute job limit. The original baseline stays
 unchanged; prompt, corpus, schema and scoring are frozen. All 1,850 local tests,
 144 independently rerun workflow-selected tests and exact historical capture
-replay pass. Independent preflight found no blockers in the code. No live run
-has occurred: the Cloudflare account session is signed out, so Workers Free
-status and available allowance cannot yet be confirmed. This is not article
-qualification or daily-delivery promotion.
+replay pass. Independent preflight found no blockers in the code. After sign-in,
+Workers Free Active and 5.31k/10k displayed daily usage were confirmed without
+billing changes. Run 36616705546 on `3e56e83` passed all four completed cases and
+seven observed span judgments, including the previously missed conjunction
+case, then stopped at SC05's 2,400-token output limit. Five calls were made;
+SC06–SC08 were not attempted. Independent exact-output review confirmed the
+completed subset but retained **HOLD for incomplete calibration**. Five request
+hashes were verified and four retained parsed responses replayed offline; the
+absent failed response and full run were not replayed. No retry or next provider
+test was started. The next recommendation is a separately bounded one-case
+resource-feasibility check, not article qualification or daily-delivery promotion.
 
 ### Prior Step 3 status notes — retained historical evidence
 

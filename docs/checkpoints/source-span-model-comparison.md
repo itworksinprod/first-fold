@@ -1,10 +1,10 @@
 # Frozen-contract source-span reviewer comparison
 
-Status: local tests and independent preflight cleared; no live request or article
-approval. Carlos's "go"
-authorized the proposed comparison following the independently held v2 run.
-Live execution remains blocked until the account's Workers Free status is
-confirmed; the dashboard currently requires sign-in.
+Status: published and live-tested once; **HOLD — incomplete calibration**.
+Four cases were correct, then the fifth reached the output-token limit. The
+remaining three were not attempted. There is no article approval or full-set pass.
+Carlos's "go" authorized this comparison following the independently held v2
+run; the bounded attempt is complete and no follow-up trial has been started.
 
 ## Question and fixed evidence
 
@@ -102,8 +102,62 @@ captured result were reproduced, without provider access or changes to the saved
 failed verdicts. The main replay receipt remains in the private review directory
 as `span-calibration-36601205488.profile-compat-audit.json`.
 
-This clears publication of the isolated setup, not a model result. The pending
-account-plan check is a real execution blocker: the current Cloudflare dashboard
-session is signed out. No live dispatch, inference call or new encryption key
-has been created for this comparison. Once signed in, confirm the plan/usage,
-then verify published main and run the single predeclared comparison if safe.
+This cleared publication of the isolated setup, not a model result. Publication
+was verified at `3e56e834bb3988dbd23f2b82bcb73720e16d650c`. The initial sign-in
+blocker was resolved before the single dispatch described below.
+
+## Live result — September 29, 2026
+
+At approximately 19:04 UTC, read-only Cloudflare dashboard inspection confirmed
+**Workers Free, Active**, no payment method on file, and displayed daily usage
+of **5.31k/10k neurons**. These are rounded preflight observations, not measured
+usage for this experiment. The GitHub account variable matched the inspected
+account. No billing settings were changed.
+
+[Run 36616705546](https://github.com/itworksinprod/first-fold/actions/runs/36616705546)
+used trusted main `3e56e834bb3988dbd23f2b82bcb73720e16d650c`, owner manual dispatch,
+the `reasoning` profile and attempt one. All 144 workflow-selected tests and
+input validation passed. The step **Check eight synthetic sentences without
+articles or delivery** stopped with `WORKERS_AI_EDITORIAL_FORMAT_INVALID`.
+
+Five requests were made, reserving 12,000 requested output tokens. Four completed
+cases matched all seven expected segment verdicts. On SC05 the retained private
+diagnostic records `OUTPUT_TOKEN_LIMIT`, with 2,400 completion tokens against the
+2,400-token requested cap. The adapter assigns that reason from the provider's
+single-choice `finish_reason: length`; this is not a guessed semantic rejection
+or a documented free-quota refusal. Its unsuccessful response text was not
+retained. SC06–SC08 were not called. No retry, fallback or output-limit increase
+followed the stop.
+
+Verified artifact `11055064636`: 14,497 ZIP bytes, SHA-256
+`e7f5f9f85143cf9a5c88edbb854a53f6589d71a9b2a7018ae8550bd24f25f405`.
+Saved decrypted capture SHA-256:
+`299cba22aa25dd3e3a2c8cb47edd3e0c461d073cfd73dde05d1eaba1aa60ee94`.
+Run identity, revision, actor, attempt, artifact membership/digest and profile
+were checked before local inspection. All five request hashes were verified.
+The four retained parsed responses replayed through the adapter and unchanged
+validator offline, with zero real network requests. The absent fifth response,
+full run and original provider HTTP bytes were **not** replayed.
+
+Independent exact-output review confirmed all four completed cases, not just
+their labels:
+
+- SC01: both actions and their shared subject are source-supported.
+- SC02: range rejection does not supply an accuracy guarantee.
+- SC03: the two observations are accepted without inventing a causal claim,
+  correcting the earlier Llama error on this reused case.
+- SC04: installation is supported but explicit causation is not established.
+
+Result: **4/4 completed cases, 7/7 observed segment judgments; only four of eight
+planned cases have usable results**. SC05's semantic judgment is unknown, as are
+SC06–SC08. The model and output budget both changed, so this subset improvement
+cannot be attributed solely to the model or promoted into an overall accuracy
+claim. The independent decision remains HOLD for incomplete calibration.
+
+The smallest recommended next experiment is one separately authorized SC05
+resource-feasibility test with only a predeclared higher output cap changed.
+Keep the model, prompt, input, schema, timeout and acceptance fixed, confirm free
+capacity first, and do not retry or salvage truncated content. This would only
+test completion at the new cap. Different-budget subsets must not be combined
+into a claimed eight-case qualification. No such test is implemented or run here.
+The held article and daily delivery remain unchanged; no email was sent.
