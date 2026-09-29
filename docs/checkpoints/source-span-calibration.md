@@ -1,0 +1,89 @@
+# Source-span coverage calibration
+
+Status: implemented and independently preflight-reviewed locally; live
+calibration pending. This does not repair or approve the held GitHub article.
+
+## Why a new contract
+
+Run 36575945893 produced a supported opening followed by an unsupported
+security/features guarantee. Its automated reviewer's explanation addressed
+only the opening. The old prompt already required all assertions, so merely
+repeating that instruction is not the proposed fix.
+
+The new isolated contract gives every losslessly retained text segment a required
+verdict, explanation and source quote. A host-generated partition prevents the
+reviewer from omitting a tail or returning one blanket verdict. Every segment is
+judged in its complete sentence context, including connectors, conditions,
+negation and causal relationships. There is no "ignore" category. Unsupported
+and uncertain are distinct holds. Only all-supported can pass the structural
+review. Every positive quote must occur exactly in its named saved passage.
+
+This is observable text coverage, **not deterministic factual verification**.
+The punctuation/connective heuristic is not a grammatical parser: it can split
+noun phrases/dates and can leave multiple assertions together. Exact quote
+membership does not prove entailment. A unit test explicitly demonstrates that
+a structurally valid, all-positive false judgment can still parse. The negative
+control with an unpunctuated guarantee tests this remaining model dependency.
+No article workflow imports this experiment; no legacy reviewer is replaced.
+
+## Predeclared controls and outcome
+
+An independent reviewer proposed eight fictional development controls, four
+supported and four unsupported, before inference. Each pair tests guarantees,
+causality, operating conditions or population scope. Labels and decisive reasons
+stay host-only, not in the prompt, schema or request data. Host scoring checks
+every expected segment verdict as well as the whole-sentence result; merely
+returning false or uncertain for every input cannot pass. After exact artifact
+replay, independent review must check the explanations and quoted evidence
+against each predeclared distinction. Passing labels alone is insufficient.
+
+Corpus SHA-256, including predeclared segment labels:
+`c7a74593f9b8e5d4714f6122029a4f5a15f93f9c7d4647a6aac287ddb7a7b94d`.
+
+Prompt SHA-256:
+`15926a4c97b5ba241fa2511290d44841f236a5b0e7abfe516e308f4ffb89efcf`.
+
+The previously held real article remains byte-identical and unapproved. These
+controls are fictional calibration, not an unseen news sample. A control pass
+would justify only a separately bounded check of real article text, not another
+writer attempt or automatic delivery.
+
+## Bounded live-test design
+
+- Manual owner dispatch, trusted main and attempt one only.
+- Eight predetermined reviewer requests, one sentence each, existing Cloudflare
+  Llama model. No writer, article secret, search or email input.
+- 600 requested output tokens per request, 4,800 total; one attempt per case.
+  30-second request timeouts and an eight-minute job limit.
+- A provider, transport, provenance or malformed-response error stops the run.
+  Truncation is a format/resource hold, never a semantic negative. No retry,
+  alternate provider, raised budget or paid fallback follows a hold.
+- A valid wrong label remains evidence; the other fixed, predeclared cases still
+  run once. The final result stays held unless all expected segment labels match.
+- Only a one-day encrypted artifact is uploaded. The fresh private decryption
+  key stays on Carlos's Mac. Exact requests and parsed responses are retained;
+  original HTTP response bytes are not independently replayable.
+- Even a green workflow says `controls-passed-awaiting-independent-review`.
+
+The existing provider adapter is unchanged. Model and request options were
+checked against the [official Cloudflare model documentation](https://developers.cloudflare.com/workers-ai/models/llama-3.3-70b-instruct-fp8-fast/).
+This setup does not inspect account billing status or guarantee available free
+quota. It does not enable billing or change the configured account plan.
+
+## Local checks
+
+The first independent code review found a sparse-array correctness gap: a
+numeric-looking non-index property could substitute for an absent array element.
+Exact indices are now required, and an empty flattened source inventory rejects.
+The regression confirms that malformed arrays cannot issue an evidence-free
+review. This is not a demonstrated native JSON-provider exploit.
+
+The 34 new focused tests cover lossless source coverage, the known tail omission,
+quote binding, held verdicts, bad shapes, resource limits, provenance, encryption,
+authority, no label leakage, no hidden retries, and unchanged article code. These
+mock checks establish mechanics only; live classifier behavior remains unproven.
+The full local suite passes all 1,828 tests after building the application.
+Independent preflight reran all 122 workflow-selected tests and cleared the
+sparse-array repair, caps, authority and isolation. The final requested alignment
+advertises the validator's eight-character quote minimum in both schema and
+prompt; this changes no verdict or editorial threshold.

@@ -53,6 +53,14 @@ not quality approval. No retry, custom correction, email or daily promotion
 occurred. Clause-complete source-review qualification is the next proposed
 checkpoint; the different-article summary is not yet accepted.
 
+The next [source-span calibration](checkpoints/source-span-calibration.md) is
+implemented locally as a separate checker experiment. It requires a verdict and
+exact source evidence for every host-owned text segment in full sentence context.
+Eight balanced fictional controls and per-segment labels were declared before
+inference. All 1,828 local tests pass; independent preflight passed and live
+calibration remains pending. The held article, writer prompt and daily workflow
+are unchanged; structural coverage is not a claim of semantic correctness.
+
 ### Prior Step 3 status notes — retained historical evidence
 
 Before that acceptance, Step 3 had a published, locally tested repair but no
