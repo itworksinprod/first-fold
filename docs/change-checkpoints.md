@@ -25,8 +25,16 @@ words, a 27-word question plus its label, all prior text/headline/order unchange
 The explicitly approved assisted method passed live run 36556059384, exact local
 replay and independent whole-article review of all seven editorial checks.
 The revision passed 1,764 tests; no research, email, paid fallback or daily change.
-The next separate checkpoint is a different article without custom prompt fixes.
-This result does not establish autonomous writer/reviewer or production readiness.
+The [different-article applicability check](checkpoints/different-article-applicability-2026-09-29.md)
+on September 29 stopped before model inference: the selected GitHub deadline
+story does not supply the optional-goal comparison's required relationship.
+Independent exact-source review agrees. The MIT input pin is a separate admission
+boundary, not a model failure. Seventy-two focused tests and five private audit
+checks pass; no new summary or live model trial occurred. The frozen method does
+not cover this different article; broader generalization remains unproven.
+The next narrow change is article-neutral input handling and a predeclared,
+topic-independent strategy for stories outside that comparison type—not another
+custom MIT prompt. No production integration or autonomous readiness is claimed.
 
 ### Prior Step 3 status notes — retained historical evidence
 
