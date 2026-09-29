@@ -61,8 +61,9 @@ C's reason-text shape. Further prompt/representation variants are stopped pendin
 a structurally different design assessment. No reviewer is live-qualified.
 The [assisted verification proposal](checkpoints/watch-assisted-verification-proposal.md)
 separates source-backed ingredients/relationships from editorial comparison
-stipulations, followed by mandatory independent exact-text review. It needs
-explicit approval to change the acceptance method before live integration.
+stipulations, followed by mandatory independent exact-text review. Carlos
+explicitly approved this method change on September 29; the isolated new path
+passes 1,761 local tests and awaits independent preflight and a bounded live run.
 This is not another writer prompt.
 No daily integration, source/reviewer gate, billing or delivery
 change was made. Require the bounded live test and exact independent review before

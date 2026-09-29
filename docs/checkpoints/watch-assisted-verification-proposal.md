@@ -1,7 +1,8 @@
 # Step 3 — assisted verification proposal
 
-Status: **proposal only, awaiting Carlos's approval of the acceptance-method
-change**. No new provider request, acceptance implementation or article approval.
+Status: **Carlos explicitly approved the acceptance-method change on September
+29, 2026**. The separate opt-in implementation passes 1,761 local tests and
+independent preflight; one bounded live test remains. No article approval yet.
 
 ## Why a different method is proposed
 
@@ -16,8 +17,8 @@ The proposed method is source-checked, constrained composition plus mandatory
 independent exact-text review. It replaces the experimental whole-question model
 acceptance gate, **not the factual standard**. Existing permission to keep
 iterating does not by itself authorize this change to the agreed acceptance
-method. Offline feasibility assessment is allowed; live acceptance integration
-waits for explicit approval.
+method. Carlos subsequently gave that explicit approval; the new method still
+requires the separate live result and independent exact-text review below.
 
 ## Limited scope
 
@@ -58,7 +59,7 @@ proof of entailment.
    usefulness and readability. Reject a question that merely repeats the text or
    hides a factual assertion behind a question mark.
 
-If approved, the first prototype must stay separate from the old failed review
+The approved first prototype must stay separate from the old failed review
 path and use a new method identifier. The four retained-field source requests
 plus one ingredient/relationship request may use at most five single-attempt
 requests and 4,800 requested output tokens, with the existing free provider and
@@ -83,6 +84,26 @@ The unrelated-measure case is outside the allowed evidence, not proof that the
 proposed measurement would be intrinsically impossible.
 
 ## Closure and limits
+
+Implementation: `scripts/automation/assisted-watch-review.mjs` and the manual
+`assisted-watch-review.yml` workflow. It pins the existing baseline, catalog,
+assembled draft and private premise-map file. The first three source requests
+are unchanged; the fourth checks the retained watch assertion against all its
+existing evidence. The fifth checks all three complete assertion/relationship
+pairs against P5/P20, without a question, prior expected verdicts or mutation
+labels in the model input. Synthetic tests exercise negative/missing/malformed
+judgments, preserved scopes, request identity, no retries, encryption and late
+network rejection. They do not prove the model's semantic reliability.
+
+The full private map stays local/in a scoped secret and encrypted artifact input;
+the public repository contains pins, mechanics and receipts, not the saved article.
+Even all-positive provider replies return only `awaiting-independent-review`.
+
+Independent preflight passed 164 focused/legacy tests, verified the exact private
+pins and unchanged candidate hash, and confirmed all five request boundaries.
+An actual-packet mocked run exercised encryption with five requests/4,800
+requested tokens and zero real network requests. No code-review blocker was
+found for one bounded no-email live trial. These are not model-quality results.
 
 Offline independent review found the three ingredient assertions supported and
 all seven negative expectations defensible, subject to the explicit

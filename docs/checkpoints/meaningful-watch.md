@@ -30,9 +30,10 @@ check. The role-specific support-target contract also failed live as 36521522135
 A introduced an exclusive baseline, B still checked the unanswered outcome, and
 C failed a reason-text gate. These reviewer variants remain unqualified; a
 structural design assessment is needed before further provider trials.
-An [offline assisted-verification proposal](watch-assisted-verification-proposal.md)
-now makes the alternative and its approval boundary explicit. It is not
-implemented as a live acceptance path and does not override the failed checks.
+Carlos explicitly approved the [assisted-verification alternative](watch-assisted-verification-proposal.md)
+on September 29. Its isolated implementation is locally tested and awaits
+independent preflight and a bounded live attempt; it does not override the old
+failed checks or approve the article.
 No new article result followed. See the
 chronological trials below; earlier budgets/counts describe those revisions.
 This isolated saved-article experiment follows the accepted Step 2 receipt. No
