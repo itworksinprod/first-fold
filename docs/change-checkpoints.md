@@ -227,6 +227,17 @@ distinctions and returned semantic HOLD. The next offline checkpoint is observab
 per-passage qualification/exception coverage, with fixed controls and no article
 patch or unchanged live retry. No email, billing or daily-delivery changes occurred.
 
+The [passage qualification review](checkpoints/passage-scope-review.md) now completes
+its **offline** checkpoint with 2,162 passing tests and independent clearance after
+147 selected tests. Its separate contract requires ordered assessments of every
+passage for every contextual span, records support and qualifications separately,
+and rejects supported verdicts that acknowledge lost conditions or uncertainty.
+Final evidence is tied to the recorded assessments. Fixed controls, the source
+catalog, legacy prompts and all live workflows remain unchanged. An explicit test
+still demonstrates that a misclassified exception can produce a false positive;
+structure is not semantic proof. Next: bounded live calibration and independent
+exact-response review. No provider call, email or production integration occurred.
+
 ### Prior Step 3 status notes — retained historical evidence
 
 Before that acceptance, Step 3 had a published, locally tested repair but no
