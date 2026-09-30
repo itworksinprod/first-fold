@@ -211,6 +211,13 @@ The prior article false positive remains held. Next: bounded live calibration of
 the unchanged checker against these frozen controls, with independent exact-output
 review before any prompt repair or production integration.
 
+The isolated [conditional-scope live baseline](checkpoints/conditional-scope-live.md)
+is prepared with 2,108 passing tests and independent preflight clearance after
+184 workflow-selected tests. One manual no-email run measures all sixteen frozen
+fictional cases with the unchanged checker, at most 4,800 requested output tokens
+each, and no retries. Exact replay and independent explanation review remain
+required. This preparation does not repair the held article or qualify the model.
+
 ### Prior Step 3 status notes — retained historical evidence
 
 Before that acceptance, Step 3 had a published, locally tested repair but no
