@@ -150,6 +150,17 @@ The complete-article checkpoint is **HOLD**. Next proposed offline work is a
 versioned source-range selector that lets the host reconstruct quotations while
 preserving semantic review—not an unchanged retry or approval override.
 
+Carlos said "go" to that [offline evidence adapter](checkpoints/source-range-evidence.md).
+It is built as a new immutable word-range contract without modifying the v2
+reviewer or live workflow. The host reconstructs each contiguous source quote
+and reuses the existing validation, while keeping raw selections distinct.
+All 1,968 local tests pass. Independent review passed 36 focused tests and the
+actual saved-input audit: seven unchanged units, 23 spans and all six source
+blocks; the original bad quotation stays rejected. This offline-mechanics
+checkpoint is complete, with no provider request. New live selection/semantic
+qualification remains required; no article correction, email or production
+promotion is implied.
+
 ### Prior Step 3 status notes — retained historical evidence
 
 Before that acceptance, Step 3 had a published, locally tested repair but no
