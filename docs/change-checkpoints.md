@@ -140,7 +140,15 @@ delivery path. Independent predeclared expectations identify 22 determinate
 spans and one ambiguous headline; they never enter the model requests. Workflow
 completion alone cannot approve the article. All 1,944 local tests pass; independent
 preflight cleared the actual packet and code with 157 workflow-selected tests.
-No live result is yet claimed.
+Run 36651712972 on `b106f95` then stopped at U1: `FULL_ARTICLE_RESPONSE_INVALID`.
+One 4,800-token-capped request returned a noncontiguous quotation stitched with
+an ellipsis; zero valid units completed and the remaining six were not attempted.
+Verified encrypted-artifact retrieval, exact request/parsed-response replay and
+independent inspection confirm the guard correctly rejected it. This was not a
+quota refusal. The headline also remains semantically ambiguous about delay.
+The complete-article checkpoint is **HOLD**. Next proposed offline work is a
+versioned source-range selector that lets the host reconstruct quotations while
+preserving semantic review—not an unchanged retry or approval override.
 
 ### Prior Step 3 status notes — retained historical evidence
 

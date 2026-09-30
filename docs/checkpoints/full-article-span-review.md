@@ -1,7 +1,7 @@
 # Complete held-article source-span check
 
-Status: isolated setup built; local and independent preflight passed.
-No live run or whole-article approval yet.
+Status: live diagnostic stopped at its first unit; checkpoint **HOLD**.
+Local and independent preflight passed, but the complete-article check did not.
 
 Carlos approved applying the same checker to the complete saved GitHub-runner
 draft, then explicitly approved transmitting its headline, six sentences and
@@ -87,3 +87,49 @@ Current Cloudflare documentation for the model and pricing was consulted. At
 approximately September 30 00:42 UTC, the account dashboard showed Workers Free
 Active, no payment method and 341.85 of 10,000 daily neurons used. No billing
 setting changed; this observation does not guarantee provider acceptance.
+
+## Bounded live result
+
+[Run 36651712972](https://github.com/itworksinprod/first-fold/actions/runs/36651712972)
+used main `b106f95f8db34fd11ffe36b883c7c52359a1995c`. The 157 selected tests and
+pinned-input validation passed. On September 30 at 00:43 UTC (September 29
+Eastern), it failed at **Review every unit once without rewriting or delivery**
+with `FULL_ARTICLE_RESPONSE_INVALID`.
+
+Only U1 (the headline) was attempted: one network/model request, a 4,800-token
+requested-output ceiling, zero completed valid reviews. U2–U7 were not attempted.
+This was not a quota refusal or transport failure. The parsed reply claimed
+support but supplied a quotation formed by joining two separated source portions
+with a literal ellipsis. It was not an exact contiguous substring of S1P1, so the
+unchanged quotation-membership guard correctly rejected it. No retry, quote
+repair, continued request, writer call or email occurred.
+
+- Artifact ID `11070438455`; verified ZIP size 8,441 bytes.
+- Artifact SHA-256: `b27a5435ad861fd0777c86e64c2e89268545b49beec317881d229c52e85ac4ef`.
+- Decrypted capture SHA-256: `8b332b980a45f61792f66d35b9b1b8dc4906934459db427041d8936159f24777`.
+
+Run/revision/event/actor/attempt and artifact identity/digest were verified before
+local decryption. Exact request and retained parsed-response replay reproduces
+the failure with no network calls; raw provider HTTP bytes were not replayed.
+An in-memory offline control replacing only the invalid quote with the exact
+passage passes structural validation, isolating the quote-membership failure.
+The original saved capture is unchanged. This synthetic control is not model
+output, factual approval, or a repaired article.
+
+The headline's semantic ambiguity also remains: matching the new date does not
+establish that the deadline was postponed. Independent exact-result review
+returned **HOLD** and reproduced the invalid quote. The complete S1P1 passage
+is 297 characters, under the 400-character quotation cap, so the omission was
+not forced by that limit. No complete-article accuracy score or success is claimed.
+
+## Next proposed offline change
+
+The independent reviewer recommends a versioned source-range evidence adapter,
+not another wording patch or an unchanged retry: supply numbered word boundaries,
+require one contiguous range per selected source quote, and reconstruct quotation
+text on the host. Keep source-membership, length, count and semantic checks;
+preserve raw selections separately from reconstructed evidence. Test Unicode,
+invalid/reordered/out-of-range selections and unsupported claims that cite valid
+source text. This would address copying failures, not establish entailment or
+resolve the headline ambiguity. It is not implemented or live-tested by this
+result record. The historical capture remains frozen and held.
