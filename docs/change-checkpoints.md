@@ -161,6 +161,19 @@ checkpoint is complete, with no provider request. New live selection/semantic
 qualification remains required; no article correction, email or production
 promotion is implied.
 
+Carlos then approved the [bounded range-citation comparison](checkpoints/source-range-live-review.md).
+All 1,996 local tests and independent preflight (182 focused tests) passed.
+Run 36655424494 on `18af1af` attempted two of seven units, then correctly stopped
+with `FULL_ARTICLE_RANGE_RESPONSE_INVALID`: two selections contained only a
+five-character year, below the unchanged eight-character citation minimum.
+Exact host reconstruction worked on the returned ranges; complete contextual
+evidence selection did not. Artifact identity/digest checks, exact local replay
+and independent full-result review confirm HOLD. The one structurally valid
+headline still leaves date-direction ambiguity unresolved; U3–U7 were not tested.
+No retry, email or daily change occurred. Next proposed offline change: a bound
+catalog of complete source sentences, preserving factual and evidence limits,
+instead of asking the model for arbitrary start/end words.
+
 ### Prior Step 3 status notes — retained historical evidence
 
 Before that acceptance, Step 3 had a published, locally tested repair but no

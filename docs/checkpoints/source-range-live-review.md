@@ -1,6 +1,6 @@
 # Source-range citation comparison — live checkpoint
 
-Status: local and independent preflight passed; live result pending.
+Status: live attempt stopped at U2; full checkpoint HOLD.
 
 Carlos said “go” to the bounded live test following publication of the offline
 source-range adapter. This is a separate, manual, encrypted no-email workflow.
@@ -65,3 +65,58 @@ At approximately September 30, 2026 01:28 UTC, Cloudflare displayed 411.94 of
 10,000 daily neurons used. Billing showed Workers Free, Active, with no payment
 method on file. No settings were changed. Current official model/API and pricing
 documentation was consulted. Availability remains subject to provider limits.
+
+## Bounded live result
+
+[Run 36655424494](https://github.com/itworksinprod/first-fold/actions/runs/36655424494)
+used trusted main `18af1af38a787bb7726dfdc51da3d75de428f3a9`, owner/manual,
+first attempt. Tests and pinned-packet validation passed. The run failed in
+**Review every unit once with exact source ranges** with
+`FULL_ARTICLE_RANGE_RESPONSE_INVALID`. Two requests were made, with 9,600
+requested output tokens maximum. One valid unit completed; U3–U7 were not called.
+There was no quota refusal, transport failure, retry or email.
+
+U1 returned legal ranges and the host reconstructed exact source quotes; the
+earlier ellipsis-copying error did not recur in these two responses. Its supported
+headline verdict still does not resolve the prior ambiguity about the direction
+of the date change: the explanation establishes the date and platform only.
+
+U2 returned six supported labels but its T3 and T6 selected only `2026.` and
+`2026,`, respectively. Both exact substrings are five UTF-16 code units, below
+the unchanged eight-unit citation minimum. The adapter correctly rejected the
+whole response without expanding either range. Even the valid month/day ranges
+offer little contextual evidence by themselves. Exact quotation copying has
+been demonstrated on these replies; reliable contextual selection has not.
+
+- Artifact ID: `11072316407`; verified ZIP size 31,797 bytes.
+- ZIP SHA-256: `d377e86b3c719dd75fa89946fa8e41fce9eda0b9a08d0922b5e35f0a43d89ff1`.
+- Decrypted capture SHA-256: `430574eba0b3e3f4fb45370014f128b8859878867b27ac632c5d3c60e9363d72`.
+
+Run/revision/event/actor/attempt, artifact identity, size and digest were verified
+before local decryption. Both exact request hashes and parsed responses replay
+locally to the same failed report with zero network calls. Raw provider HTTP
+bytes were not replayed. An explicitly synthetic, in-memory expansion of only
+the two year selections passes structural validation and isolates the immediate
+length rejection; it is not model output or a repaired/approved article. The
+original capture remains byte-identical. Independent outcome review reproduced
+both validations and retained HOLD: one structurally valid unit is not one
+independently approved unit. U2's underlying date assertions remain supported;
+the immediate failure is citation selection, not evidence that the dates are
+false. The reviewer also noted that U1's scope quote omits “only,” which remains
+available in its complete source context.
+
+No overall citation success, semantic accuracy score, article acceptance or
+production readiness is claimed. The new transport experiment is held; all
+earlier historical captures and production behavior remain unchanged.
+
+## Next proposed offline step
+
+Independent review recommends a source-sentence evidence catalog, not another
+prompt patch or unchanged retry. The host would offer complete exact source
+sentences with stable IDs and bound offsets; the model selects IDs and the host
+reconstructs separate quotations. Keep full source passages, semantic judgments,
+8–400 code-unit and one/two-evidence limits. Test version numbers, decimals,
+abbreviations and qualification boundaries; reject unsuitable segments rather
+than truncate or silently expand evidence. This is not implemented here. It
+could prevent tiny date-only selections but cannot prove entailment or resolve
+the ambiguous headline. No further provider call was made.
