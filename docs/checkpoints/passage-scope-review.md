@@ -106,7 +106,7 @@ failures remain immutable historical evidence.
 ## Live work still required
 
 The local suite and independent implementation review are complete. The next
-checkpoint is a separately bounded live evaluation of the new contract on the
+checkpoint is a [separately bounded live evaluation](passage-scope-live.md) of the new contract on the
 unchanged corpus. Verify its exact revision, request and
 response provenance, local replay and independent full-source explanations before
 judging the semantic result. Do not promote the held article or daily integration
