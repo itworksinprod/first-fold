@@ -132,6 +132,16 @@ daily promotion occurred. The original article still needs correction and
 approval; unseen generalization and a complete-draft application of the checker
 remain separate unresolved checkpoints.
 
+Carlos approved the next [complete-draft span check](checkpoints/full-article-span-review.md),
+including explicit transmission of the unchanged headline, six sentences and
+six source blocks to Cloudflare for up to seven 4,800-token reviews. The isolated
+setup uses the same v2 sentence checker throughout, with no writer, retries or
+delivery path. Independent predeclared expectations identify 22 determinate
+spans and one ambiguous headline; they never enter the model requests. Workflow
+completion alone cannot approve the article. All 1,944 local tests pass; independent
+preflight cleared the actual packet and code with 157 workflow-selected tests.
+No live result is yet claimed.
+
 ### Prior Step 3 status notes — retained historical evidence
 
 Before that acceptance, Step 3 had a published, locally tested repair but no
