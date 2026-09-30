@@ -1,0 +1,221 @@
+{
+  "kind": "unchanged-parsed-live-responses-not-provider-http-bytes",
+  "runId": "36791068732",
+  "mainRevision": "f4709da16fd808f91fcd55b708a08076bad34c44",
+  "captureSha256": "d4631178588e6815ebe8fa1ac7a86b6fc904cf9e09ecffa4be280dcee1f08282",
+  "controlsetSha256": "22ba98ba1abbc942aff656912fefb3f2c35aae2ba9bb56b736b8f7ccff2b6341",
+  "reviewContract": "contextual-passage-scope-v1",
+  "records": [
+    {
+      "caseId": "CS01",
+      "response": {
+        "reviewSha256": "ca9dcee5624cb7641cc5554565afb94a8ee08c03c28dc28167cd64146414944c",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "support",
+                "qualification": "none",
+                "explanation": "The bulletin explicitly instructs owners of outdoor sensors with cracked seals to replace the seals before winter.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  }
+                ]
+              },
+              {
+                "evidenceId": "S1P2",
+                "contribution": "context",
+                "qualification": "preserved",
+                "explanation": "It clarifies that indoor sensors are out of scope and uncracked seals need not be replaced, matching the claim's limited scope.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P2S1"
+                  },
+                  {
+                    "sentenceId": "S1P2S2"
+                  }
+                ]
+              }
+            ],
+            "verdict": "supported",
+            "basis": "supported",
+            "explanation": "Both passages confirm Cedar's advice applies to outdoor sensors with cracked seals and that the scope excludes other cases, matching the claim.",
+            "evidence": [
+              {
+                "sentenceId": "S1P1S1"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "CS02",
+      "response": {
+        "reviewSha256": "0807b2be06c41ba932381f0995afc0f93caac2c649ff7f53f454982bcefcbde2",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "support",
+                "qualification": "missing",
+                "explanation": "Bulletin advises replacement before winter only for outdoor sensors with cracked seals, not for all sensors.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  }
+                ]
+              },
+              {
+                "evidenceId": "S1P2",
+                "contribution": "contradiction",
+                "qualification": "none",
+                "explanation": "Indoor sensors are outside the bulletin's scope and seals without cracks do not need replacement, contradicting a claim about every sensor.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P2S1"
+                  },
+                  {
+                    "sentenceId": "S1P2S2"
+                  }
+                ]
+              }
+            ],
+            "verdict": "unsupported",
+            "basis": "contradiction",
+            "explanation": "The claim that Cedar advises replacing seals before winter on every sensor is too broad; the source limits advice to outdoor sensors with cracked seals and excludes indoor sensors and uncracked seals.",
+            "evidence": [
+              {
+                "sentenceId": "S1P2S1"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "CS03",
+      "response": {
+        "reviewSha256": "57d4fa85f185021d9e9439e6ed334ccd6631ba99119f9436b446f7037337fb38",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "support",
+                "qualification": "preserved",
+                "explanation": "The source says every Lumen badge expires at midnight on 30 April and no badge is exempt, matching the claim that all badges expire then.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  },
+                  {
+                    "sentenceId": "S1P1S2"
+                  }
+                ]
+              }
+            ],
+            "verdict": "supported",
+            "basis": "supported",
+            "explanation": "Both sentences confirm that all Lumen badges expire at midnight on 30 April with no exemptions.",
+            "evidence": [
+              {
+                "sentenceId": "S1P1S1"
+              },
+              {
+                "sentenceId": "S1P1S2"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "CS04",
+      "response": {
+        "reviewSha256": "dc616ede10ea4b8f20343e5236c654451d579c95ff4b5aef8a6c44b1decd5bf1",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "contradiction",
+                "qualification": "none",
+                "explanation": "Source states every badge issued by Lumen expires on 30 April and no badge is exempt, contradicting the claim that only visitor badges do so.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  },
+                  {
+                    "sentenceId": "S1P1S2"
+                  }
+                ]
+              }
+            ],
+            "verdict": "unsupported",
+            "basis": "contradiction",
+            "explanation": "The source says all Lumen‑issued badges expire on 30 April, not just visitor badges, directly contradicting the claim.",
+            "evidence": [
+              {
+                "sentenceId": "S1P1S1"
+              },
+              {
+                "sentenceId": "S1P1S2"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "CS05",
+      "response": {
+        "reviewSha256": "9df240ee704c99be8fb2a01f2d24e227265f19cf5eaa9b910238c6433a6fcbe5",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "support",
+                "qualification": "none",
+                "explanation": "Sentence states all archive members must reserve a desk before each visit, supporting the reservation requirement.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  }
+                ]
+              },
+              {
+                "evidenceId": "S1P2",
+                "contribution": "context",
+                "qualification": "missing",
+                "explanation": "Sentence only says members under sixteen are exempt; it does not explicitly state that members aged at least sixteen must reserve, so the age condition is not directly supported.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P2S1"
+                  }
+                ]
+              }
+            ],
+            "verdict": "unsupported",
+            "basis": "insufficient_evidence",
+            "explanation": "The age‑at‑least‑sixteen condition is not directly stated in any source sentence; only a general rule and an exemption are given.",
+            "evidence": [
+              {
+                "sentenceId": "S1P1S1"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -252,6 +252,19 @@ failures and returned HOLD. The next offline step is to preserve the raw
 counterexamples and test joint-source inference and qualification classification;
 fixing a citation alone would not fix the reasoning. Do not loosen existing gates.
 
+The next [joint-source inference repair](checkpoints/joint-passage-inference.md)
+completes its offline checkpoint with 2,226 passing tests. A separate prompt-bound v2 wrapper
+clarifies joint inference from rules and exceptions while delegating every
+structural/citation gate unchanged. Host-only expectations check all sixteen
+bases and fourteen unambiguous qualification anchors, with ambiguous roles left
+for manual review. Five frozen raw replies reproduce the prior stop and expose
+wrong reasons that final-label scoring missed. These are development-set
+regressions, not fresh model responses or qualification. Independent review cleared
+the change after 181 selected tests and a repaired diagnostic-reference bug.
+Next: separately bounded live testing with encrypted detailed diagnostics and
+independent exact-output review. No new live workflow, provider call, article or
+delivery change occurred.
+
 ### Prior Step 3 status notes — retained historical evidence
 
 Before that acceptance, Step 3 had a published, locally tested repair but no
