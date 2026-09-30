@@ -1,11 +1,11 @@
 # Frozen-contract source-span reviewer comparison
 
-Status: **overall calibration remains incomplete**. The first comparison returned
-four correct cases, then stopped at SC05's output cap. A separately authorized
-single-case follow-up now **passes for SC05 resource feasibility**, including
-independent exact-output review. SC06–SC08 remain unattempted under this model.
-There is no article approval or uniform full-set pass. Both bounded attempts are
-complete; no further provider trial has been started.
+Status: **PASS for the exact reused eight-case development calibration**, after
+the uniform 4,800-token-cap run, exact local replay and independent review of all
+18 segment judgments. This supersedes the incomplete comparison below; it does
+not combine prior mixed-budget subsets. The full bounded run is complete.
+No unseen-case, article or production approval is established, and no further
+provider trial has been started.
 
 ## Question and fixed evidence
 
@@ -264,3 +264,49 @@ independently rerun. Independent diff review found no blockers and confirmed tha
 existing profiles and acceptance gates remain unchanged. Read-only inspection
 before dispatch confirmed Workers Free Active, no payment method on file, and
 5.82k/10k displayed daily usage (a rounded observation, not test consumption).
+
+### Live uniform result
+
+Published setup: `a44fa89a001a0efa90e694587c54c857f607f21d`.
+[Run 36648034583](https://github.com/itworksinprod/first-fold/actions/runs/36648034583)
+was owner-dispatched on trusted main at 23:59:27 UTC September 29 and completed
+successfully after the UTC date rollover (still September 29 Eastern). All 185
+workflow-selected tests passed. Exactly eight model/network requests completed,
+each with the same 4,800 output cap: 38,400 total requested ceiling, not measured
+consumption. All eight exact case vectors and 18 segment labels matched. No
+retry, fallback, article, research, email or daily-setting change occurred.
+
+Verified artifact `11068864538`: 22,364 ZIP bytes, SHA-256
+`7338ef9c26c0bf78c61175726c5bd8b53c6e4218fb44e8e7637778e63b587454`.
+Decrypted capture SHA-256:
+`f2f4236e6c265838ccab9ccbb3d9697e7c61db1afa1d47612b8238b9a64e940f`.
+Run identity, actor, revision, first attempt, artifact name/size/digest and the
+frozen profile were verified. Offline replay verified all eight exact request
+hashes and reproduced the saved parsed responses, case decisions and full report
+with no real network calls. Original provider HTTP bytes were not replayed.
+
+Exact comparison also verified all five retained request bindings from the
+earlier reasoning run: only `max_tokens` changed from 2,400 to 4,800. SC05's
+request is identical to the successful single-case probe's request.
+
+Independent exact-output review: **PASS for this exact reused development set**.
+All eight sources and all 18 judgments were inspected:
+
+- SC01/02 distinguish supported actions from an unsupported accuracy guarantee.
+- SC03/04 distinguish conjunction from asserted causation.
+- SC05/06 preserve timing and conditions; the false continued-ringing claim is
+  rejected without wrongly rejecting the supported opening.
+- SC07/08 resolve room references and reject widening two measured rooms to six.
+
+All 16 supplied quotes are exact, relevant source substrings. SC04-T2 and SC08-T2
+omit quotes as permitted for unsupported judgments; their explanations correctly
+identify the source's causal limitation and restricted measurement scope. No
+matched label masks materially wrong reasoning. This closes the narrow uniform
+calibration checkpoint, not unseen-case or article qualification.
+
+Recommended next gate: predeclare a review-only regression of the exact previously
+held article sentence and its unchanged complete saved source, with this frozen
+reviewer profile and independently declared per-span expectations. No writer
+rerun or output correction. This directly targets the original supported-prefix/
+unsupported-tail false positive. New held-out cases remain necessary before
+broader qualification. No next-gate implementation or inference occurred here.

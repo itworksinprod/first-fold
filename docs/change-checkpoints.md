@@ -107,11 +107,17 @@ calibration, unseen generalization and article approval are not. The next propos
 step is a separately approved full set at one consistent cap, not aggregation of
 the mixed-budget results. No additional trial, email or production change occurred.
 
-Carlos then said "go" to that uniform eight-case test. Its fixed profile is now
-under preflight: all eight original controls, 4,800 requested output tokens per
-call / 38,400 maximum, one attempt each, same model and 90-second timeout, with
-all prompts, evidence and checks unchanged. This new result will stand alone;
-the earlier subsets cannot qualify it. No article or daily integration is included.
+Carlos then said "go" to that uniform eight-case test. The fixed profile passed
+1,891 local tests and independent preflight (185 selected tests), then was
+published at `a44fa89`. Run 36648034583 completed all eight original controls
+with one attempt each and the uniform 4,800 requested output cap / 38,400 total
+ceiling. Exact offline replay and independent full-output review passed: **8/8
+case vectors, 18/18 segment judgments**, with all 16 supplied quotations exact
+and relevant. This narrow reused-development calibration is complete as its own
+run, not an aggregation of older subsets. No article or daily integration is
+approved. Next proposed checkpoint: review the exact previously held article
+sentence against unchanged saved source to test its original false positive;
+no rewriting or new inference is part of this completed gate.
 
 ### Prior Step 3 status notes — retained historical evidence
 
