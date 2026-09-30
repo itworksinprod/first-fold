@@ -185,6 +185,11 @@ replies and captures remain unchanged and held. No provider call or daily change
 occurred. Live selection reliability and semantic qualification are still pending;
 offline success does not approve the article or clear production integration.
 
+Carlos approved the [bounded sentence-catalog live comparison](checkpoints/source-sentence-live-review.md).
+The isolated runner/workflow retain the same saved article, source context and
+seven-by-4,800-token ceiling. All 2,061 local tests pass; live citation mechanics
+and independent semantic review remain pending. No daily-delivery change.
+
 ### Prior Step 3 status notes — retained historical evidence
 
 Before that acceptance, Step 3 had a published, locally tested repair but no
