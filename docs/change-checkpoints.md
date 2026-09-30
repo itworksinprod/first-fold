@@ -174,6 +174,17 @@ No retry, email or daily change occurred. Next proposed offline change: a bound
 catalog of complete source sentences, preserving factual and evidence limits,
 instead of asking the model for arbitrary start/end words.
 
+The [source-sentence evidence catalog](checkpoints/source-sentence-evidence.md)
+now passes its offline checkpoint: 2,033 full-suite tests, 73 independently rerun
+focused tests, and an exact saved-input audit. A Unicode-initial boundary defect
+found by the reviewer was fixed before clearance. The same seven units/23 spans
+retain all six source passages; eleven whole source units are selectable and
+the excluded heading stays visible as context. Stable IDs select exact host-copied
+text, with unchanged quote lengths/counts and contextual factual checks. Old
+replies and captures remain unchanged and held. No provider call or daily change
+occurred. Live selection reliability and semantic qualification are still pending;
+offline success does not approve the article or clear production integration.
+
 ### Prior Step 3 status notes — retained historical evidence
 
 Before that acceptance, Step 3 had a published, locally tested repair but no
