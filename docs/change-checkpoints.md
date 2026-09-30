@@ -218,6 +218,15 @@ fictional cases with the unchanged checker, at most 4,800 requested output token
 each, and no retries. Exact replay and independent explanation review remain
 required. This preparation does not repair the held article or qualify the model.
 
+That baseline is now **measured and independently reviewed**, not qualified.
+Run 36713974906 on `edc9b8d` completed sixteen valid replies, exact local replay and
+15/16 expected labels. CS06 incorrectly accepted a copied general rule despite a
+separate explicit exemption. CS04's correct unsupported label had an overstrong
+contradiction rationale. Independent complete-source/response review confirmed both
+distinctions and returned semantic HOLD. The next offline checkpoint is observable
+per-passage qualification/exception coverage, with fixed controls and no article
+patch or unchanged live retry. No email, billing or daily-delivery changes occurred.
+
 ### Prior Step 3 status notes — retained historical evidence
 
 Before that acceptance, Step 3 had a published, locally tested repair but no
