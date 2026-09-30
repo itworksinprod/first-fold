@@ -187,8 +187,15 @@ offline success does not approve the article or clear production integration.
 
 Carlos approved the [bounded sentence-catalog live comparison](checkpoints/source-sentence-live-review.md).
 The isolated runner/workflow retain the same saved article, source context and
-seven-by-4,800-token ceiling. All 2,061 local tests pass; live citation mechanics
-and independent semantic review remain pending. No daily-delivery change.
+seven-by-4,800-token ceiling. All 2,061 local tests and 195 independently rerun
+focused tests pass. Run 36658095962 on `adc1b59` completed all seven units/23 spans
+with 26 complete exact quotations; artifact verification and exact parsed-response
+replay passed. Independent review closes this saved-sample citation checkpoint
+but holds semantic qualification: 21/22 determinate labels match, with one false
+positive on unconditional runner-upgrade scope and a separately ambiguous headline.
+The original article is not approved. Next proposed offline checkpoint is balanced
+conditional-scope controls, not another citation repair or unchanged live retry.
+No email, paid fallback or daily-delivery change.
 
 ### Prior Step 3 status notes — retained historical evidence
 
