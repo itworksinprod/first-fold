@@ -1,6 +1,7 @@
 # Exact held-article sentence regression
 
-Status: local implementation and independent preflight passed; live result pending.
+Status: complete for this exact historical regression; original sentence and
+article remain held. Live verification and independent exact-output review passed.
 Carlos authorized this next review-only checkpoint after the independently
 accepted uniform eight-case development calibration. No new article is requested.
 
@@ -63,3 +64,51 @@ On September 30 at approximately 00:24 UTC (September 29 Eastern), the dashboard
 showed Workers Free active, no payment method, and 261.83 of 10,000 daily neurons
 used. This is an availability observation, not a promise that the provider will
 accept the request. No billing setting was changed.
+
+## Live verification and independent decision
+
+Carlos explicitly approved sending this exact saved sentence and its six source
+passages to Cloudflare after the initial launch was blocked before execution by
+the privacy safeguard. No request occurred during that blocked launch.
+
+[Run 36650524483](https://github.com/itworksinprod/first-fold/actions/runs/36650524483)
+used trusted main `075858e5fa19bbac382c3bac0d55705cd1112a00` and completed
+September 30, 2026 at 00:29 UTC (September 29 Eastern). All workflow steps passed.
+It made exactly one model/network request under the 4,800 requested-output-token
+ceiling; that ceiling is not an actual billed-token or neuron usage measurement.
+There were zero writer requests, searches, retries, email sends or paid fallbacks.
+
+- Exact verdict vector: **supported / unsupported / unsupported**.
+- Complete sentence: **held**, as required.
+- Artifact ID: `11070241818`; verified ZIP size: 6,403 bytes.
+- Artifact SHA-256: `1e40927f631ff22daf4fdd22f93f620ccab66761a3c6bfeb7debbd69fe346d8f`.
+- Decrypted capture SHA-256: `cb72e6a4b17b537c81eb3baa88bdd7db2750e4a1aa565fab84ec46b21a585983`.
+
+Local verification checked run identity, main revision, actor, event, attempt,
+artifact membership and digest before decryption. It reproduced the exact saved
+request and parsed-response validation without network access. Raw provider HTTP
+bytes were not replayed. The original text, all six source blocks and lossless
+span offsets were unchanged.
+
+Independent exact-output review returned **PASS for this historical regression**:
+the opening claim is source-backed, neither added guarantee is supported, and
+the final fragment correctly inherits the preceding assurance. This is genuine
+discrimination, not blanket rejection. A nonblocking citation limitation remains:
+T1's explanation mentions job execution, supported in S1P4, but its evidence
+array quotes only S1P3's registration restriction. The explanation is supported
+by the complete input, but its citation coverage is incomplete. Record this
+limitation; do not hand-correct the frozen response or count it as full coverage.
+
+The private capture, local audit and independent-review receipt remain in the
+existing private review directory. No article/source text or private key was
+published in this result record. No billing, editorial threshold, recipient,
+production workflow or schedule was changed.
+
+## Remaining boundary
+
+This closes only the known false-positive regression. It does not repair or
+approve the original article, demonstrate unseen-case reliability, or qualify
+automatic daily delivery. The next proposed checkpoint is an isolated complete-
+draft application of the qualified checker, with whole-article independent
+review and no custom article-specific prompt fixes. No new provider trial or
+integration is authorized or performed by this completion record.

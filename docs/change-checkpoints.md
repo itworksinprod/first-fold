@@ -119,13 +119,18 @@ approved. Next proposed checkpoint: review the exact previously held article
 sentence against unchanged saved source to test its original false positive;
 no rewriting or new inference is part of this completed gate.
 
-The next [held-sentence regression](checkpoints/article-span-regression.md) is
-authorized by Carlos's "continue" and being prepared separately. It uses the exact
-saved sentence and all six retained source passages, unchanged v2 reviewer,
-one GPT-OSS-120B call capped at 4,800 tokens, no writer or delivery. Independent
-expectations were declared before inference: supported opening, unsupported
-security-patch guarantee, unsupported feature guarantee. No live result is yet
-claimed; even success would not approve the held article.
+The [held-sentence regression](checkpoints/article-span-regression.md) is complete
+for its exact historical sample. After explicit transmission approval, run
+36650524483 on `075858e` made one GPT-OSS-120B request under the 4,800-token cap.
+The unchanged sentence and all six saved passages produced the predeclared exact
+supported/unsupported/unsupported vector: the complete sentence remains held.
+Exact local request/parsed-response replay and independent full-output review
+passed. The review records incomplete citation coverage in T1's explanation as
+a nonblocking limitation; it is not fabricated reasoning. All 1,917 local tests
+and 126 workflow-selected tests pass. No writer, search, email, paid fallback or
+daily promotion occurred. The original article still needs correction and
+approval; unseen generalization and a complete-draft application of the checker
+remain separate unresolved checkpoints.
 
 ### Prior Step 3 status notes — retained historical evidence
 
