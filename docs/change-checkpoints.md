@@ -238,6 +238,20 @@ still demonstrates that a misclassified exception can produce a false positive;
 structure is not semantic proof. Next: bounded live calibration and independent
 exact-response review. No provider call, email or production integration occurred.
 
+The separate [live passage calibration](checkpoints/passage-scope-live.md) was
+published at `f4709da` after 2,192 local tests and independent preflight with
+248 selected tests. Run 36791068732 stopped after five single requests: four
+valid matching labels, then CS05 failed final evidence binding. Exact replay
+reproduced the stop. Raw CS05 also incorrectly rejects an inference supported by
+a general rule plus an exemption, while CS04 still confuses unsupported
+exclusivity with direct contradiction. CS06–CS16 were not attempted, including
+the historical copied-rule false positive. Calibration remains held; the source
+contract, controls, article, production and billing remain unchanged. There was
+no retry or email. Independent exact-source/response review confirmed these
+failures and returned HOLD. The next offline step is to preserve the raw
+counterexamples and test joint-source inference and qualification classification;
+fixing a citation alone would not fix the reasoning. Do not loosen existing gates.
+
 ### Prior Step 3 status notes — retained historical evidence
 
 Before that acceptance, Step 3 had a published, locally tested repair but no
