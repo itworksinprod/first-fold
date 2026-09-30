@@ -197,6 +197,20 @@ The original article is not approved. Next proposed offline checkpoint is balanc
 conditional-scope controls, not another citation repair or unchanged live retry.
 No email, paid fallback or daily-delivery change.
 
+The next [conditional-scope offline checkpoint](checkpoints/conditional-scope-controls.md)
+adds sixteen balanced fictional controls and a pure comparison harness using the
+unchanged sentence catalog and reviewer prompt. It covers conditional advice,
+later exceptions, genuine universals, necessity versus sufficiency, geography,
+cohorts, policy versus observed events and temporal eligibility. Independent review
+caught a necessary-versus-sufficient ambiguity in one fixture's source; explicit
+entitlement was added to both paired cases before freezing the corpus. All 2,081
+tests and 93 independently rerun focused tests pass. Final offline review accepted
+all sixteen labels and returned PASS; the controlset pin is recorded in the receipt.
+The offline checkpoint is complete, but no model run or factual repair is claimed.
+The prior article false positive remains held. Next: bounded live calibration of
+the unchanged checker against these frozen controls, with independent exact-output
+review before any prompt repair or production integration.
+
 ### Prior Step 3 status notes — retained historical evidence
 
 Before that acceptance, Step 3 had a published, locally tested repair but no
