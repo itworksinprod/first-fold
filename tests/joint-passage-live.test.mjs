@@ -20,12 +20,12 @@ async function run(failure,at=2,encrypted=false){
     aiRequestImpl:async options=>{
       const i=requests.length;requests.push(options);late.push(options.fetchImpl);
       assert.equal(options.model,FREE_REASONING_WRITER_MODEL);assert.equal(options.maxTokens,4800);assert.equal(options.timeoutMs,90000);assert.equal(options.maxAttempts,1);
-      assert.equal(options.reasoningEffort,'high');
+      assert.equal(options.reasoningEffort,'medium');
       assert.doesNotMatch(options.messages[1].content,/expectedVerdicts|rationale|category|CS\d\d|labelMatch/);
       assert.deepEqual(JSON.parse(options.messages[1].content),plan.cases[i].view.data);
       assert.equal(options.messages[0].content,`${plan.cases[i].view.prompt}\nJSON schema: ${JSON.stringify(plan.cases[i].view.schema)}`);
       const {body}=buildWorkersAiRequest(options),url=workersAiRunUrl(accountId,options.model),init={method:'POST',redirect:'error',body:JSON.stringify(body)};
-      assert.equal(body.reasoning_effort,'high');
+      assert.equal(body.reasoning_effort,'medium');
       if(i===at&&failure==='no-network')return {};
       if(i===at&&['url','method','body','redirect'].includes(failure)){
         const bad={...init};if(failure==='method')bad.method='GET';if(failure==='body')bad.body='{}';if(failure==='redirect')bad.redirect='follow';
@@ -71,6 +71,7 @@ test('sixteen frozen ordered cases use the unchanged prompt and complete evidenc
   assert.deepEqual(JOINT_PASSAGE_LIVE_LIMITS,{requests:16,tokensPerRequest:4800,outputTokens:76800,timeoutMs:90000});
   assert.equal(result.report.outputBudget,76800);assert.equal(result.report.writerRequests,0);assert.equal(result.report.searchQueries,0);
   assert.equal(result.sealed.controlsetSha256,plan.controlsetSha256);
+  assert.equal(result.sealed.reasoningEffort,'medium');
   for(const [i,c]of result.sealed.calls.entries()){
     assert.equal(c.caseId,controls[i].id);assert.deepEqual(c.response,c.verdict.rawSelection);
     assert.deepEqual(c.response,result.sealed.scoring.results[i].rawResponse);

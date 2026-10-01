@@ -1,7 +1,8 @@
 # Joint source inference repair
 
-Status: v2, default-effort v3 and high-effort v3 live attempts are held. A narrow
-v4 entailment-instruction repair is being verified. Daily delivery is unchanged.
+Status: earlier live attempts remain held. V4 at high effort exhausted its
+first response's token limit; a medium-effort comparison is being verified.
+Daily delivery is unchanged.
 
 This isolated revision addresses the two reasoning failures in the
 [five-call passage trial](passage-scope-live.md): rejecting a conclusion supported
@@ -253,3 +254,23 @@ Independent v4 preflight passed 201 selected tests, verified the historical
 capture and prompt bytes, and found no remaining implementation blocker. The
 full local suite passes 2,267 tests. The free-account check remains a launch
 condition, not a promise that all requests will fit the remaining daily allowance.
+
+## V4 output-limit failure
+
+[Run 36798309770](https://github.com/itworksinprod/first-fold/actions/runs/36798309770)
+on main `9a2ca04d1e1fde8cad75e62084f39970d7681075` stopped after its first
+request, with no parsed review. The sanitized private diagnostic records
+`OUTPUT_TOKEN_LIMIT`, 4,800 completion tokens and 4,800 requested maximum tokens.
+This is not evidence of daily quota exhaustion and provides no semantic result
+for v4. No retry occurred. Artifact SHA-256 is
+`90be64f4d109b02f22b8e19c63d46b2175ccf04a17e1ec73ee910f793c90e6b6`;
+private capture SHA-256 is
+`3d799a4d266e20b5e46ab8d7616fa301258f2a6f0bcd28c67dad7716a93f6020`.
+Run identity and the one exact request were verified locally. There is no parsed
+response to replay and no permission to infer a verdict from incomplete output.
+
+The next bounded comparison requests medium effort instead of high. V4 prompt,
+sources, expected answers, validators, sixteen-call ceiling, 4,800 tokens per
+call and no-retry stop behavior stay unchanged. This tests completion within the
+same budget, not relaxed source quality. It remains an isolated no-email test;
+the production adapter defaults and daily paper are unchanged.
