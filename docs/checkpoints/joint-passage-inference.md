@@ -1,7 +1,7 @@
 # Joint source inference repair
 
-Status: offline implementation checkpoint complete with 2,226 passing tests and
-independent clearance. There has been no new model request or live semantic pass.
+Status: offline implementation and bounded live-test setup complete with 2,259
+passing tests and independent clearance. No new live semantic pass is established.
 
 This isolated revision addresses the two reasoning failures in the
 [five-call passage trial](passage-scope-live.md): rejecting a conclusion supported
@@ -103,3 +103,27 @@ provider trial, new research, billing or delivery-setting change occurred.
 When adding live plumbing, keep detailed malformed observed values in the
 encrypted capture, not public workflow notices. The offline diagnostics do not
 log them or transmit any data. Their successful replay is not a new provider result.
+
+## Bounded live verification
+
+The separate `joint-passage-live.yml` workflow measures the same sixteen fictional
+cases using GPT-OSS-120B on the existing Workers Free account. It allows one
+request per case, at most 4,800 output tokens each and 76,800 total, with no retries.
+It stops on an invalid response or provider refusal. Valid disagreements remain
+measurements and do not cause a retry or a change to the case. The host-only
+reasoning expectations never enter the model request.
+
+The setup checks main-branch owner provenance, attempt one, the frozen corpus,
+the expectation hash and the encryption key before provider credentials. Detailed
+responses and malformed observed fields stay in a one-day encrypted artifact.
+Public notices contain only explicitly selected status values and numeric counts.
+The private key stays local. Fresh account checks, a unique dispatch intent,
+artifact integrity verification and exact parsed-response replay accompany launch.
+
+Independent preflight passed 234 selected tests with no blocking findings. The
+complete suite passes 2,259 tests, including 33 new live-boundary tests. Success
+requires all sixteen valid responses, matching verdicts and declared reasoning
+fields, followed by independent review of every explanation and source passage.
+A green workflow alone is not qualification. Even a successful development-set
+trial does not approve a news article or prove generalization. Daily research,
+email, recipients, billing and editorial gates remain unchanged.
