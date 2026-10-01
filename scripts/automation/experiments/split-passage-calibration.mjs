@@ -1,7 +1,7 @@
 // Targeted development subset, not a fresh holdout or full-corpus qualification.
 import {createHash} from 'node:crypto';
 import {assertSpanReviewJson} from './span-source-review.mjs';
-import {buildSplitPassageReview,combineSplitPassageReviews,SPLIT_PASSAGE_CONTRACT} from './split-passage-review.mjs';
+import {buildSplitPassageReview,combineSplitPassageReviews,SPLIT_PASSAGE_CONTRACT,SPLIT_OBLIGATION_CONTRACT} from './split-passage-review.mjs';
 import {CONDITIONAL_SCOPE_CONTROLS,CONDITIONAL_SCOPE_CONTROLSET_SHA256} from './conditional-scope-controls.mjs';
 import {assessScopeReasoning,SCOPE_REASONING_EXPECTATIONS_SHA256} from './scope-reasoning-expectations.mjs';
 const subset=CONDITIONAL_SCOPE_CONTROLS.slice(2,10);
@@ -10,9 +10,15 @@ const issued=new WeakMap(),fail=code=>Object.assign(new Error(code),{code});
 const freeze=x=>{if(x&&typeof x==='object'){Object.values(x).forEach(freeze);Object.freeze(x);}return x;};
 const exact=(x,keys)=>x&&typeof x==='object'&&!Array.isArray(x)&&Object.keys(x).length===keys.length&&keys.every(k=>Object.hasOwn(x,k));
 export function prepareSplitPassageCalibration(){
-  const plan=freeze({reviewContract:SPLIT_PASSAGE_CONTRACT,controlsetSha256:CONDITIONAL_SCOPE_CONTROLSET_SHA256,
+  return prepareSplitCalibration(false);
+}
+export function prepareSplitObligationCalibration(){
+  return prepareSplitCalibration(true);
+}
+function prepareSplitCalibration(obligations){
+  const plan=freeze({reviewContract:obligations?SPLIT_OBLIGATION_CONTRACT:SPLIT_PASSAGE_CONTRACT,controlsetSha256:CONDITIONAL_SCOPE_CONTROLSET_SHA256,
     subsetSha256:SPLIT_PASSAGE_SUBSET_SHA256,expectationsSha256:SCOPE_REASONING_EXPECTATIONS_SHA256,
-    cases:subset.map(c=>({caseId:c.id,pair:buildSplitPassageReview(c.input)}))});
+    cases:subset.map(c=>({caseId:c.id,pair:buildSplitPassageReview(c.input,{obligations})}))});
   issued.set(plan,subset);return plan;
 }
 export function scoreSplitPassageCalibration(records,plan){

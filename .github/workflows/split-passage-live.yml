@@ -1,4 +1,4 @@
-name: Measure blinded source-review stages (encrypted, no email)
+name: Measure blinded source-review obligations v2 (encrypted, no email)
 on:
   workflow_dispatch:
     inputs:
@@ -26,16 +26,16 @@ jobs:
           node-version: '24'
       - name: Test frozen subset and blinded stages without credentials
         run: node --test tests/split-passage*.test.mjs tests/joint-passage*.test.mjs tests/free-workers-ai.test.mjs tests/private-writer-diagnostic.test.mjs
-      - name: Validate frozen subset and key before provider credentials
+      - name: Validate frozen obligations v2 subset and key before provider credentials
         env:
           DIAGNOSTIC_PUBLIC_KEY: ${{ inputs.public_key }}
-        run: node scripts/automation/split-passage-live.mjs validate
-      - name: Measure two blinded stages per fictional case once
+        run: node scripts/automation/split-passage-live.mjs validate-obligations
+      - name: Measure two blinded obligations v2 stages per fictional case once
         env:
           DIAGNOSTIC_PUBLIC_KEY: ${{ inputs.public_key }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_AI_API_TOKEN: ${{ secrets.CLOUDFLARE_AI_API_TOKEN }}
-        run: node scripts/automation/split-passage-live.mjs run "$RUNNER_TEMP/split-passage-live.encrypted.json"
+        run: node scripts/automation/split-passage-live.mjs run-obligations "$RUNNER_TEMP/split-passage-live.encrypted.json"
       - name: Retain only encrypted result for one day
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

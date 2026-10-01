@@ -134,8 +134,9 @@ can fail while the named condition remains necessary. Both stages still receive
 all source context and remain blind to sibling answers and expected labels.
 
 This is a hypothesis awaiting live evidence, not a demonstrated semantic fix.
-The v1 default, live workflow, validators, schema and expected labels remain
-unchanged. The opt-in prompt bindings are:
+At this offline checkpoint the v1 default and live routing were unchanged.
+The later bounded live wiring below changes only the isolated workflow's opt-in;
+the validators, schema and expected labels remain unchanged. The prompt bindings are:
 
 - Claim: `2bf5d26d435a61fe402f43390c8479ff760437aedde031ee69234bde558e8c85`.
 - Passage: `3720d5f7e2b7b26263271ad3e6d48ac57ea66f9bd169b961a9edfdb7f3614732`.
@@ -152,7 +153,36 @@ preflight or evidence that the semantic failures have been fixed.
 At the last authenticated account check on October 1 UTC, daily usage displayed
 6.97k of 10k neurons, above the existing launch preflight threshold of 6.3k. No
 new provider call followed, and that threshold was not raised. The account
-remained Workers Free with no payment method. The next live preflight requires
+remained Workers Free with no payment method. A later live preflight requires
 fresh allowance, independent review of the opt-in revision and explicit binding
-of that revision to a bounded runner. No automatic later run has been scheduled
-by this checkpoint, and no production or delivery claim follows from it.
+of that revision to a bounded runner. No production or delivery claim follows
+from this result.
+
+## Approved one-time live verification
+
+Carlos approved one no-email test for October 1, 2026 at 8:05 p.m.
+America/New_York, after the daily free allowance resets. This is an isolated
+eight-case development test, not a change to the morning delivery schedule.
+The existing daily monitor remains separate and unchanged.
+
+The explicit v2 live route passed all 2,325 local tests, including 221 tests in
+the workflow-selected suite. Independent implementation review cleared its
+prompt and request bindings, unchanged v1 replay, fail-stop behavior and guarded
+launcher. This clears the setup for one bounded trial, not the live result.
+
+The scheduled attempt must use the explicit obligation-revision entry points,
+not the historical v1 default. All cases, expected labels, source text,
+validators and request ceilings remain the same. The local launcher refuses to
+start before October 2 at 00:05 UTC or after 02:05 UTC. It requires fresh account
+and billing observations, Workers Free with no payment method, and at most
+1,000 daily neurons already used. This stricter allowance check replaces no
+editorial gate and is not a guarantee against provider quota or availability
+failure. If a prerequisite fails, the attempt stops without trying another
+model, enabling billing or expanding its budget.
+
+Only one dispatch is permitted. Its local encryption key must be preserved,
+the observed run must match the intended trusted main revision, and both raw
+responses must remain unchanged in the encrypted result. After artifact and
+request verification, the same independent exact-text review is required.
+A successful workflow or an eight-case result alone cannot approve an article,
+qualify the model on the full controlset, or enable daily integration.
