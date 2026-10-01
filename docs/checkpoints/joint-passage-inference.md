@@ -1,7 +1,7 @@
 # Joint source inference repair
 
-Status: both the v2 and default-effort v3 live attempts are held. An isolated
-explicit-high-effort comparison is under verification. Daily delivery is unchanged.
+Status: v2, default-effort v3 and high-effort v3 live attempts are held. A narrow
+v4 entailment-instruction repair is being verified. Daily delivery is unchanged.
 
 This isolated revision addresses the two reasoning failures in the
 [five-call passage trial](passage-scope-live.md): rejecting a conclusion supported
@@ -209,3 +209,47 @@ request bytes. Only this no-email live runner opts in; daily callers and provide
 defaults remain unchanged. The value enters the request digest and encrypted
 capture. Maximum output remains 4,800 per call, sixteen calls, no retries; a
 refusal or truncation still stops the attempt. No paid upgrade is permitted.
+
+## High-effort result and actual-assertion repair
+
+[Run 36796955396](https://github.com/itworksinprod/first-fold/actions/runs/36796955396)
+used main `4d66d1bfa21e0d9cbcbcd542fec8b3c3839ee812` and stopped after eleven
+single requests. Ten replies were structurally valid, nine final labels matched,
+and seven declared reasoning-field sets matched. CS07 is now a valid but wrong
+rejection: it requires an additional condition even though the candidate asserts
+only necessity, not sufficiency. CS04 still invents contradiction, and CS06
+mislabels an explicit exemption conflict as insufficient evidence. CS11 has a
+sound final inference but marks a retained cohort restriction `none` and emits
+an unrelated check with a citation; `PASSAGE_SCOPE_EVIDENCE` correctly stops it.
+CS12–16 remain unobserved. Higher reasoning did not establish improvement.
+
+Independent review reconstructed eleven requests and 43 exact source selections
+and confirmed the hold. Artifact SHA-256 is
+`a45b9100f80ab69726bffb4d55253fe216d724d4888cc0365f97dc04a6e5d9ab`;
+private capture SHA-256 is
+`1d0501911038c9669fcc21551ef588e1b6dce3bc175a497576ae087ff90b857a`.
+The unchanged parsed-reply fixture SHA-256 is
+`d475b88c5f9e219818403289c76864fad3075fd4dfed6608bfe55737ec226c23`.
+Exact parsed-request validation and scoring replayed without provider calls;
+raw HTTP bytes were not replayed. Offline historical-binding projections are
+explicitly synthetic and cannot count as new model responses.
+
+Version 4 evaluates entailment of the assertion actually made, not completeness
+as a source summary. It distinguishes naming a necessary condition from claiming
+it is the only or sufficient condition. Missing qualifications must change an
+assertion the candidate actually makes. Applying a rule to an expressly exempt
+group conflicts with the policy; retaining the exemption does not. Joint
+possibility rules out proven contradiction but never establishes support. A
+literal final check preserves the existing unrelated/evidence constraints.
+
+The repair replaces relevant generic instructions, adds no case answers, and
+preserves all sources, controls, expectations, gates, budgets and the high-effort
+setting. Historical v3 remains byte-identical. V4 prompt SHA-256 is
+`d389e13cf229f4147420e1a20e96fb46bb605d11a76a7411602f988fdb839362`.
+This is a hypothesis pending bounded live measurement and independent exact-text
+review. No daily integration, article approval, email or billing change follows.
+
+Independent v4 preflight passed 201 selected tests, verified the historical
+capture and prompt bytes, and found no remaining implementation blocker. The
+full local suite passes 2,267 tests. The free-account check remains a launch
+condition, not a promise that all requests will fit the remaining daily allowance.

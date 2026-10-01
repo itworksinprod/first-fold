@@ -1,0 +1,504 @@
+{
+  "runId": "36796955396",
+  "headSha": "4d66d1bfa21e0d9cbcbcd542fec8b3c3839ee812",
+  "captureSha256": "1d0501911038c9669fcc21551ef588e1b6dce3bc175a497576ae087ff90b857a",
+  "reasoningEffort": "high",
+  "records": [
+    {
+      "caseId": "CS01",
+      "response": {
+        "reviewSha256": "efdfbf3318a9d2e7d1d9090623b53bb808257bdb703540e76c9fcfc3d966d1a9",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "support",
+                "qualification": "preserved",
+                "explanation": "Source states Cedar bulletin instructs owners of outdoor sensors with cracked seals to replace seals before winter, directly supporting the claim.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  }
+                ]
+              },
+              {
+                "evidenceId": "S1P2",
+                "contribution": "context",
+                "qualification": "none",
+                "explanation": "Source notes indoor sensors are excluded and uncracked seals need not be replaced, providing scope context but not affecting the claim.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P2S1"
+                  },
+                  {
+                    "sentenceId": "S1P2S2"
+                  }
+                ]
+              }
+            ],
+            "verdict": "supported",
+            "basis": "supported",
+            "explanation": "The claim matches the Cedar bulletin instruction for outdoor sensors with cracked seals to replace seals before winter.",
+            "evidence": [
+              {
+                "sentenceId": "S1P1S1"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "CS02",
+      "response": {
+        "reviewSha256": "b4c6206804bbdbc038791196b98ed13b4ea1670609a17f731977bfdcf9d62090",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "support",
+                "qualification": "missing",
+                "explanation": "Passage says Cedar advises seal replacement before winter only for outdoor sensors with cracked seals, a restriction the candidate omits.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  }
+                ]
+              },
+              {
+                "evidenceId": "S1P2",
+                "contribution": "contradiction",
+                "qualification": "none",
+                "explanation": "Passage states indoor sensors are outside the bulletin and uncracked seals need not be replaced, contradicting the claim that all sensors should have seals replaced before winter.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P2S1"
+                  },
+                  {
+                    "sentenceId": "S1P2S2"
+                  }
+                ]
+              }
+            ],
+            "verdict": "unsupported",
+            "basis": "contradiction",
+            "explanation": "Indoor sensors are excluded and uncracked seals need not be replaced, contradicting the claim that Cedar advises replacing seals before winter on every sensor.",
+            "evidence": [
+              {
+                "sentenceId": "S1P2S1"
+              },
+              {
+                "sentenceId": "S1P2S2"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "CS03",
+      "response": {
+        "reviewSha256": "1e5fa50194fdf6839c9a09bdf27d7858d2cb436897081844cc7512be5468af2e",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "support",
+                "qualification": "preserved",
+                "explanation": "Passage says every Lumen badge expires at midnight on 30 April and no badge is exempt, matching the universal claim.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  },
+                  {
+                    "sentenceId": "S1P1S2"
+                  }
+                ]
+              }
+            ],
+            "verdict": "supported",
+            "basis": "supported",
+            "explanation": "All Lumen badges expire at midnight on 30 April, as the passage states every badge does and none are exempt.",
+            "evidence": [
+              {
+                "sentenceId": "S1P1S1"
+              },
+              {
+                "sentenceId": "S1P1S2"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "CS04",
+      "response": {
+        "reviewSha256": "6a4c313c4c3a34f1ea696caf1f2a0b1a9d608bbb14c00db45917f84d5c98e309",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "contradiction",
+                "qualification": "missing",
+                "explanation": "Source states every Lumen badge expires and no badge is exempt, contradicting the claim that only visitor badges expire.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  },
+                  {
+                    "sentenceId": "S1P1S2"
+                  }
+                ]
+              }
+            ],
+            "verdict": "unsupported",
+            "basis": "contradiction",
+            "explanation": "The source says all Lumen-issued badges expire and none are exempt, which opposes the claim that only visitor badges expire on 30 April.",
+            "evidence": [
+              {
+                "sentenceId": "S1P1S1"
+              },
+              {
+                "sentenceId": "S1P1S2"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "CS05",
+      "response": {
+        "reviewSha256": "d7991ffdcd6cf08c4f109739b319954dcfddcae53c5626d41bd5dce87683ef50",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "support",
+                "qualification": "none",
+                "explanation": "Provides the rule that archive members must reserve a desk before each visit, supporting the reservation requirement.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  }
+                ]
+              },
+              {
+                "evidenceId": "S1P2",
+                "contribution": "support",
+                "qualification": "preserved",
+                "explanation": "States members under sixteen are exempt, which the candidate retains by specifying the rule applies to members aged at least sixteen.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P2S1"
+                  }
+                ]
+              }
+            ],
+            "verdict": "supported",
+            "basis": "supported",
+            "explanation": "Both passages confirm the rule: all archive members must reserve a desk, and members under sixteen are exempt, so the rule applies to members aged at least sixteen.",
+            "evidence": [
+              {
+                "sentenceId": "S1P1S1"
+              },
+              {
+                "sentenceId": "S1P2S1"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "CS06",
+      "response": {
+        "reviewSha256": "5d52efbbdf8c9cbb30d96e2b2b10e0f1d4f8caf742d98e9ff8a53a2152ad8c5b",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "support",
+                "qualification": "none",
+                "explanation": "The passage states the rule exactly as in the candidate.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  }
+                ]
+              },
+              {
+                "evidenceId": "S1P2",
+                "contribution": "context",
+                "qualification": "missing",
+                "explanation": "The passage exempts members under sixteen, which the candidate fails to mention.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P2S1"
+                  }
+                ]
+              }
+            ],
+            "verdict": "unsupported",
+            "basis": "insufficient_evidence",
+            "explanation": "Candidate omits the exemption for members under sixteen, so it lacks a source restriction and is not fully supported.",
+            "evidence": [
+              {
+                "sentenceId": "S1P1S1"
+              },
+              {
+                "sentenceId": "S1P2S1"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "CS07",
+      "response": {
+        "reviewSha256": "b25647da78f7a8c5f5b16fc2f80a949f14f51b60b0773b4c8853e340271e89b8",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "support",
+                "qualification": "preserved",
+                "explanation": "Passage states lift can operate only if safety latch is engaged, matching the claim that an engaged latch is required.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  }
+                ]
+              },
+              {
+                "evidenceId": "S1P2",
+                "contribution": "context",
+                "qualification": "missing",
+                "explanation": "Passage adds that a power check must also pass, a restriction omitted in the claim.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P2S1"
+                  }
+                ]
+              }
+            ],
+            "verdict": "unsupported",
+            "basis": "insufficient_evidence",
+            "explanation": "The claim matches S1P1 but omits the additional power‑check requirement stated in S1P2, so the required restriction is missing.",
+            "evidence": [
+              {
+                "sentenceId": "S1P2S1"
+              },
+              {
+                "sentenceId": "S1P1S1"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "CS08",
+      "response": {
+        "reviewSha256": "eba8c656042a913aae36358a28b6ae8ed51681d68348d8a7ec690ec43b44514a",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "verdict": "unsupported",
+            "basis": "contradiction",
+            "explanation": "S1P2 states that a power check is also required, contradicting the claim that an engaged latch guarantees operation.",
+            "evidence": [
+              {
+                "sentenceId": "S1P2S1"
+              }
+            ],
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "context",
+                "qualification": "none",
+                "explanation": "S1P1 gives a necessary condition (lift can operate only if latch engaged) which does not support the claim that latch guarantees operation.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  }
+                ]
+              },
+              {
+                "evidenceId": "S1P2",
+                "contribution": "contradiction",
+                "qualification": "missing",
+                "explanation": "S1P2 says an engaged latch alone is insufficient because a power check must also pass, contradicting the claim that latch alone guarantees operation.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P2S1"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "CS09",
+      "response": {
+        "reviewSha256": "2cf16eda804dd1ef8bbc4b16f0c4845157b7dab65a5d0175083483023e61b565",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "support",
+                "qualification": "preserved",
+                "explanation": "The passage states that a permit is required for night deliveries in the East district, directly matching the claim.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  }
+                ]
+              },
+              {
+                "evidenceId": "S1P2",
+                "contribution": "context",
+                "qualification": "none",
+                "explanation": "The passage notes the West district is excluded, which does not affect the claim about the East district.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P2S1"
+                  }
+                ]
+              }
+            ],
+            "verdict": "supported",
+            "basis": "supported",
+            "explanation": "Supported: S1P1 confirms the permit requirement for night deliveries in Harbor's East district; no contradictory evidence.",
+            "evidence": [
+              {
+                "sentenceId": "S1P1S1"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "CS10",
+      "response": {
+        "reviewSha256": "9a889ae7b36ab4243cc58e48a6426b964e08ca79cb676177ce57510636b4af74",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "verdict": "unsupported",
+            "explanation": "The claim that all night deliveries throughout Harbor require a permit is contradicted by the source stating the West district is excluded.",
+            "basis": "contradiction",
+            "evidence": [
+              {
+                "sentenceId": "S1P2S1"
+              }
+            ],
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "support",
+                "qualification": "missing",
+                "explanation": "Passage only requires a permit for night deliveries in the East district, but the claim applies to all of Harbor, so the district restriction is not retained.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  }
+                ]
+              },
+              {
+                "evidenceId": "S1P2",
+                "contribution": "contradiction",
+                "qualification": "missing",
+                "explanation": "Passage says the West district is excluded, implying no permit required there, contradicting the claim that all Harbor requires a permit.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P2S1"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "CS11",
+      "response": {
+        "reviewSha256": "3b2bb5521db80c6c0a96a6be1d469254e15b75fcfc3e3bdc54d90973cc8d5082",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "context",
+                "qualification": "preserved",
+                "explanation": "Shows printed samples are part of the Willow trial, providing context for the claim.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  }
+                ]
+              },
+              {
+                "evidenceId": "S1P2",
+                "contribution": "support",
+                "qualification": "none",
+                "explanation": "States all printed samples were inspected before storage, supporting the claim for those in the trial.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P2S1"
+                  }
+                ]
+              },
+              {
+                "evidenceId": "S1P3",
+                "contribution": "unrelated",
+                "qualification": "none",
+                "explanation": "Describes inspection of digital samples, which is unrelated to printed samples.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P3S1"
+                  }
+                ]
+              }
+            ],
+            "verdict": "supported",
+            "basis": "supported",
+            "explanation": "S1P2's universal inspection of printed samples covers those in the Willow trial, and S1P1 confirms printed samples exist in the trial.",
+            "evidence": [
+              {
+                "sentenceId": "S1P1S1"
+              },
+              {
+                "sentenceId": "S1P2S1"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
+

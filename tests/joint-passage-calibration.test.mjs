@@ -6,7 +6,7 @@ import {prepareJointPassageCalibration as prepare,scoreJointPassageCalibration a
 import {preparePassageScopeCalibration,scorePassageScopeCalibration} from '../scripts/automation/experiments/passage-scope-calibration.mjs';
 import {SCOPE_REASONING_EXPECTATIONS as gold,SCOPE_REASONING_EXPECTATIONS_SHA256,assessScopeReasoning as assess} from '../scripts/automation/experiments/scope-reasoning-expectations.mjs';
 import {CONDITIONAL_SCOPE_CONTROLS as controls,CONDITIONAL_SCOPE_CONTROLSET_SHA256} from '../scripts/automation/experiments/conditional-scope-controls.mjs';
-import {JOINT_PASSAGE_V2_PROMPT} from '../scripts/automation/experiments/joint-passage-review.mjs';
+import {JOINT_PASSAGE_V2_PROMPT,JOINT_PASSAGE_V3_PROMPT} from '../scripts/automation/experiments/joint-passage-review.mjs';
 import {buildPassageScopeReview,validatePassageScopeReview} from '../scripts/automation/experiments/passage-scope-review.mjs';
 const clone=x=>structuredClone(x),sha=x=>createHash('sha256').update(x).digest('hex');
 const raw=await readFile(new URL('./fixtures/passage-scope-live-36791068732.json',import.meta.url),'utf8'),fixture=JSON.parse(raw);
@@ -164,8 +164,35 @@ test('unchanged v3 live replies retain six valid cases and the unnecessary extra
   const text=await readFile(new URL('./fixtures/joint-passage-live-36796305352.json',import.meta.url),'utf8'),f=JSON.parse(text);
   assert.equal(sha(text),'cd45151ea85145c5def3a8994e0a8ff0232c7cfee5134e9ae863c209f2615b0e');
   assert.equal(f.captureSha256,'77077e79ebcd39fa6d44be1cd32c035215cf0ccff19fb5bb971d3e7b245cfbde');
-  const result=score(f.records,prepare());assert.equal(result.report.casesValid,6);assert.equal(result.report.casesMatching,6);
+  const p=prepare();verifyHistoricalV3Bindings(f.records);
+  assert.equal(score(f.records,p).report.casesValid,0);
+  // Explicit offline binding projection only; never counted as fresh model output.
+  const result=score(projectToCurrentBinding(f.records,p),p);assert.equal(result.report.casesValid,6);assert.equal(result.report.casesMatching,6);
   assert.equal(result.report.reasoningFieldsMatching,5);assert.deepEqual(result.report.invalidCases,[{caseId:'CS07',code:'PASSAGE_SCOPE_CONSISTENCY'}]);
   assert.equal(result.report.reasoningAgreementComplete,false);assert.equal(result.report.modelQualified,false);
-  assert.deepEqual(result.results.map(r=>r.rawResponse),f.records.map(r=>r.response));
+  for(const [i,r]of result.results.entries())assert.deepEqual(r.rawResponse.judgments,f.records[i].response.judgments);
+});
+
+function verifyHistoricalV3Bindings(records){
+  for(const [i,r]of records.entries()){
+    const old=buildPassageScopeReview(controls[i].input),{reviewSha256:unused,...original}=old.data;
+    const data={...original,policy:'joint-passage-inference-v3',passagePolicy:old.data.policy,promptSha256:sha(JOINT_PASSAGE_V3_PROMPT)};
+    assert.equal(r.response.reviewSha256,sha(JSON.stringify(data)));
+  }
+}
+function projectToCurrentBinding(records,plan){return records.map((r,i)=>({caseId:r.caseId,response:{...clone(r.response),reviewSha256:plan.cases[i].view.data.reviewSha256}}));}
+test('high-effort v3 raw responses preserve the valid false negative and unrelated-with-citation hold',async()=>{
+  const text=await readFile(new URL('./fixtures/joint-passage-live-36796955396.json',import.meta.url),'utf8'),f=JSON.parse(text),before=clone(f);
+  assert.equal(sha(text),'d475b88c5f9e219818403289c76864fad3075fd4dfed6608bfe55737ec226c23');
+  assert.equal(f.captureSha256,'1d0501911038c9669fcc21551ef588e1b6dce3bc175a497576ae087ff90b857a');
+  assert.equal(f.reasoningEffort,'high');verifyHistoricalV3Bindings(f.records);
+  const p=prepare();assert.equal(score(f.records,p).report.casesValid,0);
+  // Replays the unchanged validator with synthetic host bindings, not new provider responses.
+  const result=score(projectToCurrentBinding(f.records,p),p);
+  assert.equal(result.report.casesValid,10);assert.equal(result.report.casesMatching,9);assert.equal(result.report.reasoningFieldsMatching,7);
+  assert.deepEqual(result.report.invalidCases,[{caseId:'CS11',code:'PASSAGE_SCOPE_EVIDENCE'}]);
+  assert.equal(result.results[6].verdict.valid,true);assert.equal(f.records[6].response.judgments[0].verdict,'unsupported');
+  assert.deepEqual(f.records.map(r=>assess(r.caseId,r.response)).filter(x=>!x.fieldsMatch).map(x=>x.caseId),['CS04','CS06','CS07','CS11']);
+  assert.equal(result.report.reasoningAgreementComplete,false);assert.equal(result.report.modelQualified,false);
+  assert.deepEqual(f,before);
 });
