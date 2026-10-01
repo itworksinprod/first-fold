@@ -1,0 +1,222 @@
+{
+  "runId": "36795623890",
+  "head": "15abe18a6a61a9c7f2ebdf9d929b2618f1919ecf",
+  "captureSha256": "97aac14be9c096e0b978995909dc126b4a0edd001d3673a099cd6c05ebff006f",
+  "records": [
+    {
+      "caseId": "CS01",
+      "response": {
+        "reviewSha256": "559eecf9ff47454bfb8d749757171dbc20d5537b674e7489deb898bef435eb6b",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "support",
+                "qualification": "none",
+                "explanation": "Bulletin directly instructs replacement of seals before winter for outdoor sensors with cracked seals.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  }
+                ]
+              },
+              {
+                "evidenceId": "S1P2",
+                "contribution": "context",
+                "qualification": "none",
+                "explanation": "Notes indoor sensors are excluded and uncracked seals need not be replaced; this adds background but does not affect the claim.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P2S1"
+                  },
+                  {
+                    "sentenceId": "S1P2S2"
+                  }
+                ]
+              }
+            ],
+            "verdict": "supported",
+            "basis": "supported",
+            "explanation": "The bulletin explicitly advises replacing seals before winter on outdoor sensors with cracked seals, matching the claim.",
+            "evidence": [
+              {
+                "sentenceId": "S1P1S1"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "CS02",
+      "response": {
+        "reviewSha256": "70c61cc8ffb8dc88e95923a81df61ec923da5ff04dd5044e11d4b80cee76c5c9",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "support",
+                "qualification": "missing",
+                "explanation": "Bulletin advises replacement only for outdoor sensors with cracked seals, not for all sensors.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  }
+                ]
+              },
+              {
+                "evidenceId": "S1P2",
+                "contribution": "contradiction",
+                "qualification": "none",
+                "explanation": "States indoor sensors are outside scope and seals without cracks do not need replacement, contradicting the claim that every sensor should have seals replaced.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P2S1"
+                  },
+                  {
+                    "sentenceId": "S1P2S2"
+                  }
+                ]
+              }
+            ],
+            "verdict": "unsupported",
+            "basis": "contradiction",
+            "explanation": "The claim that Cedar advises replacing seals before winter on every sensor is contradicted by the source, which limits the advice to outdoor sensors with cracked seals and excludes indoor sensors and uncracked seals.",
+            "evidence": [
+              {
+                "sentenceId": "S1P2S1"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "CS03",
+      "response": {
+        "reviewSha256": "a450f2f6318c6e4a46a34dccb59ff04df8d601a45f8b04d7d8128c4371b071c8",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "support",
+                "qualification": "preserved",
+                "explanation": "The passage says every Lumen badge expires at midnight on 30 April and adds that no badge is exempt, matching the claim’s universal scope.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  },
+                  {
+                    "sentenceId": "S1P1S2"
+                  }
+                ]
+              }
+            ],
+            "verdict": "supported",
+            "basis": "supported",
+            "explanation": "All Lumen badges are stated to expire at midnight on 30 April with no exemptions, directly confirming the claim.",
+            "evidence": [
+              {
+                "sentenceId": "S1P1S1"
+              },
+              {
+                "sentenceId": "S1P1S2"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "CS04",
+      "response": {
+        "reviewSha256": "9f50c2f4348955ed7f34cbcd41644cbdd0af8b6f8b019194b27c8188ad75f47d",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "contradiction",
+                "qualification": "none",
+                "explanation": "Source states every badge issued by Lumen expires on 30 April and no badge is exempt, contradicting the claim that only visitor badges do so.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  },
+                  {
+                    "sentenceId": "S1P1S2"
+                  }
+                ]
+              }
+            ],
+            "verdict": "unsupported",
+            "basis": "contradiction",
+            "explanation": "The claim that only visitor badges expire at midnight on 30 April is contradicted by the source, which says all Lumen‑issued badges expire then.",
+            "evidence": [
+              {
+                "sentenceId": "S1P1S1"
+              },
+              {
+                "sentenceId": "S1P1S2"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "CS05",
+      "response": {
+        "reviewSha256": "7aa30820f27d48d3ae48dddc964bb244f684d02cfc02cb54927288c026a46f2e",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "support",
+                "qualification": "missing",
+                "explanation": "Provides the general rule that all archive members must reserve a desk before each visit, but does not mention any age condition.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  }
+                ]
+              },
+              {
+                "evidenceId": "S1P2",
+                "contribution": "support",
+                "qualification": "preserved",
+                "explanation": "States members under sixteen are exempt, preserving the claim that the rule applies to members aged at least sixteen.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P2S1"
+                  }
+                ]
+              }
+            ],
+            "verdict": "supported",
+            "basis": "supported",
+            "explanation": "The general reservation rule together with the exemption for under‑sixteen members implies that members aged at least sixteen must reserve a desk before each visit.",
+            "evidence": [
+              {
+                "sentenceId": "S1P1S1"
+              },
+              {
+                "sentenceId": "S1P2S1"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
+

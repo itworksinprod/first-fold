@@ -6,8 +6,11 @@ import {prepareJointPassageCalibration as prepare,scoreJointPassageCalibration a
 import {preparePassageScopeCalibration,scorePassageScopeCalibration} from '../scripts/automation/experiments/passage-scope-calibration.mjs';
 import {SCOPE_REASONING_EXPECTATIONS as gold,SCOPE_REASONING_EXPECTATIONS_SHA256,assessScopeReasoning as assess} from '../scripts/automation/experiments/scope-reasoning-expectations.mjs';
 import {CONDITIONAL_SCOPE_CONTROLS as controls,CONDITIONAL_SCOPE_CONTROLSET_SHA256} from '../scripts/automation/experiments/conditional-scope-controls.mjs';
+import {JOINT_PASSAGE_V2_PROMPT} from '../scripts/automation/experiments/joint-passage-review.mjs';
+import {buildPassageScopeReview,validatePassageScopeReview} from '../scripts/automation/experiments/passage-scope-review.mjs';
 const clone=x=>structuredClone(x),sha=x=>createHash('sha256').update(x).digest('hex');
 const raw=await readFile(new URL('./fixtures/passage-scope-live-36791068732.json',import.meta.url),'utf8'),fixture=JSON.parse(raw);
+const v2raw=await readFile(new URL('./fixtures/joint-passage-live-36795623890.json',import.meta.url),'utf8'),v2fixture=JSON.parse(v2raw);
 // Deliberately injected shape/label fixtures, never live model competence evidence.
 function records(plan){return plan.cases.map((c,i)=>{const expected=gold[i],v=c.view;
   const passageChecks=v.data.passages.map(p=>({evidenceId:p.evidenceId,contribution:'context',qualification:'none',
@@ -127,4 +130,32 @@ test('new scorer and expectations have no provider or production path',async()=>
     const s=await readFile(new URL(`../scripts/automation/experiments/${path}`,import.meta.url),'utf8');
     assert.doesNotMatch(s,/fetch\(|process\.env|node:fs|workers-ai|resend|writeFile/);
   }
+});
+
+test('unchanged v2 live replies bind to the historical prompt, not the new v3 view',()=>{
+  assert.equal(sha(v2raw),'839200786410138754a5c6467e195edaadb661fcbf8a86b1131cc1c2d08775e2');
+  assert.equal(v2fixture.captureSha256,'97aac14be9c096e0b978995909dc126b4a0edd001d3673a099cd6c05ebff006f');
+  const plan=prepare();
+  for(const [i,r] of v2fixture.records.entries()){
+    const old=buildPassageScopeReview(controls[i].input),{reviewSha256:unused,...original}=old.data;
+    const data={...original,policy:'joint-passage-inference-v2',passagePolicy:old.data.policy,promptSha256:sha(JOINT_PASSAGE_V2_PROMPT)};
+    assert.equal(r.response.reviewSha256,sha(JSON.stringify(data)));
+  }
+  const out=score(v2fixture.records,plan);assert.equal(out.report.casesValid,0);assert.equal(out.report.reasoningFieldsMatching,3);
+  assert.equal(out.report.reasoningAgreementComplete,false);assert.deepEqual(out.results.map(r=>r.rawResponse),v2fixture.records.map(r=>r.response));
+});
+test('v2 raw outcomes reproduce four valid cases then reversed qualification consistency hold',()=>{
+  const snapshot=clone(v2fixture);
+  const verdicts=v2fixture.records.map((r,i)=>{const old=buildPassageScopeReview(controls[i].input);
+    // Explicit offline host projection only; not a fresh response or model success.
+    return validatePassageScopeReview({...clone(r.response),reviewSha256:old.data.reviewSha256},old);});
+  assert.equal(verdicts.filter(v=>v.valid).length,4);assert.equal(verdicts[4].code,'PASSAGE_SCOPE_CONSISTENCY');
+  assert.equal(v2fixture.records[4].response.judgments[0].verdict,'supported');
+  assert.equal(v2fixture.records[4].response.judgments[0].passageChecks[0].qualification,'missing');
+  assert.deepEqual(v2fixture,snapshot);
+});
+test('correct final inference cannot conceal the reversed per-passage restriction label',()=>{
+  const plan=prepare(),r=records(plan),j=r[4].response.judgments[0];j.passageChecks[0].qualification='missing';
+  const out=score(r,plan);assert.equal(out.report.reasoningFieldsMatching,16);assert.equal(out.report.casesValid,15);
+  assert.equal(out.report.reasoningAgreementComplete,false);assert.equal(out.results[4].verdict.code,'PASSAGE_SCOPE_CONSISTENCY');
 });

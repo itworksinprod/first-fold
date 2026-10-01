@@ -1,7 +1,7 @@
 # Joint source inference repair
 
-Status: offline implementation and bounded live-test setup complete with 2,259
-passing tests and independent clearance. No new live semantic pass is established.
+Status: the v2 live attempt is held. The v3 consolidated instruction repair passes
+2,262 local tests but is not yet verified live. Daily delivery remains unchanged.
 
 This isolated revision addresses the two reasoning failures in the
 [five-call passage trial](passage-scope-live.md): rejecting a conclusion supported
@@ -127,3 +127,46 @@ fields, followed by independent review of every explanation and source passage.
 A green workflow alone is not qualification. Even a successful development-set
 trial does not approve a news article or prove generalization. Daily research,
 email, recipients, billing and editorial gates remain unchanged.
+
+## First joint inference live result
+
+[Run 36795623890](https://github.com/itworksinprod/first-fold/actions/runs/36795623890)
+used trusted main `15abe18a6a61a9c7f2ebdf9d929b2618f1919ecf` on October 1 UTC
+(September 30 Eastern). It stopped after five single requests, with four valid
+matching verdicts and three matching declared reasoning-field sets. No sixth
+request occurred. CS05 failed `PASSAGE_SCOPE_CONSISTENCY`: its final joint
+inference and citations were sound, but a passage label said a qualification was
+missing because the source sentence did not mention the candidate's age phrase.
+That reverses the required comparison; the candidate lost no source restriction.
+
+Independent review agrees with the hold. CS01 still marks retained restrictions
+as absent, and CS04 still calls unsupported exclusivity a contradiction. CS02 and
+CS03 have sound final judgments and evidence. CS06 through CS16 were not tested.
+The model's improved CS05 conclusion is not a complete pass.
+
+The artifact ZIP digest is
+`6646f04c5c86b2b469357e0b5ca4c6b2633d06830f01d1fd18ac8ea263825388`;
+the private decrypted capture digest is
+`97aac14be9c096e0b978995909dc126b4a0edd001d3673a099cd6c05ebff006f`.
+Run identity, all five exact requests and parsed responses, validation and scoring
+were verified and replayed locally with no additional provider requests. Raw HTTP
+bytes were not replayed. The unchanged parsed-reply regression fixture digest is
+`839200786410138754a5c6467e195edaadb661fcbf8a86b1131cc1c2d08775e2`.
+
+## Consolidated instruction repair
+
+Version 3 replaces the layered model prompt with one ordered generic contract.
+It explicitly distinguishes a restriction dropped by the candidate from wording
+absent in an individual source passage. It retains joint inference, contextual
+spans, every-passage review, contradiction versus insufficient evidence, exact
+catalog citations, uncertainty and unchanged negative-precedence checks. A final
+self-check asks the model to make its recorded fields consistent, not to change
+evidence to force an answer through.
+
+The original controls, host expectations, schemas, validators and request limits
+are unchanged. No case-specific answer or example is added. The v2 prompt remains
+verbatim for hash auditing, and its live capture remains immutable. New tests
+reconstruct the historical binding, reject old replies as v3 results and reproduce
+the consistency failure with an explicitly labeled offline projection. A prompt
+repair is a hypothesis; neither shorter instructions nor synthetic tests establish
+that the model now follows it.
