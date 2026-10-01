@@ -1,0 +1,308 @@
+{
+  "runId": "36801262924",
+  "headSha": "ccaff3b1dd6762587fea1e847f72d7e1a7143903",
+  "captureSha256": "c86b13369a85d2867ddc686adc4b0466f4c9f551b1c73b2db328f46efb348ccf",
+  "reasoningEffort": "medium",
+  "report": {
+    "status": "failed",
+    "code": "SPLIT_PASSAGE_LIVE_COMPOSITE_INVALID",
+    "modelRequests": 10,
+    "networkRequests": 10,
+    "outputBudget": 48000,
+    "casesExpected": 8,
+    "casesRecorded": 5,
+    "casesValid": 4,
+    "casesMatching": 4,
+    "reasoningFieldsMatching": 4,
+    "casesMissing": [
+      "CS08",
+      "CS09",
+      "CS10"
+    ],
+    "invalidCases": [
+      {
+        "caseId": "CS07",
+        "code": "PASSAGE_SCOPE_CONSISTENCY"
+      }
+    ],
+    "reasoningFieldMismatches": [
+      {
+        "caseId": "CS04",
+        "issues": [
+          {
+            "field": "basis",
+            "expected": "insufficient_evidence",
+            "observed": "contradiction"
+          }
+        ]
+      }
+    ],
+    "structuralComplete": false,
+    "labelAgreementComplete": false,
+    "reasoningAgreementComplete": false,
+    "targetedDevelopmentSubset": true,
+    "fullControlsetPassed": false,
+    "explanationsChecked": false,
+    "provenanceVerified": false,
+    "modelQualified": false,
+    "articleApproved": false,
+    "publicationReady": false,
+    "independentReview": "required",
+    "writerRequests": 0,
+    "searchQueries": 0,
+    "emailSent": false
+  },
+  "records": [
+    {
+      "caseId": "CS03",
+      "claim": {
+        "reviewSha256": "4bfc72367c032f25284f3a40a8aa3c27d8f43173756755868ee616bb90ce4417",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "verdict": "supported",
+            "basis": "supported",
+            "explanation": "The source states every Lumen badge expires at midnight on 30 April and that no badge is exempt, directly confirming the claim.",
+            "evidence": [
+              {
+                "sentenceId": "S1P1S1"
+              },
+              {
+                "sentenceId": "S1P1S2"
+              }
+            ]
+          }
+        ]
+      },
+      "checks": {
+        "reviewSha256": "3bb9e28be23129bf33ec5691c5486094e29610e782785ddb653a25feb97db14e",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "support",
+                "qualification": "preserved",
+                "explanation": "Passage states every Lumen badge expires at midnight on 30 April and that no badge is exempt, matching the claim that all badges expire then.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  },
+                  {
+                    "sentenceId": "S1P1S2"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "CS04",
+      "claim": {
+        "reviewSha256": "fad6ab736202eb865e74ceb79586c522c655f54dfab3b58326becaf1828b8003",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "verdict": "unsupported",
+            "basis": "contradiction",
+            "explanation": "Source states every Lumen badge expires on 30 April and no badge is exempt, contradicting the claim that only visitor badges expire then.",
+            "evidence": [
+              {
+                "sentenceId": "S1P1S1"
+              },
+              {
+                "sentenceId": "S1P1S2"
+              }
+            ]
+          }
+        ]
+      },
+      "checks": {
+        "reviewSha256": "d659a5e66fe350b295b795c8599e203a53461a816c98bafcd324bf776b325686",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "contradiction",
+                "qualification": "missing",
+                "explanation": "Passage says every Lumen badge expires on 30 April and no badge is exempt, contradicting the claim that only visitor badges do so; the claim omits the universal scope.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  },
+                  {
+                    "sentenceId": "S1P1S2"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "CS05",
+      "claim": {
+        "reviewSha256": "061d642962eb848d4d1d27edbb98ff3dd20ed8eaa3be1abe73a4c5e3781aa21e",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "verdict": "supported",
+            "basis": "supported",
+            "explanation": "All members must reserve a desk, and only members under sixteen are exempt, so members aged sixteen or older must reserve a desk.",
+            "evidence": [
+              {
+                "sentenceId": "S1P1S1"
+              },
+              {
+                "sentenceId": "S1P2S1"
+              }
+            ]
+          }
+        ]
+      },
+      "checks": {
+        "reviewSha256": "01052eaa8577e67f31bfb19d40d68964c2a6326d3e8dd9d003d22631f65e8105",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "support",
+                "qualification": "none",
+                "explanation": "Source states all archive members must reserve a desk, affirming the claim's reservation requirement; age condition not addressed, so no source limit is affected.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  }
+                ]
+              },
+              {
+                "evidenceId": "S1P2",
+                "contribution": "support",
+                "qualification": "preserved",
+                "explanation": "Source exempts members under sixteen, matching the claim that only members aged at least sixteen must reserve, preserving the exemption limit.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P2S1"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "CS06",
+      "claim": {
+        "reviewSha256": "62d78a7a85c5f27b7ad9a5c37c060bbc6c02bdafe37c4e914e4a551f24c82ba0",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "verdict": "unsupported",
+            "basis": "contradiction",
+            "explanation": "Members under sixteen are exempt, so the rule does not apply to all archive members, contradicting the universal claim.",
+            "evidence": [
+              {
+                "sentenceId": "S1P1S1"
+              },
+              {
+                "sentenceId": "S1P2S1"
+              }
+            ]
+          }
+        ]
+      },
+      "checks": {
+        "reviewSha256": "362c2254c2615057f045bbb6dbe57319f39b21b4c322269dd87e711d32d4b3f4",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "support",
+                "qualification": "none",
+                "explanation": "Passage S1P1 states exactly the same requirement that archive members must reserve a desk before each visit.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  }
+                ]
+              },
+              {
+                "evidenceId": "S1P2",
+                "contribution": "contradiction",
+                "qualification": "missing",
+                "explanation": "Passage S1P2 exempts members under sixteen from the reservation rule, which the candidate omits, contradicting the exemption.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P2S1"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "CS07",
+      "claim": {
+        "reviewSha256": "8e5ad91195f7fdc2030d9eaf23c199a4cc50f283974c8a58a3b0502380b5e308",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "verdict": "supported",
+            "basis": "supported",
+            "explanation": "S1P1S1 states the lift can operate only if its safety latch is engaged, directly establishing that an engaged latch is required.",
+            "evidence": [
+              {
+                "sentenceId": "S1P1S1"
+              }
+            ]
+          }
+        ]
+      },
+      "checks": {
+        "reviewSha256": "6007d97d9be2dd937927dc53b7bce01a9915ad426d9341f48ed44ad3d3492ec4",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "support",
+                "qualification": "preserved",
+                "explanation": "Passage states lift can operate only if safety latch is engaged, directly matching the claim's requirement.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  }
+                ]
+              },
+              {
+                "evidenceId": "S1P2",
+                "contribution": "context",
+                "qualification": "missing",
+                "explanation": "Passage adds that a power check must also pass, a condition omitted from the claim, so the claim drops this additional requirement.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P2S1"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

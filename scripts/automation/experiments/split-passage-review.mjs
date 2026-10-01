@@ -14,21 +14,42 @@ For EVERY span, assess EVERY passage in supplied order; do not give a final verd
 qualification compares the candidate against relevant SOURCE limits: preserved if retained, including equivalent complementary scope; missing if the actual assertion drops or changes a limit; none if no limit is relevant; uncertain if undecidable. A correctly retained restriction is preserved, not none. Necessity itself is a restriction. Absent candidate wording in this one passage is not a missing source limit; another passage may supply it. A separate extra fact need not be repeated.
 Explain each role and qualification together in at most 240 characters. Cite zero to two catalog sentenceIds from THAT passage. support, contradiction, preserved and missing require evidence. unrelated requires qualification none and empty evidence; relevant exclusions are context, not unrelated. If decisive text is unselectable use uncertain instead of inventing or shortening a citation. Never alter a role to anticipate another review's answer.`;
 
+// Separate offline revision. The live CLI remains on v1 until its own preflight.
+export const SPLIT_OBLIGATION_CONTRACT='blinded-claim-passage-obligations-v2';
+export const SPLIT_OBLIGATION_CLAIM_PROMPT=SPLIT_CLAIM_PROMPT.replace(
+  'For each span decide the complete contextual assertion:',
+  `Before choosing fields, identify the exact assertion this span makes in its complete sentence. Apply source exceptions to their rules first. Then perform this decision sequence using only established source premises:
+1. Try to construct a situation consistent with ALL source premises in which that actual assertion is false. Keep the actual assertion, established facts and qualified policies fixed. Hypothetical situations may vary facts the sources leave unspecified, including group membership. These are possibilities, not new source facts, and cannot themselves establish contradiction or support. Do not replace the assertion with a stronger one.
+2. If such a situation is possible, separately ask whether the same sources also permit a situation in which the actual assertion is true. If both truth and falsity remain possible, the assertion is unestablished, not contradicted. An unspecified population can be empty or contained in another group unless the sources establish otherwise.
+3. Contradiction requires an established incompatibility: the actual assertion cannot hold under the qualified source account. An explicit policy exemption constrains the policy even without an observed member of the exempt group. Compatibility alone is not support; use supported only when the sources establish the assertion. If the necessary relation cannot be decided, retain uncertainty.
+Your short explanation must state the established incompatibility for contradiction, or identify what remains undetermined for insufficient evidence; a restatement of the label is not a reason.
+For each span decide the complete contextual assertion:`);
+export const SPLIT_OBLIGATION_CHECKS_PROMPT=SPLIT_CHECKS_PROMPT.replace(
+  'qualification compares the candidate against relevant SOURCE limits:',
+  `Before choosing qualification, identify the actual contextual assertion and the specific source limit, then test their relationship. Ask whether the candidate asserts a rule, its converse, a sufficient condition, a necessary condition, or an observed event; do not silently switch between those claims. For a proposed missing limit, identify the assertion that becomes overbroad or false and the source-backed boundary it crosses. Merely locating omitted text does not satisfy this test.
+For a necessary-only assertion, another prerequisite can fail while the stated condition remains necessary. Test that situation before calling the other prerequisite missing: failure to list it does not turn necessity into sufficiency. For an exclusive assertion, distinguish an unestablished restriction from an established incompatibility without assuming other groups have members.
+Your short explanation must identify the actual assertion and changed boundary for missing, or why the source limit is retained or does not constrain the assertion for preserved/none. Do not explain missing solely by saying an additional fact was omitted.
+qualification compares the candidate against relevant SOURCE limits:`);
+
 const pairs=new WeakMap(),stages=new WeakMap(),sha=x=>createHash('sha256').update(x).digest('hex');
 const freeze=x=>{if(x&&typeof x==='object'){Object.values(x).forEach(freeze);Object.freeze(x);}return x;};
 const exact=(x,keys)=>x&&typeof x==='object'&&!Array.isArray(x)&&Object.keys(x).length===keys.length&&keys.every(k=>Object.hasOwn(x,k));
 const text=x=>typeof x==='string'&&x===x.trim()&&x.length>0&&x.length<=240&&!/[\p{Cc}\p{Cf}]/u.test(x);
 const invalid=code=>freeze({valid:false,supported:false,code,modelQualified:false,articleApproved:false,publicationReady:false});
 
-export function buildSplitPassageReview(input){
+export function buildSplitPassageReview(input,options={}){
+  try{assertSpanReviewJson(options);}catch{throw Object.assign(new Error('SPLIT_PASSAGE_REVISION'),{code:'SPLIT_PASSAGE_REVISION'});}
+  if(!exact(options,[])&&!exact(options,['obligations']))throw Object.assign(new Error('SPLIT_PASSAGE_REVISION'),{code:'SPLIT_PASSAGE_REVISION'});
+  const obligations=Object.hasOwn(options,'obligations')?options.obligations:false;
+  if(typeof obligations!=='boolean')throw Object.assign(new Error('SPLIT_PASSAGE_REVISION'),{code:'SPLIT_PASSAGE_REVISION'});
   const base=buildJointPassageReview(input),citation=buildSourceSentenceReview(input);
   const {reviewSha256:parentReviewSha256,policy:unused,promptSha256:oldPrompt,...original}=base.data;
   const result={};
   for(const [stage,prompt,fields]of [
-    ['claim',SPLIT_CLAIM_PROMPT,['spanId','verdict','basis','explanation','evidence']],
-    ['checks',SPLIT_CHECKS_PROMPT,['spanId','passageChecks']],
+    ['claim',obligations?SPLIT_OBLIGATION_CLAIM_PROMPT:SPLIT_CLAIM_PROMPT,['spanId','verdict','basis','explanation','evidence']],
+    ['checks',obligations?SPLIT_OBLIGATION_CHECKS_PROMPT:SPLIT_CHECKS_PROMPT,['spanId','passageChecks']],
   ]){
-    const data={...original,policy:SPLIT_PASSAGE_CONTRACT,stage,parentReviewSha256,promptSha256:sha(prompt)};
+    const data={...original,policy:obligations?SPLIT_OBLIGATION_CONTRACT:SPLIT_PASSAGE_CONTRACT,stage,parentReviewSha256,promptSha256:sha(prompt)};
     data.reviewSha256=sha(JSON.stringify(data));assertSpanReviewJson(data);
     if(Buffer.byteLength(JSON.stringify(data),'utf8')>50000)throw Object.assign(new Error('SPLIT_PASSAGE_SIZE'),{code:'SPLIT_PASSAGE_SIZE'});
     const schema=structuredClone(base.schema),j=schema.properties.judgments.items;

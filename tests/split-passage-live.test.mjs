@@ -107,6 +107,23 @@ test('offline subset scoring rejects order substitutions and cannot declare full
   assert.equal(out.report.explanationsChecked,false);assert.throws(()=>score(r,clone(p)));assert.throws(()=>score([...r].reverse(),p));
   for(const change of [x=>{x[0].extra=true;},x=>{x[1]=clone(x[0]);}]){const bad=clone(r);change(bad);assert.throws(()=>score(bad,p));}
 });
+test('first live split trial preserves the exact disagreement and distinguishes anchor checks from composite validity',async()=>{
+  const f=JSON.parse(await readFile(new URL('./fixtures/split-passage-live-36801262924.json',import.meta.url),'utf8'));
+  const before=clone(f.records),out=score(f.records,prepare());
+  assert.equal(out.report.casesRecorded,5);assert.equal(out.report.casesValid,4);
+  assert.equal(out.report.casesMatching,4);assert.equal(out.report.reasoningFieldsMatching,4);
+  assert.deepEqual(out.results.filter(x=>!x.reasoning.fieldsMatch).map(x=>x.caseId),['CS04']);
+  assert.equal(out.results[1].reasoning.issues[0].expected,'insufficient_evidence');
+  assert.equal(out.results[1].reasoning.issues[0].observed,'contradiction');
+  const last=out.results.at(-1);assert.equal(last.caseId,'CS07');
+  assert.equal(last.composite.code,'PASSAGE_SCOPE_CONSISTENCY');
+  assert.equal(last.rawClaim.judgments[0].verdict,'supported');
+  assert.equal(last.rawChecks.judgments[0].passageChecks[1].qualification,'missing');
+  // The anchored qualification matches, but an unscored second row still fails.
+  assert.equal(last.reasoning.fieldsMatch,true);assert.equal(last.composite.valid,false);
+  assert.equal(out.report.reasoningAgreementComplete,false);assert.equal(out.report.modelQualified,false);
+  assert.deepEqual(f.records,before);
+});
 test('injected perfect subset labels and anchors still cannot qualify the model or full corpus',()=>{
   const p=prepare(),records=p.cases.map(c=>{
     const gold=expectations.find(e=>e.caseId===c.caseId),claim=reply(c.pair.claim),checks=reply(c.pair.checks),a=claim.judgments[0],b=checks.judgments[0];

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
-import {buildSplitPassageReview as build,validateSplitPassageStage as validate,combineSplitPassageReviews as combine,SPLIT_PASSAGE_CONTRACT,SPLIT_CLAIM_PROMPT,SPLIT_CHECKS_PROMPT} from '../scripts/automation/experiments/split-passage-review.mjs';
+import {buildSplitPassageReview as build,validateSplitPassageStage as validate,combineSplitPassageReviews as combine,SPLIT_PASSAGE_CONTRACT,SPLIT_CLAIM_PROMPT,SPLIT_CHECKS_PROMPT,SPLIT_OBLIGATION_CONTRACT,SPLIT_OBLIGATION_CLAIM_PROMPT,SPLIT_OBLIGATION_CHECKS_PROMPT} from '../scripts/automation/experiments/split-passage-review.mjs';
 import {buildJointPassageReview,validateJointPassageReview} from '../scripts/automation/experiments/joint-passage-review.mjs';
 import {CONDITIONAL_SCOPE_CONTROLS as controls} from '../scripts/automation/experiments/conditional-scope-controls.mjs';
 import {assessScopeReasoning} from '../scripts/automation/experiments/scope-reasoning-expectations.mjs';
@@ -140,4 +140,48 @@ test('source admission, catalog exclusions and multi-span coverage are not reduc
 test('split contract is offline and cannot call providers, write files or deliver an article',async()=>{
   const source=await readFile(new URL('../scripts/automation/experiments/split-passage-review.mjs',import.meta.url),'utf8');
   assert.doesNotMatch(source,/fetch\(|process\.env|node:fs|workers-ai|resend|writeFile/);
+});
+test('offline obligation revision changes only instructions and their bindings, never source context or schema',()=>{
+  assert.equal(sha(SPLIT_OBLIGATION_CLAIM_PROMPT),'2bf5d26d435a61fe402f43390c8479ff760437aedde031ee69234bde558e8c85');
+  assert.equal(sha(SPLIT_OBLIGATION_CHECKS_PROMPT),'3720d5f7e2b7b26263271ad3e6d48ac57ea66f9bd169b961a9edfdb7f3614732');
+  assert.match(SPLIT_OBLIGATION_CLAIM_PROMPT,/If both truth and falsity remain possible/);
+  assert.match(SPLIT_OBLIGATION_CLAIM_PROMPT,/Compatibility alone is not support/);
+  assert.match(SPLIT_OBLIGATION_CLAIM_PROMPT,/Hypothetical situations may vary facts the sources leave unspecified/);
+  assert.match(SPLIT_OBLIGATION_CLAIM_PROMPT,/possibilities, not new source facts/);
+  assert.match(SPLIT_OBLIGATION_CHECKS_PROMPT,/another prerequisite can fail while the stated condition remains necessary/);
+  assert.match(SPLIT_OBLIGATION_CHECKS_PROMPT,/identify the assertion that becomes overbroad or false/);
+  for(const c of controls){const old=build(c.input),next=build(c.input,{obligations:true});
+    for(const stage of ['claim','checks']){
+      const {reviewSha256:oldHash,policy:oldPolicy,promptSha256:oldPrompt,...oldData}=old[stage].data;
+      const {reviewSha256:newHash,policy:newPolicy,promptSha256:newPrompt,...newData}=next[stage].data;
+      assert.deepEqual(newData,oldData);assert.equal(newPolicy,SPLIT_OBLIGATION_CONTRACT);
+      assert.equal(oldPolicy,SPLIT_PASSAGE_CONTRACT);assert.notEqual(oldHash,newHash);assert.notEqual(oldPrompt,newPrompt);
+      const schema=clone(next[stage].schema);schema.properties.reviewSha256.enum=[oldHash];
+      assert.deepEqual(schema,old[stage].schema);
+      assert.doesNotMatch(next[stage].prompt,/Cedar|Lumen|Archive|Harbor|Willow|Meridian|visitor badges|CS\d\d/);
+    }
+  }
+  assert.throws(()=>build(controls[0].input,{obligations:'true'}),/SPLIT_PASSAGE_REVISION/);
+});
+test('revision options reject hostile data before reading any value',()=>{
+  let reads=0;const getter={get obligations(){reads++;return true;}},proxy=new Proxy({},{ownKeys(){reads++;return[];}});
+  for(const options of [getter,proxy,null,[],42,{obligations:null},{extra:true}])
+    assert.throws(()=>build(controls[0].input,options),/SPLIT_PASSAGE_REVISION/);
+  assert.equal(reads,0);
+});
+test('new instructions never repair historical wrong reasoning or disagreement',async()=>{
+  const f=JSON.parse(await readFile(new URL('./fixtures/split-passage-live-36801262924.json',import.meta.url),'utf8'));
+  for(const record of f.records){
+    const c=controls.find(c=>c.id===record.caseId),old=build(c.input),next=build(c.input,{obligations:true});
+    assert.equal(validate(record.claim,next.claim).valid,false);
+    assert.equal(validate(record.checks,next.checks).valid,false);
+    // Explicit hash-only synthetic projection; not newly generated model output.
+    const a={...clone(record.claim),reviewSha256:next.claim.data.reviewSha256};
+    const b={...clone(record.checks),reviewSha256:next.checks.data.reviewSha256};
+    const before=clone({a,b}),out=combine(a,b,next),original=combine(record.claim,record.checks,old);
+    assert.equal(out.valid,original.valid);assert.equal(out.code,original.code);
+    assert.deepEqual(out.assembledSelection,original.assembledSelection);
+    assert.deepEqual(assessScopeReasoning(c.id,out.assembledSelection),assessScopeReasoning(c.id,original.assembledSelection));
+    assert.deepEqual({a,b},before);assert.equal(out.modelQualified,false);
+  }
 });
