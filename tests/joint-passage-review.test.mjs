@@ -25,6 +25,7 @@ test('v3 binds its standalone generic prompt without modifying source bytes cata
   assert.match(JOINT_PASSAGE_PROMPT,/one evidence set/);assert.match(JOINT_PASSAGE_PROMPT,/remainder of that same population/);
   assert.match(JOINT_PASSAGE_PROMPT,/A restriction is not none merely because it is correctly retained/);
   assert.equal(JOINT_PASSAGE_CONTRACT,'joint-passage-inference-v3');
+  assert.equal(sha(JOINT_PASSAGE_PROMPT),'2c1c16a1b51469007716e67893f9fef329d84df48d85f053767c14c441e20924');
   assert.equal(sha(JOINT_PASSAGE_V2_PROMPT),'4c4060eee85da2e35691aa90e021b444093dc2a5f28a750104d2fc568c0d7ed0');
   assert.ok(JOINT_PASSAGE_PROMPT.length<JOINT_PASSAGE_V2_PROMPT.length);
   assert.match(JOINT_PASSAGE_PROMPT,/does NOT mean this individual passage lacks some wording in the candidate/);

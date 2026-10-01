@@ -11,6 +11,7 @@ import {
   resolveCloudflareAiModel,
   workersAiRunUrl,
   workersAiFailureDiagnostic,
+  FREE_REASONING_WRITER_MODEL,
 } from "../scripts/automation/free/workers-ai.mjs";
 
 const accountId = "6fd0b70bbeb0769801ddb19c8f1b4b10";
@@ -26,6 +27,40 @@ const schema = {
   required: ["headline"],
 };
 const payload = { headline: "A verified development" };
+
+test('reasoning effort is opt-in and omission preserves the previous request body', () => {
+  const baseline = buildWorkersAiRequest({ messages, schema });
+  assert.deepEqual(buildWorkersAiRequest({ messages, schema, reasoningEffort: undefined }), baseline);
+  assert.equal(Object.hasOwn(baseline.body, 'reasoning_effort'), false);
+  for (const effort of ['low','medium','high']) {
+    const request = buildWorkersAiRequest({ model: FREE_REASONING_WRITER_MODEL, messages, schema, reasoningEffort: effort });
+    const old = buildWorkersAiRequest({ model: FREE_REASONING_WRITER_MODEL, messages, schema });
+    assert.deepEqual(request.body, { ...old.body, reasoning_effort: effort });
+  }
+});
+test('unsupported reasoning effort or model fails without reflecting arbitrary input', async () => {
+  let calls = 0;
+  for (const effort of [null, '', 'HIGH', 'SECRET_CONTENT', {}, 2, false]) {
+    await assert.rejects(requestWorkersAiEditorial({ accountId, apiToken, model: FREE_REASONING_WRITER_MODEL,
+      messages, schema, reasoningEffort: effort, validatePayload: () => true, fetchImpl: () => { calls++; } }), e => {
+        assert.match(e.message, /reasoningEffort/);assert.doesNotMatch(e.message, /SECRET_CONTENT/);return true;
+      });
+  }
+  assert.throws(() => buildWorkersAiRequest({ messages, schema, reasoningEffort: 'high' }), /reasoningEffort/);
+  assert.equal(calls, 0);
+});
+test('high effort reaches the bounded request body and its provenance hash', async () => {
+  let calls = 0, observed;
+  const options = { accountId, apiToken, model: FREE_REASONING_WRITER_MODEL, messages, schema,
+    reasoningEffort: 'high', maxTokens: 4800, maxAttempts: 1, validatePayload: () => true,
+    fetchImpl: async (url, init) => { calls++;observed=JSON.parse(init.body);
+      return new Response(JSON.stringify({ success: true, result: { response: JSON.stringify(payload) } }), { headers: {'content-type':'application/json'} });
+    } };
+  const result = await requestWorkersAiEditorial(options);
+  assert.equal(calls,1);assert.equal(observed.reasoning_effort,'high');assert.equal(observed.max_tokens,4800);
+  assert.equal(result.requestSha256,createHash('sha256').update(JSON.stringify({provider:WORKERS_AI_PROVIDER,model:FREE_REASONING_WRITER_MODEL,body:observed})).digest('hex'));
+  assert.deepEqual(result.editorialPayload,payload);
+});
 
 test("native malformed JSON reports bounded observed output usage without guessing truncation", async () => {
   for (const count of [71, 4_000, undefined, -1, 16_001, "4000", apiToken]) {

@@ -159,3 +159,13 @@ test('correct final inference cannot conceal the reversed per-passage restrictio
   const out=score(r,plan);assert.equal(out.report.reasoningFieldsMatching,16);assert.equal(out.report.casesValid,15);
   assert.equal(out.report.reasoningAgreementComplete,false);assert.equal(out.results[4].verdict.code,'PASSAGE_SCOPE_CONSISTENCY');
 });
+
+test('unchanged v3 live replies retain six valid cases and the unnecessary extra-condition hold',async()=>{
+  const text=await readFile(new URL('./fixtures/joint-passage-live-36796305352.json',import.meta.url),'utf8'),f=JSON.parse(text);
+  assert.equal(sha(text),'cd45151ea85145c5def3a8994e0a8ff0232c7cfee5134e9ae863c209f2615b0e');
+  assert.equal(f.captureSha256,'77077e79ebcd39fa6d44be1cd32c035215cf0ccff19fb5bb971d3e7b245cfbde');
+  const result=score(f.records,prepare());assert.equal(result.report.casesValid,6);assert.equal(result.report.casesMatching,6);
+  assert.equal(result.report.reasoningFieldsMatching,5);assert.deepEqual(result.report.invalidCases,[{caseId:'CS07',code:'PASSAGE_SCOPE_CONSISTENCY'}]);
+  assert.equal(result.report.reasoningAgreementComplete,false);assert.equal(result.report.modelQualified,false);
+  assert.deepEqual(result.results.map(r=>r.rawResponse),f.records.map(r=>r.response));
+});

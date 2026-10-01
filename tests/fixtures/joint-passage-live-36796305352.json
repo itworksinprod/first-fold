@@ -1,0 +1,308 @@
+{
+  "runId": "36796305352",
+  "head": "f7c2a89a8234180dd1de7e5a63af05520512fd38",
+  "captureSha256": "77077e79ebcd39fa6d44be1cd32c035215cf0ccff19fb5bb971d3e7b245cfbde",
+  "records": [
+    {
+      "caseId": "CS01",
+      "response": {
+        "reviewSha256": "efdfbf3318a9d2e7d1d9090623b53bb808257bdb703540e76c9fcfc3d966d1a9",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "verdict": "supported",
+            "basis": "supported",
+            "explanation": "The Cedar bulletin explicitly advises replacing seals before winter on outdoor sensors with cracked seals.",
+            "evidence": [
+              {
+                "sentenceId": "S1P1S1"
+              }
+            ],
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "support",
+                "qualification": "preserved",
+                "explanation": "Bulletin tells owners of outdoor sensors with cracked seals to replace the seals before winter, matching the claim.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  }
+                ]
+              },
+              {
+                "evidenceId": "S1P2",
+                "contribution": "context",
+                "qualification": "none",
+                "explanation": "Notes indoor sensors are out of scope and uncracked seals need not be replaced, which does not affect the claim about outdoor cracked seals.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P2S1"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "CS02",
+      "response": {
+        "reviewSha256": "b4c6206804bbdbc038791196b98ed13b4ea1670609a17f731977bfdcf9d62090",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "support",
+                "qualification": "missing",
+                "explanation": "Passage advises replacement only for outdoor sensors with cracked seals, not all sensors, so the claim drops this restriction.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  }
+                ]
+              },
+              {
+                "evidenceId": "S1P2",
+                "contribution": "contradiction",
+                "qualification": "none",
+                "explanation": "Passage states indoor sensors are outside scope and uncracked seals need not be replaced, contradicting the claim that every sensor should replace seals before winter.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P2S1"
+                  },
+                  {
+                    "sentenceId": "S1P2S2"
+                  }
+                ]
+              }
+            ],
+            "verdict": "unsupported",
+            "basis": "contradiction",
+            "explanation": "Sources limit advice to outdoor sensors with cracked seals and say indoor or uncracked sensors need not replace seals, contradicting the claim that every sensor should replace seals before winter.",
+            "evidence": [
+              {
+                "sentenceId": "S1P2S1"
+              },
+              {
+                "sentenceId": "S1P2S2"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "CS03",
+      "response": {
+        "reviewSha256": "1e5fa50194fdf6839c9a09bdf27d7858d2cb436897081844cc7512be5468af2e",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "verdict": "supported",
+            "basis": "supported",
+            "explanation": "The source says every Lumen badge expires at midnight on 30 April and that no badge is exempt, fully matching the claim that all Lumen badges expire then.",
+            "evidence": [
+              {
+                "sentenceId": "S1P1S1"
+              },
+              {
+                "sentenceId": "S1P1S2"
+              }
+            ],
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "support",
+                "qualification": "preserved",
+                "explanation": "Source provides universal rule and explicit no‑exception clause, preserving the claim’s restriction to Lumen badges.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  },
+                  {
+                    "sentenceId": "S1P1S2"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "CS04",
+      "response": {
+        "reviewSha256": "6a4c313c4c3a34f1ea696caf1f2a0b1a9d608bbb14c00db45917f84d5c98e309",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "contradiction",
+                "qualification": "missing",
+                "explanation": "Source states every badge issued by Lumen expires, not only visitor badges, contradicting the exclusive claim.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  },
+                  {
+                    "sentenceId": "S1P1S2"
+                  }
+                ]
+              }
+            ],
+            "verdict": "unsupported",
+            "basis": "contradiction",
+            "explanation": "The source says all Lumen badges expire at midnight 30 April, so the claim that only visitor badges do is false.",
+            "evidence": [
+              {
+                "sentenceId": "S1P1S1"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "CS05",
+      "response": {
+        "reviewSha256": "d7991ffdcd6cf08c4f109739b319954dcfddcae53c5626d41bd5dce87683ef50",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "verdict": "supported",
+            "explanation": "Combined with the exemption for under‑sixteens, the general rule applies to members aged sixteen or older.",
+            "basis": "supported",
+            "evidence": [
+              {
+                "sentenceId": "S1P1S1"
+              },
+              {
+                "sentenceId": "S1P2S1"
+              }
+            ],
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "support",
+                "qualification": "none",
+                "explanation": "Provides the general rule that all archive members must reserve a desk before each visit.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  }
+                ]
+              },
+              {
+                "evidenceId": "S1P2",
+                "contribution": "support",
+                "qualification": "preserved",
+                "explanation": "States members under sixteen are exempt, implying the rule applies to those sixteen or older.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P2S1"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "CS06",
+      "response": {
+        "reviewSha256": "5d52efbbdf8c9cbb30d96e2b2b10e0f1d4f8caf742d98e9ff8a53a2152ad8c5b",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "verdict": "unsupported",
+            "basis": "contradiction",
+            "explanation": "Source exempts members under sixteen, but candidate applies rule to all archive members, missing this restriction.",
+            "evidence": [
+              {
+                "sentenceId": "S1P2S1"
+              },
+              {
+                "sentenceId": "S1P1S1"
+              }
+            ],
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "support",
+                "qualification": "none",
+                "explanation": "Passage states the rule that archive members must reserve a desk before each visit.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  }
+                ]
+              },
+              {
+                "evidenceId": "S1P2",
+                "contribution": "contradiction",
+                "qualification": "missing",
+                "explanation": "Passage adds an exemption for members under sixteen, which candidate omits.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P2S1"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "CS07",
+      "response": {
+        "reviewSha256": "b25647da78f7a8c5f5b16fc2f80a949f14f51b60b0773b4c8853e340271e89b8",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "support",
+                "qualification": "none",
+                "explanation": "Passage states lift operates only if latch is engaged, directly supporting the requirement.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  }
+                ]
+              },
+              {
+                "evidenceId": "S1P2",
+                "contribution": "context",
+                "qualification": "missing",
+                "explanation": "Passage adds a power‑check requirement that the claim omits.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P2S1"
+                  }
+                ]
+              }
+            ],
+            "verdict": "supported",
+            "basis": "supported",
+            "explanation": "Supported: S1P1 states latch is required for operation; S1P2 adds extra condition but does not negate the requirement.",
+            "evidence": [
+              {
+                "sentenceId": "S1P1S1"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
+

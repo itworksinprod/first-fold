@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { DEFAULT_CLOUDFLARE_AI_MODEL, FREE_CLOUDFLARE_AI_MODELS } from "./models.mjs";
+import { DEFAULT_CLOUDFLARE_AI_MODEL, FREE_CLOUDFLARE_AI_MODELS, FREE_REASONING_WRITER_MODEL } from "./models.mjs";
 export { DEFAULT_CLOUDFLARE_AI_MODEL, EXPERIMENTAL_FREE_WRITER_MODEL, FREE_REASONING_WRITER_MODEL, FREE_CLOUDFLARE_AI_MODELS } from "./models.mjs";
 
 // This model is explicitly listed by Cloudflare as supporting Workers AI JSON
@@ -196,11 +196,19 @@ export function buildWorkersAiRequest({
   responseFormat = "json_schema",
   maxTokens = DEFAULT_WORKERS_AI_MAX_TOKENS,
   temperature = DEFAULT_WORKERS_AI_TEMPERATURE,
+  reasoningEffort,
 } = {}) {
   const normalizedSchema = normalizeSchema(schema);
   const normalizedResponseFormat = normalizeResponseFormat(responseFormat);
+  const normalizedModel = resolveCloudflareAiModel(model);
+  // Explicit opt-in only. Omission preserves every existing request body.
+  // Cloudflare's workers-ai-provider README documents this REST input for GPT-OSS.
+  if (reasoningEffort !== undefined && (normalizedModel !== FREE_REASONING_WRITER_MODEL ||
+    !["low", "medium", "high"].includes(reasoningEffort))) {
+    throw new Error("Workers AI reasoningEffort requires the approved reasoning model and low, medium or high.");
+  }
   return {
-    model: resolveCloudflareAiModel(model),
+    model: normalizedModel,
     body: {
       messages: normalizeMessages(messages),
       response_format: normalizedResponseFormat === "json_schema"
@@ -209,6 +217,7 @@ export function buildWorkersAiRequest({
       max_tokens: requireIntegerInRange(maxTokens, "Workers AI maxTokens", 1, 16_000),
       temperature: requireFiniteInRange(temperature, "Workers AI temperature", 0, 5),
       stream: false,
+      ...(reasoningEffort === undefined ? {} : { reasoning_effort: reasoningEffort }),
     },
   };
 }
@@ -719,6 +728,7 @@ export async function requestWorkersAiEditorial({
   validatePayload,
   maxTokens = DEFAULT_WORKERS_AI_MAX_TOKENS,
   temperature = DEFAULT_WORKERS_AI_TEMPERATURE,
+  reasoningEffort,
   fetchImpl = globalThis.fetch,
   timeoutMs = DEFAULT_WORKERS_AI_TIMEOUT_MS,
   maxAttempts = DEFAULT_WORKERS_AI_MAX_ATTEMPTS,
@@ -748,6 +758,7 @@ export async function requestWorkersAiEditorial({
     responseFormat,
     maxTokens,
     temperature,
+    reasoningEffort,
   });
   const url = workersAiRunUrl(accountId, request.model);
   const requestText = JSON.stringify(request.body);

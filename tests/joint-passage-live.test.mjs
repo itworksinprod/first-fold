@@ -20,10 +20,12 @@ async function run(failure,at=2,encrypted=false){
     aiRequestImpl:async options=>{
       const i=requests.length;requests.push(options);late.push(options.fetchImpl);
       assert.equal(options.model,FREE_REASONING_WRITER_MODEL);assert.equal(options.maxTokens,4800);assert.equal(options.timeoutMs,90000);assert.equal(options.maxAttempts,1);
+      assert.equal(options.reasoningEffort,'high');
       assert.doesNotMatch(options.messages[1].content,/expectedVerdicts|rationale|category|CS\d\d|labelMatch/);
       assert.deepEqual(JSON.parse(options.messages[1].content),plan.cases[i].view.data);
       assert.equal(options.messages[0].content,`${plan.cases[i].view.prompt}\nJSON schema: ${JSON.stringify(plan.cases[i].view.schema)}`);
       const {body}=buildWorkersAiRequest(options),url=workersAiRunUrl(accountId,options.model),init={method:'POST',redirect:'error',body:JSON.stringify(body)};
+      assert.equal(body.reasoning_effort,'high');
       if(i===at&&failure==='no-network')return {};
       if(i===at&&['url','method','body','redirect'].includes(failure)){
         const bad={...init};if(failure==='method')bad.method='GET';if(failure==='body')bad.body='{}';if(failure==='redirect')bad.redirect='follow';

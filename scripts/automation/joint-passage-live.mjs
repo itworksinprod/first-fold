@@ -45,7 +45,7 @@ export async function runJointPassageLive({plan,publicKey,accountId,apiToken,now
   aiRequestImpl=requestWorkersAiEditorial,fetchImpl=fetch,sealImpl=sealDiagnostic}){
   assertJointPassageLivePlan(plan);diagnosticPublicKey(publicKey);
   const capture={purpose:'frozen-joint-passage-calibration-awaiting-independent-review',capturedAt:now.toISOString(),
-    controlsetSha256:plan.controlsetSha256,reviewContract:plan.reviewContract,expectationsSha256:plan.expectationsSha256,limits:JOINT_PASSAGE_LIVE_LIMITS,calls:[],
+    controlsetSha256:plan.controlsetSha256,reviewContract:plan.reviewContract,expectationsSha256:plan.expectationsSha256,limits:JOINT_PASSAGE_LIVE_LIMITS,reasoningEffort:'high',calls:[],
     independentReview:'required-not-performed-by-this-workflow',emailSent:false};
   const records=[];
   let networkRequests=0,outputBudget=0,code=null;
@@ -53,7 +53,7 @@ export async function runJointPassageLive({plan,publicKey,accountId,apiToken,now
     for(const item of plan.cases){
       const view=item.view,model=FREE_REASONING_WRITER_MODEL,prompt=`${view.prompt}\nJSON schema: ${JSON.stringify(view.schema)}`;
       const options={model,messages:[{role:'system',content:prompt},{role:'user',content:JSON.stringify(view.data)}],
-        schema:view.schema,responseFormat:'json_object',maxTokens:4800,maxAttempts:1,temperature:0.1,timeoutMs:90000,
+        schema:view.schema,responseFormat:'json_object',maxTokens:4800,maxAttempts:1,temperature:0.1,reasoningEffort:'high',timeoutMs:90000,
         maxRequestBytes:70000,maxResponseBytes:100000};
       if(capture.calls.length>=16||outputBudget+4800>76800)throw fail('JOINT_PASSAGE_LIVE_BUDGET');
       const {body}=buildWorkersAiRequest(options),bodyText=JSON.stringify(body),endpoint=workersAiRunUrl(accountId,model);

@@ -1,7 +1,7 @@
 # Joint source inference repair
 
-Status: the v2 live attempt is held. The v3 consolidated instruction repair passes
-2,262 local tests but is not yet verified live. Daily delivery remains unchanged.
+Status: both the v2 and default-effort v3 live attempts are held. An isolated
+explicit-high-effort comparison is under verification. Daily delivery is unchanged.
 
 This isolated revision addresses the two reasoning failures in the
 [five-call passage trial](passage-scope-live.md): rejecting a conclusion supported
@@ -170,3 +170,42 @@ reconstruct the historical binding, reject old replies as v3 results and reprodu
 the consistency failure with an explicitly labeled offline projection. A prompt
 repair is a hypothesis; neither shorter instructions nor synthetic tests establish
 that the model now follows it.
+
+## Consolidated prompt live result
+
+[Run 36796305352](https://github.com/itworksinprod/first-fold/actions/runs/36796305352)
+on `f7c2a89a8234180dd1de7e5a63af05520512fd38` stopped after seven requests: six
+valid matching verdicts and five matching declared reasoning-field sets. CS05 now
+combines the rule and exemption correctly, and CS06 rejects the omitted exemption.
+CS01's scored preserved-restriction anchor is corrected. CS04 still overclaims a
+contradiction. CS07 marks an additional requirement missing even though the
+candidate asserts only a necessary condition, not sufficiency. Its supported
+verdict conflicts with that missing flag, so the consistency gate correctly holds.
+The independent reviewer confirms these findings; CS08 through CS16 are unobserved.
+
+Artifact SHA-256:
+`4f79eb3b00d811b0c4aa4b4d4283b996f0c12d564df7d90ee377868b4dd97134`.
+Private capture SHA-256:
+`77077e79ebcd39fa6d44be1cd32c035215cf0ccff19fb5bb971d3e7b245cfbde`.
+Unchanged parsed-reply fixture SHA-256:
+`cd45151ea85145c5def3a8994e0a8ff0232c7cfee5134e9ae863c209f2615b0e`.
+All seven exact requests, parsed validations and scoring replayed locally. The
+independent reviewer also checked all 26 recorded citation selections. No raw
+HTTP replay or model qualification is claimed.
+
+## Explicit reasoning comparison
+
+The next isolated run keeps the exact v3 prompt, model, sources, corpus, schema,
+validators, expected results and limits. Only requested reasoning effort changes
+to high. [Cloudflare's provider documentation](https://github.com/cloudflare/ai/blob/main/packages/workers-ai-provider/README.md#reasoning-controls)
+documents `reasoning_effort` in the REST body; its
+[model page](https://developers.cloudflare.com/workers-ai/models/gpt-oss-120b/)
+lists low, medium by default and high. Requesting high does not prove the provider
+honored it or that the results improve.
+
+The adapter accepts this field only when explicitly supplied for the approved
+reasoning model, with a closed low/medium/high enum. Omission preserves prior
+request bytes. Only this no-email live runner opts in; daily callers and provider
+defaults remain unchanged. The value enters the request digest and encrypted
+capture. Maximum output remains 4,800 per call, sixteen calls, no retries; a
+refusal or truncation still stops the attempt. No paid upgrade is permitted.
