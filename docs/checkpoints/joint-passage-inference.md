@@ -1,8 +1,7 @@
 # Joint source inference repair
 
-Status: earlier live attempts remain held. V4 at both high and medium effort
-exhausted the first response's token limit. A compact v5 prompt is under
-verification; daily delivery is unchanged.
+Status: compact v5 returned eight valid matching verdicts but remains held for
+reasoning defects and a ninth-request output limit. Daily delivery is unchanged.
 
 This isolated revision addresses the two reasoning failures in the
 [five-call passage trial](passage-scope-live.md): rejecting a conclusion supported
@@ -306,3 +305,38 @@ Final v5 independent preflight passed 201 selected tests and checked all sixteen
 unchanged source/schema views. The complete local suite passes 2,267 tests. The
 one-use private launch and audit helpers retain the free-account preflight,
 trusted-main checks, exact request reconstruction and encrypted-output boundary.
+
+## Compact live result: correct labels do not mean correct reasoning
+
+[Run 36799248427](https://github.com/itworksinprod/first-fold/actions/runs/36799248427)
+on `c1da4547b96271b96bcc1df03736eb535fcd461d` issued nine requests. Eight
+parsed replies were valid and matched final labels; only five matched all declared
+reasoning fields. CS04 still calls unestablished exclusivity a contradiction,
+CS05 marks the retained exception `none`, and CS06 uses insufficient evidence
+instead of the frozen contradiction basis. CS07 now supports the necessary-only
+claim, but its final explanation incorrectly calls an additional necessary
+prerequisite a sufficiency condition. Field matches do not certify explanations.
+
+The ninth request ended at `OUTPUT_TOKEN_LIMIT` with 4,800 completion tokens.
+CS09 has no parsed result and CS10–16 were not called. No daily-quota conclusion
+or complete-model qualification follows. All nine request hashes, eight parsed
+validations and prefix scoring were reconstructed; full-run response replay is
+not available because the terminal call has no parsed response.
+
+Artifact SHA-256:
+`4d062e8eeb8c37df0109459ea147889b63ac3a5a0f0d3e82d3044f5c024a99f6`.
+Private capture SHA-256:
+`25db75bc5c232fae1d3e292a57d3db28f4716319f4ddf24fda3bd58b84792982`.
+Unchanged eight-reply fixture SHA-256:
+`47cb2e47e6aeb7f21d69498c2cdfc33304df6d92a2d4f1f8c3d3d364ffc3fb3c`.
+The fixture remains failure evidence; it is not new article approval.
+
+The next repair needs an offline task-decomposition design rather than an
+unchanged rerun hoping for a better answer. Every semantic stage must retain the
+complete candidate and source context. Raw judgments must remain untouched;
+disagreements must hold, not be repaired into agreement. The current code and
+all prior failed trials remain available for comparison. No daily integration,
+email, billing or editorial-threshold change was made.
+
+The separate [blinded workload split](split-passage-inference.md) implements that
+offline design without changing this prompt, corpus, workflow or any old result.

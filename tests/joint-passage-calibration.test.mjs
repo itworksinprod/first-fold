@@ -196,3 +196,19 @@ test('high-effort v3 raw responses preserve the valid false negative and unrelat
   assert.equal(result.report.reasoningAgreementComplete,false);assert.equal(result.report.modelQualified,false);
   assert.deepEqual(f,before);
 });
+test('compact v5 live prefix preserves eight matching labels without hiding three reasoning defects',async()=>{
+  const text=await readFile(new URL('./fixtures/joint-passage-live-36799248427.json',import.meta.url),'utf8'),f=JSON.parse(text),before=clone(f);
+  assert.equal(sha(text),'47cb2e47e6aeb7f21d69498c2cdfc33304df6d92a2d4f1f8c3d3d364ffc3fb3c');
+  assert.equal(f.captureSha256,'25db75bc5c232fae1d3e292a57d3db28f4716319f4ddf24fda3bd58b84792982');
+  assert.equal(f.reasoningEffort,'medium');assert.equal(f.failure.formatReason,'OUTPUT_TOKEN_LIMIT');
+  assert.equal(f.failure.completionTokens,4800);assert.equal(f.failure.requestedMaxTokens,4800);
+  const result=score(f.records,prepare());
+  assert.equal(result.report.casesValid,8);assert.equal(result.report.casesMatching,8);assert.equal(result.report.reasoningFieldsMatching,5);
+  assert.deepEqual(result.report.reasoningFieldMismatches.map(x=>x.caseId),['CS04','CS05','CS06']);
+  assert.deepEqual(result.report.casesMissing,['CS09','CS10','CS11','CS12','CS13','CS14','CS15','CS16']);
+  assert.equal(result.report.reasoningAgreementComplete,false);assert.equal(result.report.explanationsChecked,false);
+  assert.equal(result.report.modelQualified,false);assert.equal(result.report.articleApproved,false);
+  // Matching fields do not certify the explanation's unsupported "sufficiency" characterization.
+  assert.match(f.records[6].response.judgments[0].explanation,/separate sufficiency condition/);
+  assert.deepEqual(result.results.map(r=>r.rawResponse),f.records.map(r=>r.response));assert.deepEqual(f,before);
+});

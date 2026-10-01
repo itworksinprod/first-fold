@@ -1,0 +1,374 @@
+{
+  "runId": "36799248427",
+  "headSha": "c1da4547b96271b96bcc1df03736eb535fcd461d",
+  "captureSha256": "25db75bc5c232fae1d3e292a57d3db28f4716319f4ddf24fda3bd58b84792982",
+  "reasoningEffort": "medium",
+  "failure": {
+    "httpStatus": null,
+    "providerCode": null,
+    "formatReason": "OUTPUT_TOKEN_LIMIT",
+    "completionTokens": 4800,
+    "requestedMaxTokens": 4800
+  },
+  "records": [
+    {
+      "caseId": "CS01",
+      "response": {
+        "reviewSha256": "1a281938f22ab2c5ac828848783e998ea97779ab9cc06cd698fea4c5e174f1d7",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "support",
+                "qualification": "preserved",
+                "explanation": "The bulletin explicitly instructs owners of outdoor sensors with cracked seals to replace the seals before winter, matching the claim.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  }
+                ]
+              },
+              {
+                "evidenceId": "S1P2",
+                "contribution": "context",
+                "qualification": "none",
+                "explanation": "Provides scope limits (indoor sensors excluded) and notes that uncracked seals need not be replaced, which does not affect the claim about outdoor cracked seals.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P2S1"
+                  },
+                  {
+                    "sentenceId": "S1P2S2"
+                  }
+                ]
+              }
+            ],
+            "verdict": "supported",
+            "basis": "supported",
+            "explanation": "The claim is fully supported by the bulletin and no contradictory or missing restrictions are present.",
+            "evidence": [
+              {
+                "sentenceId": "S1P1S1"
+              },
+              {
+                "sentenceId": "S1P2S1"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "CS02",
+      "response": {
+        "reviewSha256": "870ccfe6f76efad1d60266c6bdebf1c769976a351dec78cfb8e782c594f3092b",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "context",
+                "qualification": "missing",
+                "explanation": "Source limits advice to outdoor sensors with cracked seals, but claim says every sensor.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  }
+                ]
+              },
+              {
+                "evidenceId": "S1P2",
+                "contribution": "contradiction",
+                "qualification": "missing",
+                "explanation": "Source says indoor sensors are outside scope and uncracked seals need not be replaced, contradicting the claim of advice for every sensor.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P2S1"
+                  },
+                  {
+                    "sentenceId": "S1P2S2"
+                  }
+                ]
+              }
+            ],
+            "verdict": "unsupported",
+            "basis": "contradiction",
+            "explanation": "The claim overstates Cedar's advice to all sensors, while sources restrict it to outdoor sensors with cracked seals and exclude indoor sensors and uncracked seals.",
+            "evidence": [
+              {
+                "sentenceId": "S1P2S1"
+              },
+              {
+                "sentenceId": "S1P2S2"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "CS03",
+      "response": {
+        "reviewSha256": "06f0abb3e367a818b115fa728fb2748c0d9788973dd33b6fe67a597c386e61b9",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "support",
+                "qualification": "preserved",
+                "explanation": "Source states every Lumen badge expires at midnight on 30 April and no badge is exempt, matching the claim that all badges expire then.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  },
+                  {
+                    "sentenceId": "S1P1S2"
+                  }
+                ]
+              }
+            ],
+            "verdict": "supported",
+            "basis": "supported",
+            "explanation": "The claim exactly matches the source's universal expiry rule and exemption statement.",
+            "evidence": [
+              {
+                "sentenceId": "S1P1S1"
+              },
+              {
+                "sentenceId": "S1P1S2"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "CS04",
+      "response": {
+        "reviewSha256": "dba2dd82e20b0c2f9433070a38b9aa57f7a2646a5b41d3ce229fc8124c01e73b",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "contradiction",
+                "qualification": "missing",
+                "explanation": "Source states every Lumen badge expires on 30 April and no badge is exempt, so limiting expiration to visitor badges contradicts and omits the source restriction.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  },
+                  {
+                    "sentenceId": "S1P1S2"
+                  }
+                ]
+              }
+            ],
+            "verdict": "unsupported",
+            "basis": "contradiction",
+            "explanation": "Claim that only visitor badges expire conflicts with source that all badges expire and none are exempt.",
+            "evidence": [
+              {
+                "sentenceId": "S1P1S1"
+              },
+              {
+                "sentenceId": "S1P1S2"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "CS05",
+      "response": {
+        "reviewSha256": "d79772aa22bf9628ab3f776d9c9cfb8bb45bdb6352bf596314b33fedd841e85a",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "support",
+                "qualification": "none",
+                "explanation": "Source states all archive members must reserve a desk, providing the base rule.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  }
+                ]
+              },
+              {
+                "evidenceId": "S1P2",
+                "contribution": "support",
+                "qualification": "none",
+                "explanation": "Source exempts members under sixteen, implying those sixteen or older must follow the reservation rule.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P2S1"
+                  }
+                ]
+              }
+            ],
+            "verdict": "supported",
+            "basis": "supported",
+            "explanation": "Combined, the passages show that members under sixteen are exempt while all members must reserve, so members aged at least sixteen must reserve a desk.",
+            "evidence": [
+              {
+                "sentenceId": "S1P1S1"
+              },
+              {
+                "sentenceId": "S1P2S1"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "CS06",
+      "response": {
+        "reviewSha256": "f4560a3e1e8ae048273550c5e28d985c2986a7b0dc64c151d07f02a5316e78a8",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "support",
+                "qualification": "preserved",
+                "explanation": "Passage S1P1 states exactly that archive members must reserve a desk before each visit.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  }
+                ]
+              },
+              {
+                "evidenceId": "S1P2",
+                "contribution": "context",
+                "qualification": "missing",
+                "explanation": "Passage S1P2 adds that members under sixteen are exempt, a restriction omitted by the claim.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P2S1"
+                  }
+                ]
+              }
+            ],
+            "verdict": "unsupported",
+            "basis": "insufficient_evidence",
+            "explanation": "The claim ignores the exemption for members under sixteen, missing a stated restriction.",
+            "evidence": [
+              {
+                "sentenceId": "S1P1S1"
+              },
+              {
+                "sentenceId": "S1P2S1"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "CS07",
+      "response": {
+        "reviewSha256": "cc59abce3ad16cee5a8d87c39bb3c9db0e3d33b7f69dd890a820f16563413ecf",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "verdict": "supported",
+            "basis": "supported",
+            "explanation": "Passage S1P1 states the latch is necessary for operation, directly supporting the claim; passage S1P2 adds a separate sufficiency condition but does not negate the necessity.",
+            "evidence": [
+              {
+                "sentenceId": "S1P1S1"
+              },
+              {
+                "sentenceId": "S1P2S1"
+              }
+            ],
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "support",
+                "qualification": "preserved",
+                "explanation": "The lift can operate only if its safety latch is engaged, matching the claim that an engaged latch is required.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  }
+                ]
+              },
+              {
+                "evidenceId": "S1P2",
+                "contribution": "context",
+                "qualification": "none",
+                "explanation": "The passage notes an engaged latch alone is insufficient because a power check is also needed, which does not contradict the latch's necessity.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P2S1"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "CS08",
+      "response": {
+        "reviewSha256": "9cdf310e051f1483a0d1f2c0fd26ad584dfd27bfc9be61878a8d9ae32256ccb3",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "context",
+                "qualification": "missing",
+                "explanation": "Source says lift operation requires latch engaged, not that latch guarantees operation, so the claim drops this restriction.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  }
+                ]
+              },
+              {
+                "evidenceId": "S1P2",
+                "contribution": "contradiction",
+                "qualification": "missing",
+                "explanation": "Source states an engaged latch alone is insufficient, contradicting the claim that it guarantees operation.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P2S1"
+                  }
+                ]
+              }
+            ],
+            "verdict": "unsupported",
+            "basis": "contradiction",
+            "explanation": "The claim that an engaged safety latch guarantees lift operation contradicts the source stating a latch alone is insufficient.",
+            "evidence": [
+              {
+                "sentenceId": "S1P1S1"
+              },
+              {
+                "sentenceId": "S1P2S1"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
+
