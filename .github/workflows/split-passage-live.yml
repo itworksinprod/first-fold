@@ -1,4 +1,4 @@
-name: Measure blinded source-review obligations v2 (encrypted, no email)
+name: Measure two known obligation failures (encrypted smoke test, no email)
 on:
   workflow_dispatch:
     inputs:
@@ -12,9 +12,9 @@ concurrency:
   cancel-in-progress: false
 jobs:
   review:
-    if: github.repository == 'itworksinprod/first-fold' && github.ref == 'refs/heads/main' && github.actor == 'itworksinprod' && github.run_attempt == 1
+    if: github.repository == 'itworksinprod/first-fold' && github.ref == 'refs/heads/codex/remaining-allowance-smoke' && github.workflow_ref == 'itworksinprod/first-fold/.github/workflows/split-passage-live.yml@refs/heads/codex/remaining-allowance-smoke' && github.actor == 'itworksinprod' && github.run_attempt == 1
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
@@ -24,23 +24,23 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: '24'
-      - name: Test frozen subset and blinded stages without credentials
-        run: node --test tests/split-passage*.test.mjs tests/joint-passage*.test.mjs tests/free-workers-ai.test.mjs tests/private-writer-diagnostic.test.mjs
-      - name: Validate frozen obligations v2 subset and key before provider credentials
+      - name: Test fixed smoke cases and unchanged blinded stages without credentials
+        run: node --test tests/split-obligation-smoke.test.mjs tests/split-passage-review.test.mjs tests/joint-passage*.test.mjs tests/free-workers-ai.test.mjs tests/private-writer-diagnostic.test.mjs
+      - name: Validate two known obligation failures and key before provider credentials
         env:
           DIAGNOSTIC_PUBLIC_KEY: ${{ inputs.public_key }}
-        run: node scripts/automation/split-passage-live.mjs validate-obligations
-      - name: Measure two blinded obligations v2 stages per fictional case once
+        run: node scripts/automation/split-obligation-smoke.mjs validate
+      - name: Measure four requests for CS04 and CS07 once
         env:
           DIAGNOSTIC_PUBLIC_KEY: ${{ inputs.public_key }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_AI_API_TOKEN: ${{ secrets.CLOUDFLARE_AI_API_TOKEN }}
-        run: node scripts/automation/split-passage-live.mjs run-obligations "$RUNNER_TEMP/split-passage-live.encrypted.json"
+        run: node scripts/automation/split-obligation-smoke.mjs run "$RUNNER_TEMP/split-obligation-smoke.encrypted.json"
       - name: Retain only encrypted result for one day
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: split-passage-live
-          path: ${{ runner.temp }}/split-passage-live.encrypted.json
+          name: split-obligation-smoke
+          path: ${{ runner.temp }}/split-obligation-smoke.encrypted.json
           retention-days: 1
           if-no-files-found: ignore
