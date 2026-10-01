@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
-import {buildJointPassageReview as build,validateJointPassageReview as validate,JOINT_PASSAGE_CONTRACT,JOINT_PASSAGE_PROMPT,JOINT_PASSAGE_V2_PROMPT,JOINT_PASSAGE_V3_PROMPT} from '../scripts/automation/experiments/joint-passage-review.mjs';
+import {buildJointPassageReview as build,validateJointPassageReview as validate,JOINT_PASSAGE_CONTRACT,JOINT_PASSAGE_PROMPT,JOINT_PASSAGE_V2_PROMPT,JOINT_PASSAGE_V3_PROMPT,JOINT_PASSAGE_V4_PROMPT} from '../scripts/automation/experiments/joint-passage-review.mjs';
 import {buildPassageScopeReview as prior,validatePassageScopeReview as priorValidate} from '../scripts/automation/experiments/passage-scope-review.mjs';
 import {CONDITIONAL_SCOPE_CONTROLS as controls} from '../scripts/automation/experiments/conditional-scope-controls.mjs';
 const sha=x=>createHash('sha256').update(x).digest('hex'),clone=x=>structuredClone(x);
@@ -13,7 +13,7 @@ const reply=view=>({reviewSha256:view.data.reviewSha256,judgments:view.data.span
     explanation:'Injected joint-source test assessment, not a live model response.',evidence:[{sentenceId:view.data.catalog.find(c=>c.evidenceId===p.evidenceId).sentenceId}]})),
   verdict:'supported',basis:'supported',explanation:'Injected mechanics fixture, not qualification.',evidence:view.data.catalog.slice(0,2).map(c=>({sentenceId:c.sentenceId}))}))});
 
-test('v4 binds its generic entailment prompt without modifying source bytes catalog schema or historical prompts',()=>{
+test('v5 binds its compact entailment prompt without modifying source bytes catalog schema or historical prompts',()=>{
   for(const c of controls){const v=build(c.input),p=prior(c.input);freezeCheck(v);
     for(const k of ['sentence','spans','passages','catalog','excluded','evidencePolicy'])assert.deepEqual(v.data[k],p.data[k]);
     assert.equal(v.data.policy,JOINT_PASSAGE_CONTRACT);assert.equal(v.data.passagePolicy,p.data.policy);
@@ -22,20 +22,23 @@ test('v4 binds its generic entailment prompt without modifying source bytes cata
     assert.notEqual(reviewSha256,p.data.reviewSha256);assert.doesNotMatch(JSON.stringify(v),/expectedVerdicts|qualificationAnchors|expectationsSha256|CS\d\d/);
   }
   assert.doesNotMatch(JOINT_PASSAGE_PROMPT,/Cedar|Lumen|Archive|Meridian|Harbor|Willow|sixteen|visitor badge|CS\d\d/);
-  assert.match(JOINT_PASSAGE_PROMPT,/one evidence set/);assert.match(JOINT_PASSAGE_PROMPT,/remainder of that same population/);
-  assert.match(JOINT_PASSAGE_PROMPT,/A restriction is not none merely because it is correctly retained/);
-  assert.equal(JOINT_PASSAGE_CONTRACT,'joint-passage-inference-v4');
-  assert.equal(sha(JOINT_PASSAGE_PROMPT),'d389e13cf229f4147420e1a20e96fb46bb605d11a76a7411602f988fdb839362');
+  assert.match(JOINT_PASSAGE_PROMPT,/ALL supplied passages/);assert.match(JOINT_PASSAGE_PROMPT,/combine a rule with its exceptions/);
+  assert.match(JOINT_PASSAGE_PROMPT,/Correctly retaining a restriction is preserved, not none/);
+  assert.equal(JOINT_PASSAGE_CONTRACT,'joint-passage-inference-v5');
+  assert.equal(sha(JOINT_PASSAGE_PROMPT),'3fc107f1a571f8948a499f5b9ecda079285a9d35d70df4608153d0bbc7687acf');
+  assert.equal(sha(JOINT_PASSAGE_V4_PROMPT),'d389e13cf229f4147420e1a20e96fb46bb605d11a76a7411602f988fdb839362');
   assert.equal(sha(JOINT_PASSAGE_V3_PROMPT),'2c1c16a1b51469007716e67893f9fef329d84df48d85f053767c14c441e20924');
-  assert.match(JOINT_PASSAGE_PROMPT,/naming one necessary condition does not assert that it is the sole or sufficient condition/);
-  assert.match(JOINT_PASSAGE_PROMPT,/could both be true without inventing a fact/);
-  assert.match(JOINT_PASSAGE_PROMPT,/unrelated must have an empty evidence array/);
-  assert.match(JOINT_PASSAGE_PROMPT,/An assertion applying a rule to a group the source expressly exempts conflicts/);
-  assert.match(JOINT_PASSAGE_PROMPT,/An assertion that retains the exemption does not conflict/);
+  assert.match(JOINT_PASSAGE_PROMPT,/Stating one necessary condition neither claims sufficiency nor requires listing other prerequisites/);
+  assert.match(JOINT_PASSAGE_PROMPT,/Mere compatibility is not support/);
+  assert.match(JOINT_PASSAGE_PROMPT,/unrelated requires qualification none and empty evidence/);
+  assert.match(JOINT_PASSAGE_PROMPT,/Applying a rule to an explicitly exempt group conflicts with policy; retaining the exemption does not/);
   assert.equal(sha(JOINT_PASSAGE_V2_PROMPT),'4c4060eee85da2e35691aa90e021b444093dc2a5f28a750104d2fc568c0d7ed0');
-  assert.ok(JOINT_PASSAGE_PROMPT.length<JOINT_PASSAGE_V2_PROMPT.length);
-  assert.match(JOINT_PASSAGE_PROMPT,/does NOT mean this individual passage lacks some wording in the candidate/);
-  assert.match(JOINT_PASSAGE_PROMPT,/Never return supported while recording missing, contradiction or uncertain/);
+  assert.ok(JOINT_PASSAGE_PROMPT.length<JOINT_PASSAGE_V4_PROMPT.length*0.52);
+  assert.match(JOINT_PASSAGE_PROMPT,/absent wording in one passage is not a missing restriction/);
+  assert.match(JOINT_PASSAGE_PROMPT,/any contradiction => unsupported\/contradiction; else any missing => unsupported\/insufficient_evidence; else any uncertain => uncertain\/uncertain/);
+  assert.match(JOINT_PASSAGE_PROMPT,/Necessity itself is a source restriction to preserve/);
+  assert.match(JOINT_PASSAGE_PROMPT,/Support requires 1–2 jointly sufficient IDs/);
+  assert.match(JOINT_PASSAGE_PROMPT,/A decisive evidenced negative retains the above precedence/);
 });
 test('a composed support fixture passes unchanged citation guards and preserves raw versus hash projection',()=>{
   const v=build(input()),r=reply(v),out=validate(r,v),p=prior(input());freezeCheck(out);
@@ -68,7 +71,7 @@ test('missing-limit verdict still needs evidence from its recorded limiting pass
   j.evidence=[{sentenceId:'S1P1S1'}];assert.equal(validate(r,v).code,'PASSAGE_SCOPE_FINAL_EVIDENCE');
   j.evidence=[{sentenceId:'S1P2S1'}];assert.equal(validate(r,v).valid,true); // semantic truth remains separate
 });
-test('historical bindings and reconstituted views cannot masquerade as fresh v4 reviews',()=>{
+test('historical bindings and reconstituted views cannot masquerade as fresh v5 reviews',()=>{
   const v=build(input()),old=prior(input());assert.equal(validate(reply(old),v).valid,false);assert.equal(priorValidate(reply(v),old).valid,false);
   assert.equal(validate(reply(v),clone(v)).code,'JOINT_PASSAGE_VIEW');
   const changed=input();changed.sources[0].passages[1].text='Members under twelve are exempt from this rule.';
@@ -84,7 +87,7 @@ test('new contract keeps the existing bounded-input admission policy without tru
   const x=input();x.sources[0].passages=Array.from({length:9},(_,i)=>({evidenceId:`S1P${i+1}`,text:'Complete source sentence.'}));
   assert.throws(()=>build(x),/PASSAGE_SCOPE_SIZE/);
 });
-test('v4 stays offline and historical gate and live workflow bytes stay frozen',async()=>{
+test('v5 stays offline and historical gate and live workflow bytes stay frozen',async()=>{
   const dir=new URL('../',import.meta.url);
   for(const [path,hash]of [
     ['scripts/automation/experiments/passage-scope-review.mjs','26db65ee3984b74feaf4a71aa09363d11ba0421be2d9a6e78ad83cd10699168c'],

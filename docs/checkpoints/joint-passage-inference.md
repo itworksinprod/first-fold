@@ -1,8 +1,8 @@
 # Joint source inference repair
 
-Status: earlier live attempts remain held. V4 at high effort exhausted its
-first response's token limit; a medium-effort comparison is being verified.
-Daily delivery is unchanged.
+Status: earlier live attempts remain held. V4 at both high and medium effort
+exhausted the first response's token limit. A compact v5 prompt is under
+verification; daily delivery is unchanged.
 
 This isolated revision addresses the two reasoning failures in the
 [five-call passage trial](passage-scope-live.md): rejecting a conclusion supported
@@ -274,3 +274,35 @@ sources, expected answers, validators, sixteen-call ceiling, 4,800 tokens per
 call and no-retry stop behavior stay unchanged. This tests completion within the
 same budget, not relaxed source quality. It remains an isolated no-email test;
 the production adapter defaults and daily paper are unchanged.
+
+## Medium output-limit result and compact contract
+
+[Run 36798680999](https://github.com/itworksinprod/first-fold/actions/runs/36798680999)
+on `ccc23ff13c0826aa1dd99cfe7363b1159d72a4d0` also stopped after one request,
+with `OUTPUT_TOKEN_LIMIT`, 4,800 completion tokens and no parsed response.
+Independent review verified this distinction: it is neither a daily-quota refusal
+nor a semantic verdict. Artifact SHA-256 is
+`e101ab59d91e8548cc723fe61ff9a05b18e714ad3e7144aa7dfe8b7d62d0caf8`;
+private capture SHA-256 is
+`cece24beba2f2d60ef8825979f03be36e256046a161fe35c7c4bf63ee809d8ff`.
+The one exact request and artifact were verified; no response replay is possible.
+
+V5 replaces the 6,146-character instructions with a standalone 3,163-character
+contract. It retains contextual spans, complete joint-source review, actual
+assertion scope, necessary-versus-sufficient reasoning, policy exceptions,
+contradiction-versus-unestablished support, all passage roles, source restrictions,
+exact catalog citations, final-basis precedence and untrusted-data boundaries.
+The schema and host gates are unchanged. V4 remains verbatim for historical
+hash auditing. V5 prompt SHA-256 is
+`3fc107f1a571f8948a499f5b9ecda079285a9d35d70df4608153d0bbc7687acf`.
+
+This is a prompt-structure experiment, not proof that verbosity caused the limit
+or that shorter instructions guarantee completion. It keeps medium effort and
+the same sixteen-call, 4,800-token, 90-second, no-retry ceiling. No prior failed
+result becomes accepted, and no article or production change is authorized by
+the calibration result alone.
+
+Final v5 independent preflight passed 201 selected tests and checked all sixteen
+unchanged source/schema views. The complete local suite passes 2,267 tests. The
+one-use private launch and audit helpers retain the free-account preflight,
+trusted-main checks, exact request reconstruction and encrypted-output boundary.

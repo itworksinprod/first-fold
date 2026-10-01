@@ -33,7 +33,7 @@ export function assertJointPassageLivePlan(plan){
   // The offline scorer checks identity without executing untrusted plan accessors.
   scoreJointPassageCalibration([],plan);
   if(plan.controlsetSha256!==JOINT_PASSAGE_LIVE_CONTROLSET_SHA256||plan.cases.length!==16||
-    plan.reviewContract!=='joint-passage-inference-v4'||
+    plan.reviewContract!=='joint-passage-inference-v5'||
     plan.expectationsSha256!=='174aca301c001c89e9279177ee2529aeb010e288630ec8e432066821d5fde9d0')throw fail('JOINT_PASSAGE_LIVE_TARGET');
 }
 export function assertJointPassageLiveAuthority(env){
