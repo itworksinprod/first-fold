@@ -4,8 +4,8 @@ import {createHash,generateKeyPairSync} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
-import {runSplitPassageLive,runSplitObligationLive,assertSplitPassageLivePlan,assertSplitObligationLivePlan,assertSplitPassageLiveAuthority,splitPassagePublicReport,SPLIT_PASSAGE_LIVE_LIMITS,SPLIT_OBLIGATION_LIVE_BINDINGS} from '../scripts/automation/split-passage-live.mjs';
-import {prepareSplitPassageCalibration as prepare,prepareSplitObligationCalibration as prepareObligations,scoreSplitPassageCalibration as score} from '../scripts/automation/experiments/split-passage-calibration.mjs';
+import {runSplitPassageLive,runSplitObligationLive,runSplitScopeWitnessLive,assertSplitPassageLivePlan,assertSplitObligationLivePlan,assertSplitScopeWitnessLivePlan,assertSplitPassageLiveAuthority,splitPassagePublicReport,SPLIT_PASSAGE_LIVE_LIMITS,SPLIT_OBLIGATION_LIVE_BINDINGS,SPLIT_SCOPE_WITNESS_LIVE_BINDINGS} from '../scripts/automation/split-passage-live.mjs';
+import {prepareSplitPassageCalibration as prepare,prepareSplitObligationCalibration as prepareObligations,prepareSplitScopeWitnessCalibration as prepareWitnesses,scoreSplitPassageCalibration as score} from '../scripts/automation/experiments/split-passage-calibration.mjs';
 import {buildWorkersAiRequest,requestWorkersAiEditorial,workersAiRunUrl,FREE_REASONING_WRITER_MODEL} from '../scripts/automation/free/workers-ai.mjs';
 import {openDiagnostic} from '../scripts/automation/private-writer-diagnostic.mjs';
 import {SCOPE_REASONING_EXPECTATIONS as expectations} from '../scripts/automation/experiments/scope-reasoning-expectations.mjs';
@@ -22,10 +22,11 @@ function reply(view,mode){
     explanation:'Synthetic role check, not qualification.',evidence:[{sentenceId:view.data.catalog.find(e=>e.evidenceId===p.evidenceId).sentenceId}]}))})};
 }
 async function run(failure,at=3,encrypted=false,obligations=false){
-  const plan=(obligations?prepareObligations:prepare)(),views=plan.cases.flatMap(c=>[c.pair.claim,c.pair.checks]),network=[],requests=[],late=[];
+  const witnesses=obligations==='witnesses';
+  const plan=(witnesses?prepareWitnesses:obligations?prepareObligations:prepare)(),views=plan.cases.flatMap(c=>[c.pair.claim,c.pair.checks]),network=[],requests=[],late=[];
   const otherViews=failure==='cross-revision'?(obligations?prepare:prepareObligations)().cases.flatMap(c=>[c.pair.claim,c.pair.checks]):null;
   const frozenRequests=views.map(v=>[`${v.prompt}\nJSON schema: ${JSON.stringify(v.schema)}`,JSON.stringify(v.data)]);
-  const result=await (obligations?runSplitObligationLive:runSplitPassageLive)({plan,publicKey,accountId:'0'.repeat(32),apiToken:'PRIVATE_TOKEN',...(encrypted?{}:{sealImpl:x=>x}),
+  const result=await (witnesses?runSplitScopeWitnessLive:obligations?runSplitObligationLive:runSplitPassageLive)({plan,publicKey,accountId:'0'.repeat(32),apiToken:'PRIVATE_TOKEN',...(encrypted?{}:{sealImpl:x=>x}),
     aiRequestImpl:async options=>{
       const i=requests.length;requests.push(options);late.push(options.fetchImpl);
       assert.equal(options.model,FREE_REASONING_WRITER_MODEL);assert.equal(options.reasoningEffort,'medium');
@@ -109,6 +110,28 @@ test('explicit obligations live entry binds the reviewed prompts, full data, sch
     assert.ok(Object.isFrozen(view.data));assert.ok(Object.isFrozen(view.schema));
   }
 });
+test('explicit scope-witness live entry pins all sixteen requests and remains experimental with injected answers',async()=>{
+  const {result,requests,plan}=await run(undefined,3,true,'witnesses');
+  assert.doesNotThrow(()=>assertSplitScopeWitnessLivePlan(plan));
+  assert.throws(()=>assertSplitScopeWitnessLivePlan(prepare()),/SPLIT_PASSAGE_LIVE_TARGET/);
+  assert.throws(()=>assertSplitScopeWitnessLivePlan(prepareObligations()),/SPLIT_PASSAGE_LIVE_TARGET/);
+  assert.throws(()=>assertSplitScopeWitnessLivePlan(clone(plan)));
+  assert.equal(requests.length,16);assert.equal(result.report.outputBudget,76800);
+  assert.equal(result.report.reasoningAgreementComplete,false);
+  const capture=openDiagnostic(result.sealed,keys.privateKey.export({type:'pkcs8',format:'pem'}));
+  assert.equal(capture.reviewContract,SPLIT_SCOPE_WITNESS_LIVE_BINDINGS.reviewContract);
+  assert.equal(sha(JSON.stringify(plan.cases)),SPLIT_SCOPE_WITNESS_LIVE_BINDINGS.casesSha256);
+  assert.equal(sha(JSON.stringify(capture.calls.map(c=>c.requestSha256))),SPLIT_SCOPE_WITNESS_LIVE_BINDINGS.requestsSha256);
+  for(const {pair}of plan.cases)for(const stage of ['claim','checks'])
+    assert.equal(sha(pair[stage].prompt),SPLIT_SCOPE_WITNESS_LIVE_BINDINGS[`${stage}PromptSha256`]);
+  for(const flag of ['fullControlsetPassed','modelQualified','articleApproved','publicationReady','emailSent'])assert.equal(capture.report[flag],false);
+});
+for(const failure of ['quota','url','retry','hash','conflict','cross-revision','truncation'])
+  test(`scope witnesses ${failure} stops without a retry or revised answer`,async()=>{
+    const {result}=await run(failure,3,false,'witnesses');
+    assert.equal(result.report.status,'failed');assert.equal(result.report.modelRequests,4);
+    assert.equal(result.report.reasoningAgreementComplete,false);
+  });
 test('live entry points reject the other revision and hostile or unissued plans before inference',async()=>{
   let reads=0,calls=0;
   const getter={get reviewContract(){reads++;return SPLIT_OBLIGATION_LIVE_BINDINGS.reviewContract;}},
@@ -222,6 +245,10 @@ test('manual first-attempt owner/main workflow is read-only and excludes deliver
   assert.match(s,/cancel-in-progress: false/);assert.match(s,/github\.run_attempt == 1/);
   assert.match(s,/split-passage-live\.mjs validate-obligations\s/);
   assert.match(s,/split-passage-live\.mjs run-obligations "\$RUNNER_TEMP\/split-passage-live\.encrypted\.json"/);
+  assert.match(s,/scope_witnesses:[\s\S]*default: false[\s\S]*type: boolean/);
+  assert.match(s,/split-passage-live\.mjs validate-scope-witnesses\s/);
+  assert.match(s,/split-passage-live\.mjs run-scope-witnesses "\$RUNNER_TEMP\/split-passage-live\.encrypted\.json"/);
+  assert.match(s,/tests\/split-scope-witness\*\.test\.mjs/);
   assert.doesNotMatch(s,/split-passage-live\.mjs (?:validate|run)(?:\s|$)|\brevision:/);
   assert.doesNotMatch(s,/schedule:|pull_request|RESEND|GEMINI|OPENAI_API|PERSONAL_PAPER|contents: write/);
   assert.deepEqual([...s.matchAll(/secrets\.([A-Z_]+)/g)].map(x=>x[1]),['CLOUDFLARE_AI_API_TOKEN']);
@@ -231,13 +258,15 @@ test('explicit obligations CLI validates without provider credentials and retain
   const cli=new URL('../scripts/automation/split-passage-live.mjs',import.meta.url);
   const env={GITHUB_REPOSITORY:'itworksinprod/first-fold',GITHUB_REF:'refs/heads/main',GITHUB_WORKFLOW_REF:'itworksinprod/first-fold/.github/workflows/split-passage-live.yml@refs/heads/main',GITHUB_ACTOR:'itworksinprod',GITHUB_EVENT_NAME:'workflow_dispatch',GITHUB_RUN_ATTEMPT:'1',DIAGNOSTIC_PUBLIC_KEY:publicKey,RUNNER_TEMP:'/tmp'};
   const invoke=(args,changes={})=>spawnSync(process.execPath,[fileURLToPath(cli),...args],{env:{...env,...changes},encoding:'utf8'});
-  for(const command of ['validate','validate-obligations']){
+  for(const command of ['validate','validate-obligations','validate-scope-witnesses']){
     const result=invoke([command]);assert.equal(result.status,0,result.stderr);assert.equal(result.stdout,'');
     const untrusted=invoke([command],{GITHUB_RUN_ATTEMPT:'2'});assert.equal(untrusted.status,1);
     assert.match(untrusted.stderr,/SPLIT_PASSAGE_LIVE_AUTHORITY/);
   }
   for(const args of [['validate-obligations','extra'],['validate-obligations-extra'],['run-obligations'],
-    ['run-obligations','/tmp/wrong.json'],['run-obligations','/tmp/split-passage-live.encrypted.json','extra']]){
+    ['run-obligations','/tmp/wrong.json'],['run-obligations','/tmp/split-passage-live.encrypted.json','extra'],
+    ['validate-scope-witnesses','extra'],['validate-scope-witnesses-extra'],['run-scope-witnesses'],
+    ['run-scope-witnesses','/tmp/wrong.json'],['run-scope-witnesses','/tmp/split-passage-live.encrypted.json','extra']]){
     const result=invoke(args);assert.equal(result.status,1);assert.match(result.stderr,/SPLIT_PASSAGE_LIVE_ARGUMENTS/);
   }
 });

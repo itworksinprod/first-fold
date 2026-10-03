@@ -3,7 +3,7 @@ import {createHash} from 'node:crypto';
 import {writeFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {prepareSplitPassageCalibration,prepareSplitObligationCalibration,scoreSplitPassageCalibration} from './experiments/split-passage-calibration.mjs';
+import {prepareSplitPassageCalibration,prepareSplitObligationCalibration,prepareSplitScopeWitnessCalibration,scoreSplitPassageCalibration} from './experiments/split-passage-calibration.mjs';
 import {validateSplitPassageStage} from './experiments/split-passage-review.mjs';
 import {assertSpanReviewJson} from './experiments/span-source-review.mjs';
 import {diagnosticPublicKey,sealDiagnostic} from './private-writer-diagnostic.mjs';
@@ -16,6 +16,13 @@ export const SPLIT_OBLIGATION_LIVE_BINDINGS=Object.freeze({
   checksPromptSha256:'3720d5f7e2b7b26263271ad3e6d48ac57ea66f9bd169b961a9edfdb7f3614732',
   casesSha256:'dadec747c86a14ea3e5db4878f556d0917b40f69f0b1ff6465f905caa3bc05f7',
   requestsSha256:'f5e0003fcb0a6d7a41ae6ea4aa527682c66080e0435af63279b4600c75a56cd1',
+});
+export const SPLIT_SCOPE_WITNESS_LIVE_BINDINGS=Object.freeze({
+  reviewContract:'blinded-claim-passage-scope-witness-v3',
+  claimPromptSha256:'a1e4a0f75204b19fcba45ebe17911f8b772aa1020ef08ee6db7c752d0f3068f2',
+  checksPromptSha256:'2cf1af8897105d444f1a63a0dfe8f7cdb4ed0c29d7fcec7962d9e41b59b597fa',
+  casesSha256:'eadcc2e157d0ba029e35219e7b364f0114b02acd97ac0054604580a70ada3535',
+  requestsSha256:'6d28bf8fd99b6269f6dc6713b41fa592864fdc3d42618e8c3ebc1535e15ef83d',
 });
 const sha=x=>createHash('sha256').update(x).digest('hex'),fail=code=>Object.assign(new Error(code),{code});
 export function splitPassagePublicReport(report){
@@ -35,14 +42,20 @@ export function assertSplitPassageLivePlan(plan){
   assertSplitLivePlan(plan,'blinded-claim-passage-review-v1');
 }
 export function assertSplitObligationLivePlan(plan){
-  assertSplitLivePlan(plan,SPLIT_OBLIGATION_LIVE_BINDINGS.reviewContract);
+  assertSplitBoundLivePlan(plan,SPLIT_OBLIGATION_LIVE_BINDINGS);
+}
+export function assertSplitScopeWitnessLivePlan(plan){
+  assertSplitBoundLivePlan(plan,SPLIT_SCOPE_WITNESS_LIVE_BINDINGS);
+}
+function assertSplitBoundLivePlan(plan,bindings){
+  assertSplitLivePlan(plan,bindings.reviewContract);
   for(const {pair}of plan.cases)for(const stage of ['claim','checks']){
-    const view=pair[stage],expected=SPLIT_OBLIGATION_LIVE_BINDINGS[`${stage}PromptSha256`];
-    if(view.data.policy!==SPLIT_OBLIGATION_LIVE_BINDINGS.reviewContract||view.data.stage!==stage||
+    const view=pair[stage],expected=bindings[`${stage}PromptSha256`];
+    if(view.data.policy!==bindings.reviewContract||view.data.stage!==stage||
       view.data.promptSha256!==expected||sha(view.prompt)!==expected)throw fail('SPLIT_PASSAGE_LIVE_TARGET');
   }
   // Pin the complete ordered data, schemas and instructions, not just their labels.
-  if(sha(JSON.stringify(plan.cases))!==SPLIT_OBLIGATION_LIVE_BINDINGS.casesSha256)throw fail('SPLIT_PASSAGE_LIVE_TARGET');
+  if(sha(JSON.stringify(plan.cases))!==bindings.casesSha256)throw fail('SPLIT_PASSAGE_LIVE_TARGET');
 }
 function assertSplitLivePlan(plan,reviewContract){
   scoreSplitPassageCalibration([],plan);
@@ -62,6 +75,9 @@ export async function runSplitPassageLive(options){
 }
 export async function runSplitObligationLive(options){
   return runSplitLive(options,assertSplitObligationLivePlan,SPLIT_OBLIGATION_LIVE_BINDINGS.requestsSha256);
+}
+export async function runSplitScopeWitnessLive(options){
+  return runSplitLive(options,assertSplitScopeWitnessLivePlan,SPLIT_SCOPE_WITNESS_LIVE_BINDINGS.requestsSha256);
 }
 async function runSplitLive({plan,publicKey,accountId,apiToken,now=new Date(),
   aiRequestImpl=requestWorkersAiEditorial,fetchImpl=fetch,sealImpl=sealDiagnostic},assertPlan,requestsSha256){
@@ -118,14 +134,18 @@ async function runSplitLive({plan,publicKey,accountId,apiToken,now=new Date(),
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
   try{
     const [command,...args]=process.argv.slice(2);
-    const obligations=command==='validate-obligations'||command==='run-obligations',running=command==='run'||command==='run-obligations';
-    if(!(((command==='validate'||command==='validate-obligations')&&args.length===0)||(running&&args.length===1&&process.env.RUNNER_TEMP&&
+    const obligations=command==='validate-obligations'||command==='run-obligations';
+    const witnesses=command==='validate-scope-witnesses'||command==='run-scope-witnesses';
+    const running=command==='run'||command==='run-obligations'||command==='run-scope-witnesses';
+    if(!(((command==='validate'||command==='validate-obligations'||command==='validate-scope-witnesses')&&args.length===0)||(running&&args.length===1&&process.env.RUNNER_TEMP&&
       resolve(args[0])===resolve(process.env.RUNNER_TEMP,'split-passage-live.encrypted.json'))))throw fail('SPLIT_PASSAGE_LIVE_ARGUMENTS');
     assertSplitPassageLiveAuthority(process.env);diagnosticPublicKey(process.env.DIAGNOSTIC_PUBLIC_KEY);
-    const plan=obligations?prepareSplitObligationCalibration():prepareSplitPassageCalibration();
-    (obligations?assertSplitObligationLivePlan:assertSplitPassageLivePlan)(plan);
+    const prepare=witnesses?prepareSplitScopeWitnessCalibration:obligations?prepareSplitObligationCalibration:prepareSplitPassageCalibration;
+    const assertPlan=witnesses?assertSplitScopeWitnessLivePlan:obligations?assertSplitObligationLivePlan:assertSplitPassageLivePlan;
+    const run=witnesses?runSplitScopeWitnessLive:obligations?runSplitObligationLive:runSplitPassageLive;
+    const plan=prepare();assertPlan(plan);
     if(running){
-      const {report,sealed}=await (obligations?runSplitObligationLive:runSplitPassageLive)({plan,publicKey:process.env.DIAGNOSTIC_PUBLIC_KEY,accountId:process.env.CLOUDFLARE_ACCOUNT_ID,apiToken:process.env.CLOUDFLARE_AI_API_TOKEN});
+      const {report,sealed}=await run({plan,publicKey:process.env.DIAGNOSTIC_PUBLIC_KEY,accountId:process.env.CLOUDFLARE_ACCOUNT_ID,apiToken:process.env.CLOUDFLARE_AI_API_TOKEN});
       await writeFile(args[0],JSON.stringify(sealed),{mode:0o600,flag:'wx'});
       console.info(`::notice title=Split passage calibration::${JSON.stringify(splitPassagePublicReport(report))}`);if(report.status==='failed')process.exitCode=1;
     }

@@ -31,6 +31,15 @@ For a necessary-only assertion, another prerequisite can fail while the stated c
 Your short explanation must identify the actual assertion and changed boundary for missing, or why the source limit is retained or does not constrain the assertion for preserved/none. Do not explain missing solely by saying an additional fact was omitted.
 qualification compares the candidate against relevant SOURCE limits:`);
 
+// New offline hypothesis; preserve v1/v2 verbatim for historical request replay.
+export const SPLIT_SCOPE_WITNESS_CONTRACT='blinded-claim-passage-scope-witness-v3';
+const scopeWitnesses=`First normalize the direction and type of the actual assertion before comparing wording. "Every X is Y" states X implies Y; "only X is Y" states Y implies X. Neither establishes that anything outside X exists. "Required" states necessity, "guarantees" states sufficiency, and a conditional rule does not establish an observed event. Keep the same subject, population, time, modality and relationship throughout the comparison.
+Before choosing contradiction in EITHER stage, identify the exact source-backed incompatibility: an established instance that violates the actual candidate, an explicitly opposite relation, or an explicit policy exclusion that the candidate overrides. A universal outcome rule, including "no exceptions", supplies no instance outside a newly named subgroup. Do not silently add that instance. When subgroup membership is unresolved, test whether different memberships consistent with ALL sources can make the exclusive assertion true and false. If both are possible, exclusivity is unestablished; it is not an incompatible fact or policy. This is insufficient evidence in claim review and cannot be a contradiction contribution in passage review.
+Distinguish missing population evidence from explicit source exclusions. An explicit exemption or excluded policy scope constrains the obligation even without an observed member; applying that obligation to the expressly excluded group still conflicts with the qualified policy. A separate prerequisite does not refute a necessary-only assertion. Explain the established incompatibility or unresolved relation, rather than treating different wording, an omitted fact, or a hypothetical member as proof.
+`;
+export const SPLIT_SCOPE_WITNESS_CLAIM_PROMPT=scopeWitnesses+SPLIT_CLAIM_PROMPT;
+export const SPLIT_SCOPE_WITNESS_CHECKS_PROMPT=scopeWitnesses+SPLIT_CHECKS_PROMPT;
+
 const pairs=new WeakMap(),stages=new WeakMap(),sha=x=>createHash('sha256').update(x).digest('hex');
 const freeze=x=>{if(x&&typeof x==='object'){Object.values(x).forEach(freeze);Object.freeze(x);}return x;};
 const exact=(x,keys)=>x&&typeof x==='object'&&!Array.isArray(x)&&Object.keys(x).length===keys.length&&keys.every(k=>Object.hasOwn(x,k));
@@ -42,14 +51,24 @@ export function buildSplitPassageReview(input,options={}){
   if(!exact(options,[])&&!exact(options,['obligations']))throw Object.assign(new Error('SPLIT_PASSAGE_REVISION'),{code:'SPLIT_PASSAGE_REVISION'});
   const obligations=Object.hasOwn(options,'obligations')?options.obligations:false;
   if(typeof obligations!=='boolean')throw Object.assign(new Error('SPLIT_PASSAGE_REVISION'),{code:'SPLIT_PASSAGE_REVISION'});
+  return buildSplitReview(input,obligations?SPLIT_OBLIGATION_CONTRACT:SPLIT_PASSAGE_CONTRACT,
+    obligations?SPLIT_OBLIGATION_CLAIM_PROMPT:SPLIT_CLAIM_PROMPT,
+    obligations?SPLIT_OBLIGATION_CHECKS_PROMPT:SPLIT_CHECKS_PROMPT);
+}
+
+export function buildSplitScopeWitnessReview(input){
+  return buildSplitReview(input,SPLIT_SCOPE_WITNESS_CONTRACT,SPLIT_SCOPE_WITNESS_CLAIM_PROMPT,SPLIT_SCOPE_WITNESS_CHECKS_PROMPT);
+}
+
+function buildSplitReview(input,policy,claimPrompt,checksPrompt){
   const base=buildJointPassageReview(input),citation=buildSourceSentenceReview(input);
   const {reviewSha256:parentReviewSha256,policy:unused,promptSha256:oldPrompt,...original}=base.data;
   const result={};
   for(const [stage,prompt,fields]of [
-    ['claim',obligations?SPLIT_OBLIGATION_CLAIM_PROMPT:SPLIT_CLAIM_PROMPT,['spanId','verdict','basis','explanation','evidence']],
-    ['checks',obligations?SPLIT_OBLIGATION_CHECKS_PROMPT:SPLIT_CHECKS_PROMPT,['spanId','passageChecks']],
+    ['claim',claimPrompt,['spanId','verdict','basis','explanation','evidence']],
+    ['checks',checksPrompt,['spanId','passageChecks']],
   ]){
-    const data={...original,policy:obligations?SPLIT_OBLIGATION_CONTRACT:SPLIT_PASSAGE_CONTRACT,stage,parentReviewSha256,promptSha256:sha(prompt)};
+    const data={...original,policy,stage,parentReviewSha256,promptSha256:sha(prompt)};
     data.reviewSha256=sha(JSON.stringify(data));assertSpanReviewJson(data);
     if(Buffer.byteLength(JSON.stringify(data),'utf8')>50000)throw Object.assign(new Error('SPLIT_PASSAGE_SIZE'),{code:'SPLIT_PASSAGE_SIZE'});
     const schema=structuredClone(base.schema),j=schema.properties.judgments.items;

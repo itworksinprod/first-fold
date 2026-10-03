@@ -1,0 +1,107 @@
+{
+  "provenance": {
+    "runId": "36804291981",
+    "head": "d79d0d63d9050ce072832b8ad9d7727806330df3",
+    "captureSha256": "59ad32c96c27f0cbcfbfac572a1f7fc72bdb3b9e717f00c63241e44347722c16",
+    "scope": "Actual fictional responses from the four-request v2 smoke test; not approved articles or new model outputs"
+  },
+  "records": [
+    {
+      "caseId": "CS04",
+      "claim": {
+        "reviewSha256": "08150e845b147e8684a0c2dff9081dc6dc066d354cc5b7311a04b417deae8f88",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "verdict": "unsupported",
+            "basis": "contradiction",
+            "explanation": "Source states every Lumen badge expires on 30 April and no badge is exempt, contradicting the claim that only visitor badges expire then.",
+            "evidence": [
+              {
+                "sentenceId": "S1P1S1"
+              },
+              {
+                "sentenceId": "S1P1S2"
+              }
+            ]
+          }
+        ]
+      },
+      "checks": {
+        "reviewSha256": "d00ab75e5e3e1bfd718771dd0f3bdf6ee143f1594959a605ba6055d9a17a2999",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "contradiction",
+                "qualification": "missing",
+                "explanation": "Claim limits expiration to visitor badges, omitting source's universal rule that every Lumen badge expires on 30 April, so it contradicts the source.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  },
+                  {
+                    "sentenceId": "S1P1S2"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "CS07",
+      "claim": {
+        "reviewSha256": "6e3cda6284f2102b9a2b92548850287e50fcb408c916e76f7cb70f5f025b1503",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "verdict": "supported",
+            "basis": "supported",
+            "explanation": "S1P1S1 says the lift can operate only if its safety latch is engaged, making the latch a required condition.",
+            "evidence": [
+              {
+                "sentenceId": "S1P1S1"
+              }
+            ]
+          }
+        ]
+      },
+      "checks": {
+        "reviewSha256": "358285a1436bd49c479ad8c25f554748ea425701c26309039e8918ab677d2c72",
+        "judgments": [
+          {
+            "spanId": "T1",
+            "passageChecks": [
+              {
+                "evidenceId": "S1P1",
+                "contribution": "support",
+                "qualification": "preserved",
+                "explanation": "The source states the latch must be engaged for operation, matching the claim's required condition.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P1S1"
+                  }
+                ]
+              },
+              {
+                "evidenceId": "S1P2",
+                "contribution": "context",
+                "qualification": "none",
+                "explanation": "The source adds a power‑check requirement but does not conflict with the latch‑required claim.",
+                "evidence": [
+                  {
+                    "sentenceId": "S1P2S1"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
