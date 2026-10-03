@@ -1,8 +1,8 @@
 # Blinded claim and passage review
 
-Status: live scope reasoning remains held; the independently reviewed v3 repair
-is locally tested but has not been tested with a provider. The daily paper and
-all article holds remain unchanged.
+Status: the October 3 v3 live trial completed all eight cases, but scope reasoning
+remains held after independent exact-text review. The daily paper and all
+article holds remain unchanged.
 
 The [compact joint trial](joint-passage-inference.md) returned eight valid,
 correct final labels but only five matching reasoning-field sets. It also
@@ -251,3 +251,58 @@ remote publication occurred at this local checkpoint.
 Scope-witness live success, even if later observed on these eight development
 cases, would still leave the other eight controls, unseen articles and daily
 integration unqualified.
+
+## October 3 approved v3 live result: held
+
+Carlos explicitly approved a new bounded no-email trial after the expired
+one-time approval was explained. The reviewed experiment changes were published
+to trusted main at `2dd870fbd6a14526c61ea70e69e3f3a119a4e565`.
+Fresh authenticated account observations showed zero daily neurons, Workers Free
+Active and no payment method. An independently reviewed new v3 launcher used a
+new local RSA-3072 key and a non-overwritable intent; the expired v2 helpers were
+not invoked or modified.
+
+[Run 37159289696](https://github.com/itworksinprod/first-fold/actions/runs/37159289696)
+was verified as owner-initiated, main, first attempt, the exact published
+revision and the isolated workflow. It made sixteen requests without retries
+and finished in 2 minutes 40 seconds. No email, fresh news research, billing,
+recipient, production or editorial-threshold change was included.
+
+The encrypted artifact was 91,666 bytes. ZIP SHA-256:
+`8a95e577ddcba96a8cabf05dc5ec3880a1e7ddedcb0e4a06d05be8fa200a981b`.
+Decrypted capture SHA-256:
+`58a5f840f4ad93918fcd094120c83856dbb972b3ebf0fa797f1220244c4e1c77`.
+All sixteen exact request hashes and parsed responses were verified, and a
+complete offline runner replay reproduced the report and scoring. Raw provider
+HTTP bytes were not replayed. The encrypted evidence and private key remain
+local; no credential appeared in the review output.
+
+The automated sets are distinct:
+
+- Structural validity: eight of eight cases.
+- Final verdict agreement: eight of eight cases.
+- Scored reasoning-field agreement: seven of eight cases.
+
+Independent inspection of all sixteen complete responses and every source
+found six clean cases, one smaller explanation overstatement, and one decisive
+failure. CS04 still asserted nonvisitor badges as its contradiction witness in
+both stages, although the source never establishes that subgroup exists. Exact
+citations to a universal outcome do not provide the missing population evidence.
+The correct rejection basis remains insufficient evidence. The model's two
+agreeing stages repeated the same error.
+
+CS07 correctly retained necessity and treated the additional power requirement
+as context, but this is one successful observation, not general qualification.
+CS06's final rejection and exemption passage were correct; its first passage
+explanation nevertheless called the whole claim supported despite the jointly
+supplied exemption. That is a smaller explanation defect, not another wrong
+final decision. No selected citation pointed to the wrong source sentence.
+
+The independent reviewer held the result. No answer, expected label, threshold
+or validator was repaired to produce a pass. No second trial was dispatched.
+The next narrow hypothesis is a separately reviewed structured incompatibility
+witness contract: require a source-backed contrary instance, opposite relation
+or explicit policy exclusion before contradiction can be asserted. Another
+prompt reminder alone has not resolved this error. Any new contract must
+preserve these actual responses as failures, rather than reinterpret them as
+success. Full-controlset, unseen-article and production approval remain false.
