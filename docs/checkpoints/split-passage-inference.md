@@ -314,8 +314,9 @@ success. Full-controlset, unseen-article and production approval remain false.
 The separate `blinded-claim-passage-incompatibility-witness-v4` module adds an
 `incompatibilityWitness` object to every claim judgment and every passage row.
 It does not alter v1, v2 or v3, the frozen development controls, their expected
-labels, or any production validator. No workflow, provider client or daily-paper
-entry point imports the new experiment.
+labels, or any production validator. At this offline checkpoint no workflow,
+provider client or daily-paper entry point imported the new experiment. The
+later isolated live wiring below does not integrate it into the daily paper.
 
 Contradiction requires a typed witness: `contrary_instance`, `opposite_relation`
 or `policy_exclusion`. The response must separately state its
@@ -358,7 +359,7 @@ Independent implementation preflight cleared the modules, regressions and this
 checkpoint with no actionable finding. The tests explicitly preserve the actual
 v3 CS04 replies, demonstrate a fabricated anchored premise without semantic
 approval, retain valid policy-exclusion and opposite-relation paths, and reject
-the new plan in every existing live runner before provider activity. A perfect
+the new plan in all historical live runners before provider activity. A perfect
 injected eight-case result still leaves all semantic and approval flags false.
 
 These are mechanics checks only, not actual model responses or evidence of a
@@ -366,3 +367,54 @@ live semantic improvement. A new live request contract, bounded authorization, f
 account checks, exact replay and independent review of actual source premises
 would still be required before claiming a semantic improvement. The completed
 v3 one-use launcher must not be dispatched again.
+
+## Approved one-use v4 trial wiring
+
+Carlos approved publication and one new free, no-email trial of the structured
+witness contract. The existing manual workflow gains the explicit
+`incompatibility_witnesses` boolean, default false. It cannot be selected together
+with the v3 `scope_witnesses` option. Historical v1/v2/v3 CLI routes, prompts and
+request pins remain unchanged; the new CLI routes explicitly name the v4
+contract. Both blinded stages still receive full sources, not prior answers or
+expected labels.
+
+The new entry pins all eight prepared views and all sixteen exact requests.
+Ordered request-hash aggregate:
+`b03c06674bb1651608bbeb3508aba10c44a4972c1a1411847ac1c84633845fd2`.
+The ceiling remains sixteen requests, 4,800 requested output tokens per request,
+76,800 aggregate, medium reasoning, 90-second timeouts and no retries. Only the
+existing free Workers AI model and credential are available. Owner-initiated,
+trusted main, first attempt and the existing shared concurrency guard remain
+required. The workflow has no email or paid-research credential and retains only
+an encrypted, one-day diagnostic artifact.
+
+The live runner uses the new witness validator and separate calibration, while
+retaining every original core hold. Its report still marks witness semantics
+unchecked and independent exact-text review required. A green workflow is not
+permission to approve an article, enable production integration or relax gold.
+
+The v4 encrypted capture stores each complete actual answer once in `calls`,
+alongside its exact source view and request hashes. Only duplicate host-derived
+validation/scoring copies are compacted. The scoring projection is explicitly
+labeled, retains core projections, assembled decisions and reasoning fields,
+and includes a SHA-256 of the complete original scorer result. Offline audit
+recomputes the full validators and scorer before comparing that hash and compact
+metadata; no model text is repaired or dropped. In-memory gates still use the
+full original results. Historical captures are unchanged. Boundary tests retain
+all maximum-length Unicode witness fields and a final near-100 KB malformed
+answer under the unchanged 350 KB encryption limit (largest tested capture:
+295,421 bytes), including the exact failing answer.
+
+Private, independently reviewed one-use helpers must verify their manifest and
+own hashes, fresh authenticated daily usage and active Workers Free/no-payment
+status, exact local and GitHub main revision and a clean checkout. They preserve
+a fresh local private key and non-overwritable intent before the sole dispatch.
+The consumed v3 intent and keys are not reused. The preflight permits at most
+2,000 already-used daily neurons; this is a bounded free attempt, not a proven
+worst-case fit or completion guarantee. Input tokens and provider availability
+can still consume the remaining allowance or cause a refusal. No paid overage,
+extra probe or retry is authorized.
+
+Final local checks before publication passed: 2,393/2,393 complete tests and
+289/289 tests matching the live workflow's credential-free test command. These
+are implementation and storage checks, not a live semantic result.

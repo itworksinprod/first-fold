@@ -1,4 +1,4 @@
-name: Measure blinded source-review obligations v2 (encrypted, no email)
+name: Measure isolated blinded source review (encrypted, no email)
 on:
   workflow_dispatch:
     inputs:
@@ -8,6 +8,11 @@ on:
         type: string
       scope_witnesses:
         description: Select the separately reviewed v3 scope-witness experiment (v2 remains the default)
+        required: true
+        default: false
+        type: boolean
+      incompatibility_witnesses:
+        description: Select the separately reviewed v4 incompatibility-witness experiment (exclusive with v3; v2 remains the default)
         required: true
         default: false
         type: boolean
@@ -30,15 +35,18 @@ jobs:
         with:
           node-version: '24'
       - name: Test frozen subset and blinded stages without credentials
-        run: node --test tests/split-passage*.test.mjs tests/split-scope-witness*.test.mjs tests/joint-passage*.test.mjs tests/free-workers-ai.test.mjs tests/private-writer-diagnostic.test.mjs
+        run: node --test tests/split-passage*.test.mjs tests/split-scope-witness*.test.mjs tests/split-incompatibility-witness*.test.mjs tests/joint-passage*.test.mjs tests/free-workers-ai.test.mjs tests/private-writer-diagnostic.test.mjs
       - name: Validate selected frozen subset and key before provider credentials
         env:
           DIAGNOSTIC_PUBLIC_KEY: ${{ inputs.public_key }}
           SCOPE_WITNESSES: ${{ inputs.scope_witnesses }}
+          INCOMPATIBILITY_WITNESSES: ${{ inputs.incompatibility_witnesses }}
         run: |
-          if [[ "$SCOPE_WITNESSES" == "true" ]]; then
+          if [[ "$INCOMPATIBILITY_WITNESSES" == "true" && "$SCOPE_WITNESSES" == "false" ]]; then
+            node scripts/automation/split-passage-live.mjs validate-incompatibility-witnesses
+          elif [[ "$INCOMPATIBILITY_WITNESSES" == "false" && "$SCOPE_WITNESSES" == "true" ]]; then
             node scripts/automation/split-passage-live.mjs validate-scope-witnesses
-          elif [[ "$SCOPE_WITNESSES" == "false" ]]; then
+          elif [[ "$INCOMPATIBILITY_WITNESSES" == "false" && "$SCOPE_WITNESSES" == "false" ]]; then
             node scripts/automation/split-passage-live.mjs validate-obligations
           else
             exit 1
@@ -47,12 +55,15 @@ jobs:
         env:
           DIAGNOSTIC_PUBLIC_KEY: ${{ inputs.public_key }}
           SCOPE_WITNESSES: ${{ inputs.scope_witnesses }}
+          INCOMPATIBILITY_WITNESSES: ${{ inputs.incompatibility_witnesses }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_AI_API_TOKEN: ${{ secrets.CLOUDFLARE_AI_API_TOKEN }}
         run: |
-          if [[ "$SCOPE_WITNESSES" == "true" ]]; then
+          if [[ "$INCOMPATIBILITY_WITNESSES" == "true" && "$SCOPE_WITNESSES" == "false" ]]; then
+            node scripts/automation/split-passage-live.mjs run-incompatibility-witnesses "$RUNNER_TEMP/split-passage-live.encrypted.json"
+          elif [[ "$INCOMPATIBILITY_WITNESSES" == "false" && "$SCOPE_WITNESSES" == "true" ]]; then
             node scripts/automation/split-passage-live.mjs run-scope-witnesses "$RUNNER_TEMP/split-passage-live.encrypted.json"
-          elif [[ "$SCOPE_WITNESSES" == "false" ]]; then
+          elif [[ "$INCOMPATIBILITY_WITNESSES" == "false" && "$SCOPE_WITNESSES" == "false" ]]; then
             node scripts/automation/split-passage-live.mjs run-obligations "$RUNNER_TEMP/split-passage-live.encrypted.json"
           else
             exit 1

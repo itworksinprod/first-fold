@@ -279,12 +279,18 @@ test('every existing live entry rejects the new offline plan before model or net
   assert.equal(requests,0);assert.equal(network,0);
 });
 
-test('new witness modules remain offline with no live workflow routing or production integration',async()=>{
+test('witness builders and scorers remain offline while the separately pinned live entry requires explicit opt-in',async()=>{
   for(const name of ['split-incompatibility-witness-review.mjs','split-incompatibility-witness-calibration.mjs']){
     const source=await readFile(new URL(`../scripts/automation/experiments/${name}`,import.meta.url),'utf8');
     assert.doesNotMatch(source,/fetch\s*\(|process\.env|node:(?:fs|http|https|child_process)|workers-ai|resend|writeFile/);
   }
-  for(const path of ['../scripts/automation/split-passage-live.mjs','../.github/workflows/split-passage-live.yml']){
-    const source=await readFile(new URL(path,import.meta.url),'utf8');assert.doesNotMatch(source,/incompatibility-witness/);
+  const runtime=await readFile(new URL('../scripts/automation/split-passage-live.mjs',import.meta.url),'utf8');
+  assert.match(runtime,/export async function runSplitIncompatibilityWitnessLive/);
+  assert.match(runtime,/command==='run-incompatibility-witnesses'/);
+  const workflow=await readFile(new URL('../.github/workflows/split-passage-live.yml',import.meta.url),'utf8');
+  assert.match(workflow,/incompatibility_witnesses:[\s\S]*default: false[\s\S]*type: boolean/);
+  assert.match(workflow,/INCOMPATIBILITY_WITNESSES" == "true" && "\$SCOPE_WITNESSES" == "false"/);
+  for(const path of ['../scripts/automation/generate-free-edition.mjs','../.github/workflows/personal-morning-paper.yml']){
+    const source=await readFile(new URL(path,import.meta.url),'utf8');assert.doesNotMatch(source,/split-incompatibility-witness|run-incompatibility-witnesses/);
   }
 });
