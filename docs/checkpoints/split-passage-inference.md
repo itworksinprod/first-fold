@@ -1,8 +1,10 @@
 # Blinded claim and passage review
 
 Status: the October 3 v3 live trial completed all eight cases, but scope reasoning
-remains held after independent exact-text review. The daily paper and all
-article holds remain unchanged.
+remains held after independent exact-text review. A separate offline structured
+incompatibility-witness revision passed local tests and independent implementation
+review; it has not been called live. The daily paper and all article holds
+remain unchanged.
 
 The [compact joint trial](joint-passage-inference.md) returned eight valid,
 correct final labels but only five matching reasoning-field sets. It also
@@ -306,3 +308,61 @@ or explicit policy exclusion before contradiction can be asserted. Another
 prompt reminder alone has not resolved this error. Any new contract must
 preserve these actual responses as failures, rather than reinterpret them as
 success. Full-controlset, unseen-article and production approval remain false.
+
+## Offline follow-up: structured incompatibility premise
+
+The separate `blinded-claim-passage-incompatibility-witness-v4` module adds an
+`incompatibilityWitness` object to every claim judgment and every passage row.
+It does not alter v1, v2 or v3, the frozen development controls, their expected
+labels, or any production validator. No workflow, provider client or daily-paper
+entry point imports the new experiment.
+
+Contradiction requires a typed witness: `contrary_instance`, `opposite_relation`
+or `policy_exclusion`. The response must separately state its
+`assertedSourcePremise` and its `incompatibility`, each bounded to 240 characters.
+The one or two witness sentence IDs must already be selected by that same core
+judgment, in its evidence order. Passage witnesses cannot borrow another
+passage's citations. Noncontradiction rows require an explicit empty `none`
+witness; the host supplies no defaults and makes no repairs.
+
+The prompt requires a source-established subject and incompatible property for
+an instance, an actual opposite relation rather than a reversed implication,
+or an express policy exclusion rather than an unmentioned group. Both stages
+still receive all original sources and remain blind to expected answers and
+each other's responses. The passage instructions also distinguish supplying a
+supporting premise from supporting the whole claim after exceptions apply.
+
+The complete new response is retained separately. A clearly labeled synthetic
+core projection removes only the witness and substitutes the original core
+validation hash. It does not edit any verdict, basis, explanation, evidence,
+qualification or order. The unchanged core and composite validators still
+enforce all existing holds. This projection is never represented as the model's
+actual reply.
+
+Shape and citation membership are not a proof that the asserted premise is true.
+A fabricated nonvisitor instance can cite a real universal-rule sentence and
+still pass those structural checks. Every validation and scoring result
+therefore retains `witnessSemanticsChecked: false`, independent exact-text
+review required, and model/article/publication approval false. This contract
+exposes the premise for review; it does not silently turn CS04 into a pass.
+
+Prompt bindings:
+
+- Claim: `b53c32622bee2051ff0a76ac982e141a02791d8de2082ce6a0f9cb905a14acc5`.
+- Passage: `a3afae86cf66785aa83ecc28171c39c48132d38552c457fb041507dec2005568`.
+- Prepared eight-case views: `83df4289d88e0faecd370255e32915829845adb6b18ba0ba044ba1224d296a35`.
+
+The unchanged controlset, subset and reasoning-expectation hashes remain those
+recorded above. All 2,357 local tests pass, including 17 new witness tests.
+Independent implementation preflight cleared the modules, regressions and this
+checkpoint with no actionable finding. The tests explicitly preserve the actual
+v3 CS04 replies, demonstrate a fabricated anchored premise without semantic
+approval, retain valid policy-exclusion and opposite-relation paths, and reject
+the new plan in every existing live runner before provider activity. A perfect
+injected eight-case result still leaves all semantic and approval flags false.
+
+These are mechanics checks only, not actual model responses or evidence of a
+live semantic improvement. A new live request contract, bounded authorization, fresh free
+account checks, exact replay and independent review of actual source premises
+would still be required before claiming a semantic improvement. The completed
+v3 one-use launcher must not be dispatched again.
