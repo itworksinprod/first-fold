@@ -14,6 +14,17 @@ on:
         description: Exact trusted main revision approved for this evaluation
         required: true
         type: string
+      mode:
+        description: Full benchmark or one six-draft frozen reviewer check
+        type: choice
+        default: write-and-review
+        options:
+          - write-and-review
+          - saved-claim-review
+      replay_sha256:
+        description: Required SHA-256 for the six saved drafts in review-only mode
+        type: string
+        default: ''
 permissions: {}
 concurrency:
   group: personal-morning-paper
@@ -29,6 +40,8 @@ jobs:
       BENCHMARK_PACKET_SHA256: ${{ inputs.packet_sha256 }}
       BENCHMARK_REVISION: ${{ inputs.revision }}
       DIAGNOSTIC_PUBLIC_KEY: ${{ inputs.public_key }}
+      BENCHMARK_MODE: ${{ inputs.mode }}
+      BENCHMARK_REPLAY_SHA256: ${{ inputs.replay_sha256 }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
@@ -41,10 +54,12 @@ jobs:
       - name: Validate frozen corpus before provider credentials
         env:
           FIRST_FOLD_BENCHMARK_B64: ${{ secrets.FIRST_FOLD_BENCHMARK_B64 }}
+          FIRST_FOLD_BENCHMARK_REPLAY_B64: ${{ secrets.FIRST_FOLD_BENCHMARK_REPLAY_B64 }}
         run: node scripts/automation/article-benchmark.mjs validate
-      - name: Write and review ten saved articles without sending email
+      - name: Run the bounded saved-article evaluation without sending email
         env:
           FIRST_FOLD_BENCHMARK_B64: ${{ secrets.FIRST_FOLD_BENCHMARK_B64 }}
+          FIRST_FOLD_BENCHMARK_REPLAY_B64: ${{ secrets.FIRST_FOLD_BENCHMARK_REPLAY_B64 }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_AI_API_TOKEN: ${{ secrets.CLOUDFLARE_AI_API_TOKEN }}
         run: node scripts/automation/article-benchmark.mjs run "$RUNNER_TEMP/article-benchmark"

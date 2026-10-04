@@ -73,5 +73,52 @@ do not retry to conceal quota or availability failures.
   send or proof that the daily paper works. Ten satisfactory archived summaries
   permit planning the next fresh end-to-end test, not silent production rollout.
 
-Initial status: implementation and local validation in progress; no live result
-or production approval is recorded by this document.
+## October 3 live result — not ready
+
+Run `37169149442`, trusted main `6e951cee9f2773ee0b3ba2e2b2296743cff0411e`,
+attempted all ten articles with seventeen requests. No provider quota blocker
+occurred. The encrypted artifact and exact requests/answers were verified and
+replayed offline. Private independent exact-text review covered all sources,
+all ten writer responses and the seven available model reviews.
+
+- Nine complete drafts; A02 was cut off at its output-token ceiling.
+- Eight complete drafts require material correction. A07 was substantially
+  faithful with minor editorial cautions; this is not production approval.
+- All four model-approved drafts (A03, A06, A08, A09) contain material errors:
+  invented compliance/mandatory steps; merged rate-limit populations and missing
+  per-IP scope; "not reported to CISA" changed to "not observed"; and immediate
+  availability substituted for an explicit within-weeks qualification.
+- The reviewer correctly caught other errors but also rejected an ordinary
+  consequence of an administrator disabling a feature. Rejection alone is not
+  evidence of good review.
+- Two local guards were overstrict: the MIT feed category was demanded as part
+  of publisher attribution; numeric version comparisons in the private fact
+  inventory were treated as markup. Both are narrowly repaired with regressions.
+  Saved A01/A07 now pass local structure at 166/136 words. Original failed run
+  statuses are preserved; A01 still requires factual correction.
+
+The private record is `ten-article-benchmark-v1/independent-review-v1.json` in
+the existing review directory. This corpus is not an unseen-accuracy estimate.
+Daily delivery, thresholds, recipient and billing are unchanged.
+
+## One bounded follow-up: frozen-draft clause review
+
+The explicit `saved-claim-review` mode receives six unchanged drafts from the
+original run: A03, A05, A06, A07, A08 and A09. It uses the complete retained source
+and exact visible draft, with no writer inventory, expected verdicts or known
+discrepancies in provider input. A07 is a supported control; A05 includes both
+a real unsupported hardware claim and a supported admin-disablement consequence.
+
+The candidate reviewer partitions each sentence into contiguous claim spans.
+Local validation requires their byte-exact concatenation and rejects any
+unsupported span regardless of other supported spans. This proves coverage,
+**not entailment**; independent exact-text inspection remains mandatory.
+
+Limits: six requests, 4,800 output tokens each, medium reasoning, one attempt,
+no writer calls, retries, research, email or integration. Fresh free-plan/usage
+verification, a new local encryption key, frozen input hash, non-repeatable
+dispatch intent and exact artifact/request replay are required. Preserve v1
+evidence and the unchanged baseline prompts for comparison. A green run alone
+does not pass this test: it must identify the actual unsupported assertions and
+preserve supported controls. If core errors persist, stop layering review
+machinery and record that this reviewer setup remains unreliable.

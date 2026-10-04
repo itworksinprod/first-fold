@@ -4,7 +4,8 @@ import {createHash, generateKeyPairSync} from 'node:crypto';
 import {gzipSync} from 'node:zlib';
 import {readFile} from 'node:fs/promises';
 import {prepareBenchmark, benchmarkWriterView, normalizeBenchmarkSummary, benchmarkReviewView,
-  validateBenchmarkReview, runBenchmark, assertBenchmarkAuthority, BENCHMARK_DESKS} from '../scripts/automation/article-benchmark.mjs';
+  validateBenchmarkReview, benchmarkClauseReviewView, validateBenchmarkClauseReview,
+  runBenchmark, prepareBenchmarkReplay, assertBenchmarkAuthority, BENCHMARK_DESKS} from '../scripts/automation/article-benchmark.mjs';
 import {openDiagnostic} from '../scripts/automation/private-writer-diagnostic.mjs';
 const sha = s => createHash('sha256').update(s).digest('hex');
 const pair = generateKeyPairSync('rsa', {modulusLength:3072});
@@ -50,6 +51,100 @@ test('one whole-article review includes every exact unit and full unchanged sour
     r=>r.quality.readable=false,r=>r.quality.issues=['The second clause adds unsupported advice.']]){
     const r=reply(view.data);mutate(r);assert.equal(validateBenchmarkReview(r,s,a).eligibleForIndependentReview,false);}
   assert.equal(benchmarkWriterView(a).prompt,benchmarkWriterView(plan().articles[1]).prompt);
+});
+test('publisher attribution accepts the reviewed news name, not an arbitrary identity or substring',()=>{
+  const p=packet();p.articles[0].url='https://news.mit.edu/2026/synthetic';p.articles[0].publisherKey='mit';
+  const a=prepareBenchmark(...encode(p)).articles[0];
+  assert.equal(a.publisher,'MIT News — Artificial Intelligence');
+  for(const name of ['MIT News','MIT News — Artificial Intelligence']) {
+    const r=draft();r.whatHappened[0]=r.whatHappened[0].replace('GitHub',name);
+    assert.doesNotThrow(()=>normalizeBenchmarkSummary(r,a));
+  }
+  for(const name of ['MIT','MIT Newsletter','Someone','GitHub']) {
+    const r=draft();r.whatHappened[0]=r.whatHappened[0].replace('GitHub',name);
+    assert.throws(()=>normalizeBenchmarkSummary(r,a),/ATTRIBUTION/);
+  }
+  const r=draft();r.whatHappened[0]=r.whatHappened[0].replace('GitHub','MIT News');
+  assert.throws(()=>normalizeBenchmarkSummary(r,plan().articles[0]),/ATTRIBUTION/);
+});
+test('private facts preserve numeric version comparisons without admitting markup or invalid anchors',()=>{
+  const a=plan().articles[0];
+  for(const op of ['<','<=','>','>=']) {
+    const r=draft();r.facts[0].text=`Affected versions ${op}4.2.3.`;
+    const normalized=normalizeBenchmarkSummary(r,a);
+    assert.equal(normalized.raw.facts[0].text,r.facts[0].text);
+  }
+  for(const value of ['<script>alert(1)</script>','<img src=x>','Version <unknown.', 'Bad “whatHappened”: text.']) {
+    const r=draft();r.facts[0].text=value;assert.throws(()=>normalizeBenchmarkSummary(r,a),/FACT_ANCHOR/);
+  }
+  const r=draft();r.facts[0].text='Versions <4.2.3.';r.facts[0].passageIds=['P999'];
+  assert.throws(()=>normalizeBenchmarkSummary(r,a),/FACT_ANCHOR/);
+  const visible=draft();visible.whatToWatch=['Versions <4.2.3.'];
+  assert.throws(()=>normalizeBenchmarkSummary(visible,a),/DRAFT_PROSE/);
+});
+test('candidate clause reviewer preserves all text and cannot hide an unsupported later claim',()=>{
+  const a=plan().articles[0], d=draft();
+  d.whyItMatters=['The fictional service has conditions, and an added benefit is claimed.'];
+  const s=normalizeBenchmarkSummary(d,a), view=benchmarkClauseReviewView(s,a);
+  assert.deepEqual(view.data.passages,a.passages);assert.deepEqual(view.data.units,s.units);
+  assert.ok(!('facts' in view.data));assert.equal(view.data.draftSha256,s.draftSha256);
+  const answer=()=>({draftSha256:s.draftSha256,judgments:s.units.map(u=>({unitId:u.id,
+    claims:[{text:u.text,supported:true,passageIds:['P1'],reason:'Synthetic coverage fixture, not factual approval.'}]})),
+    quality:{readable:true,useful:true,faithful:true,issues:[]}});
+  const good=validateBenchmarkClauseReview(answer(),s,a);
+  assert.equal(good.eligibleForIndependentReview,true);assert.equal(good.semanticApproval,false);
+  const r=answer();r.judgments[2].claims=[
+    {text:'The fictional service has conditions, ',supported:true,passageIds:['P1'],reason:'Supported part of synthetic fixture.'},
+    {text:'and an added benefit is claimed.',supported:false,passageIds:[],reason:'No source establishes the asserted benefit.'}];
+  assert.equal(validateBenchmarkClauseReview(r,s,a).eligibleForIndependentReview,false);
+  for(const mutate of [x=>x.judgments[2].claims.pop(),x=>x.judgments[2].claims.reverse(),
+    x=>x.judgments[2].claims[1].text='and a different benefit is claimed.',
+    x=>x.judgments[2].claims[0].text=x.judgments[2].claims[0].text.trim(),
+    x=>x.judgments[2].claims[0].passageIds=['P999'],x=>x.judgments[2].claims[0].passageIds=[],
+    x=>x.judgments[2].claims[1].text=' ',x=>x.judgments[2].supported=true,
+    x=>x.judgments[1].unitId='U0',x=>x.draftSha256='0'.repeat(64),x=>x.quality.faithful='true']) {
+    const bad=structuredClone(r);mutate(bad);assert.throws(()=>validateBenchmarkClauseReview(bad,s,a));
+  }
+  for(const mutate of [x=>x.quality.faithful=false,x=>x.quality.useful=false,x=>x.quality.readable=false,
+    x=>x.quality.issues=['An issue remains.']]) {
+    const bad=answer();mutate(bad);assert.equal(validateBenchmarkClauseReview(bad,s,a).eligibleForIndependentReview,false);
+  }
+  // The v1 answer cannot qualify as v2 merely because the overall labels pass.
+  assert.throws(()=>validateBenchmarkClauseReview(reply(s),s,a));
+});
+test('saved-review mode binds six exact drafts to the corpus and never requests a writer',async()=>{
+  const p=plan(), packet={version:1,packetSha256:p.packetSha256,originalRunId:'123456',drafts:p.articles.slice(0,6).map(a=>{
+    const s=normalizeBenchmarkSummary(draft(),a);return {id:a.id,raw:s.raw,draftSha256:s.draftSha256};})};
+  const replay=prepareBenchmarkReplay(...encode(packet),p);
+  for(const mutate of [x=>x.drafts.pop(),x=>x.drafts[1].id=x.drafts[0].id,x=>x.drafts[0].id='A99',
+    x=>x.packetSha256='0'.repeat(64),x=>x.drafts[0].draftSha256='0'.repeat(64),x=>x.originalRunId='wrong',
+    x=>x.drafts[0].expectedAnswer=true]) {
+    const bad=structuredClone(packet);mutate(bad);assert.throws(()=>prepareBenchmarkReplay(...encode(bad),p));
+  }
+  const saved=[];let calls=0;
+  const report=await runBenchmark({plan:p,replay,publicKey,accountId:'0'.repeat(32),apiToken:'TEST_ONLY',
+    save:async(id,sealed)=>saved.push({id,data:openDiagnostic(sealed,pair.privateKey)}),fetchImpl:async(url,init)=>{
+      calls++;const b=JSON.parse(init.body),d=JSON.parse(b.messages[1].content);assert.ok(d.units);assert.ok(!d.facts);
+      assert.equal(b.max_tokens,4800);
+      const answer={draftSha256:d.draftSha256,judgments:d.units.map(u=>({unitId:u.id,
+        claims:[{text:u.text,supported:true,passageIds:['P1'],reason:'Synthetic control only.'}]})),
+        quality:{readable:true,useful:true,faithful:true,issues:[]}};
+      return new Response(JSON.stringify({success:true,result:{response:JSON.stringify(answer)}}),{headers:{'content-type':'application/json'}});
+    }});
+  assert.equal(calls,6);assert.equal(report.requests,6);assert.equal(report.networkRequests,6);
+  assert.equal(report.requestedOutputTokens,28800);assert.equal(report.results.length,6);assert.equal(report.mode,'saved-claim-review');
+  assert.equal(report.productionApproved,false);assert.equal(report.emailSent,false);
+  assert.ok(saved.every(x=>!x.id.includes('writer')));assert.equal(saved.length,12);
+  for(const row of saved.filter(x=>/^A\d+$/.test(x.id))) {
+    assert.equal(row.data.replay.sha256,replay.sha256);assert.equal(row.data.replay.originalRunId,'123456');
+    assert.deepEqual(row.data.summary.raw,packet.drafts.find(d=>d.id===row.id).raw);
+  }
+  await assert.rejects(runBenchmark({plan:p,replay:{...replay},publicKey,save:async()=>{}}),/REPLAY_PACKET/);
+  let refused=0;
+  const stopped=await runBenchmark({plan:p,replay,publicKey,accountId:'0'.repeat(32),apiToken:'TEST_ONLY',save:async()=>{},
+    fetchImpl:async()=>{refused++;return new Response('{"success":false}',{status:429});}});
+  assert.equal(refused,1);assert.equal(stopped.results.length,6);
+  assert.equal(stopped.results.filter(r=>r.status==='not-attempted-provider-blocker').length,5);
 });
 async function execute(mode){const p=plan(),saved=[],requests=[];
   const report=await runBenchmark({plan:p,publicKey,accountId:'0'.repeat(32),apiToken:'TEST_TOKEN_NEVER_LOG',

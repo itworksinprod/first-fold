@@ -16,11 +16,18 @@ const fields = ['whatHappened', 'whyItMatters', 'whatToWatch'];
 const sha = x => createHash('sha256').update(x).digest('hex');
 const fail = code => Object.assign(new Error(code), {code});
 const plans = new WeakSet();
+const replays = new WeakSet();
 const freeze = x => {if (x && typeof x === 'object') {Object.values(x).forEach(freeze); Object.freeze(x);} return x;};
 const exact = (x, keys) => x && typeof x === 'object' && !Array.isArray(x) &&
   Object.keys(x).length === keys.length && keys.every(k => Object.hasOwn(x, k));
 const text = (x, max) => typeof x === 'string' && x.length > 0 && x.length <= max && x === x.trim() && !/[\p{Cc}\p{Cf}]/u.test(x);
 const prose = (x, max) => text(x, max) && !/[{}<>`]|[“”"]\s*[:,]|\b(?:whatHappened|whyItMatters|whatToWatch)\s*[“”"]?\s*:/u.test(x);
+// The private fact inventory is not HTML. Preserve numeric version comparisons
+// without allowing markup or relaxing the reader-facing prose check.
+const factText = x => text(x, 1000) && prose(x.replace(/[<>]=?\s*(?=\d)/gu, ''), 1000);
+// A reviewed feed's category is not part of the publisher's prose name. This
+// exact metadata alias does not admit arbitrary source-supplied identities.
+const publisherAliases = Object.freeze({'MIT News — Artificial Intelligence': 'MIT News'});
 const words = x => x.normalize('NFKC').toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
 // Provider replies are native JSON. Bound their size before parsing/retaining.
 const data = x => {const s = JSON.stringify(x); if (!s || Buffer.byteLength(s) > 50000) throw fail('BENCHMARK_RESPONSE_SIZE'); return JSON.parse(s);};
@@ -76,10 +83,33 @@ export function benchmarkWriterView(article) {
       headline: stringSchema, ...Object.fromEntries(fields.map(f => [f, stringsSchema(1, 3)]))})};
 }
 
+export function prepareBenchmarkReplay(encoded, expectedSha, plan) {
+  if (!plans.has(plan) || !/^[a-f0-9]{64}$/.test(expectedSha ?? '') || typeof encoded !== 'string' ||
+      encoded.length > 48000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) throw fail('BENCHMARK_REPLAY_PACKET');
+  let packet, body;
+  try {const bytes = Buffer.from(encoded, 'base64'); if (bytes.toString('base64') !== encoded) throw Error();
+    body = gunzipSync(bytes, {maxOutputLength: 90000}).toString('utf8'); packet = JSON.parse(body);
+  } catch {throw fail('BENCHMARK_REPLAY_PACKET');}
+  if (sha(body) !== expectedSha || !exact(packet, ['version', 'packetSha256', 'originalRunId', 'drafts']) ||
+      packet.version !== 1 || packet.packetSha256 !== plan.packetSha256 || !/^\d{1,20}$/.test(packet.originalRunId ?? '') ||
+      !arr(packet.drafts, 6, 6)) throw fail('BENCHMARK_REPLAY_PACKET');
+  const ids = new Set();
+  const drafts = packet.drafts.map(row => {
+    if (!exact(row, ['id', 'raw', 'draftSha256']) || ids.has(row.id)) throw fail('BENCHMARK_REPLAY_DRAFT');
+    const article = plan.articles.find(a => a.id === row.id);
+    if (!article) throw fail('BENCHMARK_REPLAY_DRAFT');
+    const summary = normalizeBenchmarkSummary(row.raw, article);
+    if (summary.draftSha256 !== row.draftSha256) throw fail('BENCHMARK_REPLAY_DRAFT');
+    ids.add(row.id);return {id: row.id, summary};
+  });
+  const replay = freeze({sha256: expectedSha, packetSha256: plan.packetSha256, originalRunId: packet.originalRunId, drafts});
+  replays.add(replay);return replay;
+}
+
 export function normalizeBenchmarkSummary(value, article) {
   const raw = data(value), passageIds = new Set(article.passages.map(p => p.id));
   if (!exact(raw, ['facts', 'headline', ...fields]) || !prose(raw.headline, 180) || !arr(raw.facts, 3, 8)) throw fail('BENCHMARK_DRAFT_SHAPE');
-  for (const f of raw.facts) if (!exact(f, ['text', 'passageIds']) || !prose(f.text, 1000) || !arr(f.passageIds, 1, 12) ||
+  for (const f of raw.facts) if (!exact(f, ['text', 'passageIds']) || !factText(f.text) || !arr(f.passageIds, 1, 12) ||
     new Set(f.passageIds).size !== f.passageIds.length || f.passageIds.some(id => !passageIds.has(id))) throw fail('BENCHMARK_FACT_ANCHOR');
   const units = [{id: 'U0', section: 'headline', text: raw.headline}];
   for (const field of fields) {
@@ -89,7 +119,9 @@ export function normalizeBenchmarkSummary(value, article) {
   if (new Set(units.map(u => u.text)).size !== units.length) throw fail('BENCHMARK_DRAFT_REPEATED');
   const bodyWords = fields.flatMap(f => raw[f]).join(' ').split(/\s+/u).length;
   if (bodyWords < 110 || bodyWords > 225) throw fail('BENCHMARK_DRAFT_LENGTH');
-  if (!` ${words(raw.whatHappened.join(' ')).join(' ')} `.includes(` ${words(article.publisher).join(' ')} `)) throw fail('BENCHMARK_DRAFT_ATTRIBUTION');
+  const attribution = ` ${words(raw.whatHappened.join(' ')).join(' ')} `;
+  const names = [article.publisher, publisherAliases[article.publisher]].filter(Boolean);
+  if (!names.some(name => attribution.includes(` ${words(name).join(' ')} `))) throw fail('BENCHMARK_DRAFT_ATTRIBUTION');
   const source = ` ${words(article.sourceText).join(' ')} `, draft = words(units.map(u => u.text).join(' '));
   for (let i = 0; i + 12 <= draft.length; i++) if (source.includes(` ${draft.slice(i, i + 12).join(' ')} `)) throw fail('BENCHMARK_DRAFT_COPY');
   return freeze({raw, units, bodyWords, draftSha256: sha(JSON.stringify(units))});
@@ -123,6 +155,47 @@ export function validateBenchmarkReview(value, summary, article) {
     eligibleForIndependentReview: supported && q.readable && q.useful && q.faithful && q.issues.length === 0});
 }
 
+// Candidate reviewer v2, used ONLY by the explicit saved-claim-review experiment.
+// Keep the original reviewer available for exact replay/comparison of v1 runs.
+// Exact coverage can reveal skipped clauses; it cannot establish entailment.
+export function benchmarkClauseReviewView(summary, article) {
+  const baseline = benchmarkReviewView(summary, article);
+  return {...baseline, prompt: baseline.prompt + `
+For each unit, partition its EXACT text into contiguous claim spans in reading order. Concatenating every span's text with no separator must reproduce the unit byte-for-byte, including spaces and punctuation. Use 1–8 spans; never drop or rewrite a word. Split independently checkable assertions, including asserted consequences or recommendations, while retaining qualifications with the claim they qualify. Do not split a necessary qualifier into a meaningless fragment.
+For EACH span, judge the whole assertion in its sentence and article context, not isolated words. Identify which source passage actually states its premises, scope and strength. A plausible consequence is unsupported unless the source supplies the required connection. Explicitly reject an added assertion even if the preceding assertion is supported. Give unsupported spans false, and explain the unsupported part. Keep all source context available; the partition is a coverage aid, not new evidence.`,
+    schema: objectSchema({draftSha256: stringSchema,
+      judgments: {type: 'array', minItems: summary.units.length, maxItems: summary.units.length,
+        items: objectSchema({unitId: stringSchema, claims: {type: 'array', minItems: 1, maxItems: 8,
+          items: objectSchema({text: stringSchema, supported: {type: 'boolean'}, passageIds: stringsSchema(0, 20), reason: stringSchema})}})},
+      quality: baseline.schema.properties.quality})};
+}
+
+export function validateBenchmarkClauseReview(value, summary, article) {
+  const raw = data(value), ids = new Set(article.passages.map(p => p.id));
+  if (!exact(raw, ['draftSha256', 'judgments', 'quality']) || raw.draftSha256 !== summary.draftSha256 ||
+      !arr(raw.judgments, summary.units.length, summary.units.length)) throw fail('BENCHMARK_REVIEW_COVERAGE');
+  const mapped = [];
+  for (let i = 0; i < summary.units.length; i++) {
+    const j = raw.judgments[i], unit = summary.units[i];
+    if (!exact(j, ['unitId', 'claims']) || j.unitId !== unit.id || !arr(j.claims, 1, 8)) throw fail('BENCHMARK_CLAIM_COVERAGE');
+    for (const c of j.claims) {
+      // Boundary whitespace is necessary for byte-exact contiguous coverage.
+      if (!exact(c, ['text', 'supported', 'passageIds', 'reason']) || typeof c.text !== 'string' ||
+          !text(c.text.trim(), 1200) || c.text.length > 1200 || /[\p{Cc}\p{Cf}]/u.test(c.text) ||
+          typeof c.supported !== 'boolean' || !text(c.reason, 2400) || !arr(c.passageIds, c.supported ? 1 : 0, 20) ||
+          new Set(c.passageIds).size !== c.passageIds.length || c.passageIds.some(id => !ids.has(id))) throw fail('BENCHMARK_CLAIM_JUDGMENT');
+    }
+    if (j.claims.map(c => c.text).join('') !== unit.text) throw fail('BENCHMARK_CLAIM_COVERAGE');
+    const unsupported = j.claims.find(c => !c.supported);
+    // Reuse the existing whole-review quality gate; no unsupported span can be
+    // hidden by a separate overall "supported" answer from the model.
+    mapped.push({unitId: unit.id, supported: !unsupported,
+      passageIds: j.claims[0].passageIds, reason: (unsupported ?? j.claims[0]).reason});
+  }
+  const checked = validateBenchmarkReview({draftSha256: raw.draftSha256, judgments: mapped, quality: raw.quality}, summary, article);
+  return freeze({...checked, raw, coverage: 'exact-contiguous-claim-spans', semanticApproval: false});
+}
+
 export function assertBenchmarkAuthority(env) {
   if (env.GITHUB_REPOSITORY !== 'itworksinprod/first-fold' || env.GITHUB_ACTOR !== 'itworksinprod' ||
       env.GITHUB_REF !== 'refs/heads/main' || env.GITHUB_EVENT_NAME !== 'workflow_dispatch' || env.GITHUB_RUN_ATTEMPT !== '1' ||
@@ -130,9 +203,11 @@ export function assertBenchmarkAuthority(env) {
       !/^[a-f0-9]{40}$/.test(env.BENCHMARK_REVISION ?? '') || env.GITHUB_SHA !== env.BENCHMARK_REVISION) throw fail('BENCHMARK_AUTHORITY');
 }
 
-export async function runBenchmark({plan, publicKey, accountId, apiToken, save,
+export async function runBenchmark({plan, replay = null, publicKey, accountId, apiToken, save,
   aiRequestImpl = requestWorkersAiEditorial, fetchImpl = fetch, sealImpl = sealDiagnostic, onProgress = () => {}}) {
   if (!plans.has(plan) || typeof save !== 'function') throw fail('BENCHMARK_PLAN');
+  if (replay !== null && (!replays.has(replay) || replay.packetSha256 !== plan.packetSha256)) throw fail('BENCHMARK_REPLAY_PACKET');
+  const requestLimit = replay ? 6 : 20, tokenLimit = replay ? 28800 : 80000;
   diagnosticPublicKey(publicKey);
   let requests = 0, networkRequests = 0, requestedOutputTokens = 0, stopped = false, evidenceFailure = false;
   const persist = async (id, value) => {
@@ -140,15 +215,17 @@ export async function runBenchmark({plan, publicKey, accountId, apiToken, save,
     catch {stopped = true; evidenceFailure = true; throw fail('BENCHMARK_EVIDENCE_STORAGE');}
   };
   const results = [];
-  for (const article of plan.articles) {
+  for (const article of plan.articles.filter(a => !replay || replay.drafts.some(d => d.id === a.id))) {
     if (stopped) {results.push({id: article.id, status: evidenceFailure ? 'not-attempted-evidence-blocker' : 'not-attempted-provider-blocker'}); continue;}
     const {passages: _regenerablePassages, ...savedArticle} = article;
     const capture = {article: savedArticle, packetSha256: plan.packetSha256, calls: [], emailSent: false,
       independentReview: 'required', capturedAt: new Date().toISOString()};
+    if (replay) capture.replay = {sha256: replay.sha256, originalRunId: replay.originalRunId, mode: 'saved-claim-review'};
     let providerFailure = false;
     const call = async (view, stage) => {
       const maxTokens = stage === 'writer' ? 3200 : 4800;
-      if (requests >= 20 || capture.calls.length >= 2 || requestedOutputTokens + maxTokens > 80000) throw fail('BENCHMARK_BUDGET');
+      if (requests >= requestLimit || capture.calls.length >= (replay ? 1 : 2) ||
+          (replay && stage !== 'reviewer') || requestedOutputTokens + maxTokens > tokenLimit) throw fail('BENCHMARK_BUDGET');
       const options = {model: FREE_REASONING_WRITER_MODEL,
         messages: [{role: 'system', content: view.prompt + '\nJSON schema: ' + JSON.stringify(view.schema)},
           {role: 'user', content: JSON.stringify(view.data)}], schema: view.schema, responseFormat: 'json_object',
@@ -163,7 +240,7 @@ export async function runBenchmark({plan, publicKey, accountId, apiToken, save,
       try {
         result = await aiRequestImpl({...options, accountId, apiToken, validatePayload: x => x && typeof x === 'object' && !Array.isArray(x),
           fetchImpl: async (url, init) => {
-            if (!active || violation || attempts >= 1 || networkRequests >= 20 || url !== endpoint || init?.method !== 'POST' ||
+            if (!active || violation || attempts >= 1 || networkRequests >= requestLimit || url !== endpoint || init?.method !== 'POST' ||
                 init.redirect !== 'error' || init.body !== serialized) {violation = true; throw fail('BENCHMARK_NETWORK');}
             attempts++; networkRequests++;
             const response = await fetchImpl(url, init);
@@ -203,8 +280,11 @@ export async function runBenchmark({plan, publicKey, accountId, apiToken, save,
     };
     let status = 'awaiting-independent-review', code = null;
     try {
-      capture.summary = normalizeBenchmarkSummary(await call(benchmarkWriterView(article), 'writer'), article);
-      capture.review = validateBenchmarkReview(await call(benchmarkReviewView(capture.summary, article), 'reviewer'), capture.summary, article);
+      capture.summary = replay ? replay.drafts.find(d => d.id === article.id).summary :
+        normalizeBenchmarkSummary(await call(benchmarkWriterView(article), 'writer'), article);
+      const view = replay ? benchmarkClauseReviewView : benchmarkReviewView;
+      const validate = replay ? validateBenchmarkClauseReview : validateBenchmarkReview;
+      capture.review = validate(await call(view(capture.summary, article), 'reviewer'), capture.summary, article);
       if (!capture.review.eligibleForIndependentReview) status = 'held-by-review';
     } catch (error) {status = 'held'; code = /^BENCHMARK_[A-Z_]+$/.test(error?.code ?? '') ? error.code : 'BENCHMARK_FAILED';}
     stopped ||= providerFailure;
@@ -215,7 +295,7 @@ export async function runBenchmark({plan, publicKey, accountId, apiToken, save,
     try {await persist(article.id, capture);} catch {report.status = 'held'; report.code = 'BENCHMARK_EVIDENCE_STORAGE';}
     results.push(report); onProgress({...report, requests, networkRequests, requestedOutputTokens});
   }
-  return {packetSha256: plan.packetSha256, results, requests, networkRequests, requestedOutputTokens,
+  return {packetSha256: plan.packetSha256, ...(replay ? {replaySha256: replay.sha256, mode: 'saved-claim-review'} : {}), results, requests, networkRequests, requestedOutputTokens,
     stoppedOnProviderBlocker: stopped && !evidenceFailure, stoppedOnEvidenceBlocker: evidenceFailure, emailSent: false, productionApproved: false};
 }
 
@@ -223,12 +303,16 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   try {
     assertBenchmarkAuthority(process.env); diagnosticPublicKey(process.env.DIAGNOSTIC_PUBLIC_KEY);
     const plan = prepareBenchmark(process.env.FIRST_FOLD_BENCHMARK_B64, process.env.BENCHMARK_PACKET_SHA256);
+    const mode = process.env.BENCHMARK_MODE ?? 'write-and-review';
+    if (!['write-and-review', 'saved-claim-review'].includes(mode)) throw fail('BENCHMARK_MODE');
+    const replay = mode === 'saved-claim-review' ? prepareBenchmarkReplay(process.env.FIRST_FOLD_BENCHMARK_REPLAY_B64,
+      process.env.BENCHMARK_REPLAY_SHA256, plan) : null;
     const [command, output, ...extra] = process.argv.slice(2);
     if (extra.length || !['validate', 'run'].includes(command) || (command === 'validate' && output) ||
         (command === 'run' && (!process.env.RUNNER_TEMP || output !== resolve(process.env.RUNNER_TEMP, 'article-benchmark')))) throw fail('BENCHMARK_ARGUMENTS');
     if (command === 'run') {
       await mkdir(output, {mode: 0o700}); // Existing output means do not repeat the attempt.
-      const report = await runBenchmark({plan, publicKey: process.env.DIAGNOSTIC_PUBLIC_KEY,
+      const report = await runBenchmark({plan, replay, publicKey: process.env.DIAGNOSTIC_PUBLIC_KEY,
         accountId: process.env.CLOUDFLARE_ACCOUNT_ID, apiToken: process.env.CLOUDFLARE_AI_API_TOKEN,
         save: (id, sealed) => writeFile(resolve(output, id + '.encrypted.json'), JSON.stringify(sealed), {mode: 0o600, flag: 'wx'}),
         onProgress: row => console.info(JSON.stringify(row))});
