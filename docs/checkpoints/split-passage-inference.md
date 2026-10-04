@@ -422,3 +422,44 @@ extra probe or retry is authorized.
 Final local checks before publication passed: 2,395/2,395 complete tests and
 291/291 tests matching the live workflow's credential-free test command. These
 are implementation and storage checks, not a live semantic result.
+
+## One-use v4 live result — held
+
+The sole approved trial ran on trusted main
+`c7cb166fd3843a2d44e362cdf3edc2b7a5c2ec48`:
+[run 37163805513](https://github.com/itworksinprod/first-fold/actions/runs/37163805513).
+Fresh authenticated checks after the October 4 UTC reset showed daily usage
+0/10,000, Workers Free active and no payment method. No billing was changed.
+The run stopped after four provider requests, a 19,200 requested-output-token
+ceiling, in `Measure two selected blinded stages per fictional case once` with
+`SPLIT_PASSAGE_LIVE_COMPOSITE_INVALID`; the underlying CS04 hold was
+`PASSAGE_SCOPE_CONSISTENCY`. This was not a provider/quota refusal.
+
+The encrypted artifact was retained, identity and hashes verified, and all four
+exact requests and parsed replies replayed offline. Full scorer regeneration,
+its canonical hash and compact metadata matched; replay made zero provider
+calls. Artifact SHA-256:
+`ae49809b712bed3ac749a2372d0151dd1c33ee50508ea30c0fecfe886a90dd48`.
+Decrypted saved-capture SHA-256:
+`051da2a7e91915f21c9aa57dab888e323ba5727a000d2ba0fb9a75ef0f149daa`.
+
+Independent exact-text review read every complete actual answer and source in
+the four calls. Both CS03 answers correctly preserve the universal expiry rule,
+date and no-exemption qualification. CS04's claim answer improves on v3: it
+correctly selects insufficient evidence and explicitly avoids inventing
+nonvisitor existence. But CS04's passage answer still calls the universal rule
+an `opposite_relation`, asserting that it implies nonvisitor badges also expire.
+No source establishes such an instance; all issued badges could be visitors.
+The source premise is accurately anchored, but the claimed incompatibility is
+not established. A real citation cannot validate that inference.
+
+The unchanged composer correctly rejects the disagreement. The diagnostic
+`reasoningFieldsMatching: 2` is not semantic clearance: it checks selected claim
+fields and has no CS04 qualification anchor. Only one of two recorded composites
+is valid; the CS04 claim clears in isolation, not its pair. CS05–CS10 were not
+reached. The independent outcome remains **HOLD**, not a full-corpus, model,
+article or production pass. The one-use intent is consumed; no retry, additional
+trial, email, fresh research, paid fallback, production integration or policy
+change was performed. The next narrow offline step is to preserve this actual
+failed passage witness as a regression and address its unsupported inference,
+not align the correct claim answer to it or bypass the hold.
