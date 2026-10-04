@@ -189,3 +189,60 @@ the prompt. The existing encrypted transport/provenance boundaries and whole-
 batch provider/storage stop rules apply. Fresh authenticated Free/Active/no-
 payment checks and sufficient remaining daily allowance precede dispatch.
 No daily-delivery integration or email. Prior failed variants remain unchanged.
+
+### Source-first writer result: improvement, not release approval
+
+Run `37172758769` used exact main
+`2de8fe07d9f3a9de37a8f06056bfb20fc8a4029c`. Artifact SHA-256:
+`8dbb7b3c0f3589b2ddcbd0157b4519c9f3c336d7b2efceb889953eedc827f4bb`.
+All ten one-attempt writer requests completed, with 40,000 requested-output
+tokens reserved and approximately 2,613.34 neurons reported. There was no
+provider refusal. Authenticated daily usage after the batch showed 7.75k/10k;
+the separate rolling-24-hour total was not used as the daily allowance.
+Exact run identity, archive digest, frozen corpus, requests and native answers
+were verified and replayed locally without further provider calls.
+
+All ten answers contained complete prose. Six passed automatic structural
+checks. The other four were correctly held under the existing rules:
+
+- A01: missing explicit MIT News publisher attribution (140 body words).
+- A04: at least twelve contiguous copied source words (138 words).
+- A08: an eleven-character evidence quotation violates the twelve-character
+  minimum; this is **not** a factual-error detection (131 words).
+- A10: only 105 body words, below the unchanged 110-word minimum.
+
+Independent full-source/exact-answer review found five semantically adequate
+drafts: A01, A03, A05, A06 and A09. Four also passed structural checks: A03,
+A05, A06 and A09. Five require material content correction:
+
+- A02 merges platform-limited monitoring with the separate company-wide compute
+  snapshot, changes a share of work into a share of tasks, and drops the important
+  limitation on using compute as a measure of safety effort.
+- A04 still omits the already-enforced Enterprise Cloud Data Residency exception.
+- A07 labels the vendor advisory with the CISA republication identifier and adds
+  an industrial-operations consequence not established by the account-hijack
+  evidence. It needs correction before reader delivery.
+- A08 loses the affected-broker restriction and broadens the carefully qualified
+  statement about exploitation reports received by CISA.
+- A10 drops South America from its geographic summary as well as missing length.
+
+A01's final integration sentence is weak editorial inference/repetition, not
+the previous invented validation roadmap. A06 now says capacity purchase is
+planned rather than definitely launching later this year; the joined timing
+sentence could be clearer but is not counted as a definite factual error.
+Neither minor caution is inflated into a material semantic failure.
+
+This is a descriptive improvement on a reused ten-article regression set, not
+an unseen accuracy estimate or proof that exact quotations imply faithful
+paraphrases. The initial baseline had one substantially faithful complete draft;
+this variant has five semantically adequate drafts, four satisfying both kinds
+of checks. The batch still fails its all-ten acceptance contract. Keep it
+isolated: no automatic publication, email or production integration.
+
+The private independent record is
+`source-first-writer-v1/independent-review-source-first-v1.json`. All 2,434 local
+tests and the independent implementation preflight passed before the run;
+those results do not supersede the article findings. Next drafting work must
+preserve quantities' denominators, scope exceptions and reporting qualifiers,
+rather than weakening gates or adding another unreliable reviewer verdict.
+No additional provider trials were made after this bounded result.
