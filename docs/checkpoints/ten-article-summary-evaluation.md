@@ -122,3 +122,45 @@ evidence and the unchanged baseline prompts for comparison. A green run alone
 does not pass this test: it must identify the actual unsupported assertions and
 preserve supported controls. If core errors persist, stop layering review
 machinery and record that this reviewer setup remains unreliable.
+
+### Follow-up result: reject this reviewer variant
+
+Run `37171841004`, exact main `478c88c3df7c4c843323e13ed96f1cd90d08ee3c`,
+completed all six one-attempt reviews. Artifact SHA-256:
+`81f5031a90ee95eb32fd7756e017907fe7150e4717f4f1ab2e44e916b5907958`.
+The new replay packet is
+`b0b0e06d25a369bf22fab1a1a0f6b79dd3a6fdd562de4ff6aa343ce914daf95b`.
+All exact saved requests/native answers were verified and replayed offline,
+without additional provider calls. Six requests reserved 28,800 output tokens;
+provider usage reported approximately 1,519 neurons. There was no quota blocker.
+
+Independent exact-text comparison found **one of seven predefined material
+errors detected**: the Google Meet hardware/network assurance, already caught
+by the baseline reviewer. The other six errors remained approved. This is a
+small diagnostic result, not a model-wide accuracy estimate.
+
+- A03 passed structure and received an incorrect all-supported verdict.
+- A09 passed structure but was held for the wrong reason: the reviewer rejected
+  ordinary AWS announcement attribution while approving "immediately" despite
+  the source's within-weeks condition.
+- A05, A06, A07 and A08 failed exact text coverage (dropped punctuation, spaces
+  or connective words). Their raw answers were still independently examined;
+  those holds do not count as catching the factual discrepancies.
+- Neither supported control was preserved by the semantic judgments. The
+  administrator-disablement consequence was again called speculation. The A07
+  risk explanation ignored relevant industrial/exploit context while treating
+  a minor editorial concern as unsupported content.
+
+**Decision:** stop this reviewer variant, with no retry or extra schema/prompt
+layering. Keep its isolated manual diagnostic and original evidence for audit;
+do not wire it into daily publication. The two valid local guard fixes remain.
+All 2,430 local tests and the independent implementation preflight passed, which
+proves tested software behavior—not reliable news judgment.
+
+Next substantive work belongs in drafting: reduce unsupported additions through
+source-first, minimally transformed factual writing, then independently compare
+complete articles. Another review label is not a substitute for that evidence.
+Any future qualification must preserve the 110–225-word requirement and all ten
+articles in the denominator, include supported controls, and precede a fresh
+end-to-end delivery test. No daily integration, email, recipient, billing or
+editorial-threshold change has been made.
