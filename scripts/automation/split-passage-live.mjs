@@ -76,15 +76,13 @@ export function splitIncompatibilityWitnessScoringReport(scoring){
   assertSplitWitnessHostScoring(scoring);
   if(scoring?.reviewContract!==SPLIT_INCOMPATIBILITY_WITNESS_LIVE_BINDINGS.reviewContract||!Array.isArray(scoring.results)||scoring.results.length>8)
     throw fail('SPLIT_PASSAGE_LIVE_SCORING_REPORT');
-  const out={projection:'host-scoring-metadata-with-core-projection-raw-responses-in-calls-v1',fullScoringSha256:sha(JSON.stringify(scoring)),
+  const out={projection:'host-scoring-metadata-raw-responses-in-calls-v2',fullScoringSha256:sha(JSON.stringify(scoring)),
     reviewContract:scoring.reviewContract,controlsetSha256:scoring.controlsetSha256,subsetSha256:scoring.subsetSha256,
     expectationsSha256:scoring.expectationsSha256,report:{...structuredClone(scoring.report),
       witnessSemanticsChecked:false,independentReview:'required',modelQualified:false,articleApproved:false,publicationReady:false},
     results:scoring.results.map(({caseId,labelMatch,reasoning,composite})=>({caseId,labelMatch,reasoning:structuredClone(reasoning),
       composite:{valid:composite.valid,supported:composite.supported,code:composite.code,
         ...(composite.composition?{composition:composite.composition}:{}),
-        ...(composite.coreProjection?{coreProjection:structuredClone(composite.coreProjection)}:{}),
-        ...(composite.assembledSelection?{assembledSelection:structuredClone(composite.assembledSelection)}:{}),
         witnessSemanticsChecked:false,independentReview:'required',modelQualified:false,articleApproved:false,publicationReady:false},
     }))};
   assertSpanReviewJson(out);return out;

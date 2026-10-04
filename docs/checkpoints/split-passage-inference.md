@@ -396,14 +396,18 @@ permission to approve an article, enable production integration or relax gold.
 The v4 encrypted capture stores each complete actual answer once in `calls`,
 alongside its exact source view and request hashes. Only duplicate host-derived
 validation/scoring copies are compacted. The scoring projection is explicitly
-labeled, retains core projections, assembled decisions and reasoning fields,
-and includes a SHA-256 of the complete original scorer result. Offline audit
+labeled, retains decisions and reasoning fields, and includes a SHA-256 of the
+complete original scorer result. Synthetic core projections and assembly text
+are regenerated from actual replies instead of stored again. Offline audit
 recomputes the full validators and scorer before comparing that hash and compact
 metadata; no model text is repaired or dropped. In-memory gates still use the
-full original results. Historical captures are unchanged. Boundary tests retain
-all maximum-length Unicode witness fields and a final near-100 KB malformed
-answer under the unchanged 350 KB encryption limit (largest tested capture:
-295,421 bytes), including the exact failing answer.
+full original results. Historical captures and the 350 KB encryption limit are
+unchanged. The last size check additionally covers canonical expansion of
+compact JSON numbers in a rejected near-100 KB answer, not only text bytes.
+All six boundary cases retain the exact answers; the largest tested capture is
+334,022 bytes, including 5,964 finite compact-exponent numbers in the final
+rejected answer. This changes evidence storage only, not provider limits or
+acceptance of the malformed answer.
 
 Private, independently reviewed one-use helpers must verify their manifest and
 own hashes, fresh authenticated daily usage and active Workers Free/no-payment
@@ -415,6 +419,6 @@ worst-case fit or completion guarantee. Input tokens and provider availability
 can still consume the remaining allowance or cause a refusal. No paid overage,
 extra probe or retry is authorized.
 
-Final local checks before publication passed: 2,393/2,393 complete tests and
-289/289 tests matching the live workflow's credential-free test command. These
+Final local checks before publication passed: 2,395/2,395 complete tests and
+291/291 tests matching the live workflow's credential-free test command. These
 are implementation and storage checks, not a live semantic result.

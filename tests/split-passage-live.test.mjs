@@ -174,13 +174,13 @@ test('explicit incompatibility-witness entry pins sixteen requests and preserves
   }
   for(const row of capture.scoring.results){
     assert.equal(row.composite.composition,'raw-witness-responses-with-explicit-core-projection');
-    for(const key of ['rawClaim','rawChecks','coreComposite'])assert.equal(Object.hasOwn(row.composite,key),false);
+    for(const key of ['rawClaim','rawChecks','coreComposite','coreProjection','assembledSelection'])assert.equal(Object.hasOwn(row.composite,key),false);
     for(const key of ['rawClaim','rawChecks'])assert.equal(Object.hasOwn(row,key),false);
     assert.equal(row.composite.witnessSemanticsChecked,false);
   }
   const records=plan.cases.map(({caseId},i)=>({caseId,claim:capture.calls[i*2].response,checks:capture.calls[i*2+1].response})),
     fullScoring=scoreIncompatibility(records,plan);
-  assert.equal(capture.scoring.projection,'host-scoring-metadata-with-core-projection-raw-responses-in-calls-v1');
+  assert.equal(capture.scoring.projection,'host-scoring-metadata-raw-responses-in-calls-v2');
   assert.equal(capture.scoring.fullScoringSha256,sha(JSON.stringify(fullScoring)));
   assert.deepEqual(capture.scoring,splitIncompatibilityWitnessScoringReport(fullScoring));
   for(const out of [capture,capture.report,capture.scoring.report,splitPassagePublicReport(result.report)]){
@@ -424,14 +424,28 @@ function maximumWitnessReply(view,fill){
       ...row(select(view.data.catalog.filter(s=>s.evidenceId===evidenceId)))}))})};
 }
 for(const [character,label]of [['漢','three-byte Unicode'],[String.fromCharCode(0xd800),'six-byte serialized surrogate']])
-  for(const malformed of [false,true])test(`v4 bounded evidence seals all ${label} fields${malformed?' and the final near-100KB malformed answer':''}`,async()=>{
+  for(const malformed of [false,true,'numeric'])test(`v4 bounded evidence seals all ${label} fields${malformed?' and the final near-100KB malformed answer':''}${malformed==='numeric'?' with maximal numeric expansion':''}`,async()=>{
     // Worst serialization units in every allowed240-character field; these
     // injected answers test storage bounds, not semantic quality or live success.
     const plan=prepareIncompatibility(),views=plan.cases.flatMap(c=>[c.pair.claim,c.pair.checks]),answers=[];let calls=0,maximumEnvelope=0;
     const result=await runSplitIncompatibilityWitnessLive({plan,publicKey,accountId:'0'.repeat(32),apiToken:'boundary-only',
       now:new Date('2026-10-03T00:00:00.000Z'),fetchImpl:async()=>{
-        const i=calls++,answer=malformed&&i===15?{privateMalformed:'漢'.repeat(33280)}:maximumWitnessReply(views[i],character.repeat(240));
-        answers.push(clone(answer));const envelope=JSON.stringify({success:true,result:{response:JSON.stringify(answer)}});
+        const i=calls++;let answer,envelope;
+        if(malformed==='numeric'&&i===15){
+          // Numeric notation1e20 expands by17bytes in canonical JSON. Twelve
+          // dense497-element arrays nearly exhaust the unchanged6,000-node
+          // safety bound while remaining below each500-element array bound.
+          const numbers=`[${Array(12).fill(`[${Array(497).fill('1e20').join(',')}]`).join(',')}]`,
+            inner=count=>`{"badNumbers":${numbers},"privateMalformed":"${'漢'.repeat(count)}"}`,
+            wrap=text=>JSON.stringify({success:true,result:{response:text}}),
+            count=Math.floor((99990-Buffer.byteLength(wrap(inner(0))))/3),text=inner(count);
+          answer=JSON.parse(text);envelope=wrap(text);
+          assert.ok(Buffer.byteLength(JSON.stringify(answer))<=202000);
+        }else{
+          answer=malformed&&i===15?{privateMalformed:'漢'.repeat(33280)}:maximumWitnessReply(views[i],character.repeat(240));
+          envelope=JSON.stringify({success:true,result:{response:JSON.stringify(answer)}});
+        }
+        answers.push(clone(answer));
         maximumEnvelope=Math.max(maximumEnvelope,Buffer.byteLength(envelope));assert.ok(Buffer.byteLength(envelope)<=100000);
         return new Response(envelope,{headers:{'content-type':'application/json'}});
       }});
@@ -439,8 +453,8 @@ for(const [character,label]of [['漢','three-byte Unicode'],[String.fromCharCode
     assert.equal(result.report.casesValid,malformed?7:8);assert.equal(result.report.status,malformed?'failed':'review-complete-awaiting-independent-review');
     const capture=openDiagnostic(result.sealed,keys.privateKey.export({type:'pkcs8',format:'pem'}));
     assert.deepEqual(capture.calls.map(c=>c.response),answers);assert.ok(Buffer.byteLength(JSON.stringify(capture))<=350000);
-    assert.ok(Buffer.byteLength(JSON.stringify(capture))<310000);
-    if(malformed){assert.equal(maximumEnvelope,99908);assert.equal(capture.calls[15].validation.valid,false);}
+    assert.ok(Buffer.byteLength(JSON.stringify(capture))<(malformed==='numeric'?340000:310000));
+    if(malformed){assert.equal(maximumEnvelope,malformed==='numeric'?99988:99908);assert.equal(capture.calls[15].validation.valid,false);}
     const records=plan.cases.slice(0,malformed?7:8).map(({caseId},i)=>({caseId,claim:answers[i*2],checks:answers[i*2+1]})),
       full=scoreIncompatibility(records,plan);
     assert.equal(capture.scoring.fullScoringSha256,sha(JSON.stringify(full)));
@@ -454,8 +468,8 @@ test('v4 full-score hash and compact projection preserve decisions while refusin
   assert.deepEqual(out.report,scoring.report);
   for(const [i,row]of out.results.entries()){
     assert.deepEqual(row.reasoning,scoring.results[i].reasoning);assert.equal(row.labelMatch,scoring.results[i].labelMatch);
-    assert.deepEqual(row.composite.coreProjection,scoring.results[i].composite.coreProjection);
-    assert.deepEqual(row.composite.assembledSelection,scoring.results[i].composite.assembledSelection);
+    for(const field of ['valid','supported','code','composition'])assert.equal(row.composite[field],scoring.results[i].composite[field]);
+    for(const field of ['coreProjection','assembledSelection','coreComposite'])assert.equal(Object.hasOwn(row.composite,field),false);
   }
   let reads=0;const getter=clone(scoring);Object.defineProperty(getter.results[0].composite,'code',{enumerable:true,get(){reads++;return 'PRIVATE_DETAIL';}});
   const proxy=clone(scoring);proxy.results[0].composite=new Proxy({}, {get(){reads++;},ownKeys(){reads++;return[];}});
