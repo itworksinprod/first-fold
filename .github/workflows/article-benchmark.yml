@@ -1,0 +1,58 @@
+name: Evaluate ten saved articles (encrypted, no email)
+on:
+  workflow_dispatch:
+    inputs:
+      public_key:
+        description: Ephemeral RSA-3072 public key, base64 DER
+        required: true
+        type: string
+      packet_sha256:
+        description: Frozen ten-article input SHA-256
+        required: true
+        type: string
+      revision:
+        description: Exact trusted main revision approved for this evaluation
+        required: true
+        type: string
+permissions: {}
+concurrency:
+  group: personal-morning-paper
+  cancel-in-progress: false
+jobs:
+  evaluate:
+    if: github.repository == 'itworksinprod/first-fold' && github.ref == 'refs/heads/main' && github.actor == 'itworksinprod' && github.run_attempt == 1 && github.sha == inputs.revision
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    env:
+      BENCHMARK_PACKET_SHA256: ${{ inputs.packet_sha256 }}
+      BENCHMARK_REVISION: ${{ inputs.revision }}
+      DIAGNOSTIC_PUBLIC_KEY: ${{ inputs.public_key }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: '24'
+      - name: Test evaluation boundaries without credentials
+        run: node --test tests/article-benchmark.test.mjs tests/free-workers-ai.test.mjs tests/private-writer-diagnostic.test.mjs
+      - name: Validate frozen corpus before provider credentials
+        env:
+          FIRST_FOLD_BENCHMARK_B64: ${{ secrets.FIRST_FOLD_BENCHMARK_B64 }}
+        run: node scripts/automation/article-benchmark.mjs validate
+      - name: Write and review ten saved articles without sending email
+        env:
+          FIRST_FOLD_BENCHMARK_B64: ${{ secrets.FIRST_FOLD_BENCHMARK_B64 }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_AI_API_TOKEN: ${{ secrets.CLOUDFLARE_AI_API_TOKEN }}
+        run: node scripts/automation/article-benchmark.mjs run "$RUNNER_TEMP/article-benchmark"
+      - name: Preserve encrypted results and content-free counts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: article-benchmark
+          path: ${{ runner.temp }}/article-benchmark/
+          retention-days: 1
+          if-no-files-found: ignore
