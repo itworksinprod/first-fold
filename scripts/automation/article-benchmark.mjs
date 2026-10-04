@@ -173,6 +173,50 @@ export function normalizeSourceFirstSummary(value, article) {
     sourceQuotesExact: true, semanticApproval: false});
 }
 
+// An isolated drafting experiment, not a semantic validator. A scope binding
+// proves only that a real source fragment and its claimed rendering were kept.
+export const SCOPE_FIRST_WRITER_PROMPT = `${SOURCE_FIRST_WRITER_PROMPT}
+Before composing EACH sentence, examine the entire source for boundaries on the specific claim you selected. In qualifications, record each relevant source qualification as an exact passage quotation, then preservedAs: the exact words you will put in this sentence to preserve it. Write the final text last. Keep qualifications empty only when that particular claim has no source qualification. Headline qualifications may be expressed briefly but must not make the headline broader than the source.
+Keep separate measurement frames separate: a figure's measured population, denominator, time period and method belong to that figure, not a neighboring one. Do not join unrelated facts into a shared time/place/population statement. If one sentence would need several different frames, use separate sentences or omit the less important claim.
+Check other passages for exclusions from any group or schedule you describe. Keep a known exception alongside a general rule. Preserve whose reports or observations establish a negative claim, including known/reported/as-of limitations; absence of a report is not evidence of absence. A listed sector, severity or location alone does not establish an operational consequence. A region list must not become an incomplete exclusive geographical restriction. Keep identifiers attached to the organization/document that owns them.
+Every qualification uses the same exact-quote rules as evidence: 12–800 characters, unchanged from its numbered passage. preservedAs must be a nonempty, exact, contiguous phrase in this item's reader text, at most 300 characters. Do not add filler merely to satisfy that check. This is a drafting aid, not permission to assume your paraphrase follows from the source. Read the entire selected quotation and its context, not just matching keywords.
+Use requiredAttribution naturally in whatHappened. Preserve the 110–225-word body limit; aim for 140–170 words so small counting differences do not produce an undersized draft. Return no approval, confidence or self-review verdict. No article-specific examples or outside facts are supplied.`;
+
+export function scopeFirstWriterView(article) {
+  const quote = objectSchema({passageId: stringSchema, quote: stringSchema});
+  const item = objectSchema({evidence: {type: 'array', minItems: 1, maxItems: 3, items: quote},
+    qualifications: {type: 'array', minItems: 0, maxItems: 3,
+      items: objectSchema({passageId: stringSchema, quote: stringSchema, preservedAs: stringSchema})}, text: stringSchema});
+  return {prompt: SCOPE_FIRST_WRITER_PROMPT,
+    data: {...sourceFirstWriterView(article).data, requiredAttribution: publisherAliases[article.publisher] ?? article.publisher},
+    schema: objectSchema({headline: item, ...Object.fromEntries(fields.map(f => [f, {type: 'array', minItems: 1, maxItems: 3, items: item}]))})};
+}
+
+export function normalizeScopeFirstSummary(value, article) {
+  const scoped = data(value), bindings = [];
+  if (!exact(scoped, ['headline', ...fields])) throw fail('BENCHMARK_DRAFT_SHAPE');
+  const read = (item, section) => {
+    if (!exact(item, ['evidence', 'qualifications', 'text']) || !arr(item.qualifications, 0, 3)) throw fail('BENCHMARK_SCOPE_BINDING');
+    const seen = new Set();
+    for (const q of item.qualifications) {
+      const p = article.passages.find(p => p.id === q?.passageId);
+      if (!exact(q, ['passageId', 'quote', 'preservedAs']) || !p || !text(q.quote, 800) || q.quote.length < 12 ||
+          !p.text.includes(q.quote) || !prose(q.preservedAs, 300) || typeof item.text !== 'string' ||
+          !item.text.includes(q.preservedAs) || seen.has(JSON.stringify([q.passageId, q.quote]))) throw fail('BENCHMARK_SCOPE_BINDING');
+      seen.add(JSON.stringify([q.passageId, q.quote]));
+    }
+    bindings.push({unitId: `U${bindings.length}`, section, qualifications: item.qualifications});
+    return {evidence: item.evidence, text: item.text};
+  };
+  const grounded = {headline: read(scoped.headline, 'headline')};
+  for (const f of fields) {
+    if (!arr(scoped[f], 1, 3)) throw fail('BENCHMARK_DRAFT_PROSE');
+    grounded[f] = scoped[f].map(item => read(item, f));
+  }
+  return freeze({...normalizeSourceFirstSummary(grounded, article), scopeBindings: bindings,
+    scopeRenderingPresent: true, qualificationCoverageVerified: false, semanticApproval: false});
+}
+
 export function benchmarkReviewView(summary, article) {
   return {prompt: BENCHMARK_REVIEW_PROMPT,
     data: {draftSha256: summary.draftSha256, publisher: article.publisher, sourceUrl: article.url,
@@ -249,12 +293,14 @@ export function assertBenchmarkAuthority(env) {
       !/^[a-f0-9]{40}$/.test(env.BENCHMARK_REVISION ?? '') || env.GITHUB_SHA !== env.BENCHMARK_REVISION) throw fail('BENCHMARK_AUTHORITY');
 }
 
-export async function runBenchmark({plan, replay = null, sourceFirst = false, publicKey, accountId, apiToken, save,
+export async function runBenchmark({plan, replay = null, sourceFirst = false, scopeFirst = false, publicKey, accountId, apiToken, save,
   aiRequestImpl = requestWorkersAiEditorial, fetchImpl = fetch, sealImpl = sealDiagnostic, onProgress = () => {}}) {
   if (!plans.has(plan) || typeof save !== 'function') throw fail('BENCHMARK_PLAN');
   if (replay !== null && (!replays.has(replay) || replay.packetSha256 !== plan.packetSha256)) throw fail('BENCHMARK_REPLAY_PACKET');
-  if (typeof sourceFirst !== 'boolean' || (sourceFirst && replay)) throw fail('BENCHMARK_MODE');
-  const requestLimit = sourceFirst ? 10 : replay ? 6 : 20, tokenLimit = sourceFirst ? 40000 : replay ? 28800 : 80000;
+  if (typeof sourceFirst !== 'boolean' || typeof scopeFirst !== 'boolean' ||
+      (sourceFirst && scopeFirst) || ((sourceFirst || scopeFirst) && replay)) throw fail('BENCHMARK_MODE');
+  const writerOnly = sourceFirst || scopeFirst;
+  const requestLimit = writerOnly ? 10 : replay ? 6 : 20, tokenLimit = writerOnly ? 40000 : replay ? 28800 : 80000;
   diagnosticPublicKey(publicKey);
   let requests = 0, networkRequests = 0, requestedOutputTokens = 0, stopped = false, evidenceFailure = false;
   const persist = async (id, value) => {
@@ -269,11 +315,12 @@ export async function runBenchmark({plan, replay = null, sourceFirst = false, pu
       independentReview: 'required', capturedAt: new Date().toISOString()};
     if (replay) capture.replay = {sha256: replay.sha256, originalRunId: replay.originalRunId, mode: 'saved-claim-review'};
     if (sourceFirst) capture.mode = 'source-first-writer';
+    if (scopeFirst) capture.mode = 'scope-first-writer';
     let providerFailure = false;
     const call = async (view, stage) => {
-      const maxTokens = sourceFirst ? 4000 : stage === 'writer' ? 3200 : 4800;
-      if (requests >= requestLimit || capture.calls.length >= (sourceFirst || replay ? 1 : 2) ||
-          (replay && stage !== 'reviewer') || (sourceFirst && stage !== 'writer') ||
+      const maxTokens = writerOnly ? 4000 : stage === 'writer' ? 3200 : 4800;
+      if (requests >= requestLimit || capture.calls.length >= (writerOnly || replay ? 1 : 2) ||
+          (replay && stage !== 'reviewer') || (writerOnly && stage !== 'writer') ||
           requestedOutputTokens + maxTokens > tokenLimit) throw fail('BENCHMARK_BUDGET');
       const options = {model: FREE_REASONING_WRITER_MODEL,
         messages: [{role: 'system', content: view.prompt + '\nJSON schema: ' + JSON.stringify(view.schema)},
@@ -329,7 +376,9 @@ export async function runBenchmark({plan, replay = null, sourceFirst = false, pu
     };
     let status = 'awaiting-independent-review', code = null;
     try {
-      if (sourceFirst) {
+      if (scopeFirst) {
+        capture.summary = normalizeScopeFirstSummary(await call(scopeFirstWriterView(article), 'writer'), article);
+      } else if (sourceFirst) {
         capture.summary = normalizeSourceFirstSummary(await call(sourceFirstWriterView(article), 'writer'), article);
       } else {
         capture.summary = replay ? replay.drafts.find(d => d.id === article.id).summary :
@@ -348,7 +397,7 @@ export async function runBenchmark({plan, replay = null, sourceFirst = false, pu
     try {await persist(article.id, capture);} catch {report.status = 'held'; report.code = 'BENCHMARK_EVIDENCE_STORAGE';}
     results.push(report); onProgress({...report, requests, networkRequests, requestedOutputTokens});
   }
-  return {packetSha256: plan.packetSha256, ...(sourceFirst ? {mode: 'source-first-writer'} : replay ? {replaySha256: replay.sha256, mode: 'saved-claim-review'} : {}), results, requests, networkRequests, requestedOutputTokens,
+  return {packetSha256: plan.packetSha256, ...(scopeFirst ? {mode: 'scope-first-writer'} : sourceFirst ? {mode: 'source-first-writer'} : replay ? {replaySha256: replay.sha256, mode: 'saved-claim-review'} : {}), results, requests, networkRequests, requestedOutputTokens,
     stoppedOnProviderBlocker: stopped && !evidenceFailure, stoppedOnEvidenceBlocker: evidenceFailure, emailSent: false, productionApproved: false};
 }
 
@@ -357,7 +406,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     assertBenchmarkAuthority(process.env); diagnosticPublicKey(process.env.DIAGNOSTIC_PUBLIC_KEY);
     const plan = prepareBenchmark(process.env.FIRST_FOLD_BENCHMARK_B64, process.env.BENCHMARK_PACKET_SHA256);
     const mode = process.env.BENCHMARK_MODE ?? 'write-and-review';
-    if (!['write-and-review', 'saved-claim-review', 'source-first-writer'].includes(mode)) throw fail('BENCHMARK_MODE');
+    if (!['write-and-review', 'saved-claim-review', 'source-first-writer', 'scope-first-writer'].includes(mode)) throw fail('BENCHMARK_MODE');
     const replay = mode === 'saved-claim-review' ? prepareBenchmarkReplay(process.env.FIRST_FOLD_BENCHMARK_REPLAY_B64,
       process.env.BENCHMARK_REPLAY_SHA256, plan) : null;
     const [command, output, ...extra] = process.argv.slice(2);
@@ -365,7 +414,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
         (command === 'run' && (!process.env.RUNNER_TEMP || output !== resolve(process.env.RUNNER_TEMP, 'article-benchmark')))) throw fail('BENCHMARK_ARGUMENTS');
     if (command === 'run') {
       await mkdir(output, {mode: 0o700}); // Existing output means do not repeat the attempt.
-      const report = await runBenchmark({plan, replay, sourceFirst: mode === 'source-first-writer', publicKey: process.env.DIAGNOSTIC_PUBLIC_KEY,
+      const report = await runBenchmark({plan, replay, sourceFirst: mode === 'source-first-writer', scopeFirst: mode === 'scope-first-writer', publicKey: process.env.DIAGNOSTIC_PUBLIC_KEY,
         accountId: process.env.CLOUDFLARE_ACCOUNT_ID, apiToken: process.env.CLOUDFLARE_AI_API_TOKEN,
         save: (id, sealed) => writeFile(resolve(output, id + '.encrypted.json'), JSON.stringify(sealed), {mode: 0o600, flag: 'wx'}),
         onProgress: row => console.info(JSON.stringify(row))});

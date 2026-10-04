@@ -15,13 +15,14 @@ on:
         required: true
         type: string
       mode:
-        description: Full benchmark or one six-draft frozen reviewer check
+        description: Isolated drafting benchmark or frozen reviewer check
         type: choice
         default: write-and-review
         options:
           - write-and-review
           - saved-claim-review
           - source-first-writer
+          - scope-first-writer
       replay_sha256:
         description: Required SHA-256 for the six saved drafts in review-only mode
         type: string

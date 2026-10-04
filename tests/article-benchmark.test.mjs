@@ -6,7 +6,7 @@ import {readFile} from 'node:fs/promises';
 import {prepareBenchmark, benchmarkWriterView, normalizeBenchmarkSummary, benchmarkReviewView,
   validateBenchmarkReview, benchmarkClauseReviewView, validateBenchmarkClauseReview,
   runBenchmark, prepareBenchmarkReplay, assertBenchmarkAuthority, BENCHMARK_DESKS} from '../scripts/automation/article-benchmark.mjs';
-import {sourceFirstWriterView, normalizeSourceFirstSummary} from '../scripts/automation/article-benchmark.mjs';
+import {sourceFirstWriterView, normalizeSourceFirstSummary, scopeFirstWriterView, normalizeScopeFirstSummary} from '../scripts/automation/article-benchmark.mjs';
 import {openDiagnostic} from '../scripts/automation/private-writer-diagnostic.mjs';
 const sha = s => createHash('sha256').update(s).digest('hex');
 const pair = generateKeyPairSync('rsa', {modulusLength:3072});
@@ -27,6 +27,78 @@ function anchoredDraft(a,n=130) {
   const d=draft(n),item=text=>({evidence:[{passageId:'P1',quote:a.passages[0].text}],text});
   return {headline:item(d.headline),...Object.fromEntries(['whatHappened','whyItMatters','whatToWatch'].map(f=>[f,d[f].map(item)]))};
 }
+function scopedDraft(a,n=130) {
+  const r=anchoredDraft(a,n);
+  for(const item of [r.headline,...r.whatHappened,...r.whyItMatters,...r.whatToWatch]) item.qualifications=[];
+  r.whatToWatch[0].text='Conditions.';
+  r.whatToWatch[0].qualifications=[{passageId:'P1',quote:a.passages[0].text,preservedAs:'Conditions'}];
+  return r;
+}
+
+test('scope-first binds retained source qualifications to visible text without semantic approval',()=>{
+  const a=plan().articles[0],r=scopedDraft(a),s=normalizeScopeFirstSummary(r,a);
+  assert.equal(s.bodyWords,130);assert.equal(s.scopeRenderingPresent,true);
+  assert.equal(s.semanticApproval,false);assert.equal(s.qualificationCoverageVerified,false);
+  assert.deepEqual(s.scopeBindings.map(x=>x.unitId),s.units.map(x=>x.id));assert.ok(Object.isFrozen(s.scopeBindings));
+  assert.ok(!('qualifications' in s.raw));assert.ok(!JSON.stringify(s.raw).includes(a.passages[0].text));
+  const v=scopeFirstWriterView(a);assert.deepEqual(v.data.passages,a.passages);assert.equal(v.data.requiredAttribution,'GitHub');
+  assert.equal(v.prompt,scopeFirstWriterView(plan().articles[1]).prompt);
+  assert.equal(scopeFirstWriterView({...a,publisher:'MIT News — Artificial Intelligence'}).data.requiredAttribution,'MIT News');
+  // A present rendering can still be wrong, and a model can miss a relevant
+  // qualification. Neither is automatically upgraded to factual approval.
+  r.whatToWatch[0].text='Unconditional.';r.whatToWatch[0].qualifications[0].preservedAs='Unconditional';
+  assert.equal(normalizeScopeFirstSummary(r,a).semanticApproval,false);
+  r.whatToWatch[0].qualifications=[];
+  assert.equal(normalizeScopeFirstSummary(r,a).qualificationCoverageVerified,false);
+});
+test('scope-first rejects missing, fabricated, hidden and duplicate qualification bindings',()=>{
+  const a=plan().articles[0];
+  for(const mutate of [r=>delete r.headline.qualifications,r=>r.whatToWatch[0].qualifications=null,
+    r=>r.whatToWatch[0].qualifications[0].passageId='P999',r=>r.whatToWatch[0].qualifications[0].quote='not in source',
+    r=>r.whatToWatch[0].qualifications[0].quote='tiny',r=>r.whatToWatch[0].qualifications[0].preservedAs='not in output',
+    r=>r.whatToWatch[0].qualifications[0].preservedAs='',r=>r.whatToWatch[0].qualifications[0].preservedAs='Conditions\n',
+    r=>r.whatToWatch[0].qualifications[0].supported=true,r=>r.whatToWatch[0].qualifications.push(r.whatToWatch[0].qualifications[0]),
+    r=>r.whatToWatch[0].qualifications[0].preservedAs='x'.repeat(301),r=>r.headline.extra=true,
+    r=>r.whatToWatch[0].text='<script>Conditions</script>.']) {
+    const r=scopedDraft(a);mutate(r);assert.throws(()=>normalizeScopeFirstSummary(r,a));
+  }
+  for(const n of [109,110,225,226]) {
+    if(n<110||n>225)assert.throws(()=>normalizeScopeFirstSummary(scopedDraft(a,n),a),/LENGTH/);
+    else assert.equal(normalizeScopeFirstSummary(scopedDraft(a,n),a).bodyWords,n);
+  }
+  const original=scopedDraft(a);delete original.whatHappened[0].qualifications;
+  assert.throws(()=>normalizeScopeFirstSummary(original,a),/SCOPE_BINDING/);
+});
+test('scope-first spends at most ten writer requests and leaves daily delivery and truth judgments untouched',async()=>{
+  const p=plan(),saved=[];let calls=0;
+  const report=await runBenchmark({plan:p,scopeFirst:true,publicKey,accountId:'0'.repeat(32),apiToken:'TEST_ONLY',
+    save:async(id,sealed)=>saved.push({id,data:openDiagnostic(sealed,pair.privateKey)}),fetchImpl:async(url,init)=>{
+      const b=JSON.parse(init.body),d=JSON.parse(b.messages[1].content);assert.equal(b.max_tokens,4000);
+      assert.equal(b.reasoning_effort,'medium');assert.equal(d.requiredAttribution,'GitHub');assert.ok(!d.expectedVerdict);
+      assert.deepEqual(d.passages,p.articles[calls].passages);
+      return new Response(JSON.stringify({success:true,result:{response:JSON.stringify(scopedDraft(p.articles[calls++]))}}),{headers:{'content-type':'application/json'}});
+    }});
+  assert.equal(calls,10);assert.equal(report.requests,10);assert.equal(report.networkRequests,10);assert.equal(report.requestedOutputTokens,40000);
+  assert.equal(report.mode,'scope-first-writer');assert.equal(report.results.length,10);
+  assert.equal(report.emailSent,false);assert.equal(report.productionApproved,false);
+  assert.ok(report.results.every(r=>r.sourceSupported===null&&r.faithful===null&&!r.reviewerStructural));
+  assert.equal(saved.length,20);assert.ok(saved.every(r=>!r.id.includes('reviewer')));
+  for(const args of [{scopeFirst:'yes'},{scopeFirst:true,sourceFirst:true}])
+    await assert.rejects(runBenchmark({plan:p,...args,publicKey,save:async()=>{}}),/MODE/);
+});
+test('scope-first preserves failed native answers and stops on quota without retries or replacing cases',async()=>{
+  const p=plan(),saved=[];let calls=0;
+  const report=await runBenchmark({plan:p,scopeFirst:true,publicKey,accountId:'0'.repeat(32),apiToken:'TEST_ONLY',
+    save:async(id,sealed)=>saved.push({id,data:openDiagnostic(sealed,pair.privateKey)}),fetchImpl:async()=>{
+      calls++;if(calls===2)return new Response('{"success":false}',{status:429});
+      const r=scopedDraft(p.articles[0]);r.whatToWatch[0].qualifications[0].preservedAs='missing limit';
+      return new Response(JSON.stringify({success:true,result:{response:JSON.stringify(r)}}),{headers:{'content-type':'application/json'}});
+    }});
+  assert.equal(calls,2);assert.equal(report.results[0].code,'BENCHMARK_SCOPE_BINDING');
+  assert.equal(report.results[1].code,'BENCHMARK_PROVIDER_STOP');assert.equal(report.results.length,10);
+  assert.equal(report.results.filter(r=>r.status==='not-attempted-provider-blocker').length,8);
+  assert.ok(saved.find(r=>r.id==='A01-writer').data.nativeResponseBase64);
+});
 
 test('source-first drafts retain exact evidence for every visible unit but never claim semantic approval',()=>{
   const a=plan().articles[0],r=anchoredDraft(a),s=normalizeSourceFirstSummary(r,a);

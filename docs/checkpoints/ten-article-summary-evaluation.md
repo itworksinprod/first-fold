@@ -246,3 +246,45 @@ those results do not supersede the article findings. Next drafting work must
 preserve quantities' denominators, scope exceptions and reporting qualifiers,
 rather than weakening gates or adding another unreliable reviewer verdict.
 No additional provider trials were made after this bounded result.
+
+## Scope-first writer: local implementation ready, live result pending
+
+The next isolated `scope-first-writer` mode keeps the full frozen ten-article
+corpus and the source-first baseline unchanged. Before each reader sentence,
+the writer records relevant exact source qualifications and a `preservedAs`
+span that must appear in that same sentence. Local checks reject missing or
+fabricated quotations, absent rendering spans, duplicate bindings and malformed
+prose. The publisher metadata also supplies its already-approved attribution
+name, without widening the reader attribution guard.
+
+The generic drafting instructions keep measurement frames separate, preserve
+exceptions to group/schedule claims, distinguish an absence of reports from an
+absence of events, and retain the organization attached to document identifiers.
+No case-specific corrections or expected verdicts are sent. The requested
+output ceiling is still 4,000 tokens per article, ten writer requests total,
+medium reasoning, one attempt, no reviewer/retries/email. The 110–225-word limit
+and all existing reader checks remain intact.
+
+This is **not** semantic validation: a model can omit a qualification or attach
+the wrong paraphrase to a real quote. `qualificationCoverageVerified` and
+`semanticApproval` stay false. The exact full output and full retained source
+still require independent review. Tests deliberately demonstrate those limits.
+
+All 2,438 local tests pass; independent implementation preflight passed all 115
+focused tests with no blocking finding. These counts say nothing yet about live
+article quality. On October 3 at approximately 11:30 PM Eastern, fresh Cloudflare
+daily usage remained 7.75k/10k. The preceding ten-article test used 2,613.34
+neurons; the remaining allowance is inadequate headroom for repeating this full
+test. No provider call or workflow dispatch was made for the new mode.
+
+The private `scope-first-writer-v1` directory holds the unchanged corpus and a
+new local encryption key. Prepared helpers are `prepare-scope-first-writer.mjs`,
+`launch-scope-first-writer.mjs` and `fetch-scope-first-writer.mjs` in the existing
+review directory. Do not rerun the preparer. The launch requires a new Free /
+Active / no-payment observation and daily usage at most 5,500, both observations
+under thirty minutes old, the pinned local/main revision, and no prior dispatch
+intent. No successful preflight has been recorded, and nothing is scheduled.
+After sufficient verified allowance, dispatch once, fetch and replay exact
+encrypted evidence, then compare all ten drafts independently under the same
+acceptance contract. Do not substitute fewer articles, shorter budgets, paid
+fallbacks or weaker checks merely to fit the current daily balance.
