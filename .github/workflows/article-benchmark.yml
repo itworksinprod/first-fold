@@ -21,6 +21,7 @@ on:
         options:
           - write-and-review
           - saved-claim-review
+          - source-first-writer
       replay_sha256:
         description: Required SHA-256 for the six saved drafts in review-only mode
         type: string

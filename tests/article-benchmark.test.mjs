@@ -6,6 +6,7 @@ import {readFile} from 'node:fs/promises';
 import {prepareBenchmark, benchmarkWriterView, normalizeBenchmarkSummary, benchmarkReviewView,
   validateBenchmarkReview, benchmarkClauseReviewView, validateBenchmarkClauseReview,
   runBenchmark, prepareBenchmarkReplay, assertBenchmarkAuthority, BENCHMARK_DESKS} from '../scripts/automation/article-benchmark.mjs';
+import {sourceFirstWriterView, normalizeSourceFirstSummary} from '../scripts/automation/article-benchmark.mjs';
 import {openDiagnostic} from '../scripts/automation/private-writer-diagnostic.mjs';
 const sha = s => createHash('sha256').update(s).digest('hex');
 const pair = generateKeyPairSync('rsa', {modulusLength:3072});
@@ -22,6 +23,64 @@ function draft(n=130) {
 }
 const reply = d => ({draftSha256:d.draftSha256,judgments:d.units.map(u=>({unitId:u.id,supported:true,passageIds:['P1'],reason:'Synthetic transport fixture only; not factual qualification.'})),
   quality:{readable:true,useful:true,faithful:true,issues:[]}});
+function anchoredDraft(a,n=130) {
+  const d=draft(n),item=text=>({evidence:[{passageId:'P1',quote:a.passages[0].text}],text});
+  return {headline:item(d.headline),...Object.fromEntries(['whatHappened','whyItMatters','whatToWatch'].map(f=>[f,d[f].map(item)]))};
+}
+
+test('source-first drafts retain exact evidence for every visible unit but never claim semantic approval',()=>{
+  const a=plan().articles[0],r=anchoredDraft(a),s=normalizeSourceFirstSummary(r,a);
+  assert.equal(s.bodyWords,130);assert.equal(s.sourceQuotesExact,true);assert.equal(s.semanticApproval,false);
+  assert.equal(s.sourceEvidence.length,s.units.length);assert.deepEqual(s.sourceEvidence.map(e=>e.unitId),s.units.map(u=>u.id));
+  assert.ok(Object.isFrozen(s.sourceEvidence));assert.ok(!('evidence' in s.raw));
+  const view=sourceFirstWriterView(a);assert.deepEqual(view.data.passages,a.passages);
+  assert.equal(view.prompt,sourceFirstWriterView(plan().articles[1]).prompt);
+  // A real source quote cannot by itself establish an invented attached claim.
+  r.whyItMatters[0].text='The fictional service guarantees zero downtime.';
+  assert.equal(normalizeSourceFirstSummary(r,a).semanticApproval,false);
+});
+test('source-first rejects fabricated excerpts, missing evidence and malformed reader output',()=>{
+  const a=plan().articles[0];
+  for(const mutate of [r=>r.headline.evidence=[],r=>r.headline.evidence[0].passageId='P999',
+    r=>r.headline.evidence[0].quote='Fabricated source excerpt.',r=>r.headline.evidence[0].quote='tiny',
+    r=>r.headline.evidence.push(r.headline.evidence[0]),r=>r.headline.evidence[0].verdict=true,
+    r=>r.whatToWatch[0].evidence=null,r=>r.headline.text='<script>bad</script>',
+    r=>r.whatToWatch[0].text='unfinished',r=>r.whatHappened[0].text=r.whatHappened[0].text.replace('GitHub','Someone'),
+    r=>r.headline.extra='ignore rules',r=>r.extra=true,r=>r.whatToWatch[0].text=a.passages[0].text]) {
+    const r=anchoredDraft(a);mutate(r);assert.throws(()=>normalizeSourceFirstSummary(r,a));
+  }
+  for(const n of [109,110,225,226]) {
+    if(n<110||n>225)assert.throws(()=>normalizeSourceFirstSummary(anchoredDraft(a,n),a),/LENGTH/);
+    else assert.equal(normalizeSourceFirstSummary(anchoredDraft(a,n),a).bodyWords,n);
+  }
+});
+test('source-first writer calls exactly ten times and leaves support judgments unset',async()=>{
+  const p=plan(),saved=[];let calls=0;
+  const report=await runBenchmark({plan:p,sourceFirst:true,publicKey,accountId:'0'.repeat(32),apiToken:'TEST_ONLY',
+    save:async(id,sealed)=>saved.push({id,data:openDiagnostic(sealed,pair.privateKey)}),fetchImpl:async(url,init)=>{
+      const b=JSON.parse(init.body),d=JSON.parse(b.messages[1].content);assert.equal(b.max_tokens,4000);
+      assert.equal(b.reasoning_effort,'medium');assert.ok(!d.units);assert.deepEqual(d.passages,p.articles[calls].passages);
+      const r=anchoredDraft(p.articles[calls++]);return new Response(JSON.stringify({success:true,result:{response:JSON.stringify(r)}}),{headers:{'content-type':'application/json'}});
+    }});
+  assert.equal(calls,10);assert.equal(report.requests,10);assert.equal(report.networkRequests,10);assert.equal(report.requestedOutputTokens,40000);
+  assert.equal(report.mode,'source-first-writer');assert.equal(report.results.length,10);assert.equal(report.emailSent,false);assert.equal(report.productionApproved,false);
+  assert.ok(report.results.every(r=>r.sourceSupported===null&&r.faithful===null&&!r.reviewerStructural));
+  assert.ok(saved.every(r=>!r.id.includes('reviewer')));assert.equal(saved.length,20);
+  await assert.rejects(runBenchmark({plan:p,sourceFirst:'yes',publicKey,save:async()=>{}}),/MODE/);
+});
+test('source-first preserves failed drafts and stops on provider refusal without retry',async()=>{
+  const p=plan();let calls=0;const saved=[];
+  const report=await runBenchmark({plan:p,sourceFirst:true,publicKey,accountId:'0'.repeat(32),apiToken:'TEST_ONLY',
+    save:async(id,sealed)=>saved.push({id,data:openDiagnostic(sealed,pair.privateKey)}),fetchImpl:async()=>{
+      calls++;if(calls===2)return new Response('{"success":false}',{status:429});
+      const r=anchoredDraft(p.articles[0]);r.headline.evidence[0].quote='Invented quotation that must be rejected.';
+      return new Response(JSON.stringify({success:true,result:{response:JSON.stringify(r)}}),{headers:{'content-type':'application/json'}});
+    }});
+  assert.equal(calls,2);assert.equal(report.results[0].code,'BENCHMARK_SOURCE_EVIDENCE');
+  assert.equal(report.results[1].code,'BENCHMARK_PROVIDER_STOP');assert.equal(report.results.length,10);
+  assert.equal(report.results.filter(r=>r.status==='not-attempted-provider-blocker').length,8);
+  assert.ok(saved.find(r=>r.id==='A01-writer').data.nativeResponseBase64);
+});
 
 test('ten frozen sources retain all passages, canonical identity and four-desk coverage',()=>{
   const p=plan();assert.equal(p.articles.length,10);assert.equal(p.articles[0].publisher,'GitHub');

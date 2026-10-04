@@ -164,3 +164,28 @@ Any future qualification must preserve the 110–225-word requirement and all te
 articles in the denominator, include supported controls, and precede a fresh
 end-to-end delivery test. No daily integration, email, recipient, billing or
 editorial-threshold change has been made.
+
+## Source-first writer experiment (next bounded step)
+
+The `source-first-writer` mode drafts the same frozen ten articles with one
+generic prompt. Each headline/body sentence contains 1–3 exact excerpts from
+identified passages before its minimally transformed paraphrase. The excerpts
+stay in private encrypted evidence and never appear in reader prose. Full
+retained source context is supplied; no expected answers, article-specific
+corrections or model-review verdicts are supplied.
+
+Local validation checks that excerpts really exist, and preserves existing
+110–225-word, attribution, plain-prose and copying bounds. An exact excerpt is
+traceability only, not evidence that all paraphrased assertions follow from it:
+`semanticApproval` remains false and factual/readability judgments remain unset.
+Independent comparison of all ten complete sources and actual outputs is still
+required, including drafts rejected mechanically.
+
+Limits: ten requests, one writer request per article, 4,000 output tokens each,
+medium reasoning, no retries or model-reviewer calls. The modestly larger writer
+cap accommodates private excerpts and the previously truncated response; this
+is a combined drafting-format/budget experiment, not an isolated causal test of
+the prompt. The existing encrypted transport/provenance boundaries and whole-
+batch provider/storage stop rules apply. Fresh authenticated Free/Active/no-
+payment checks and sufficient remaining daily allowance precede dispatch.
+No daily-delivery integration or email. Prior failed variants remain unchanged.
