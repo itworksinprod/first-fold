@@ -23,6 +23,7 @@ on:
           - saved-claim-review
           - source-first-writer
           - scope-first-writer
+          - compact-reference-writer
       replay_sha256:
         description: Required SHA-256 for the six saved drafts in review-only mode
         type: string
@@ -52,7 +53,7 @@ jobs:
         with:
           node-version: '24'
       - name: Test evaluation boundaries without credentials
-        run: node --test tests/article-benchmark.test.mjs tests/free-workers-ai.test.mjs tests/private-writer-diagnostic.test.mjs
+        run: node --test tests/article-benchmark.test.mjs tests/compact-reference-writer.test.mjs tests/free-workers-ai.test.mjs tests/private-writer-diagnostic.test.mjs
       - name: Validate frozen corpus before provider credentials
         env:
           FIRST_FOLD_BENCHMARK_B64: ${{ secrets.FIRST_FOLD_BENCHMARK_B64 }}

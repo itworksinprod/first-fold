@@ -1,0 +1,47 @@
+{
+  "purpose": "Fictional paired clause controls for independent review. Expected judgments are test-only and never writer input. Passing structural checks does not detect these meaning errors.",
+  "cases": [
+    {
+      "id": "activity-denominator",
+      "source": "Meridian measured its research work during May. AI assisted staff on 88 percent of that work. AI led 24 percent of the measured work, under close human supervision. The index describes work, not a count of individual tasks.",
+      "supported": "Meridian measured AI-led work at 24 percent, with people closely supervising it.",
+      "unsupported": "Meridian found that AI now directs most of its research work.",
+      "reason": "Assisting on 88 percent of measured work does not mean leading most of it; the leading share is 24 percent."
+    },
+    {
+      "id": "separate-measurement-scope",
+      "source": "Meridian's June monitoring covered only its main internal agent platform. A separate June 8–14 compute snapshot covered the whole company. The platform restriction does not describe the compute snapshot.",
+      "supported": "The company-wide compute snapshot covered June 8–14; June agent monitoring covered only the main internal platform.",
+      "unsupported": "Both the June monitoring and compute snapshot covered only the main internal platform.",
+      "reason": "The draft transfers one measurement's platform boundary onto a separate company-wide measurement."
+    },
+    {
+      "id": "proxy-limitation",
+      "source": "Meridian allocated 9 percent of the measured compute to safety research. Compute is an imperfect proxy for research effort, since some labor-intensive safety work consumes little compute. This percentage is not a measure of all safety effort.",
+      "supported": "Safety work used 9 percent of measured compute, a measure Meridian says cannot fully represent research effort.",
+      "unsupported": "Meridian devoted 9 percent of its total research effort to safety.",
+      "reason": "A share of compute with an explicit proxy limitation is changed into a share of overall effort."
+    },
+    {
+      "id": "identifier-owner",
+      "source": "The Civic Security Office republished vendor Larch's advisory. The office assigned bulletin CSO-442 to its republication. Larch's original advisory is LA-918. These identifiers belong to different documents.",
+      "supported": "Larch issued advisory LA-918, later republished by the Civic Security Office as CSO-442.",
+      "unsupported": "Larch's vendor advisory carries the identifier CSO-442.",
+      "reason": "The republication identifier is incorrectly assigned to the vendor's original document."
+    },
+    {
+      "id": "exploit-precondition",
+      "source": "Larch's authentication module does not validate a response signature correctly. The defect can permit account takeover in deployments using a particular legacy single-sign-on configuration. Other configurations are not covered by this stated consequence.",
+      "supported": "The signature-checking flaw can enable account takeover when that legacy single-sign-on setup is in use.",
+      "unsupported": "The signature-checking flaw lets attackers take over accounts in every deployment.",
+      "reason": "Naming the mechanism does not preserve the prerequisite configuration."
+    },
+    {
+      "id": "reporting-recipient",
+      "source": "As of June 18, the Civic Security Office had received no known public reports of attacks specifically exploiting this defect. The bulletin does not claim that nobody has reported exploitation to other organizations.",
+      "supported": "By June 18, no known public reports of attacks exploiting the defect had reached the Civic Security Office.",
+      "unsupported": "The Civic Security Office says no public exploitation reports existed as of June 18.",
+      "reason": "Naming the office as speaker does not preserve the boundary of reports received by that office."
+    }
+  ]
+}

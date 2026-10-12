@@ -288,3 +288,147 @@ After sufficient verified allowance, dispatch once, fetch and replay exact
 encrypted evidence, then compare all ten drafts independently under the same
 acceptance contract. Do not substitute fewer articles, shorter budgets, paid
 fallbacks or weaker checks merely to fit the current daily balance.
+
+### October 11 live scope-first result — no release approval
+
+After Carlos explicitly approved this exact ten-article transfer to Cloudflare,
+run `38194738894` used trusted main
+`f9a83f831076b15708bfb312bf65b1b3057b21d1`, first attempt, starting at
+10:10 PM America/New_York on October 11 (02:10 UTC October 12). Fresh account
+checks showed Workers Free, Active, no payment method and zero daily usage.
+All 2,438 local tests passed before dispatch. There were ten one-attempt writer
+requests, 40,000 requested output tokens and 3,091.39 reported neurons. The
+postflight daily dashboard showed 3.09k/10k. No provider quota refusal occurred.
+
+Artifact SHA-256:
+`01baabbeb7ae84314fbe7d521c118f9ab03726a85cc050733813a79b83d7148c`.
+Run identity, exact revision, archive size/digest, frozen corpus and every saved
+request/native response were verified and replayed offline. The private key,
+original encrypted responses, decoded evidence and audit are preserved under
+`scope-first-writer-v1` in the existing private review directory. No hidden model
+reasoning was displayed or used for editorial review.
+
+- Nine complete drafts; A06 hit the 4,000-output-token limit and stopped
+  mid-sentence. It remains incomplete, with no reconstruction or retry.
+- Three mechanical passes: A02, A07, A08. All three require material content
+  correction. An exact source quote and matching rendered span still do not
+  establish that the claim follows from its source.
+- Six materially adequate drafts: A01, A03, A04, A05, A09, A10. All six remain
+  mechanically held for inexact evidence, mismatched `preservedAs` text, or
+  copied source wording. Separate offline diagnostics preserve additional
+  copying findings even when an earlier binding check stopped validation.
+- **Zero of ten pass both checks.** The all-ten acceptance contract fails.
+
+Independent exact-text review read every complete retained source, nine new
+headlines and 53 complete body sentences, plus A06's partial visible answer.
+Its private record is `scope-first-writer-v1/independent-review.json`:
+
+- A02 says AI directs most research despite the 26% leading-work figure;
+  attaches the platform-only agent-monitoring limit to separate company-wide
+  compute/index measurements; and omits the imperfect-compute-proxy caveat.
+- A07 again identifies the Siemens advisory with CISA's republication ID and
+  drops the specific-SSO-configuration condition on account hijacking.
+- A08 turns the absence of known reports received by CISA into an unbounded
+  absence of public-exploitation reports. The broker-bounded access sentence
+  could be clearer, but is not counted as a separate demonstrated material
+  scope expansion.
+
+Real improvements are retained as evidence: A04 now states the Data Residency
+exception; A09 keeps within-weeks timing; A10 gives non-exhaustive regional
+examples instead of an incomplete exclusive list. A01's exclusive experimental-
+maturity caveat and other minor editorial cautions remain documented, not
+inflated into separate material failures or silently polished away.
+
+Compared descriptively with the preceding source-first batch, semantic adequacy
+rose from five to six while mechanical passes fell from six to three and joint
+passes fell from four to zero. This reused corpus cannot establish causal prompt
+improvement or general accuracy. The extra scope-binding format is not ready for
+integration; another schema layer or silent relaxation would not fix the actual
+meaning errors. Preserve this failed result. The next proposed design step is to
+reduce duplicated evidence-output bookkeeping while keeping source-backed scope
+checks and independent exact-text review, before seeking another bounded trial.
+No new trial, model substitution, daily integration, email, recipient, billing,
+production setting or editorial-threshold change followed this evaluation.
+
+## Compact passage-reference prototype — local only
+
+Carlos's subsequent “okay” is being implemented as the next local design/test
+increment, not authority to run another provider batch. The new exported
+`compactReferenceWriterView` and `normalizeCompactReferenceSummary` are
+deliberately **not** connected to `runBenchmark`, its CLI mode allowlist, or the
+GitHub workflow. No new credential, provider request, deployment, email or
+production change occurs in this step.
+
+The model-facing format now asks for each headline/sentence once, alongside
+1–3 passage IDs. It does not ask the writer to duplicate exact source quotations
+and then duplicate a paraphrase as `preservedAs`. The host verifies the retained
+source hash and complete passage mapping, resolves the IDs to exact original
+passages, and keeps those passages and their hashes privately. The full retained
+source, not just selected IDs, remains the basis for independent review.
+
+The generic writing prompt emphasizes separate measurement frames, qualified
+negative reports, prerequisite configurations, and document ownership. It has
+no named article correction, expected answer, or fixture-specific example.
+This is a hypothesis about reducing output overhead and scope mistakes, **not a
+demonstrated factual fix**. The model can still cite a real passage and write an
+incorrect sentence. `referenceIdsValid` means only that the IDs exist;
+`semanticApproval` and `qualificationCoverageVerified` remain false, independent
+review is required, and `productionApproved` remains false.
+
+All old modes and validators are unchanged. The new format reuses the exact
+110–225 body-word, attribution, clean-prose, repeated-text and twelve-contiguous-
+source-word guards, including headline and cross-section copying checks. Old
+failed responses are neither transformed into passes nor repaired in place.
+
+New local tests exercise source/passage integrity, every-unit reference
+coverage, immutable evidence, strict output shape, word limits, copying, exact
+full-source review input and the live CLI's rejection of this prototype mode.
+Six paired fictional clause controls cover activity/denominator confusion,
+transferred measurement scope, proxy limitations, advisory ownership, exploit
+prerequisites and reporting-recipient limits. Both the supported and unsupported
+clauses can pass reference-format validation and remain unapproved. These are
+regressions against **claiming that structure proves truth**, not an automatic
+detector for those factual errors or a semantic accuracy score. Fixture answers
+are excluded from writer input. Adapter tests use only mocked network responses.
+
+Local verification: 40 focused tests and the full 2,454-test suite passed on
+October 11/12, 2026, with no skipped tests or provider calls. Independent review
+found one source-completeness defect: array iteration skipped sparse passage
+entries. The validator now iterates every original source-block index and
+requires its own matching passage entry. Regressions cover a missing middle
+entry, an all-hole array and explicit undefined entries in both functions.
+The reviewer verified the repair, independently reran the 40 focused tests and
+found no remaining blocker to local-only handoff. The full 2,454-test suite also
+passed again after the fix. No independent full-suite run is claimed.
+
+This local increment is complete but uncommitted and unpublished. A separately
+authorized bounded live evaluation and independent exact-text review would
+still be required before judging writing quality or planning integration; all
+ten articles, including any failures, must stay in that future denominator.
+
+### Approved compact-reference live test
+
+Carlos then requested “live test.” The prototype is now wired only into the
+explicit `compact-reference-writer` manual diagnostic mode. Default and daily
+execution paths are unchanged. It uses the same frozen ten articles, generic
+prompt and reader guards reviewed above, one GPT-OSS-120B writer request per
+article, medium reasoning, at most 4,000 output tokens each (40,000 total),
+90-second timeouts, no retries and no provider reviewer calls. It stops the
+batch on provider refusal, preserves encrypted native responses before local
+validation and never treats structural success as factual approval.
+
+The new live transport tests retain all ten cases in the denominator, verify
+request limits and encrypted evidence, and prove that support/readability/
+faithfulness judgments remain unset. The workflow runs them before exposing
+provider credentials. The prior local-only CLI test now verifies explicit
+opt-in admission rather than rejection; no existing mode was broadened.
+
+Preparation, one-shot launch, verified artifact retrieval/offline replay and
+visible-answer extraction helpers are in the existing private review directory
+under `*-compact-reference-*.mjs`, with fresh state in
+`compact-reference-writer-v1`. Dispatch requires a freshly verified Free,
+Active account with no payment method, daily usage at most 5,500, matching
+local/trusted-main revision and a non-overwritable intent. No extra probes or
+automatic retry are part of this approval. Exact-text independent review of
+every output, including any mechanically rejected drafts, follows this test.
+No email, fresh research, paid fallback or production integration is authorized.
