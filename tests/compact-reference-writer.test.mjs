@@ -213,3 +213,56 @@ test('compact mode keeps rejected cases and stops the batch at provider refusal 
   assert.equal(report.results.filter(r => r.status === 'not-attempted-provider-blocker').length, 8);
   assert.ok(saved.find(r => r.id === 'A01-writer').data.nativeResponseBase64);
 });
+
+test('version boundary screening holds an unchanged complete draft and retains private evidence without extra calls', async () => {
+  const source = 'Synthetic agents below version 4.8.2 cannot register.\n' + sourceText;
+  const p = prepareBenchmark(...encode(packet(source))), pair = generateKeyPairSync('rsa', {modulusLength: 3072});
+  const publicKey = pair.publicKey.export({type: 'spki', format: 'der'}).toString('base64');
+  const bad = draft(); bad.whyItMatters[0].text = 'Agents on version 4.8.2 or older cannot register.';
+  const good = structuredClone(bad); good.whyItMatters[0].text = 'Agents older than version 4.8.2 cannot register.';
+  const snapshot = JSON.stringify(bad), saved = []; let calls = 0;
+  const report = await runBenchmark({plan: p, compactReference: true, publicKey, accountId: '0'.repeat(32), apiToken: 'TEST_ONLY',
+    save: async (id, sealed) => saved.push({id, data: openDiagnostic(sealed, pair.privateKey)}), fetchImpl: async () => {
+      return new Response(JSON.stringify({success: true, result: {response: JSON.stringify(++calls === 1 ? bad : good)}}),
+        {headers: {'content-type': 'application/json'}});
+    }});
+  assert.equal(calls, 10); assert.equal(report.networkRequests, 10); assert.equal(report.requestedOutputTokens, 40000);
+  assert.equal(report.results[0].status, 'held'); assert.equal(report.results[0].code, 'BENCHMARK_VERSION_BOUNDARY_REVIEW');
+  assert.equal(report.results[0].draftStructural, true); assert.equal(report.results[0].sourceSupported, null);
+  assert.ok(report.results.slice(1).every(r => r.status === 'awaiting-independent-review'));
+  const capture = saved.find(r => r.id === 'A01').data;
+  assert.equal(capture.summary.raw.whyItMatters[0], bad.whyItMatters[0].text);
+  assert.equal(capture.summary.versionBoundaryScreen.issues[0].unitId, 'U2');
+  assert.equal(capture.summary.versionBoundaryScreen.issues[0].source[0].passageId, 'P1');
+  assert.equal(capture.summary.semanticApproval, false); assert.equal(capture.summary.productionApproved, false);
+  const native = saved.find(r => r.id === 'A01-writer').data;
+  assert.equal(JSON.parse(Buffer.from(native.nativeResponseBase64, 'base64')).result.response, snapshot);
+  assert.doesNotMatch(JSON.stringify(report), /Synthetic agents|4\.8\.2|cannot register/);
+  assert.equal(report.emailSent, false); assert.equal(report.productionApproved, false);
+});
+
+test('dense valid boundary evidence cannot overflow encryption and stop the remaining articles', async () => {
+  const source = Array.from({length: 3}, (_, p) => Array.from({length: 70}, (_, n) =>
+    `Synthetic branch ${p}-${n} denies below version 4.8.2 under its special local policy.`).join(' ')).join('\n');
+  assert.ok(source.length < 18000); assert.ok(source.split('\n').every(p => p.length <= 6000));
+  const p = prepareBenchmark(...encode(packet(source))), pair = generateKeyPairSync('rsa', {modulusLength: 3072});
+  const publicKey = pair.publicKey.export({type: 'spki', format: 'der'}).toString('base64');
+  const payload = draft(110);
+  payload.whyItMatters[0] = {text: Array.from({length: 20}, (_, i) => `Group${i} at most 4.8.2`).join('; ') + '.', passageIds: ['P1', 'P2', 'P3']};
+  const saved = []; let calls = 0;
+  const report = await runBenchmark({plan: p, compactReference: true, publicKey, accountId: '0'.repeat(32), apiToken: 'TEST_ONLY',
+    save: async (id, sealed) => saved.push({id, data: openDiagnostic(sealed, pair.privateKey)}), fetchImpl: async () => {
+      calls++;
+      return new Response(JSON.stringify({success: true, result: {response: JSON.stringify(payload)}}),
+        {headers: {'content-type': 'application/json'}});
+    }});
+  assert.equal(calls, 10); assert.equal(report.stoppedOnEvidenceBlocker, false);
+  assert.ok(report.results.every(r => r.code === 'BENCHMARK_VERSION_BOUNDARY_REVIEW' && r.draftStructural));
+  const capture = saved.find(x => x.id === 'A01').data;
+  assert.equal(capture.summary.versionBoundaryScreen.issueCount, 20);
+  assert.equal(capture.summary.versionBoundaryScreen.detailsTruncated, true);
+  assert.ok(capture.summary.versionBoundaryScreen.issues.every(x => x.sourceComparisonCount === 210));
+  assert.ok(Buffer.byteLength(JSON.stringify(capture)) < 100000);
+  assert.equal(capture.article.sourceText, source);
+  assert.equal(capture.summary.raw.whyItMatters[0], payload.whyItMatters[0].text);
+});

@@ -4,6 +4,8 @@ import {gunzipSync} from 'node:zlib';
 import {mkdir, writeFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
+import {screenVersionBoundaries} from './experiments/version-boundary-screen.mjs';
+import {buildSourcePlanView, acceptSourcePlan, buildPlannedRewriteView, attachPlannedReferences} from './experiments/source-plan-writer.mjs';
 import {reviewedSearchPublisher} from './free/publisher-registry.mjs';
 import {diagnosticPublicKey, sealDiagnostic} from './private-writer-diagnostic.mjs';
 import {requestWorkersAiEditorial, buildWorkersAiRequest, workersAiRunUrl,
@@ -268,7 +270,9 @@ export function normalizeCompactReferenceSummary(value, article) {
     if (!arr(compact[f], 1, 3)) throw fail('BENCHMARK_DRAFT_PROSE');
     raw[f] = compact[f].map(item => read(item, f));
   }
-  return freeze({raw, ...normalizeReaderSummary(raw, article), sourceSha256: article.sourceSha256,
+  const reader = normalizeReaderSummary(raw, article);
+  const versionBoundaryScreen = screenVersionBoundaries({units: reader.units, sourceReferences: references, passages: article.passages});
+  return freeze({raw, ...reader, sourceSha256: article.sourceSha256, versionBoundaryScreen,
     sourceReferences: references,
     // Resolve references from immutable host evidence, not model-retyped quotes.
     // Retain whole passages once; no claim that the chosen passages are enough.
@@ -353,15 +357,16 @@ export function assertBenchmarkAuthority(env) {
       !/^[a-f0-9]{40}$/.test(env.BENCHMARK_REVISION ?? '') || env.GITHUB_SHA !== env.BENCHMARK_REVISION) throw fail('BENCHMARK_AUTHORITY');
 }
 
-export async function runBenchmark({plan, replay = null, sourceFirst = false, scopeFirst = false, compactReference = false, publicKey, accountId, apiToken, save,
+export async function runBenchmark({plan, replay = null, sourceFirst = false, scopeFirst = false, compactReference = false, sourcePlan = false, publicKey, accountId, apiToken, save,
   aiRequestImpl = requestWorkersAiEditorial, fetchImpl = fetch, sealImpl = sealDiagnostic, onProgress = () => {}}) {
   if (!plans.has(plan) || typeof save !== 'function') throw fail('BENCHMARK_PLAN');
   if (replay !== null && (!replays.has(replay) || replay.packetSha256 !== plan.packetSha256)) throw fail('BENCHMARK_REPLAY_PACKET');
-  if ([sourceFirst, scopeFirst, compactReference].some(x => typeof x !== 'boolean') ||
-      [sourceFirst, scopeFirst, compactReference].filter(Boolean).length > 1 ||
-      ((sourceFirst || scopeFirst || compactReference) && replay)) throw fail('BENCHMARK_MODE');
-  const writerOnly = sourceFirst || scopeFirst || compactReference;
-  const requestLimit = writerOnly ? 10 : replay ? 6 : 20, tokenLimit = writerOnly ? 40000 : replay ? 28800 : 80000;
+  if ([sourceFirst, scopeFirst, compactReference, sourcePlan].some(x => typeof x !== 'boolean') ||
+      [sourceFirst, scopeFirst, compactReference, sourcePlan].filter(Boolean).length > 1 ||
+      ((sourceFirst || scopeFirst || compactReference || sourcePlan) && replay)) throw fail('BENCHMARK_MODE');
+  const writerOnly = sourceFirst || scopeFirst || compactReference || sourcePlan;
+  const requestLimit = sourcePlan ? 20 : writerOnly ? 10 : replay ? 6 : 20;
+  const tokenLimit = sourcePlan ? 52000 : writerOnly ? 40000 : replay ? 28800 : 80000;
   diagnosticPublicKey(publicKey);
   let requests = 0, networkRequests = 0, requestedOutputTokens = 0, stopped = false, evidenceFailure = false;
   const persist = async (id, value) => {
@@ -378,11 +383,13 @@ export async function runBenchmark({plan, replay = null, sourceFirst = false, sc
     if (sourceFirst) capture.mode = 'source-first-writer';
     if (scopeFirst) capture.mode = 'scope-first-writer';
     if (compactReference) capture.mode = 'compact-reference-writer';
+    if (sourcePlan) capture.mode = 'source-plan-writer';
     let providerFailure = false;
     const call = async (view, stage) => {
-      const maxTokens = writerOnly ? 4000 : stage === 'writer' ? 3200 : 4800;
-      if (requests >= requestLimit || capture.calls.length >= (writerOnly || replay ? 1 : 2) ||
-          (replay && stage !== 'reviewer') || (writerOnly && stage !== 'writer') ||
+      const maxTokens = sourcePlan && stage === 'planner' ? 1200 : writerOnly ? 4000 : stage === 'writer' ? 3200 : 4800;
+      if (requests >= requestLimit || capture.calls.length >= (sourcePlan ? 2 : writerOnly || replay ? 1 : 2) ||
+          (sourcePlan && stage !== (capture.calls.length === 0 ? 'planner' : 'writer')) ||
+          (replay && stage !== 'reviewer') || (writerOnly && !sourcePlan && stage !== 'writer') ||
           requestedOutputTokens + maxTokens > tokenLimit) throw fail('BENCHMARK_BUDGET');
       const options = {model: FREE_REASONING_WRITER_MODEL,
         messages: [{role: 'system', content: view.prompt + '\nJSON schema: ' + JSON.stringify(view.schema)},
@@ -438,8 +445,21 @@ export async function runBenchmark({plan, replay = null, sourceFirst = false, sc
     };
     let status = 'awaiting-independent-review', code = null;
     try {
-      if (compactReference) {
+      if (sourcePlan) {
+        const sourceView = compactReferenceWriterView(article);
+        const planning = buildSourcePlanView({articleId: article.id, sourceSha256: article.sourceSha256, ...sourceView.data});
+        capture.sourcePlan = acceptSourcePlan(await call(planning, 'planner'), planning);
+        const rewrite = buildPlannedRewriteView(planning, capture.sourcePlan);
+        const payload = attachPlannedReferences(await call(rewrite, 'writer'), planning, capture.sourcePlan);
+        capture.summary = normalizeCompactReferenceSummary(payload, article);
+        if (capture.summary.versionBoundaryScreen.status === 'needs-review') {
+          status = 'held'; code = 'BENCHMARK_VERSION_BOUNDARY_REVIEW';
+        }
+      } else if (compactReference) {
         capture.summary = normalizeCompactReferenceSummary(await call(compactReferenceWriterView(article), 'writer'), article);
+        if (capture.summary.versionBoundaryScreen.status === 'needs-review') {
+          status = 'held'; code = 'BENCHMARK_VERSION_BOUNDARY_REVIEW';
+        }
       } else if (scopeFirst) {
         capture.summary = normalizeScopeFirstSummary(await call(scopeFirstWriterView(article), 'writer'), article);
       } else if (sourceFirst) {
@@ -461,7 +481,7 @@ export async function runBenchmark({plan, replay = null, sourceFirst = false, sc
     try {await persist(article.id, capture);} catch {report.status = 'held'; report.code = 'BENCHMARK_EVIDENCE_STORAGE';}
     results.push(report); onProgress({...report, requests, networkRequests, requestedOutputTokens});
   }
-  return {packetSha256: plan.packetSha256, ...(compactReference ? {mode: 'compact-reference-writer'} : scopeFirst ? {mode: 'scope-first-writer'} : sourceFirst ? {mode: 'source-first-writer'} : replay ? {replaySha256: replay.sha256, mode: 'saved-claim-review'} : {}), results, requests, networkRequests, requestedOutputTokens,
+  return {packetSha256: plan.packetSha256, ...(sourcePlan ? {mode: 'source-plan-writer'} : compactReference ? {mode: 'compact-reference-writer'} : scopeFirst ? {mode: 'scope-first-writer'} : sourceFirst ? {mode: 'source-first-writer'} : replay ? {replaySha256: replay.sha256, mode: 'saved-claim-review'} : {}), results, requests, networkRequests, requestedOutputTokens,
     stoppedOnProviderBlocker: stopped && !evidenceFailure, stoppedOnEvidenceBlocker: evidenceFailure, emailSent: false, productionApproved: false};
 }
 
@@ -470,15 +490,18 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     assertBenchmarkAuthority(process.env); diagnosticPublicKey(process.env.DIAGNOSTIC_PUBLIC_KEY);
     const plan = prepareBenchmark(process.env.FIRST_FOLD_BENCHMARK_B64, process.env.BENCHMARK_PACKET_SHA256);
     const mode = process.env.BENCHMARK_MODE ?? 'write-and-review';
-    if (!['write-and-review', 'saved-claim-review', 'source-first-writer', 'scope-first-writer', 'compact-reference-writer'].includes(mode)) throw fail('BENCHMARK_MODE');
+    if (!['write-and-review', 'saved-claim-review', 'source-first-writer', 'scope-first-writer', 'compact-reference-writer', 'source-plan-writer'].includes(mode)) throw fail('BENCHMARK_MODE');
     const replay = mode === 'saved-claim-review' ? prepareBenchmarkReplay(process.env.FIRST_FOLD_BENCHMARK_REPLAY_B64,
       process.env.BENCHMARK_REPLAY_SHA256, plan) : null;
+    if (mode === 'source-plan-writer') for (const article of plan.articles) {
+      buildSourcePlanView({articleId: article.id, sourceSha256: article.sourceSha256, ...compactReferenceWriterView(article).data});
+    }
     const [command, output, ...extra] = process.argv.slice(2);
     if (extra.length || !['validate', 'run'].includes(command) || (command === 'validate' && output) ||
         (command === 'run' && (!process.env.RUNNER_TEMP || output !== resolve(process.env.RUNNER_TEMP, 'article-benchmark')))) throw fail('BENCHMARK_ARGUMENTS');
     if (command === 'run') {
       await mkdir(output, {mode: 0o700}); // Existing output means do not repeat the attempt.
-      const report = await runBenchmark({plan, replay, sourceFirst: mode === 'source-first-writer', scopeFirst: mode === 'scope-first-writer', compactReference: mode === 'compact-reference-writer', publicKey: process.env.DIAGNOSTIC_PUBLIC_KEY,
+      const report = await runBenchmark({plan, replay, sourceFirst: mode === 'source-first-writer', scopeFirst: mode === 'scope-first-writer', compactReference: mode === 'compact-reference-writer', sourcePlan: mode === 'source-plan-writer', publicKey: process.env.DIAGNOSTIC_PUBLIC_KEY,
         accountId: process.env.CLOUDFLARE_ACCOUNT_ID, apiToken: process.env.CLOUDFLARE_AI_API_TOKEN,
         save: (id, sealed) => writeFile(resolve(output, id + '.encrypted.json'), JSON.stringify(sealed), {mode: 0o600, flag: 'wx'}),
         onProgress: row => console.info(JSON.stringify(row))});

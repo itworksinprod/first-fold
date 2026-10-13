@@ -432,3 +432,312 @@ local/trusted-main revision and a non-overwritable intent. No extra probes or
 automatic retry are part of this approval. Exact-text independent review of
 every output, including any mechanically rejected drafts, follows this test.
 No email, fresh research, paid fallback or production integration is authorized.
+
+### Compact-reference live result — October 11/12, 2026
+
+The authorized batch ran once as GitHub run `38199938735` on trusted main
+`a11b6648eab5313ccab0c4090802d15b81e53585`. The focused 133-test suite and full
+2,456-test suite passed before dispatch; the independent implementation reviewer
+also ran the focused suite and cleared the private retrieval/replay helpers.
+Free/Active/no-payment-method status and the explicit daily 3.09k/10k usage
+indicator were freshly observed before dispatch. No billing setting changed.
+
+All ten writer requests returned complete parsed drafts, 142–177 body words,
+with finish reason `stop`; no quota refusal, retry or truncation occurred.
+Requested output allowance was 40,000 tokens; reported usage was 21,151 input
+tokens, 18,776 completion tokens and 1,953.16 neurons. The explicit daily
+dashboard showed 5.04k/10k afterward. These are observed usage figures, not a
+future cost or availability guarantee.
+
+The workflow failed at **Run the bounded saved-article evaluation without
+sending email** because not all ten drafts cleared mechanical validation:
+
+- Seven passed: A02, A04, A06, A07, A08, A09, A10.
+- A01 and A05 were held for missing the required publisher attribution string
+  in `whatHappened` (they name MIT researchers and Google Meet, respectively).
+- A03 was held for one twelve-word source-text overlap. None of the other nine
+  has a twelve-word overlap under the same normalization.
+
+Artifact SHA-256:
+`5181e7c77a1b14fca5e9a1dd12ecfd5e7d1870c8c8f36462a432de8f098844b3`.
+Run identity, pinned revision, archive digest/size and frozen corpus were
+verified. All ten exact saved request/native-response pairs replayed offline
+with zero provider calls. Original encrypted evidence, fresh private key,
+decoded records and visible-answer review packet are retained privately in
+`compact-reference-writer-v1`. Hidden reasoning was not displayed or used to
+judge the editorial text.
+
+Independent exact-text review covers all ten complete sources, ten headlines
+and 59 body units, including mechanically rejected drafts. Five drafts require
+material factual correction:
+
+- A01 invents an intention to release code and turns a described optimization
+  challenge into an asserted ongoing limitation.
+- A02 conflates the August automation measurement with July's compute snapshot,
+  transfers the platform-only monitoring limit onto company-wide compute, and
+  infers limited safety focus despite the source's imperfect-proxy caution.
+- A06 suggests upgrading can avoid limits on anonymous traffic; the source says
+  unauthenticated calls remain capped even against paid accounts.
+- A08 broadens FTP access to all data and loses the recipient/time limitation
+  on exploitation reports received by CISA. Its safety-critical consequence is
+  also not established by the retained source.
+- A10 gives 18 regions although the retained list contains 17, and adds a
+  real-time capability not established by the source.
+
+Five drafts are materially adequate against the full retained source: A03,
+A04, A05, A07 and A09. Of these, only **A04, A07 and A09 pass both mechanical
+and full-source content review (3/10)**. Minor cautions remain: A05 has generic
+cross-room benefit language; A07 frames standing defensive guidance as useful
+until patching without explicitly saying to remove it later; and A09's task
+execution wording is imprecise but its MicroVM-integration lead-in reasonably
+limits the claim. These are not inflated into additional demonstrated material
+errors. Source-reference completeness is a separate axis: a valid selected ID
+does not ensure it contains every detail in the sentence (for example A07's
+headline CVE is elsewhere in the full source, not its selected P5).
+
+The change reduced format overhead: all ten answers finished, compared with
+nine in the previous scope-first batch, and reported neurons fell from 3,091.39
+to 1,953.16. Mechanical passes increased from 3 to 7 and combined mechanical/
+full-source content passes from 0 to 3, while materially adequate drafts fell
+from 6 to 5. This is mixed descriptive evidence on the same reused corpus,
+not a causal improvement claim or a general reliability estimate. The next
+design decision must address unsupported conclusions and lost qualifications,
+not merely relax guards or rerun until favorable outputs appear.
+
+The independent per-article record is
+`compact-reference-writer-v1/independent-review.json`, SHA-256
+`0f2302e6d02b35c7c1d2e2b163c6657008658f428be9d449dd56a18264f7644c`.
+It separates readability, usefulness, factual findings, minor cautions and
+incomplete selected-reference coverage. The primary agent also inspected every
+source and draft and reconciled the material findings without changing the
+underlying answers or weakening the automated holds.
+
+This result is not an all-ten quality pass. The unchanged mechanical guards
+were not bypassed; no model answer was repaired, no additional trial was run,
+and nothing was emailed, freshly researched or integrated into daily delivery.
+
+### Explicitly requested unchanged repeat — October 11/12, 2026
+
+Carlos requested another “live test” after receiving the result above. The
+assistant explicitly identified it as a repeatability test, not a repaired
+revision. Run `38201395589` uses the same main revision, ten archived articles,
+compact prompt, model, sampling settings, request limits and all quality guards.
+The earlier failed result remains intact and is not replaced by this repeat.
+
+The 133 focused tests passed again. Authenticated Free/Active/no-payment-method
+and explicit daily 5.04k/10k usage were observed before dispatch. Fresh local
+encryption keys and an exclusive intent are preserved separately in
+`compact-reference-writer-repeat-v1`. The four private repeat helpers differ
+from the already reviewed helpers only in that private state directory; exact
+normalized byte equivalence and syntax were checked locally. One new dispatch
+was accepted; no in-run retry, extra probe, daily change or email is authorized.
+
+The repeat completed all ten requests with finish reason `stop` and 116–178
+body words. There was no provider refusal, truncation or evidence-storage
+failure. Reported usage was 21,151 prompt tokens, 17,314 completion tokens and
+1,853.48 neurons. The immediate daily dashboard still displayed its pre-run
+5.04k total; that delayed display is not evidence of zero usage. Native usage
+is retained separately. The account remained on its verified free configuration
+and no billing action was taken.
+
+Five drafts passed mechanical checks: A02, A04, A06, A07 and A08. A01, A03,
+A05 and A10 failed required publisher attribution; A09 failed the unchanged
+copying guard. All ten exact requests and native responses replayed offline
+with zero provider calls. The failed workflow step is again **Run the bounded
+saved-article evaluation without sending email**, reflecting held drafts rather
+than inability to reach the provider. Archive size, digest, actor, first-attempt
+identity, revision and unchanged corpus were verified. Artifact SHA-256:
+`0e4b843efbea0f987acfedc4d3298f2e6e5b9677a4dc3c2310428c699ceb5088`.
+The fresh key, encrypted originals and unedited decoded drafts are preserved
+under the repeat's separate private directory.
+
+Offline cross-run assertions confirmed that every provider request body and
+request hash is identical to the first compact-reference run, while all ten
+parsed response hashes differ. This is an unchanged-input repeat, not evidence
+of an implemented repair. Both runs stay in the record; neither a best-of-two
+selection nor silent answer editing is part of this test.
+
+Independent exact-text review is complete: **2/10 materially adequate, 8/10
+requiring material factual correction, and 0/10 passing both mechanical and
+content review**. A05 and A09 are content-adequate with minor editorial cautions,
+but both remain mechanically held. All ten are readable in a grammatical sense;
+that is not evidence of reliable factual meaning. Selected-passage completeness
+was assessed separately from whole-source support. All ten complete sources,
+ten headlines and sixty body units were reviewed, including held drafts.
+
+The five earlier material-failure cases all fail again, with varying errors:
+A01 invents commercialization status and adoption prerequisites; A02 changes
+measurement denominators and scope and makes optional verification mandatory;
+A06 applies the anonymous per-IP cap to authenticated Free-plan requests; A08
+transfers impacts between vulnerabilities and strengthens CISA's bounded
+reporting statement; and A10 again counts 18 regions where the source lists 17.
+New defects occur in A03 (customer-location access prohibition), A04 ("below
+2.329.0" becomes "2.329.0 or older", with enforcement-scope distortion), and A07
+(unsupported specific industrial-control application impact and exposure scale).
+The unchanged-input repeat therefore does not establish a repair or reliability:
+the first compact run had 7 mechanical, 5 content and 3 joint passes; this run
+has 5, 2 and 0. Neither is discarded or combined into a best-of-two edition.
+These are repeated-development-corpus observations, not unseen accuracy or
+statistical proof of regression.
+
+Final independent record: `compact-reference-writer-repeat-v1/independent-review.json`,
+SHA-256 `f94eab9548cf9e579212daa1ee79d5d1eb13147a912a9a19ddb9e375c2e94768`.
+The reviewer validated 26 reader quotations and 26 source anchors against the
+saved packet; the primary agent read the complete final review. No held answer
+was repaired or released. A targeted drafting/validation design change is
+needed before further live testing, rather than repeating unchanged prompts
+until favorable outputs appear. No email, new provider attempt, billing action,
+fresh news research, production integration or editorial-threshold change was
+performed following this result.
+
+### Incremental local repair — version endpoint inclusion, October 12
+
+The next change is a **narrow rejection screen**, not another drafting prompt or
+a claim that the summaries have been repaired. The compact-reference experiment
+now screens recognized dotted numeric version comparisons in every headline and
+body item against that item's selected source passages. With the same version,
+same comparison direction and an unambiguous source relation, changing a strict
+endpoint into an inclusive one (or vice versa) holds the draft for review using
+`BENCHMARK_VERSION_BOUNDARY_REVIEW`. Equivalent supported comparison phrases are
+not flagged. Drafts, complete sources, exact native responses and private source
+spans remain unchanged and retained; public reports contain only the code/counts.
+The prompt, model, request limits, word bounds, attribution and copying checks
+remain unchanged. Other experiment modes and daily delivery do not use this
+screen. The manual benchmark runs its tests before provider credentials.
+
+The scope is deliberately limited: this is not subject, action, negation, range,
+prerelease, entity or full-sentence entailment checking. Opposite comparisons can
+describe complementary populations. Missing or ambiguous selected-source
+relations are recorded as uncovered, not approved. A source comparator attached
+to the wrong product can evade this screen. A detected lexical conflict requests
+review rather than asserting semantic contradiction; unusual equivalent
+constructions can be held conservatively. `semanticApproval` remains false in
+all cases. It does not address the other seven materially flawed repeat drafts,
+or A04's separate enforcement-scope error.
+
+Concrete limitations from review: a source saying "version X or older, except X"
+can produce a false hold for a faithful "below X" paraphrase; different products
+with strict and inclusive cutoffs at the same number in one passage are marked
+ambiguous; the form "earlier than or equal to X" is outside the recognized
+grammar. None is treated as a factual pass. This lexical screen is not the
+mechanism for deciding those semantic cases.
+
+Offline replay of all twenty unedited drafts from the two compact runs flags
+only the repeated-run A04 item U3: the source says below version 2.329.0, while
+the draft includes that version with "or older". The first run's strict boundary
+is not flagged. This is regression evidence on saved cases, not a new live
+pass or an improvement to generated text. Original results and the 0/10 repeat
+joint-pass count remain unchanged. Content-free replay evidence is saved privately
+as `version-boundary-screen-2026-10-12.json`; source/draft text is not committed.
+
+Focused local tests pass (167), including synthetic endpoint families, faithful
+paraphrases, explicit blind spots, malformed/sparse input and encrypted mock-run
+holding without retries or text repair. The complete local suite passes all
+2,490 tests. Independent review found and prompted two repairs: Unicode-dash
+prereleases could be partially parsed as release endpoints, and repeated source
+span diagnostics could exceed the encrypted envelope limit and stop the batch.
+The final screen excludes those suffixes and stores bounded offset-only details
+with complete counters and explicit truncation metadata. Complete source, draft
+and native provider evidence are unaffected. A ten-article encrypted mock batch
+with dense repeated comparisons now remains article-held rather than failing
+evidence storage. The independent reviewer reproduced the original overflow
+counterexample after repair: its summary is now 29,627 bytes, all twenty
+conflicts remain counted, and it seals successfully. The reviewer found no
+remaining blocker to this **narrow local handoff**, with all 167 workflow-listed
+tests passing and the documented lexical limitations intact. The final screen
+SHA-256 is `c94d1e0227d48ddadb900ca2136cd6a0a4114159b9ebd31033e3685ee22b15c4`;
+the two-run offline replay was repeated against that exact file and produced
+unchanged outcomes. No provider allowance, email, publishing, billing or
+production change was used for this local step.
+
+This step is locally complete, not deployed and not a qualification of the
+writer. Next is a separate drafting repair for unsupported conclusions and
+scope transfer, with faithful counterexamples as well as failures. Do not spend
+another live batch merely to demonstrate this deterministic screen: the saved
+failure and encrypted mock regression already exercise it. Any later live
+writing test must be identified as a new bounded experiment and evaluated on
+the complete unedited output, not made successful by this extra rejection gate.
+
+### Next isolated drafting experiment — frozen source plan, October 12
+
+Implemented locally, **not published or run against a provider**. The manual
+benchmark has a new opt-in `source-plan-writer` mode. Its first request selects
+only IDs of host-segmented source sentence-units. The host validates and freezes
+that selection before a separate writer request paraphrases those fixed slots.
+The complete retained publisher text remains visible at both stages, including
+unselectable material and exceptions. There are no article-specific examples,
+gold summaries, custom corrections or model-facing prior failure judgments.
+
+This is a hypothesis about reducing the simultaneous selection/composition
+burden, not evidence that references establish truth. It changes staging,
+selection granularity and budget together; a future result cannot isolate a
+single cause. The writer can still add unsupported clauses or move meanings
+between mechanically correct slots. Explicit synthetic counterexamples retain
+those errors unchanged and remain `semanticApproval: false`. Independent review
+must assess the complete exact draft against the entire original source, not
+only the chosen IDs. No new automatic factual approval gate was introduced.
+
+The source-plan identity includes article ID, source hash, publisher, attribution,
+title, URL, capture note, full ordered passages, and the catalog's exact offsets.
+Plans are descriptor-checked, copied, deeply frozen and tied to their issued
+view; cloned or cross-article plans are rejected. Selection requires 1–3 units
+per section, keeps source order within a section, and cannot repeat body units.
+An explicit abstention preserves the case in the denominator and prevents the
+writer call. The ordinary attribution, copying, prose and 110–225-word checks
+remain unchanged, as does the narrow version-boundary hold. Exact native answers
+are sealed before plan/draft validation; no answer is silently repaired.
+
+The isolated profile allows at most **20 calls / 52,000 requested output tokens**
+for all ten saved articles: one 1,200-token planner followed by one 4,000-token
+writer per article. Both use the existing GPT-OSS-120B model, medium reasoning,
+90-second timeout and no retries. Malformed or abstaining planners skip writing;
+provider/provenance or storage failures stop remaining work. Quality holds retain
+all cases and permit the remaining articles to be attempted. There is no model
+reviewer call, email, billing change, fresh research or daily-delivery integration.
+These ceilings do not establish that a live run fits the free neuron allowance.
+
+Independent implementation review found a real preflight-size defect: counting
+raw strings missed the additional JSON escaping in the actual request. The
+repair now measures the shared adapter's exact serialized request and also
+bounds the largest reachable rewrite before planning, then checks the actual
+rewrite again. Quote/backslash-heavy and multibyte cases exercise this without
+increasing the request, decoded-corpus or encrypted-evidence limits. Oversized
+local cases are not misreported as provider failures. The legacy sentence-review
+file remains byte-for-byte unchanged; a new isolated segmentation copy is locked
+to that original algorithm by a parity test rather than repinning old evidence.
+
+The complete frozen ten-source corpus was inventoried locally with its original
+capture notes and verified packet hash. Eligible/excluded sentence-unit counts:
+
+| Article | Eligible | Excluded |
+| --- | ---: | ---: |
+| A01 | 28 | 1 |
+| A02 | 29 | 4 |
+| A03 | 10 | 1 |
+| A04 | 11 | 1 |
+| A05 | 8 | 5 |
+| A06 | 71 | 10 |
+| A07 | 26 | 43 |
+| A08 | 27 | 58 |
+| A09 | 13 | 1 |
+| A10 | 5 | 3 |
+
+All ten inputs pass local size bounds; exact planner requests are 7,016–29,008
+bytes. Offsets, context/source hashes and reasons are recorded privately in
+`source-plan-catalog-inventory-2026-10-12.json`. This is transport coverage, not
+editorial adequacy. In particular, CISA version/score/background/fix fields and
+A10's region list include unterminated or oversized units that cannot be selected.
+Their full text is still context, not omitted evidence. This selection bias may
+force abstention or limit useful coverage. Do not drop those articles, loosen
+segmentation silently, or count a reduced denominator as success.
+
+Verification: all **2,514** local automated tests pass, including **24** new
+source-plan tests. The independent reviewer rechecked all ten source inventories
+and the escaped-input repair, found no remaining implementation blocker, and
+cleared **local prototype mechanics only**. The reviewer explicitly withheld
+live, semantic-quality, publishing and production approval. Earlier compact-run
+failure counts remain unchanged. This step is locally ready for consideration
+of a separately approved bounded no-email trial, not proof that the writer is
+fixed. Before any trial, verify trusted revision, fresh free-plan/allowance
+status and the exact scope/budget; preserve all raw answers and independently
+review all ten results without cherry-picking. No live attempt occurred here.
