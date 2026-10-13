@@ -15,7 +15,7 @@ on:
         required: true
         type: string
       mode:
-        description: Isolated drafting benchmark or frozen reviewer check
+        description: Isolated drafting benchmark, reviewer check, or one-article planner check
         type: choice
         default: write-and-review
         options:
@@ -25,6 +25,7 @@ on:
           - scope-first-writer
           - compact-reference-writer
           - source-plan-writer
+          - source-plan-planner-check
       replay_sha256:
         description: Required SHA-256 for the six saved drafts in review-only mode
         type: string

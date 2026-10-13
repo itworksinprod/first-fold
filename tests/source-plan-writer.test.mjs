@@ -11,7 +11,7 @@ import {sourceSentenceSegments} from '../scripts/automation/experiments/source-p
 import {prepareBenchmark, BENCHMARK_DESKS, compactReferenceWriterView, normalizeCompactReferenceSummary,
   runBenchmark} from '../scripts/automation/article-benchmark.mjs';
 import {openDiagnostic} from '../scripts/automation/private-writer-diagnostic.mjs';
-import {buildWorkersAiRequest, FREE_REASONING_WRITER_MODEL} from '../scripts/automation/free/workers-ai.mjs';
+import {buildWorkersAiRequest, requestWorkersAiEditorial, FREE_REASONING_WRITER_MODEL} from '../scripts/automation/free/workers-ai.mjs';
 
 const sha = s => createHash('sha256').update(s).digest('hex');
 const fields = ['whatHappened', 'whyItMatters', 'whatToWatch'];
@@ -224,10 +224,13 @@ test('planned version-boundary violations hold exact text without provider repai
 });
 
 test('mode is opt-in and cannot mix with another writer; workflow tests run before secrets', async () => {
-  for (const modes of [{sourcePlan: 'yes'}, {sourcePlan: true, compactReference: true}, {sourcePlan: true, sourceFirst: true}, {sourcePlan: true, scopeFirst: true}])
+  for (const modes of [{sourcePlan: 'yes'}, {sourcePlan: true, compactReference: true}, {sourcePlan: true, sourceFirst: true}, {sourcePlan: true, scopeFirst: true},
+    {plannerCheck: 'yes'}, {plannerCheck: true, sourcePlan: true}, {plannerCheck: true, compactReference: true},
+    {plannerCheck: true, sourceFirst: true}, {plannerCheck: true, scopeFirst: true}])
     await assert.rejects(runBenchmark({plan: corpus(), ...modes, publicKey, save: async () => {}}), /BENCHMARK_MODE/);
   const workflow = await readFile(new URL('../.github/workflows/article-benchmark.yml', import.meta.url), 'utf8');
   assert.match(workflow, /default: write-and-review/); assert.match(workflow, /- source-plan-writer/);
+  assert.match(workflow, /- source-plan-planner-check/);
   assert.ok(workflow.indexOf('tests/source-plan-writer.test.mjs') < workflow.indexOf('CLOUDFLARE_AI_API_TOKEN'));
   assert.doesNotMatch(workflow, /RESEND|OPENAI_API_KEY|schedule:|contents: write/);
   const [encoded, digest] = encode(packet());
@@ -299,4 +302,133 @@ test('oversized parsed planner answers preserve native evidence before the valid
   assert.equal(calls, 10); assert.ok(r.results.every(x => x.code === 'BENCHMARK_RESPONSE_SIZE'));
   assert.equal(saved.filter(s => s.id.endsWith('-planner') && Buffer.from(s.data.nativeResponseBase64, 'base64').length > 60000).length, 10);
   assert.ok(saved.every(s => Buffer.byteLength(JSON.stringify(s.data)) < 350000));
+});
+
+// These envelopes reconstruct observed failure shapes from run 38328613943.
+// They are synthetic transport fixtures, NOT exact archived native responses,
+// and passing them does not demonstrate that low reasoning fixes the provider.
+const plannerEnvelope = (content, finishReason = 'length') => JSON.stringify({success: true, result: {
+  choices: [{message: {role: 'assistant', content}, finish_reason: finishReason}],
+  usage: {prompt_tokens: 50, completion_tokens: 1200, total_tokens: 1250},
+}});
+const check = options => execute({sourcePlan: false, plannerCheck: true, ...options});
+
+test('planner-only check preselects A01, allows one call and never writes even after accepted selection', async () => {
+  let adapterCalls = 0;
+  const {result: r, seen, saved, calls} = await check({aiRequestImpl: options => {
+    adapterCalls++;
+    assert.equal(options.maxTokens, 1200); assert.equal(options.maxAttempts, 1);
+    assert.equal(options.timeoutMs, 90000); assert.equal(options.reasoningEffort, 'low');
+    return requestWorkersAiEditorial(options);
+  }});
+  assert.equal(adapterCalls, 1); assert.equal(calls, 1); assert.equal(r.requests, 1); assert.equal(r.networkRequests, 1);
+  assert.equal(r.requestedOutputTokens, 1200); assert.equal(r.mode, 'source-plan-planner-check');
+  assert.deepEqual(r.checkScope, {selectedArticleIds: ['A01'], selectedArticleCount: 1, corpusArticleCount: 10,
+    excludedArticleCount: 9, writerCallsPermitted: 0, semanticApproval: false});
+  assert.equal(r.results.length, 10); assert.equal(r.results[0].id, 'A01');
+  assert.equal(r.results[0].status, 'awaiting-independent-plan-review');
+  assert.equal(r.results[0].plannerNativeResponseCaptured, true); assert.equal(r.results[0].plannerJsonObjectParsed, true);
+  assert.equal(r.results[0].planStructural, true); assert.equal(r.results[0].draftStructural, false);
+  assert.equal(r.results[0].hasReaderDraft, false); assert.equal(r.results[0].bodyWords, null);
+  for (const field of ['sourceSupported', 'faithful', 'readable', 'useful']) assert.equal(r.results[0][field], null);
+  assert.ok(r.results.slice(1).every(x => x.status === 'not-selected-planner-check'));
+  assert.deepEqual(saved.map(s => s.id), ['A01-planner', 'A01']);
+  assert.equal(saved[1].data.sourcePlan.semanticApproval, false); assert.equal(saved[1].data.summary, undefined);
+  assert.equal(seen[0].data.context.articleId, 'A01'); assert.equal(seen[0].data.planSha256, undefined);
+  assert.equal(r.emailSent, false); assert.equal(r.productionApproved, false);
+  assert.doesNotMatch(JSON.stringify(r), /Fictional|TEST_ONLY|P1S1/);
+});
+
+test('planner check changes only reasoning effort in the prior A01 planner request', async () => {
+  const original = await execute(), probe = await check();
+  assert.equal(original.result.mode, 'source-plan-writer');
+  assert.equal(original.calls, 20); assert.equal(original.result.requestedOutputTokens, 52000);
+  assert.ok(original.seen.every(s => s.body.reasoning_effort === 'medium'));
+  const low = probe.seen[0].body;
+  assert.equal(low.reasoning_effort, 'low');
+  assert.equal(JSON.stringify({...low, reasoning_effort: 'medium'}), JSON.stringify(original.seen[0].body));
+  assert.equal(probe.result.packetSha256, original.result.packetSha256);
+});
+
+for (const [label, content] of [['no final answer', null], ['punctuation only', '!'.repeat(1200)],
+  ['partial JSON', '{\n  "decision": "plan",\n  "headline": ["P2S1", "P3S']])
+test(`planner check preserves ${label} failure without retry, abstention or writer`, async () => {
+  const native = plannerEnvelope(content);
+  const {result: r, calls, saved} = await check({answer: () => new Response(native, {headers: {'content-type': 'application/json'}})});
+  assert.equal(calls, 1); assert.equal(r.requestedOutputTokens, 1200);
+  assert.equal(r.results[0].code, 'BENCHMARK_PROVIDER_FORMAT'); assert.equal(r.results[0].status, 'held');
+  assert.equal(r.results[0].plannerNativeResponseCaptured, true); assert.equal(r.results[0].plannerJsonObjectParsed, false);
+  assert.equal(r.results[0].planStructural, false); assert.equal(r.results[0].hasReaderDraft, false);
+  assert.equal(saved[1].data.sourcePlan, undefined);
+  assert.equal(Buffer.from(saved[0].data.nativeResponseBase64, 'base64').toString('utf8'), native);
+  assert.equal(saved[0].data.nativeResponseSha256, sha(native));
+  assert.equal(saved[0].data.failure.formatReason, 'OUTPUT_TOKEN_LIMIT');
+  assert.equal(saved[0].data.failure.completionTokens, 1200); assert.equal(saved[0].data.failure.requestedMaxTokens, 1200);
+  assert.equal(r.stoppedOnProviderBlocker, false);
+  assert.ok(r.results.slice(1).every(x => x.status === 'not-selected-planner-check'));
+});
+
+for (const [label, value, code] of [['abstention', abstention(), 'BENCHMARK_SOURCE_PLAN_ABSTAINED'],
+  ['bad structure', {decision: 'plan'}, 'BENCHMARK_SOURCE_PLAN_SHAPE'],
+  ['bad source ID', {...selection(), headline: ['P999S1']}, 'BENCHMARK_SOURCE_PLAN_ANCHOR']])
+test(`planner check separates parsed JSON from ${label} and never writes`, async () => {
+  const {result: r, calls, saved} = await check({answer: () => response(value)});
+  assert.equal(calls, 1); assert.equal(r.results[0].code, code); assert.equal(r.results[0].status, 'held');
+  assert.equal(r.results[0].plannerJsonObjectParsed, true); assert.equal(r.results[0].planStructural, false);
+  assert.deepEqual(saved.map(s => s.id), ['A01-planner', 'A01']);
+});
+
+for (const status of [401, 429, 500]) test(`planner check HTTP ${status} makes no retry or later call`, async () => {
+  const {result: r, calls, saved} = await check({answer: () => new Response('{}', {status})});
+  assert.equal(calls, 1); assert.equal(r.requests, 1); assert.equal(r.stoppedOnProviderBlocker, true);
+  assert.equal(r.results[0].code, 'BENCHMARK_PROVIDER_STOP'); assert.equal(r.results[0].plannerJsonObjectParsed, false);
+  assert.ok(r.results.slice(1).every(x => x.status === 'not-selected-planner-check'));
+  assert.ok(saved.every(s => !s.id.endsWith('-writer')));
+});
+
+for (const stage of ['A01-planner', 'A01']) test(`planner check storage failure at ${stage} cannot promote result or call writer`, async () => {
+  const {result: r, calls} = await check({storageFailure: id => id === stage});
+  assert.equal(calls, 1); assert.equal(r.stoppedOnEvidenceBlocker, true);
+  assert.equal(r.results[0].status, 'held'); assert.equal(r.results[0].code, 'BENCHMARK_EVIDENCE_STORAGE');
+  assert.equal(r.productionApproved, false); assert.equal(r.results[0].hasReaderDraft, false);
+});
+
+test('planner check request-size failure does not substitute a different article', async () => {
+  const {result: r, calls, saved} = await check({sourceText: stressSource('Fictional ' + '\\'.repeat(110) + ' unit.'), firstOnly: true});
+  assert.equal(calls, 0); assert.equal(r.requests, 0); assert.equal(r.results[0].code, 'BENCHMARK_SOURCE_PLAN_SIZE');
+  assert.equal(r.results[0].plannerNativeResponseCaptured, false); assert.equal(r.results[0].planStructural, false);
+  assert.deepEqual(saved.map(s => s.id), ['A01']);
+  assert.ok(r.results.slice(1).every(x => x.status === 'not-selected-planner-check'));
+});
+
+test('planner check transport refuses an adapter second request without contacting provider twice', async () => {
+  const {result: r, calls} = await check({aiRequestImpl: async options => {
+    const {body} = buildWorkersAiRequest(options);
+    const init = {method: 'POST', redirect: 'error', body: JSON.stringify(body)};
+    const url = `https://api.cloudflare.com/client/v4/accounts/${'0'.repeat(32)}/ai/run/${FREE_REASONING_WRITER_MODEL}`;
+    await options.fetchImpl(url, init);
+    await options.fetchImpl(url, init);
+    throw Error('unreachable');
+  }});
+  assert.equal(calls, 1); assert.equal(r.networkRequests, 1);
+  assert.equal(r.results[0].status, 'held'); assert.equal(r.stoppedOnProviderBlocker, true);
+});
+
+test('planner check CLI validates the fixed corpus before credentials and rejects untrusted authority', () => {
+  const [encoded, digest] = encode(packet());
+  const env = {GITHUB_REPOSITORY: 'itworksinprod/first-fold', GITHUB_ACTOR: 'itworksinprod',
+    GITHUB_REF: 'refs/heads/main', GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_RUN_ATTEMPT: '1',
+    GITHUB_WORKFLOW_REF: 'itworksinprod/first-fold/.github/workflows/article-benchmark.yml@refs/heads/main',
+    GITHUB_SHA: '1'.repeat(40), BENCHMARK_REVISION: '1'.repeat(40), DIAGNOSTIC_PUBLIC_KEY: publicKey,
+    FIRST_FOLD_BENCHMARK_B64: encoded, BENCHMARK_PACKET_SHA256: digest, BENCHMARK_MODE: 'source-plan-planner-check'};
+  const cli = patch => spawnSync(process.execPath,
+    [fileURLToPath(new URL('../scripts/automation/article-benchmark.mjs', import.meta.url)), 'validate'],
+    {encoding: 'utf8', env: {...env, ...patch}});
+  const valid = cli({}); assert.equal(valid.status, 0); assert.equal(valid.stderr.trim(), '');
+  for (const patch of [{GITHUB_RUN_ATTEMPT: '2'}, {GITHUB_ACTOR: 'stranger'}, {GITHUB_REF: 'refs/heads/other'},
+    {GITHUB_SHA: '2'.repeat(40)}, {GITHUB_EVENT_NAME: 'schedule'}]) {
+    const bad = cli(patch); assert.equal(bad.status, 1); assert.equal(bad.stderr.trim(), 'BENCHMARK_AUTHORITY');
+  }
+  const corrupt = cli({BENCHMARK_PACKET_SHA256: '0'.repeat(64)});
+  assert.equal(corrupt.status, 1); assert.equal(corrupt.stderr.trim(), 'BENCHMARK_PACKET_HASH');
 });

@@ -357,16 +357,19 @@ export function assertBenchmarkAuthority(env) {
       !/^[a-f0-9]{40}$/.test(env.BENCHMARK_REVISION ?? '') || env.GITHUB_SHA !== env.BENCHMARK_REVISION) throw fail('BENCHMARK_AUTHORITY');
 }
 
-export async function runBenchmark({plan, replay = null, sourceFirst = false, scopeFirst = false, compactReference = false, sourcePlan = false, publicKey, accountId, apiToken, save,
+export async function runBenchmark({plan, replay = null, sourceFirst = false, scopeFirst = false, compactReference = false, sourcePlan = false, plannerCheck = false, publicKey, accountId, apiToken, save,
   aiRequestImpl = requestWorkersAiEditorial, fetchImpl = fetch, sealImpl = sealDiagnostic, onProgress = () => {}}) {
   if (!plans.has(plan) || typeof save !== 'function') throw fail('BENCHMARK_PLAN');
   if (replay !== null && (!replays.has(replay) || replay.packetSha256 !== plan.packetSha256)) throw fail('BENCHMARK_REPLAY_PACKET');
-  if ([sourceFirst, scopeFirst, compactReference, sourcePlan].some(x => typeof x !== 'boolean') ||
-      [sourceFirst, scopeFirst, compactReference, sourcePlan].filter(Boolean).length > 1 ||
-      ((sourceFirst || scopeFirst || compactReference || sourcePlan) && replay)) throw fail('BENCHMARK_MODE');
-  const writerOnly = sourceFirst || scopeFirst || compactReference || sourcePlan;
-  const requestLimit = sourcePlan ? 20 : writerOnly ? 10 : replay ? 6 : 20;
-  const tokenLimit = sourcePlan ? 52000 : writerOnly ? 40000 : replay ? 28800 : 80000;
+  if ([sourceFirst, scopeFirst, compactReference, sourcePlan, plannerCheck].some(x => typeof x !== 'boolean') ||
+      [sourceFirst, scopeFirst, compactReference, sourcePlan, plannerCheck].filter(Boolean).length > 1 ||
+      ((sourceFirst || scopeFirst || compactReference || sourcePlan || plannerCheck) && replay)) throw fail('BENCHMARK_MODE');
+  const sourcePlanning = sourcePlan || plannerCheck;
+  const writerOnly = sourceFirst || scopeFirst || compactReference || sourcePlanning;
+  // Planner check is a predeclared A01-only diagnostic, not another writer trial.
+  // It changes reasoning effort only; existing source-plan requests stay intact.
+  const requestLimit = plannerCheck ? 1 : sourcePlan ? 20 : writerOnly ? 10 : replay ? 6 : 20;
+  const tokenLimit = plannerCheck ? 1200 : sourcePlan ? 52000 : writerOnly ? 40000 : replay ? 28800 : 80000;
   diagnosticPublicKey(publicKey);
   let requests = 0, networkRequests = 0, requestedOutputTokens = 0, stopped = false, evidenceFailure = false;
   const persist = async (id, value) => {
@@ -375,6 +378,7 @@ export async function runBenchmark({plan, replay = null, sourceFirst = false, sc
   };
   const results = [];
   for (const article of plan.articles.filter(a => !replay || replay.drafts.some(d => d.id === a.id))) {
+    if (plannerCheck && article.id !== 'A01') {results.push({id: article.id, status: 'not-selected-planner-check'}); continue;}
     if (stopped) {results.push({id: article.id, status: evidenceFailure ? 'not-attempted-evidence-blocker' : 'not-attempted-provider-blocker'}); continue;}
     const {passages: _regenerablePassages, ...savedArticle} = article;
     const capture = {article: savedArticle, packetSha256: plan.packetSha256, calls: [], emailSent: false,
@@ -384,17 +388,19 @@ export async function runBenchmark({plan, replay = null, sourceFirst = false, sc
     if (scopeFirst) capture.mode = 'scope-first-writer';
     if (compactReference) capture.mode = 'compact-reference-writer';
     if (sourcePlan) capture.mode = 'source-plan-writer';
-    let providerFailure = false;
+    if (plannerCheck) capture.mode = 'source-plan-planner-check';
+    let providerFailure = false, plannerNativeResponseCaptured = false, plannerJsonObjectParsed = false;
     const call = async (view, stage) => {
-      const maxTokens = sourcePlan && stage === 'planner' ? 1200 : writerOnly ? 4000 : stage === 'writer' ? 3200 : 4800;
+      const maxTokens = sourcePlanning && stage === 'planner' ? 1200 : writerOnly ? 4000 : stage === 'writer' ? 3200 : 4800;
       if (requests >= requestLimit || capture.calls.length >= (sourcePlan ? 2 : writerOnly || replay ? 1 : 2) ||
+          (plannerCheck && stage !== 'planner') ||
           (sourcePlan && stage !== (capture.calls.length === 0 ? 'planner' : 'writer')) ||
-          (replay && stage !== 'reviewer') || (writerOnly && !sourcePlan && stage !== 'writer') ||
+          (replay && stage !== 'reviewer') || (writerOnly && !sourcePlanning && stage !== 'writer') ||
           requestedOutputTokens + maxTokens > tokenLimit) throw fail('BENCHMARK_BUDGET');
       const options = {model: FREE_REASONING_WRITER_MODEL,
         messages: [{role: 'system', content: view.prompt + '\nJSON schema: ' + JSON.stringify(view.schema)},
           {role: 'user', content: JSON.stringify(view.data)}], schema: view.schema, responseFormat: 'json_object',
-        maxTokens, maxAttempts: 1, reasoningEffort: 'medium', temperature: 0.1,
+        maxTokens, maxAttempts: 1, reasoningEffort: plannerCheck ? 'low' : 'medium', temperature: 0.1,
         timeoutMs: 90000, maxRequestBytes: 90000, maxResponseBytes: 150000};
       const {body} = buildWorkersAiRequest(options), serialized = JSON.stringify(body), endpoint = workersAiRunUrl(accountId, options.model);
       const requestSha256 = sha(JSON.stringify({provider: 'cloudflare-workers-ai', model: options.model, body}));
@@ -421,6 +427,7 @@ export async function runBenchmark({plan, replay = null, sourceFirst = false, sc
             } finally {reader.releaseLock();}
             const bytes = Buffer.concat(chunks);
             record.nativeResponseBase64 = bytes.toString('base64'); record.nativeResponseSha256 = sha(bytes);
+            if (plannerCheck) plannerNativeResponseCaptured = true;
             return new Response(bytes, {status: response.status, headers: response.headers});
           }});
       } catch (error) {
@@ -439,21 +446,27 @@ export async function runBenchmark({plan, replay = null, sourceFirst = false, sc
       // cap, including oversized/malformed answers. No source duplication in
       // the aggregate result; each encrypted item stays below the 350 KB cap.
       Object.assign(record, {responseSha256: result.responseSha256});
+      if (plannerCheck) plannerJsonObjectParsed = true;
       reference.responseSha256 = result.responseSha256;
       await persist(`${article.id}-${stage}`, record);
       return data(result.editorialPayload);
     };
     let status = 'awaiting-independent-review', code = null;
     try {
-      if (sourcePlan) {
+      if (sourcePlanning) {
         const sourceView = compactReferenceWriterView(article);
         const planning = buildSourcePlanView({articleId: article.id, sourceSha256: article.sourceSha256, ...sourceView.data});
         capture.sourcePlan = acceptSourcePlan(await call(planning, 'planner'), planning);
-        const rewrite = buildPlannedRewriteView(planning, capture.sourcePlan);
-        const payload = attachPlannedReferences(await call(rewrite, 'writer'), planning, capture.sourcePlan);
-        capture.summary = normalizeCompactReferenceSummary(payload, article);
-        if (capture.summary.versionBoundaryScreen.status === 'needs-review') {
-          status = 'held'; code = 'BENCHMARK_VERSION_BOUNDARY_REVIEW';
+        if (plannerCheck) {
+          if (capture.sourcePlan.selection.decision === 'abstain') throw fail('BENCHMARK_SOURCE_PLAN_ABSTAINED');
+          status = 'awaiting-independent-plan-review';
+        } else {
+          const rewrite = buildPlannedRewriteView(planning, capture.sourcePlan);
+          const payload = attachPlannedReferences(await call(rewrite, 'writer'), planning, capture.sourcePlan);
+          capture.summary = normalizeCompactReferenceSummary(payload, article);
+          if (capture.summary.versionBoundaryScreen.status === 'needs-review') {
+            status = 'held'; code = 'BENCHMARK_VERSION_BOUNDARY_REVIEW';
+          }
         }
       } else if (compactReference) {
         capture.summary = normalizeCompactReferenceSummary(await call(compactReferenceWriterView(article), 'writer'), article);
@@ -477,11 +490,15 @@ export async function runBenchmark({plan, replay = null, sourceFirst = false, sc
     const report = {id: article.id, status, code, bodyWords: capture.summary?.bodyWords ?? null,
       draftStructural: Boolean(capture.summary), reviewerStructural: Boolean(capture.review), sourceSupported: capture.review?.supported ?? null,
       readable: capture.review?.readable ?? null, useful: capture.review?.useful ?? null, faithful: capture.review?.faithful ?? null};
+    if (plannerCheck) Object.assign(report, {plannerNativeResponseCaptured, plannerJsonObjectParsed,
+      planStructural: capture.sourcePlan?.selection.decision === 'plan', hasReaderDraft: false});
     capture.report = report;
     try {await persist(article.id, capture);} catch {report.status = 'held'; report.code = 'BENCHMARK_EVIDENCE_STORAGE';}
     results.push(report); onProgress({...report, requests, networkRequests, requestedOutputTokens});
   }
-  return {packetSha256: plan.packetSha256, ...(sourcePlan ? {mode: 'source-plan-writer'} : compactReference ? {mode: 'compact-reference-writer'} : scopeFirst ? {mode: 'scope-first-writer'} : sourceFirst ? {mode: 'source-first-writer'} : replay ? {replaySha256: replay.sha256, mode: 'saved-claim-review'} : {}), results, requests, networkRequests, requestedOutputTokens,
+  return {packetSha256: plan.packetSha256, ...(plannerCheck ? {mode: 'source-plan-planner-check',
+      checkScope: {selectedArticleIds: ['A01'], selectedArticleCount: 1, corpusArticleCount: 10, excludedArticleCount: 9,
+        writerCallsPermitted: 0, semanticApproval: false}} : sourcePlan ? {mode: 'source-plan-writer'} : compactReference ? {mode: 'compact-reference-writer'} : scopeFirst ? {mode: 'scope-first-writer'} : sourceFirst ? {mode: 'source-first-writer'} : replay ? {replaySha256: replay.sha256, mode: 'saved-claim-review'} : {}), results, requests, networkRequests, requestedOutputTokens,
     stoppedOnProviderBlocker: stopped && !evidenceFailure, stoppedOnEvidenceBlocker: evidenceFailure, emailSent: false, productionApproved: false};
 }
 
@@ -490,10 +507,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     assertBenchmarkAuthority(process.env); diagnosticPublicKey(process.env.DIAGNOSTIC_PUBLIC_KEY);
     const plan = prepareBenchmark(process.env.FIRST_FOLD_BENCHMARK_B64, process.env.BENCHMARK_PACKET_SHA256);
     const mode = process.env.BENCHMARK_MODE ?? 'write-and-review';
-    if (!['write-and-review', 'saved-claim-review', 'source-first-writer', 'scope-first-writer', 'compact-reference-writer', 'source-plan-writer'].includes(mode)) throw fail('BENCHMARK_MODE');
+    if (!['write-and-review', 'saved-claim-review', 'source-first-writer', 'scope-first-writer', 'compact-reference-writer', 'source-plan-writer', 'source-plan-planner-check'].includes(mode)) throw fail('BENCHMARK_MODE');
     const replay = mode === 'saved-claim-review' ? prepareBenchmarkReplay(process.env.FIRST_FOLD_BENCHMARK_REPLAY_B64,
       process.env.BENCHMARK_REPLAY_SHA256, plan) : null;
-    if (mode === 'source-plan-writer') for (const article of plan.articles) {
+    if (['source-plan-writer', 'source-plan-planner-check'].includes(mode)) for (const article of plan.articles.filter(a => mode !== 'source-plan-planner-check' || a.id === 'A01')) {
       buildSourcePlanView({articleId: article.id, sourceSha256: article.sourceSha256, ...compactReferenceWriterView(article).data});
     }
     const [command, output, ...extra] = process.argv.slice(2);
@@ -501,13 +518,15 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
         (command === 'run' && (!process.env.RUNNER_TEMP || output !== resolve(process.env.RUNNER_TEMP, 'article-benchmark')))) throw fail('BENCHMARK_ARGUMENTS');
     if (command === 'run') {
       await mkdir(output, {mode: 0o700}); // Existing output means do not repeat the attempt.
-      const report = await runBenchmark({plan, replay, sourceFirst: mode === 'source-first-writer', scopeFirst: mode === 'scope-first-writer', compactReference: mode === 'compact-reference-writer', sourcePlan: mode === 'source-plan-writer', publicKey: process.env.DIAGNOSTIC_PUBLIC_KEY,
+      const report = await runBenchmark({plan, replay, sourceFirst: mode === 'source-first-writer', scopeFirst: mode === 'scope-first-writer', compactReference: mode === 'compact-reference-writer', sourcePlan: mode === 'source-plan-writer', plannerCheck: mode === 'source-plan-planner-check', publicKey: process.env.DIAGNOSTIC_PUBLIC_KEY,
         accountId: process.env.CLOUDFLARE_ACCOUNT_ID, apiToken: process.env.CLOUDFLARE_AI_API_TOKEN,
         save: (id, sealed) => writeFile(resolve(output, id + '.encrypted.json'), JSON.stringify(sealed), {mode: 0o600, flag: 'wx'}),
         onProgress: row => console.info(JSON.stringify(row))});
       await writeFile(resolve(output, 'report.json'), JSON.stringify(report), {mode: 0o600, flag: 'wx'});
       console.info(JSON.stringify(report));
-      if (report.results.some(r => r.status !== 'awaiting-independent-review')) process.exitCode = 1;
+      if (report.results.some(r => mode === 'source-plan-planner-check'
+        ? r.status !== (r.id === 'A01' ? 'awaiting-independent-plan-review' : 'not-selected-planner-check')
+        : r.status !== 'awaiting-independent-review')) process.exitCode = 1;
     }
   } catch (error) {console.error(/^BENCHMARK_[A-Z_]+$/.test(error?.code ?? '') ? error.code : 'BENCHMARK_FAILED'); process.exitCode = 1;}
 }

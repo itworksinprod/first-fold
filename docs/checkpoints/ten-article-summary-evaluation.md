@@ -741,3 +741,129 @@ of a separately approved bounded no-email trial, not proof that the writer is
 fixed. Before any trial, verify trusted revision, fresh free-plan/allowance
 status and the exact scope/budget; preserve all raw answers and independently
 review all ten results without cherry-picking. No live attempt occurred here.
+
+### Approved source-plan live trial — October 12 Eastern / October 13 UTC
+
+Carlos approved publishing the isolated setup and **one** no-email live trial.
+Only the nine reviewed implementation, test, workflow and checkpoint files were
+published at `c5465322be13371d294a4eb28ae0640c14152a66`. Unrelated working-tree
+changes were preserved. Before dispatch, fresh authenticated UI observations
+confirmed Workers Free, Active, no payment method, and **0/10,000 daily neurons**;
+the rolling-24-hour chart was not used as the daily allowance. The launch helper
+verified exact local/remote main, the frozen corpus and key binding, and recorded
+a non-overwritable intent before its sole dispatch.
+
+Run [38328613943](https://github.com/itworksinprod/first-fold/actions/runs/38328613943)
+completed with failure. Boundary tests, corpus validation and encrypted artifact
+preservation succeeded; the bounded evaluation correctly failed with all ten
+cases held. The run used **12 requests / 20,000 requested output tokens**, within
+the approved 20-request / 52,000-token ceilings. This was not a quota refusal or
+evidence-storage failure. No attempt was retried.
+
+Eight of ten planners reached their **1,200-token output limit**: six produced no
+final answer, A03 produced only punctuation, and A05 produced incomplete JSON.
+Only A06 and A10 returned accepted plans. A10's writer reached its 4,000-token
+limit with punctuation-only output. A06 returned complete JSON and 163 body
+words, but supplied a three-element headline array instead of the required
+single string; it was held unchanged for `BENCHMARK_PLANNED_REWRITE_SHAPE`.
+There were **zero mechanically accepted drafts**. Nine cases had no complete
+reader draft and cannot be described as having passed or failed factual review.
+
+All twelve actual requests, native responses and the aggregate result replayed
+exactly offline, with **zero provider calls during replay**. The encrypted
+artifact's exact size/digest and the run's owner, first attempt, workflow, main
+revision and dispatch timing were verified. Artifact SHA-256:
+`ad303668a146198dfe7be02e633f983c2a6b2959b3478aee2d6bf4ba65b32d81`.
+Private evidence is in `source-plan-writer-v1/`; `execution-result.json` and
+`run-38328613943-audit.json` record execution separately from independent review.
+Per-response metadata totals approximately 2,603.52 neurons; this is not a
+post-run dashboard or invoice measurement. No hidden model reasoning was
+exported to the review packet.
+
+The primary agent read all ten complete saved sources and all actual final-answer
+outputs. A06 repeats the same October 19 development in all three opening body
+sentences and the paid-tier January date in two headline entries. Unique source
+IDs therefore did **not** ensure unique facts. Its raw headline array does retain
+the January paid-tier exception, so broad October wording in the body is not
+counted as an invented unqualified all-tier claim. The exact unedited text
+received a separate independent editorial review; no array-to-string repair or
+deduping was permitted when scoring this attempt.
+
+That review is now complete: **0/10 mechanical, 0/10 editorial-content, and 0/10
+joint passes**. A06's raw prose is broadly factually supportable with the noted
+timeline clarity caveat, but fails useful, nonduplicate finished-summary quality.
+The other nine cases are missing drafts, not nine demonstrated factual errors.
+Both accepted plans' original offsets/texts and all twelve native response
+hashes were independently checked. The A10 plan covers a plausible outline but
+does not test preservation of its unselectable region/provisioning details.
+The primary agent read the complete review and verified its reader/source
+quotations. Final private record: `source-plan-writer-v1/independent-review.json`,
+SHA-256 `fad79a5570f0fc27561dc0e18f681acb3e339dc2984ba5893835170acb47c7fe`.
+Neither the held text nor the previous run results were repaired or overwritten.
+
+This trial does not establish improved summary quality or qualify the writer.
+Do not spend another batch merely by increasing every token cap. The next
+increment should first distinguish output-budget/format failure from fact
+selection and semantic duplication, preserve the failing captures as regression
+evidence, and make any new provider test a separately bounded experiment.
+No email, billing, recipient, fresh research, public edition, daily-delivery or
+editorial-threshold change occurred.
+
+### Planner completion isolation — local preparation, October 12 Eastern
+
+Following Carlos's approval to continue incrementally, the next local change is
+an opt-in **`source-plan-planner-check`** in the existing manual benchmark. It is
+not published, dispatched, or a demonstrated model repair. It preselects A01
+from the same hash-bound ten-article corpus **before** any request. The other
+nine are explicitly `not-selected-planner-check`, not successes or silently
+removed failures. Reported scope is one selected case, not a new ten-article
+quality score. Earlier live results and their ten-article denominator stand.
+
+The only model-request change relative to A01's prior planner is
+`reasoning_effort: low` instead of `medium`. Source, complete context, catalog,
+prompt, JSON mode/schema, model, temperature and the 1,200-token cap are unchanged.
+The new profile permits **one request, one attempt, 90 seconds, no retries and
+zero writer/reviewer calls**, even after successful selection. It uses existing
+authority and frozen-corpus checks; there is no new schedule or recipient.
+Cloudflare's current [model documentation](https://developers.cloudflare.com/workers-ai/models/gpt-oss-120b/)
+lists low/medium/high reasoning. This motivates a controlled diagnostic, not a
+claim that low effort will complete reliably or retain planning quality.
+In particular, the prior punctuation-only output does not establish a need for
+more tokens. [JSON Mode documentation](https://developers.cloudflare.com/workers-ai/features/json-mode/)
+also warns that the requested schema is not guaranteed; local validation stays.
+
+The report separates bounded native-response capture, parsed JSON object, and
+accepted plan structure. A valid plan remains `awaiting-independent-plan-review`,
+with no reader draft, no semantic approval and no production approval. Abstention,
+incomplete JSON, empty answers and punctuation-only answers are held unchanged.
+The native-captured flag means bytes were retained in memory; a separate evidence
+storage failure still holds the result and is not proof of a durable artifact.
+The raw bytes are sealed before plan validation. An HTTP refusal, storage error
+or failure on A01 cannot authorize a retry, a writer call or a substitute article.
+
+All **2,530** local tests pass (16 added in this step). Reconstructed failure
+envelopes are explicitly labeled synthetic regression fixtures, not exact live
+captures or successful low-effort outputs. Tests enforce the one-call transport
+boundary, abstention and malformed-plan handling, storage failures, input-size
+failure, trusted CLI authority, unchanged old-mode budgets and exact request
+parity apart from reasoning effort.
+
+An additional private offline audit replayed all **12 exact captured requests,
+native responses and aggregate results** from run 38328613943 under the modified
+code. Legacy source-plan behavior is unchanged. It compared the new profile's
+actual A01 request to the saved request and found only the reasoning-effort field
+different. Injecting the old medium-effort failure into the new path still held
+it without a writer call; that is a negative control, **not** a live low-effort
+result. No credentials, private keys or provider calls were used by this audit.
+Helper: `audit-planner-check-local.mjs` in the existing private review directory.
+
+Independent implementation review found no blocking issues and independently
+ran all **207** workflow-focused tests. It separately verified actual A01 request
+parity, one-request/no-writer behavior and the planner/legacy exit predicates.
+This clears local handoff only, not live effectiveness or publication. Before live use, obtain approval
+for this specific one-request scope, publish only the reviewed isolated changes,
+and recheck exact trusted main, fresh free-plan/allowance observations and a new
+non-repeatable dispatch intent. A live accepted plan would still need exact
+source review and would not complete the headline, duplication or overall
+summary-quality work. Those fixes remain separate. No external publication,
+provider use, email or daily-delivery change occurred in this local step.
